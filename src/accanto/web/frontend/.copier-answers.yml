@@ -1,0 +1,10 @@
+_src_path: ../../../../../templates/templates/frontend-react
+_commit: 72a28b9be899c6ccd39f06f8482d55e460556acd
+project_name: accanto
+project_description: A financial companion for planning a rich life.
+is_composed: true
+include_forms: true
+include_shadcn: false
+include_zustand: false
+include_recharts: false
+include_tables: false

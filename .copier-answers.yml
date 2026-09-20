@@ -1,0 +1,13 @@
+_src_path: ../templates/templates/python-web
+_commit: 72a28b9be899c6ccd39f06f8482d55e460556acd
+project_name: accanto
+project_description: A financial companion for planning a rich life.
+author_name: mattjmcnaughton
+author_email: me@mattjmcnaughton.com
+license: MIT
+include_database: true
+database_type: postgres
+include_clients: false
+enable_otel: false
+include_product_docs: true
+include_technical_docs: false
