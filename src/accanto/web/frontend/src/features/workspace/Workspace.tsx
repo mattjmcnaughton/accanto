@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { type BrowserSession, readSession } from "../../lib/api";
-import { Settings } from "../settings/Settings";
 import type { WriteSpec } from "../../lib/monthly";
 import {
   RecoverableWrite,
@@ -9,12 +8,13 @@ import {
   logout,
   reauthenticate,
 } from "../../lib/recoverableWrite";
+import { IncomeEstimates } from "../estimates/IncomeEstimates";
 import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice";
-import { Plans } from "./Plans";
+import { Savings } from "../savings/Savings";
+import { Settings } from "../settings/Settings";
 import { ActivityScreen } from "./Activity";
 import { MonthlyReview } from "./MonthlyReview";
-import { IncomeEstimates } from "../estimates/IncomeEstimates";
-import { Savings } from "../savings/Savings";
+import { Plans } from "./Plans";
 
 export function Workspace({
   initial,
@@ -197,26 +197,33 @@ export function Workspace({
       {entity && (
         <>
           <nav className="workspace-nav" aria-label="Workspace" hidden={concealed}>
-            {(["Plans", "Activity", "Monthly Review", "Income estimates", "Savings", "Settings"] as const).map(
-              (item) => (
-                <button
-                  type="button"
-                  key={item}
-                  aria-current={screen === item ? "page" : undefined}
-                  onClick={() => {
-                    if (item !== screen && guard()) {
-                      pending.current.clear();
-                      dirty.current = false;
-                      setStatus(null);
-                      setMessage("");
-                      setScreen(item);
-                    }
-                  }}
-                >
-                  {item}
-                </button>
-              ),
-            )}
+            {(
+              [
+                "Plans",
+                "Activity",
+                "Monthly Review",
+                "Income estimates",
+                "Savings",
+                "Settings",
+              ] as const
+            ).map((item) => (
+              <button
+                type="button"
+                key={item}
+                aria-current={screen === item ? "page" : undefined}
+                onClick={() => {
+                  if (item !== screen && guard()) {
+                    pending.current.clear();
+                    dirty.current = false;
+                    setStatus(null);
+                    setMessage("");
+                    setScreen(item);
+                  }
+                }}
+              >
+                {item}
+              </button>
+            ))}
           </nav>
           {screen === "Plans" && <Plans {...props} />}
           {screen === "Activity" && <ActivityScreen {...props} />}

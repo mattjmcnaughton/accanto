@@ -1,10 +1,12 @@
 """Savings commands under the shared authorized Entity transaction."""
 
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import insert, select, update
 
 from accanto.domains.savings import (
+    funded_status,
     goal_target,
     opening_change_allowed,
     opening_designations,
@@ -40,6 +42,7 @@ async def snapshot(session, account):
             "opening_amount": str(row["opening_amount"]),
             "remaining_saved": str(row["opening_amount"]),
             "contribution_progress": "0.00",
+            "funded_status": funded_status(row["opening_amount"], row["target"]),
             "revision": row["revision"],
             "active": row["active"],
         }
@@ -99,7 +102,7 @@ async def write_savings(session, entity, operation, payload, target, audit):
                     .values(
                         entity_id=entity["id"],
                         name=payload["name"],
-                        opening_date=payload["opening_date"],
+                        opening_date=date.fromisoformat(payload["opening_date"]),
                         opening_amount=payload["opening_amount"],
                     )
                     .returning(s.accounts)
@@ -177,7 +180,7 @@ async def write_savings(session, entity, operation, payload, target, audit):
             )
             old_amounts = {str(row["uuid"]): row["opening_amount"] for row in rows}
             changed = (
-                account["opening_date"] != payload["opening_date"]
+                account["opening_date"] != date.fromisoformat(payload["opening_date"])
                 or account["opening_amount"] != Decimal(payload["opening_amount"])
                 or any(
                     old_amounts[str(item["goal_id"])] != Decimal(item["opening_amount"])
@@ -206,7 +209,7 @@ async def write_savings(session, entity, operation, payload, target, audit):
                     .where(s.accounts.c.id == account["id"])
                     .values(
                         name=payload["name"],
-                        opening_date=payload["opening_date"],
+                        opening_date=date.fromisoformat(payload["opening_date"]),
                         opening_amount=payload["opening_amount"],
                         revision=account["revision"] + 1,
                     )

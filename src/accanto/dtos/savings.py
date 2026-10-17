@@ -86,6 +86,7 @@ class GoalResult(BaseModel):
     opening_amount: str
     remaining_saved: str
     contribution_progress: str
+    funded_status: str | None
     revision: int
     active: bool
 

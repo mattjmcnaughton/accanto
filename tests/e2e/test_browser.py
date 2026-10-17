@@ -210,6 +210,43 @@ def test_signed_in_workspace(tmp_path):
             "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
         )
         browser("wait", "--text", "Changed since review. Your annotation remains set.")
+        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
+        browser("wait", "--text", "No savings accounts yet.")
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "New savings account",
+            "--exact",
+        )
+        browser("find", "label", "Name", "fill", "Synthetic savings")
+        browser("find", "label", "Opening amount", "fill", "10000.00")
+        browser(
+            "find", "role", "button", "click", "--name", "Add opening goal", "--exact"
+        )
+        browser("find", "label", "Goal name", "fill", "Emergency")
+        browser("find", "label", "Target (required)", "fill", "8000.00")
+        browser("find", "label", "Opening designation", "fill", "5000.00")
+        browser(
+            "find", "role", "button", "click", "--name", "Add opening goal", "--exact"
+        )
+        browser("fill", "fieldset:nth-of-type(2) label:nth-of-type(1) input", "Laptop")
+        browser("fill", "fieldset:nth-of-type(2) label:nth-of-type(3) input", "1000.00")
+        browser("fill", "fieldset:nth-of-type(2) label:nth-of-type(4) input", "1000.00")
+        browser("find", "role", "button", "click", "--name", "Save", "--exact")
+        browser("wait", "--text", "Synthetic savings")
+        page = browser("snapshot")
+        assert "Current saved" in page, page
+        assert "Unallocated" in page and "$4000.00" in page
+        assert "Contribution progress $0.00" in page
+        assert "Not yet funded" in page and "Funded" in page
+        browser("reload")
+        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
+        browser("wait", "--text", "Synthetic savings")
+        browser("set", "viewport", "375", "760")
+        assert "Unallocated" in browser("snapshot")
         browser("find", "role", "button", "click", "--name", "Sign out", "--exact")
         browser("wait", "--text", "Sign in")
         assert "Synthetic E2E Entity" not in browser("get", "text", "body")

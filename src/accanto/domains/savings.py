@@ -30,3 +30,10 @@ def opening_change_allowed(has_retained_activity: bool, changed: bool) -> None:
         raise ValueError(
             "Opening is fixed after linked activity exists, including deleted activity."
         )
+
+
+def funded_status(remaining_saved: Decimal, target: Decimal | None) -> str | None:
+    """Opening money can fund a target without counting as contributions."""
+    if target is None:
+        return None
+    return "Funded" if remaining_saved >= target else "Not yet funded"
