@@ -179,7 +179,12 @@ def test_signed_in_workspace(tmp_path):
         browser("find", "label", "Net amount 1", "fill", "4000")
         browser("find", "label", "Monthly guilt-free spending", "fill", "800")
         browser("find", "role", "button", "click", "--name", "Save draft", "--exact")
-        browser("wait", "--text", "Save version")
+        browser(
+            "wait",
+            "--fn",
+            "Array.from(document.querySelectorAll('button'))"
+            ".some(b => b.textContent.trim() === 'Save version')",
+        )
         browser("find", "role", "button", "click", "--name", "Save version", "--exact")
         browser("wait", "--text", "View Synthetic month v1")
         browser(
