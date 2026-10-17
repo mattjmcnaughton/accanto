@@ -310,6 +310,39 @@ async def scenario():
             post("/activity/known-total", {**raced_body, "desired_total": "310"}),
         )
         assert sorted(result.status_code for result in raced_totals) == [200, 409]
+        # No entries is unknown until an explicit zero adjustment is recorded.
+        zero = await post(
+            "/activity/known-total",
+            {
+                "date": "2026-11-03",
+                "month": "2026-11-01",
+                "category": "spending",
+                "desired_total": "0",
+                "contributing_entries": [],
+            },
+        )
+        assert zero.status_code == 200 and zero.json()["amount"] == "0.00"
+        assert zero.json()["is_adjustment"] is True
+        zero_edit = await client.put(
+            prefix + f"/activity/{zero.json()['uuid']}",
+            json={
+                "date": "2026-11-03",
+                "category": "spending",
+                "amount": "-5",
+                "is_adjustment": True,
+                "expected_revision": 1,
+            },
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert zero_edit.status_code == 200 and zero_edit.json()["amount"] == "-5.00"
+        assert (
+            await client.request(
+                "DELETE",
+                prefix + f"/activity/{zero.json()['uuid']}",
+                json={"expected_revision": 2},
+                headers={"Idempotency-Key": str(uuid4())},
+            )
+        ).status_code == 200
         assert (
             await post("/activity", {**entry_body, "amount": "1.001"})
         ).status_code == 422
@@ -542,6 +575,22 @@ async def scenario():
         before_entries = (await client.get(prefix + "/activity")).json()
         before_review = (await client.get(edit_path)).json()
         failure_key = str(uuid4())
+        total_failure_key = str(uuid4())
+        failed_total_body = {
+            **total_body,
+            "desired_total": "320",
+            "contributing_entries": [
+                {"uuid": entry["uuid"], "revision": entry["revision"]}
+                for entry in before_entries
+                if entry["category"] == "spending"
+            ],
+        }
+        async with sessions() as session:
+            audit_before_failure = await session.scalar(
+                select(func.count())
+                .select_from(m.audit)
+                .where(m.audit.c.entity_id == entity["id"])
+            )
         try:
             failed_review = await client.put(
                 edit_path,
@@ -552,6 +601,10 @@ async def scenario():
             failed = await post("/activity", entry_body, failure_key)
             assert failed.status_code == 503
             assert "private financial note" not in failed.text
+            failed_total = await post(
+                "/activity/known-total", failed_total_body, total_failure_key
+            )
+            assert failed_total.status_code == 503
         finally:
             async with admin.begin() as connection:
                 await connection.execute(
@@ -564,11 +617,26 @@ async def scenario():
             assert (
                 await session.scalar(
                     select(func.count())
+                    .select_from(m.audit)
+                    .where(m.audit.c.entity_id == entity["id"])
+                )
+                == audit_before_failure
+            )
+            assert (
+                await session.scalar(
+                    select(func.count())
                     .select_from(m.outcomes)
-                    .where(m.outcomes.c.request_key == failure_key)
+                    .where(
+                        m.outcomes.c.request_key.in_([failure_key, total_failure_key])
+                    )
                 )
                 == 0
             )
+        retried_total = await post(
+            "/activity/known-total", failed_total_body, total_failure_key
+        )
+        assert retried_total.status_code == 200
+        assert retried_total.json()["is_adjustment"] is True
         # Deletion retains stored data and restores unknown for the expected source.
         deleted = await client.request(
             "DELETE",

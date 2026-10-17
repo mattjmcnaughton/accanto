@@ -64,7 +64,8 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | GET | `/plans` | Plans with saved revisions and current drafts |
 | PUT | `/plans/{plan_id}/draft` | Full replacement inputs plus expected revision |
 | POST | `/plans/{plan_id}/versions` | Expected draft revision; freezes snapshot and creates next draft |
-| POST | `/activity` | Explicit date, category, amount, optional source and note |
+| POST | `/activity` | Explicit date, category, amount, optional source and note; `is_adjustment` for signed corrections |
+| POST | `/activity/known-total` | Desired total and contributing-entry fingerprint; creates one signed adjustment |
 | GET | `/activity` | Current entries ordered by financial date and recording order |
 | PUT | `/activity/{entry_id}` | Replacement entry plus expected revision |
 | DELETE | `/activity/{entry_id}` | Expected revision in JSON body; soft deletes |
@@ -77,8 +78,10 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | PUT | `/income-estimates/{estimate_id}` | Full replacement assumptions with `expected_revision` |
 | POST | `/income-estimates/{estimate_id}/duplicate` | New independent scenario with `{name, expected_revision}` |
 
-Amounts are USD decimal **strings**, nonnegative exact cents, maximum
-`999999999.99` per entered amount. Fractional cents and numeric JSON values reject.
+Amounts are USD decimal **strings**, exact cents, maximum absolute value
+`999999999.99` per entered amount. Ordinary entries and known totals are
+nonnegative. Only entries explicitly marked `is_adjustment: true` accept signed
+amounts. Fractional cents and numeric JSON values reject.
 Zero is explicit, absence is unknown. Dates are `YYYY-MM-DD`; there is no implicit
 today. Month selection uses dates, independently of UTC recording timestamps.
 
@@ -156,6 +159,37 @@ Record spending with `{"date":"2026-10-16","category":"spending","amount":"75.00
 Income may be unassigned; it counts once in the month's recorded income, but does
 not resolve a missing expected source. Assignments in this increment support the
 original Plan only; future cross-Plan matching policy is not settled by this API.
+
+To correct a known category total, read `GET /activity` and select the current
+entries for the chosen month/category. For Income, also select exactly one source
+UUID or `null` for Unassigned income. Send every contributing entry's `uuid` and
+`revision` in the fingerprint. For example, after a synthetic `210.00` spending
+entry, `POST /activity/known-total` accepts:
+
+```json
+{
+  "date": "2026-10-16", "month": "2026-10-01", "category": "spending",
+  "desired_total": "250.00",
+  "contributing_entries": [{"uuid": "ENTRY_UUID", "revision": 1}],
+  "note": "Known monthly total"
+}
+```
+
+The response is an ordinary activity response labeled `is_adjustment: true`,
+with amount `40.00`. It remains in activity and Review history; deleting it
+returns the recorded total to `210.00`, while a later `40.00` detail would make
+the total `290.00` if the adjustment remains. An empty fingerprint and desired
+`0.00` records explicit known zero. A category-only adjustment does not resolve
+unknown expected Income sources. The server checks the fingerprint under the
+Entity lock and returns `409 stale_total` without a write if entries changed.
+Reload current entries and reconcile the intended total before submitting a new
+request. Keep the same request identity for uncertain retries.
+
+Direct signed corrections use `POST /activity` or `PUT /activity/{entry_id}`
+with `is_adjustment: true`, an explicit date/category, and a signed amount such
+as `"-5.00"`. A negative ordinary receipt/payment still rejects. Adjustments
+are corrections to recorded totals; refunds and withdrawals have separate
+workflows and are not represented by this flag.
 
 Create the Review with `POST /reviews`, body
 `{"month":"2026-10-01","version_id":"SAVED_VERSION_UUID"}`, then retrieve it using

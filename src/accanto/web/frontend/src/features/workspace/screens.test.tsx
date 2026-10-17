@@ -1,10 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { Plans } from "./Plans";
+import type { PlanRevision } from "../../lib/monthly";
+import { ActivityScreen } from "./Activity";
 import { MonthlyReview } from "./MonthlyReview";
+import { Plans } from "./Plans";
 import { Workspace } from "./Workspace";
 import type { ScreenProps } from "./shared";
-import type { PlanRevision } from "../../lib/monthly";
 const entity = { id: "entity", name: "Synthetic Entity", today: "2026-11-10", time_zone: "UTC" };
 const session = { user: { id: "user" }, csrf_token: "synthetic", entities: [entity] };
 const version: PlanRevision = {
@@ -60,6 +61,41 @@ const props = (): ScreenProps => ({
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+});
+it("keeps the viewed contributing-entry fingerprint through a background refresh", async () => {
+  let refreshed = false;
+  const first = {
+    uuid: "first",
+    financial_date: "2026-11-03",
+    category: "spending",
+    amount: "210.00",
+    source_id: null,
+    note: "",
+    revision: 1,
+    is_adjustment: false,
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/activity")
+      ? json(refreshed ? [first, { ...first, uuid: "new" }] : [first])
+      : json([]),
+  );
+  const p = props();
+  const view = render(<ActivityScreen {...p} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Enter known total" }));
+  expect(screen.getByText("1 contributing entries were captured for this total.")).toBeDefined();
+  refreshed = true;
+  view.rerender(<ActivityScreen {...p} refresh={1} />);
+  await waitFor(() =>
+    expect(screen.getAllByRole("button", { name: /Edit spending/ })).toHaveLength(2),
+  );
+  fireEvent.change(screen.getByLabelText("Known total (USD)"), { target: { value: "250" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save adjustment" }));
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      body: expect.objectContaining({ contributing_entries: [{ uuid: "first", revision: 1 }] }),
+    }),
+    expect.any(Function),
+  );
 });
 it("keeps source UUID and expected revision when saving an edited draft", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(json(plans));

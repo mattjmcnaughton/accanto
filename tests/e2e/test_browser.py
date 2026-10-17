@@ -149,8 +149,28 @@ def test_signed_in_workspace(tmp_path):
         browser("find", "role", "link", "click", "--name", "Sign in", "--exact")
         browser("wait", "--text", "Synthetic E2E Entity")
         assert "Sign out" in browser("snapshot", "-i")
+        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        browser("wait", "--text", "Record activity")
+        browser(
+            "find", "role", "button", "click", "--name", "Record activity", "--exact"
+        )
+        browser("find", "label", "Amount (USD)", "fill", "210")
+        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
+        browser("wait", "--text", "$210.00")
+        browser(
+            "find", "role", "button", "click", "--name", "Enter known total", "--exact"
+        )
+        browser("find", "label", "Known total (USD)", "fill", "250")
+        browser(
+            "find", "role", "button", "click", "--name", "Save adjustment", "--exact"
+        )
+        browser("wait", "--text", "$40.00")
+        assert "Adjustment" in browser("get", "text", "body")
         browser("reload")
         browser("wait", "--text", "Synthetic E2E Entity")
+        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        browser("wait", "--text", "$40.00")
+        browser("find", "role", "button", "click", "--name", "Plans", "--exact")
         # A reviewed month can contain unknown actuals. Later activity leaves the
         # annotation set and displays an informational checkpoint mismatch.
         browser("find", "role", "button", "click", "--name", "New Plan", "--exact")

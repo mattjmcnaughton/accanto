@@ -21,6 +21,17 @@ export function ActivityScreen(p: ScreenProps) {
   const [form, setForm] = useState<ActivityInput | null>(null);
   const [known, setKnown] = useState<KnownTotalInput | null>(null);
   const sources = plans.kind === "ready" ? sourceChoices(plans.data) : [];
+  function fingerprint(month: string, category: "income" | "spending", sourceId: string | null) {
+    const current = entries.kind === "ready" ? entries.data : [];
+    return current
+      .filter(
+        (entry) =>
+          entry.financial_date.slice(0, 7) === month.slice(0, 7) &&
+          entry.category === category &&
+          (category === "spending" || entry.source_id === sourceId),
+      )
+      .map(({ uuid, revision }) => ({ uuid, revision }));
+  }
   function update(value: ActivityInput) {
     setForm(value);
     p.dirty(true);
@@ -45,7 +56,7 @@ export function ActivityScreen(p: ScreenProps) {
     p.dirty(!entry);
   }
   function openKnown() {
-    if (!p.guard()) return;
+    if ((entries.kind !== "ready" && entries.kind !== "empty") || !p.guard()) return;
     setSelected(null);
     setForm(null);
     setKnown({
@@ -55,7 +66,7 @@ export function ActivityScreen(p: ScreenProps) {
       desired_total: "",
       source_id: null,
       note: "",
-      contributing_entries: [],
+      contributing_entries: fingerprint(`${p.entity.today.slice(0, 7)}-01`, "spending", null),
     });
     p.dirty(true);
   }
@@ -76,7 +87,11 @@ export function ActivityScreen(p: ScreenProps) {
         <button type="button" disabled={p.busy} onClick={() => open(null)}>
           Record activity
         </button>
-        <button type="button" disabled={p.busy} onClick={openKnown}>
+        <button
+          type="button"
+          disabled={p.busy || (entries.kind !== "ready" && entries.kind !== "empty")}
+          onClick={openKnown}
+        >
           Enter known total
         </button>
       </div>
@@ -217,26 +232,16 @@ export function ActivityScreen(p: ScreenProps) {
             onSubmit={(e) => {
               e.preventDefault();
               if (entries.kind !== "ready" && entries.kind !== "empty") return;
-              const current = entries.kind === "ready" ? entries.data : [];
-              p.save(
-                monthly.recordKnownTotal(p.entity.id, {
-                  ...known,
-                  contributing_entries: current
-                    .filter(
-                      (entry) =>
-                        entry.financial_date.slice(0, 7) === known.month.slice(0, 7) &&
-                        entry.category === known.category &&
-                        (known.category === "spending" || entry.source_id === known.source_id),
-                    )
-                    .map(({ uuid, revision }) => ({ uuid, revision })),
-                }),
-                done,
-              );
+              p.save(monthly.recordKnownTotal(p.entity.id, known), done);
             }}
           >
             <fieldset disabled={p.busy}>
               <legend>Enter known total</legend>
               <p>A dated adjustment records the difference. Later detail adds to this total.</p>
+              <p>
+                {known.contributing_entries.length} contributing entries were captured for this
+                total.
+              </p>
               <label>
                 Financial date
                 <input
@@ -245,7 +250,17 @@ export function ActivityScreen(p: ScreenProps) {
                   value={known.date}
                   onChange={(e) => {
                     const date = e.target.value;
-                    setKnown({ ...known, date, month: `${date.slice(0, 7)}-01` });
+                    const month = `${date.slice(0, 7)}-01`;
+                    setKnown({
+                      ...known,
+                      date,
+                      month,
+                      contributing_entries: fingerprint(
+                        month,
+                        known.category,
+                        known.source_id || null,
+                      ),
+                    });
                     p.dirty(true);
                   }}
                 />
@@ -255,10 +270,12 @@ export function ActivityScreen(p: ScreenProps) {
                 <select
                   value={known.category}
                   onChange={(e) => {
+                    const category = e.target.value as "income" | "spending";
                     setKnown({
                       ...known,
-                      category: e.target.value as "income" | "spending",
+                      category,
                       source_id: null,
+                      contributing_entries: fingerprint(known.month, category, null),
                     });
                     p.dirty(true);
                   }}
@@ -273,7 +290,12 @@ export function ActivityScreen(p: ScreenProps) {
                   <select
                     value={known.source_id || ""}
                     onChange={(e) => {
-                      setKnown({ ...known, source_id: e.target.value || null });
+                      const source_id = e.target.value || null;
+                      setKnown({
+                        ...known,
+                        source_id,
+                        contributing_entries: fingerprint(known.month, "income", source_id),
+                      });
                       p.dirty(true);
                     }}
                   >
