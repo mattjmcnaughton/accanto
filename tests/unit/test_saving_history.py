@@ -49,3 +49,38 @@ def test_adjustment_changes_contribution_and_remaining_without_second_account_en
         {"laptop": Decimal("500.00"), "unallocated": Decimal("0.00")},
         {"laptop": Decimal("100.00"), "unallocated": Decimal("0.00")},
     )
+
+
+def test_transfer_is_one_equal_effect_movement_without_contributions():
+    from accanto.domains.savings import movement_events
+
+    before = {"source": Decimal("100.00"), "destination": Decimal("0.00")}
+    events = movement_events(
+        date(2026, 9, 15), 1, "source", "destination", Decimal("100.00")
+    )
+    balances, contributions = replay_savings(before, events)
+    assert balances == {"source": Decimal("0.00"), "destination": Decimal("100.00")}
+    assert sum(balances.values()) == sum(before.values())
+    assert contributions == {"source": Decimal("0.00"), "destination": Decimal("0.00")}
+    with pytest.raises(SavingsShortfallError):
+        replay_savings(
+            before,
+            movement_events(
+                date(2026, 9, 15), 1, "source", "destination", Decimal("200.00")
+            )
+            + [SavingEvent(date(2026, 10, 1), 2, "source", Decimal("400.00"), True)],
+        )
+
+
+def test_reconciliation_changes_one_goal_without_contribution():
+    from accanto.domains.savings import reconciliation_delta
+
+    delta = reconciliation_delta("5000.00", Decimal("5200.00"))
+    assert delta == Decimal("-200.00")
+    balances, contributions = replay_savings(
+        {"goal": Decimal("1000.00"), "unallocated": Decimal("4200.00")},
+        [SavingEvent(DAY, 1, "unallocated", delta, False)],
+    )
+    assert balances == {"goal": Decimal("1000.00"), "unallocated": Decimal("4000.00")}
+    assert sum(balances.values()) == Decimal("5000.00")
+    assert contributions == {"goal": Decimal("0.00"), "unallocated": Decimal("0.00")}
