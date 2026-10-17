@@ -58,7 +58,9 @@ required.
 | `dtos/` | Pydantic API contracts, separate from database models. |
 | `web/frontend/src/routes/` | Route composition and navigation. |
 | `web/frontend/src/features/` | Feature UI, interactions, and presentation state as production workflows are added. |
-| `web/frontend/src/lib/api.ts` | Existing frontend API transport entry point. Production workflows call the backend API. |
+| `web/frontend/src/lib/api.ts` | Same-origin session transport, normalized API errors and load states. |
+| `web/frontend/src/lib/monthly.ts` | Typed request and result contracts for the implemented monthly API. |
+| `web/frontend/src/lib/recoverableWrite.ts` | In-memory pending write identity, retry and reauthentication coordination; financial rules remain on the backend. |
 
 Follow the constitution's explicit domain-rule requirements. Each TDD uses
 [the template](tdds/template.md) to identify affected rules, all supported commands
