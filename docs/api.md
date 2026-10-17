@@ -216,9 +216,10 @@ Plan; there is no `Use in Plan` command, link, or automatic synchronization.
 
 `POST /plans` and `PUT /plans/{plan_id}/draft` accept `fixed_costs`, an array
 of named lines with `amount` as a USD decimal string and `frequency` of
-`monthly` or `annual`. A persisted line also has a stable `fixed_cost_id` within
-its Plan. Retain that ID when editing the line; omit it to create a new cost.
-Copying a Plan creates new cost IDs. Each line returns its entered amount,
+`monthly` or `annual`. A persisted line also has a stable Entity-scoped
+`fixed_cost_id`. Retain that ID when editing or copying the line; omit it to
+create a new cost. Copied Plans share Fixed cost identities while Income
+sources receive new identities. Each line returns its entered amount,
 frequency and cent-valued `monthly_amount`; `fixed_cost_total` sums those
 monthly results. Three annual inputs of `100.00` therefore produce three
 `8.33` monthly lines and a `24.99` monthly total while retaining all three
@@ -228,7 +229,9 @@ monthly results. Three annual inputs of `100.00` therefore produce three
 and `funding_origin: "income"`. An omitted ID is Unassigned fixed-cost activity.
 Ordinary payments are nonnegative, including explicit zero. Signed corrections
 require `is_adjustment: true`; refunds are outside this workflow. Current
-activity and Review detail retain an assigned cost's name. In a Review, an
+activity and Review detail retain an assigned cost's original canonical name
+even if a Plan line is later renamed or removed. Plan lines also retain their
+own saved labels. In a Review, an
 expected saved fixed-cost line with no assigned payment remains unknown even
 when other fixed-cost payments or a category adjustment exist. The category
 total includes assigned and Unassigned entries once, and its difference from
@@ -424,10 +427,11 @@ and logout. Do not record it in browser storage, logs, screenshots or recordings
 Choose the exact stored draft or saved version from `GET .../plans`; supply that
 revision's concurrency revision. A stale selection is rejected. The command uses
 the normal authentication, CSRF (browser), and `Idempotency-Key` requirements.
-It returns `{plan_id, draft}` with fresh Plan and Income source identities.
+It returns `{plan_id, draft}` with fresh Plan and Income source identities
+and shared Fixed cost identities.
 The new draft calculates current rules from the selected inputs. The source,
 its immutable versions, receipts, and Review targets remain unchanged.
 
-Saved scenario comparisons use the stored `incomes`, result fields, and
+Saved scenario comparisons use the stored `incomes`, `fixed_costs`, result fields, and
 `rule_version` returned by `GET .../plans`. Do not recalculate historical versions
 using current rules. Copies do not infer cross-Plan receipt matching.

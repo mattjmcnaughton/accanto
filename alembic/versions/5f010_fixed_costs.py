@@ -25,13 +25,11 @@ def upgrade():
         "fixed_cost",
         sa.Column("id", sa.BigInteger(), sa.Identity(), primary_key=True),
         sa.Column("uuid", sa.Uuid(), nullable=False, unique=True),
-        sa.Column("plan_id", sa.BigInteger(), nullable=False),
-        sa.Column("entity_id", sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["plan_id", "entity_id"], ["plan.id", "plan.entity_id"]
+        sa.Column(
+            "entity_id", sa.BigInteger(), sa.ForeignKey("entity.id"), nullable=False
         ),
+        sa.Column("name", sa.String(120), nullable=False),
         sa.UniqueConstraint("id", "entity_id"),
-        sa.UniqueConstraint("id", "plan_id"),
     )
     op.create_table(
         "plan_fixed_cost_line",
@@ -39,6 +37,7 @@ def upgrade():
         sa.Column("uuid", sa.Uuid(), nullable=False, unique=True),
         sa.Column("plan_revision_id", sa.BigInteger(), nullable=False),
         sa.Column("plan_id", sa.BigInteger(), nullable=False),
+        sa.Column("entity_id", sa.BigInteger(), nullable=False),
         sa.Column("fixed_cost_id", sa.BigInteger(), nullable=False),
         sa.Column("name", sa.String(120), nullable=False),
         sa.Column("amount", sa.Numeric(14, 2), nullable=False),
@@ -49,7 +48,10 @@ def upgrade():
             ["plan_revision.id", "plan_revision.plan_id"],
         ),
         sa.ForeignKeyConstraint(
-            ["fixed_cost_id", "plan_id"], ["fixed_cost.id", "fixed_cost.plan_id"]
+            ["plan_id", "entity_id"], ["plan.id", "plan.entity_id"]
+        ),
+        sa.ForeignKeyConstraint(
+            ["fixed_cost_id", "entity_id"], ["fixed_cost.id", "fixed_cost.entity_id"]
         ),
         sa.UniqueConstraint("plan_revision_id", "fixed_cost_id"),
         sa.CheckConstraint("frequency IN ('monthly', 'annual')"),

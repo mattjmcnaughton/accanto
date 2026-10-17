@@ -684,9 +684,9 @@ async def scenario():
         assert copied_response.status_code == 200, copied_response.text
         copied = copied_response.json()["draft"]
         assert copied["fixed_cost_total"] == "24.99"
-        assert {line["fixed_cost_id"] for line in copied["fixed_costs"]}.isdisjoint(
+        assert [line["fixed_cost_id"] for line in copied["fixed_costs"]] == [
             line["fixed_cost_id"] for line in fixed_saved["fixed_costs"]
-        )
+        ]
         fixed_review = await post(
             "/reviews", {"month": "2026-11-01", "version_id": fixed_saved["uuid"]}
         )
@@ -706,12 +706,85 @@ async def scenario():
         payment = payment_response.json()
         assert payment["fixed_cost_name"] == "Service A"
         assert payment["funding_origin"] == "income"
+        assert (
+            await post(
+                "/activity",
+                {**payment_body, "amount": "-1.00"},
+            )
+        ).status_code == 422
+        renamed_costs = [
+            {
+                "fixed_cost_id": line["fixed_cost_id"],
+                "name": "Renamed service" if index == 0 else line["name"],
+                "amount": line["amount"],
+                "frequency": line["frequency"],
+            }
+            for index, line in enumerate(
+                fixed_saved_response.json()["draft"]["fixed_costs"]
+            )
+        ]
+        edited_draft = await client.put(
+            prefix + f"/plans/{fixed_plan['plan_id']}/draft",
+            json={
+                **fixed_body,
+                "fixed_costs": renamed_costs,
+                "expected_revision": 1,
+            },
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert edited_draft.status_code == 200, edited_draft.text
+        assert (
+            edited_draft.json()["draft"]["fixed_costs"][0]["fixed_cost_id"] == cost_id
+        )
+        stored_versions = (await client.get(prefix + "/plans")).json()
+        stored_fixed = next(
+            revision
+            for plan_group in stored_versions
+            for revision in plan_group["revisions"]
+            if revision["uuid"] == fixed_saved["uuid"]
+        )
+        assert stored_fixed["fixed_costs"][0]["name"] == "Service A"
+        assert stored_fixed["fixed_costs"][0]["monthly_amount"] == "8.33"
+        removed_from_draft = await client.put(
+            prefix + f"/plans/{fixed_plan['plan_id']}/draft",
+            json={
+                **fixed_body,
+                "fixed_costs": renamed_costs[1:],
+                "expected_revision": 2,
+            },
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert removed_from_draft.status_code == 200, removed_from_draft.text
+        removed_from_copy = await client.put(
+            prefix + f"/plans/{copied_response.json()['plan_id']}/draft",
+            json={
+                "name": copied["name"],
+                "spending": copied["spending"],
+                "incomes": copied["incomes"],
+                "fixed_costs": [
+                    {
+                        "fixed_cost_id": line["fixed_cost_id"],
+                        "name": line["name"],
+                        "amount": line["amount"],
+                        "frequency": line["frequency"],
+                    }
+                    for line in copied["fixed_costs"][1:]
+                ],
+                "expected_revision": 1,
+            },
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert removed_from_copy.status_code == 200, removed_from_copy.text
+        historical_payment = await post("/activity", {**payment_body, "amount": "0.00"})
+        assert historical_payment.status_code == 200, historical_payment.text
+        assert historical_payment.json()["fixed_cost_name"] == "Service A"
         corrected = await client.put(
             prefix + f"/activity/{payment['uuid']}",
             json={**payment_body, "amount": "12.00", "expected_revision": 1},
             headers={"Idempotency-Key": str(uuid4())},
         )
         assert corrected.status_code == 200, corrected.text
+        assert corrected.json()["fixed_cost_name"] == "Service A"
         unassigned = await post(
             "/activity",
             {

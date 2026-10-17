@@ -129,10 +129,11 @@ schema sections describe additions required as command families ship.
 | [Credentials](../../src/accanto/services/api_keys.py), [bootstrap](../../src/accanto/bootstrap.py) | Hashed user-owned keys, issue/revoke, operator-provisioned identity/Entity and validated zone | Browser sign-in/session/logout, authenticated Entity discovery/settings; hosted MCP |
 | [Frontend transport](../../src/accanto/web/frontend/src/lib/api.ts) | Generic fetch helper only; workspace saves to localStorage | Typed monthly API responses, error/retry handling and API-backed screens; no production workspace exists yet |
 
-MVP-010 adds named fixed-cost identities, immutable saved lines with original
+MVP-010 adds Entity-scoped named fixed-cost identities shared by Plan copies,
+immutable saved lines with original
 monthly/annual amounts and per-line monthly results, and a stored monthly
 fixed-cost total. It adds `entry_fixed_cost` as an optional assignment with a
-frozen label for current-income-funded payments. The pure monthly rule rounds
+frozen canonical label for current-income-funded payments. The pure monthly rule rounds
 each annual input to cents using half-even before summing. The Entity lock
 protects Plan and activity writes, assignment changes, audit snapshots and retry
 outcomes in one transaction. Scoped foreign keys and a deferred category trigger

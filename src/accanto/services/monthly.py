@@ -162,6 +162,7 @@ async def write(
                 ],
                 "fixed_costs": [
                     {
+                        "fixed_cost_id": line["fixed_cost_id"],
                         "name": line["name"],
                         "amount": str(line["amount"]),
                         "frequency": line["frequency"],
@@ -324,16 +325,12 @@ async def write(
                     fixed = await scoped(
                         session, m.fixed_costs, entity["id"], line["fixed_cost_id"]
                     )
-                    if fixed["plan_id"] != plan["id"]:
-                        raise RejectionError(
-                            "fixed_cost_plan", "Fixed cost belongs to a different Plan."
-                        )
                 else:
                     fixed = (
                         (
                             await session.execute(
                                 insert(m.fixed_costs)
-                                .values(plan_id=plan["id"], entity_id=entity["id"])
+                                .values(entity_id=entity["id"], name=line["name"])
                                 .returning(m.fixed_costs)
                             )
                         )
@@ -350,6 +347,7 @@ async def write(
                     insert(m.fixed_cost_lines).values(
                         plan_revision_id=record["id"],
                         plan_id=plan["id"],
+                        entity_id=entity["id"],
                         fixed_cost_id=fixed["id"],
                         name=line["name"],
                         amount=money(line["amount"]),
@@ -485,7 +483,6 @@ async def write(
             previous_link = await current_link(session, old["id"]) if old else None
             source = None
             fixed_cost = None
-            fixed_name = None
             if payload.get("source_id"):
                 if payload["category"] != "income":
                     raise RejectionError(
@@ -504,39 +501,6 @@ async def write(
                 fixed_cost = await scoped(
                     session, m.fixed_costs, entity["id"], payload["fixed_cost_id"]
                 )
-                previous_assignment = (
-                    (
-                        await session.execute(
-                            select(m.fixed_cost_assignments).where(
-                                m.fixed_cost_assignments.c.actual_entry_id
-                                == (old["id"] if old else -1)
-                            )
-                        )
-                    )
-                    .mappings()
-                    .first()
-                )
-                fixed_name = await session.scalar(
-                    select(m.fixed_cost_lines.c.name)
-                    .join(
-                        m.revisions,
-                        m.revisions.c.id == m.fixed_cost_lines.c.plan_revision_id,
-                    )
-                    .where(
-                        m.fixed_cost_lines.c.fixed_cost_id == fixed_cost["id"],
-                        ~m.revisions.c.saved,
-                    )
-                )
-                if (
-                    previous_assignment
-                    and previous_assignment["fixed_cost_id"] == fixed_cost["id"]
-                ):
-                    fixed_name = previous_assignment["name"]
-                if fixed_name is None:
-                    raise RejectionError(
-                        "fixed_cost_unavailable",
-                        "Choose a Fixed cost in a current Plan draft.",
-                    )
             if operation == "known_total":
                 from accanto.models import savings as s
 
@@ -690,7 +654,7 @@ async def write(
                             actual_entry_id=record["id"],
                             fixed_cost_id=fixed_cost["id"],
                             entity_id=entity["id"],
-                            name=fixed_name,
+                            name=fixed_cost["name"],
                         )
                     )
             response = await entry_snapshot(session, record)

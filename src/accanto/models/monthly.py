@@ -97,11 +97,9 @@ sources = table(
 )
 fixed_costs = table(
     "fixed_cost",
-    Column("plan_id", BigInteger, nullable=False),
-    Column("entity_id", BigInteger, nullable=False),
-    ForeignKeyConstraint(["plan_id", "entity_id"], ["plan.id", "plan.entity_id"]),
+    Column("entity_id", ForeignKey("entity.id"), nullable=False),
+    Column("name", String(120), nullable=False),
     UniqueConstraint("id", "entity_id"),
-    UniqueConstraint("id", "plan_id"),
 )
 revisions = table(
     "plan_revision",
@@ -150,6 +148,7 @@ fixed_cost_lines = table(
     "plan_fixed_cost_line",
     Column("plan_revision_id", BigInteger, nullable=False),
     Column("plan_id", BigInteger, nullable=False),
+    Column("entity_id", BigInteger, nullable=False),
     Column("fixed_cost_id", BigInteger, nullable=False),
     Column("name", String(120), nullable=False),
     Column("amount", Numeric(14, 2), nullable=False),
@@ -158,8 +157,9 @@ fixed_cost_lines = table(
     ForeignKeyConstraint(
         ["plan_revision_id", "plan_id"], ["plan_revision.id", "plan_revision.plan_id"]
     ),
+    ForeignKeyConstraint(["plan_id", "entity_id"], ["plan.id", "plan.entity_id"]),
     ForeignKeyConstraint(
-        ["fixed_cost_id", "plan_id"], ["fixed_cost.id", "fixed_cost.plan_id"]
+        ["fixed_cost_id", "entity_id"], ["fixed_cost.id", "fixed_cost.entity_id"]
     ),
     UniqueConstraint("plan_revision_id", "fixed_cost_id"),
     CheckConstraint("frequency IN ('monthly', 'annual')"),

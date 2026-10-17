@@ -36,6 +36,7 @@ async def plan_fixed_costs(session: AsyncSession, revision_id: int) -> list[dict
                 fixed_cost_lines.c.frequency,
                 fixed_cost_lines.c.monthly_amount,
                 fixed_costs.c.uuid.label("fixed_cost_id"),
+                fixed_costs.c.name.label("canonical_name"),
             )
             .join(fixed_costs, fixed_costs.c.id == fixed_cost_lines.c.fixed_cost_id)
             .where(fixed_cost_lines.c.plan_revision_id == revision_id)
