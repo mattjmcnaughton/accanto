@@ -3,9 +3,11 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from accanto.logging import configure_logging
-from accanto.routers import health
+from accanto.routers import api_keys, health, monthly
 from accanto.web.serve import mount_frontend
 
 
@@ -25,7 +27,24 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    @app.exception_handler(SQLAlchemyError)
+    async def database_failure(_request, _error):
+        # SQLAlchemy exceptions can contain financial bind parameters. Never log them.
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": {
+                    "code": "storage_unavailable",
+                    "message": (
+                        "Save was not confirmed. Retry with the same request identity."
+                    ),
+                }
+            },
+        )
+
     app.include_router(health.router)
+    app.include_router(monthly.router)
+    app.include_router(api_keys.router)
 
     # Mount frontend static files (only serves if dist/ exists)
     mount_frontend(app)

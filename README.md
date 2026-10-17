@@ -3,9 +3,18 @@
 A financial companion for planning a rich life: conscious spending, giving,
 experiences, consumption, saving, and financial independence.
 
-This is a working application scaffold. It currently serves an Accanto starter
-page and health endpoints. Plan creation, goal tracking, FIRE projections, and
-the AI companion are specified in the product notes but not implemented yet.
+The frontend is an interactive design prototype for Plans, monthly Reviews,
+Activity, saving goals, investments, and charitable giving. It starts empty and keeps data in browser storage,
+with export/restore. No backend is required to evaluate the prototype. Yearly
+Reviews and FIRE projections are deferred.
+
+Run `just dev-fe`, or open the generated
+[standalone prototype](docs/product/daily-workspace-prototype.html). See the
+[review walkthrough](docs/product/prototype-review.md) for workflows and current
+design decisions. The production backend now supports an authenticated direct-API
+income/spending Plan → activity → monthly Review loop with Postgres persistence.
+See [API usage](docs/api.md). The browser remains a separate local prototype;
+API-backed UI, browser sign-in and the remaining financial commands are next.
 
 ## Stack
 
@@ -42,12 +51,15 @@ just gate
 ```
 
 Checks formatting, linting, types, the frontend production build, and backend
-unit tests. Frontend tests run when present; none exist yet. Integration and E2E
-targets remain template placeholders until those suites are implemented.
+unit tests. Frontend tests cover the prototype financial workflows. A browser walkthrough
+runs with `pnpm --dir src/accanto/web/frontend exec playwright test`. Backend
+integration tests exercise the monthly API against an explicitly configured local
+test database; see [development](docs/development.md). Backend E2E remains pending.
 
 The backend tests cover liveness, frontend deep-link serving, and preserving
-404 responses for missing APIs and assets. No application tables or migrations
-exist yet; the Alembic environment is ready for the first model.
+404 responses for missing APIs and assets, plus pure Decimal domain rules. The
+initial migration includes typed monthly records, credentials, audit and retry
+outcomes; real Postgres checks cover concurrency, authorization and rollback.
 
 ## Production image
 
@@ -60,12 +72,13 @@ docker run --rm -p 8000:8000 \
 
 The image builds React and runs FastAPI as a non-root user. Run migrations using
 `alembic upgrade head` inside the image against the same database before startup.
-No deployment, authentication, or AI provider is configured.
+No deployment, browser identity provider, hosted MCP, or AI provider is configured.
+Use a separate restricted database runtime role as described in the API guide.
 
 ## Product and architecture
 
 - [Product brief](docs/product/brief.md): current direction and decisions still open.
-- [Initial workflow specification](docs/product/workflows.md): creation and review.
+- [Domain context](CONTEXT.md): shared financial language.
 - [Architecture](docs/architecture.md): package structure and conventions.
 - [Development](docs/development.md): commands and local environment.
 

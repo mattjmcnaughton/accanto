@@ -1,22 +1,29 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { type View, WorkspaceApp } from "../features/workspace/WorkspaceApp";
+import { today } from "../features/workspace/domain";
 
-export const Route = createFileRoute("/")({ component: Home });
-
+export const Route = createFileRoute("/")({
+  validateSearch: (search: Record<string, unknown>): { view: View; month: string } => ({
+    view: ["month", "activity", "plans", "goals", "investments", "giving"].includes(
+      String(search.view),
+    )
+      ? (search.view as View)
+      : "month",
+    month:
+      typeof search.month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(search.month)
+        ? search.month
+        : today().slice(0, 7),
+  }),
+  component: Home,
+});
 function Home() {
+  const { view, month } = Route.useSearch();
+  const navigate = Route.useNavigate();
   return (
-    <main className="mx-auto min-h-screen max-w-4xl px-6 py-16 text-slate-800">
-      <p className="text-lg font-semibold">Accanto</p>
-      <h1 className="mt-20 max-w-2xl text-4xl font-medium leading-tight sm:text-5xl">
-        Money for the life you want.
-      </h1>
-      <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-600">
-        A financial companion for conscious spending, meaningful goals, and more choice for your
-        future.
-      </p>
-      <p className="mt-12 border-t border-slate-200 pt-6 text-sm text-slate-500">
-        Accanto is taking shape. Plan creation, rich-life progress, and the AI companion are coming
-        next.
-      </p>
-    </main>
+    <WorkspaceApp
+      view={view}
+      month={month}
+      navigate={(next, nextMonth) => void navigate({ search: { view: next, month: nextMonth } })}
+    />
   );
 }

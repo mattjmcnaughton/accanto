@@ -50,3 +50,10 @@ coverage/
 test-results/
 playwright-report/
 .ruff_cache/
+
+# Private financial exports and recovery data must never enter version control.
+accanto-prototype-*.json
+accanto-recovery.json
+/private-data/
+.env.*
+!.env.example

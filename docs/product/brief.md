@@ -1,52 +1,67 @@
-# Accanto
+# Accanto product direction
 
-Accanto is a financial companion for consciously directing money toward the life
-we want. Its name is Italian for “beside” or “alongside.”
+Updated 2026-10-16. Accanto helps an Entity plan its money, record activity and
+review a month without confusing intentions, receipts, contributions and balances.
+[CONTEXT.md](../../CONTEXT.md) owns financial meanings; the
+[constitution](../../CONSTITUTION.md) owns engineering obligations. The
+[MVP PRD](../prd/01-mvp.md) defines scope and acceptance; the
+[TDD](../tdds/01-mvp.md) specifies enforcement.
 
-## Product direction
+A User is the account identity. An Entity is the financial boundary. Initial
+production serves one owner and one Entity; switching and sharing are deferred.
+No separate Individual model, tax-return inference or person-level subtotal is
+required. USD is the only currency.
 
-- Create a Conscious Spending Plan through a wizard, then review and edit it
-  directly. Preview changes and explicitly save or discard them.
-- Define rich-life intentions in giving, experiences, consumption, and saving.
-  Link intentions to CSP allocations without counting the same money twice.
-- Record contributions and dated balances to track actual progress. Keep these
-  separate from planned allocations and projected balances.
-- Explore FIRE targets, portfolio progress, and time-to-target scenarios that
-  update immediately when assumptions change. Make assumptions visible and
-  distinguish illustrative projections from live account data.
-- Offer an AI sidebar companion during creation and review. It explains context,
-  answers questions, and proposes changes. Applying a proposal changes a draft;
-  saving the plan remains a separate, explicit user action.
+## Core experience
 
-## Design
+- Create named monthly Plans with direct net-income sources, fixed costs,
+  guilt-free spending, giving recipients, saving goals and investment allocations.
+  Separate account-level savings funding adds to funding, never income or tithe.
+  Save immutable versions and compare scenarios. Overallocation warns but does
+  not block saving. Copies have independent Income source identities.
+- Optionally save, edit and duplicate multi-income estimates. Annual/monthly/
+  twice-monthly/weekly/daily payment assumptions subtract entered withholding
+  and deductions. Manually copy results to Plans. No tax estimation or live link.
+- Record dated activity independently of Reviews. Every savings dollar belongs
+  to a goal in one savings account, including its mandatory Unallocated goal.
+  Opening positions, transfers, reassignments and reconciliation are distinct
+  from new saving. Validate savings history on every supported change.
+- Record purchases once with one funding origin. Linked refunds affect their
+  own month and restore the original origin. Delete erroneous records using
+  soft deletion; do not erase real purchases to represent refunds.
+- Review a month against one explicitly selected saved version. Unknown actuals
+  stay unknown; zero is an entry. Adjustments are visible dated differences.
+  A reviewed/closed annotation neither locks the month nor requires completeness.
 
-Minimal and calm. The latest direction uses ink blue,
-pale blue-gray, restrained raspberry accents, clear typography, and modest
-corner radii. Prefer legible allocations and intention labels to illustrations.
-The September 10 screenshot study explored 29 desktop and 4 mobile states.
+Finite goals can be explicitly completed, returning remaining funds to their
+account's Unallocated goal atomically. Ongoing goals can have no target. Savings
+accounts archive at zero and reopen with lifecycle provenance preserved. Loans
+have observed amounts owed, independent of payments. Investments remain tracked
+without regular contributions. Giving progress is net donations, not tax eligibility.
 
-## Current implementation
+Percentage views disclose numerator, denominator and component amounts. Plan and
+actual ratios stay separate. Defaults remain provisional pending use; no generic
+metric editor is needed. Shared-to-personal spending allocations (“dividends”)
+are ordinary guilt-free spending, counted once.
 
-A FastAPI/React starter with database infrastructure and local/production serving.
-The features above are not implemented. No AI provider, authentication, financial
-account integration, or application data model has been chosen.
+## Delivery status
 
-## Architecture decision
+The [browser prototype](daily-workspace-prototype.html) and
+[walkthrough](prototype-review.md) implement the refined interaction paths.
+Legacy saved versions and label-only histories are preserved; they are not
+silently converted into tracked accounts. Browser storage, backup/restore and
+local audit snapshots are prototype continuity tools.
 
-Use the `python-web` template with a composed React frontend, following Aleph's
-structure. Postgres infrastructure is included.
+The first production increment implements create/save a Plan → record activity →
+review a month for direct net income and guilt-free spending. It has Python
+Decimal rules, authenticated API access, relational Postgres persistence, atomic
+audit writes, retry outcomes and stale-write protection, verified separately
+from the prototype. Browser sign-in/API-backed UI and remaining financial
+commands are subsequent increments.
+The UI must use the same application behavior as direct API access.
 
-The initial workflow specification assumed browser-only persistence. This is
-historical product input, not a finalized storage decision for Accanto. Before
-implementing persistence, decide what remains local, what the server stores,
-and how households authenticate and authorize access. The presence of Postgres
-in the scaffold does not imply that any plan data is currently saved there.
-
-Sending context to an AI service is separate from saving a plan. The interface
-must accurately state what is shared. Model credentials belong on the server.
-
-## Initial delivery boundary
-
-Manual data entry first; live account syncing remains unscoped. Implement the
-creation/review core before adding account integrations or a full agent framework.
-No model calls or provider charges occur in this scaffold.
+Advanced income matching, dedicated restoration UI, annual Plans/Reviews,
+credit-card settlement, split funding, tax estimation, automated bank ingestion,
+FIRE projections and AI features remain deferred. Existing household-loop and
+information-architecture HTML files are historical experiments, not competing
+current flows. No additional workflow interview is a prerequisite for core work.
