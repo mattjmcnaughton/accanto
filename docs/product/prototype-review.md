@@ -7,8 +7,8 @@ access, or database durability.
 
 ## Open and preserve work
 
-Run `just dev-fe`, or open [the standalone HTML](daily-workspace-prototype.html).
-Regenerate it with `pnpm --dir src/accanto/web/frontend prototype`.
+Open [the preserved standalone HTML](daily-workspace-prototype.html). The active
+production frontend is now a separate shell; do not regenerate this file from it.
 The workspace starts empty. Settings exports/restores browser data. Origins have
 separate storage. An unreadable load is reported and blocks writes; export the
 untouched stored data before recovery. Legacy Replacement-total backups remain

@@ -1,30 +1,39 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { type View, WorkspaceApp } from "../features/workspace/WorkspaceApp";
-import { today } from "../features/workspace/domain";
-import { loadWorkspace } from "../features/workspace/storage";
 
-export const Route = createFileRoute("/")({
-  validateSearch: (search: Record<string, unknown>): { view: View; month: string } => ({
-    view: ["month", "activity", "plans", "goals", "investments", "giving"].includes(
-      String(search.view),
-    )
-      ? (search.view as View)
-      : "month",
-    month:
-      typeof search.month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(search.month)
-        ? search.month
-        : today(loadWorkspace().state.timeZone).slice(0, 7),
-  }),
-  component: Home,
-});
-function Home() {
-  const { view, month } = Route.useSearch();
-  const navigate = Route.useNavigate();
+export const Route = createFileRoute("/")({ component: ProductionHome });
+
+export function ProductionHome() {
   return (
-    <WorkspaceApp
-      view={view}
-      month={month}
-      navigate={(next, nextMonth) => void navigate({ search: { view: next, month: nextMonth } })}
-    />
+    <div className="app-shell">
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
+      <header className="site-header">
+        <div className="brand" aria-label="Accanto">
+          <span className="brand-mark" aria-hidden="true">
+            a
+          </span>
+          <span>accanto</span>
+        </div>
+        <span className="header-label">Your financial companion</span>
+      </header>
+      <main id="main-content" className="shell-main">
+        <div className="welcome-card">
+          <p className="eyebrow">A place for the life you are planning</p>
+          <h1>Your financial workspace</h1>
+          <p className="lead">
+            Bring your Plans, recorded activity, and Reviews together in one place.
+          </p>
+          <output className="connection-state">
+            <span className="state-dot" aria-hidden="true" />
+            <span className="state-copy">
+              <strong>Not connected yet</strong>
+              <span>Sign-in and your Entity workspace are being prepared.</span>
+            </span>
+          </output>
+        </div>
+      </main>
+      <footer className="site-footer">Plan thoughtfully. Live richly.</footer>
+    </div>
   );
 }

@@ -3,47 +3,31 @@
 A financial companion for planning a rich life: conscious spending, giving,
 experiences, consumption, saving, and financial independence.
 
-The frontend is an interactive design prototype for Plans, monthly Reviews,
-Activity, saving goals, investments, and charitable giving. It starts empty and
-keeps data in browser storage, with export/restore. No backend is required to
-evaluate the prototype. Annual Plans/Reviews, tax estimation, and FIRE
-projections are deferred.
+The active frontend is a new production shell. It explicitly reports that
+sign-in and the Entity workspace are not connected yet; it does not load the
+browser-local design prototype or financial data. The backend supports an
+authenticated direct-API income/spending Plan → activity → monthly Review loop
+with Postgres persistence. See [API usage](docs/api.md). Browser sign-in and
+API-backed workflows are planned in the [MVP tickets](docs/technical/tickets/01-mvp.md).
 
-Run `just dev-fe`, or open the generated
-[standalone prototype](docs/product/daily-workspace-prototype.html). See the
-[review walkthrough](docs/product/prototype-review.md) for workflows and current
-design decisions. The production backend now supports an authenticated direct-API
-income/spending Plan → activity → monthly Review loop with Postgres persistence.
-See [API usage](docs/api.md). The browser remains a separate local prototype;
-API-backed UI, browser sign-in and the remaining financial commands are next.
+## Run the production shell
 
-## Try the prototype
-
-Open the [standalone HTML](docs/product/daily-workspace-prototype.html) in a
-browser, or run the frontend with Node 22+, pnpm 11.21.0 and just:
+With Node 22+, pnpm 11.21.0 and just:
 
 ```sh
-pnpm --dir src/accanto/web/frontend install
+pnpm --dir src/accanto/web/frontend install --frozen-lockfile
 just dev-fe
 ```
 
-Follow the local URL printed by Vite (normally http://localhost:5173). No Python
-server, database, API key or sign-in is needed for this workflow. The current
-prototype uses direct monthly net-income Plans, separate saved income estimates,
-account-level planned savings funding, goal-level recorded savings activity,
-linked refunds and monthly Reviews. Start with the [walkthrough](docs/product/prototype-review.md).
-
-Data belongs to the browser origin: `localhost`, `127.0.0.1`, different ports and
-the standalone file may have separate workspaces. Use Settings & data to export
-and restore explicitly. Keep private data and recordings outside the checkout;
-examples and tests use synthetic data. See the walkthrough for legacy-data
-handling, protected openings and other prototype limits.
-
-Rebuild the portable artifact after frontend changes:
-
-```sh
-pnpm --dir src/accanto/web/frontend prototype
-```
+Follow the local URL printed by Vite (normally http://localhost:5173). The
+shell needs no Python server or database. The accepted browser-local design
+[prototype remains available as standalone HTML](docs/product/daily-workspace-prototype.html),
+with its [walkthrough](docs/product/prototype-review.md). It is a legacy reference,
+not the active frontend, and its committed HTML is not rebuilt from the production
+application. The prototype's browser data and saved Plan versions are left in
+place. Browser storage belongs to its origin: `localhost`, `127.0.0.1`, different
+ports, and a standalone file can each have different data access. Keep private
+exports and recordings outside the checkout.
 
 ## Stack
 
@@ -80,11 +64,9 @@ just gate
 ```
 
 Checks formatting, linting, types, the frontend build, and backend and frontend
-unit tests. For prototype-only changes, use `just gate-fe`. The prototype browser
-journeys run separately with
-`pnpm --dir src/accanto/web/frontend exec playwright test`; they are not included
-in `just gate` or the backend `just test-e2e` target. Browser setup and the
-`CHROMIUM_EXECUTABLE` override are described in [development](docs/development.md).
+unit tests. For frontend-only changes, use `just gate-fe`. The old prototype
+browser suite has been retired; production browser journeys will be added with
+the API-backed workflows.
 Backend integration tests exercise the monthly API against an explicitly configured local
 test database; see [development](docs/development.md). Backend E2E remains pending.
 
@@ -102,9 +84,8 @@ docker run --rm -p 8000:8000 \
   accanto:local
 ```
 
-The image builds React and runs FastAPI as a non-root user. It still serves the
-browser-local prototype; packaging it does not connect it to the monthly API or
-make it a completed production application. Run migrations using
+The image builds React and runs FastAPI as a non-root user. It serves the new
+production shell while browser access is being built. Run migrations using
 `alembic upgrade head` inside the image against the same database before startup.
 No deployment, browser identity provider, hosted MCP, or AI provider is configured.
 Use a separate restricted database runtime role as described in the API guide.

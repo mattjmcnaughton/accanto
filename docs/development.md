@@ -8,14 +8,15 @@ The frontend lives in `src/accanto/web/frontend`. Vite proxies `/api`,
 
 Run `just gate` before committing. Backend unit tests need no database.
 The frontend typecheck target builds the app first to generate its route tree.
-Prototype unit tests run with `just test-unit-fe`. The browser walkthrough runs
-with `pnpm --dir src/accanto/web/frontend exec playwright test`; it uses or starts
-Vite on port 8770. Set `CHROMIUM_EXECUTABLE` to an existing compatible Chromium
-binary if Playwright's default browser is unavailable.
+Frontend unit tests run with `just test-unit-fe`. The current production shell
+works without the backend and shows an explicit unconnected state. Production
+browser journeys will be added with API-backed workflows.
 
-The current frontend works without the backend. Regenerate the standalone HTML
-with `pnpm --dir src/accanto/web/frontend prototype`. Browser storage is local to
-the origin; export/restore from Settings to move prototype data between devices.
+The preserved [standalone prototype](product/daily-workspace-prototype.html) is
+a legacy reference. Do not regenerate it from the new application. Its existing
+browser data and saved Plan versions are not migrated or cleared; browser storage
+is origin-bound, so moving between ports, hostnames, or the standalone file can
+change which data a browser can access.
 
 ## Real PostgreSQL API verification
 
@@ -49,9 +50,9 @@ a rollback must preserve saved versions and audit history.
 ## Privacy review before a commit
 
 Use fictional names and deliberately synthetic financial examples. Never derive
-fixtures or documentation examples from a person's financial records. The current
-prototype starts empty; its package script bundles application assets, not browser
-storage. Verify that remains true whenever changing packaging or initial state.
+fixtures or documentation examples from a person's financial records. Production
+packaging bundles code and assets only, not browser storage or database contents.
+Verify that remains true whenever changing packaging or initial state.
 
 Keep financial exports, recovery files, real-data screenshots and scratch notes
 outside the repository, including untracked/ignored files: tooling may snapshot

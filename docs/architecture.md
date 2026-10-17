@@ -57,7 +57,7 @@ required.
 | `repositories/` and `models/` | Database queries, persistence, relationships, and constraints. Repositories may return SQLAlchemy models to services; services pass plain values into pure calculations. |
 | `dtos/` | Pydantic API contracts, separate from database models. |
 | `web/frontend/src/routes/` | Route composition and navigation. |
-| `web/frontend/src/features/` | Feature UI, interactions, and presentation state. The current workspace prototype lives here. |
+| `web/frontend/src/features/` | Feature UI, interactions, and presentation state as production workflows are added. |
 | `web/frontend/src/lib/api.ts` | Existing frontend API transport entry point. Production workflows call the backend API. |
 
 Follow the constitution's explicit domain-rule requirements. Each TDD uses
@@ -94,15 +94,15 @@ financial calculations stay independent of the model. See the
   Test persistence guarantees with the database rather than assuming an in-memory
   fake reproduces constraints or transactions.
 - Keep frontend unit tests alongside the feature under the frontend's test
-  configuration. Current prototype browser workflows live in
-  `web/frontend/tests/browser/`, relative to `src/accanto/`.
+  configuration. Production browser journeys will be added with the workflows
+  they exercise.
 - Keep provider compatibility checks separate from fake-backed application tests;
   mark live external-service tests `external` and run them explicitly.
 
 Select the lowest level that establishes the behavior. Fakes belong at useful
-dependency boundaries, not around every internal function. The current prototype
-contains browser-local calculations and storage for design exploration; this is
-not the chosen production authority or persistence model.
+dependency boundaries, not around every internal function. The preserved
+standalone prototype contains browser-local calculations and storage for design
+exploration; it is not the production authority or persistence model.
 
 ## Frontend
 

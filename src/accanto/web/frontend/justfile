@@ -31,7 +31,7 @@ test-integration:
 
 # Run e2e tests
 test-e2e:
-    pnpm exec playwright test
+    pnpm vitest run tests/e2e --passWithNoTests
 
 # Run tests that hit external services
 test-external:
