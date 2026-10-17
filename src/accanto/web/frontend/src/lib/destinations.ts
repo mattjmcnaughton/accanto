@@ -14,6 +14,7 @@ export interface Destination {
   revision: number;
   contribution_progress: string;
   opening: Opening | null;
+  latest: Opening | null;
 }
 export interface Contribution {
   uuid: string;
@@ -46,12 +47,21 @@ export const destinations = {
     entity: string,
     kind: DestinationKind,
     body: { name: string; target: string | null; opening?: Opening | null },
-  ): WriteSpec<Destination> => ({ method: "POST", path: root(entity, kind), body }),
+  ): WriteSpec<Destination> => ({
+    method: "POST",
+    path: root(entity, kind),
+    body,
+  }),
   edit: (
     entity: string,
     kind: DestinationKind,
     destination: string,
-    body: { name: string; target: string | null; active: boolean; expected_revision: number },
+    body: {
+      name: string;
+      target: string | null;
+      active: boolean;
+      expected_revision: number;
+    },
   ): WriteSpec<Destination> => ({
     method: "PUT",
     path: `${root(entity, kind)}/${encodeURIComponent(destination)}`,

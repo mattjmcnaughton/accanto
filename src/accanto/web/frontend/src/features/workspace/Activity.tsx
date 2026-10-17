@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { balances } from "../../lib/balances";
 import { destinations } from "../../lib/destinations";
 import {
   type Activity,
@@ -24,6 +25,7 @@ export function ActivityScreen(p: ScreenProps) {
     () => destinations.list(p.entity.id, "investment"),
     [p.entity.id, p.refresh, reload],
   );
+  const loans = useLoad(() => balances.loans(p.entity.id), [p.entity.id, p.refresh, reload]);
   const recipients = useLoad(
     () => destinations.list(p.entity.id, "giving"),
     [p.entity.id, p.refresh, reload],
@@ -100,6 +102,7 @@ export function ActivityScreen(p: ScreenProps) {
             amount: entry.amount,
             source_id: entry.source_id,
             fixed_cost_id: entry.fixed_cost_id,
+            debt_account_id: entry.debt_account_id,
             note: entry.note,
             expected_revision: entry.revision,
             is_adjustment: entry.is_adjustment,
@@ -112,6 +115,7 @@ export function ActivityScreen(p: ScreenProps) {
             amount: "",
             source_id: null,
             fixed_cost_id: null,
+            debt_account_id: null,
             note: "",
             funding_origin: "income",
             saving_goal_id: null,
@@ -164,6 +168,7 @@ export function ActivityScreen(p: ScreenProps) {
       <LoadMessage state={plans} retry={() => setReload((x) => x + 1)} />
       <LoadMessage state={accounts} retry={() => setReload((x) => x + 1)} />
       <LoadMessage state={investments} retry={() => setReload((x) => x + 1)} />
+      <LoadMessage state={loans} retry={() => setReload((x) => x + 1)} />
       <LoadMessage state={recipients} retry={() => setReload((x) => x + 1)} />
       <div className="workspace-columns">
         <div className="record-list">
@@ -202,6 +207,15 @@ export function ActivityScreen(p: ScreenProps) {
                             ? "Funded from current income"
                             : "Unassigned"}
                 </p>
+                {entry.category === "fixed_cost" && entry.debt_account_id && (
+                  <p>
+                    Loan:{" "}
+                    {loans.kind === "ready"
+                      ? (loans.data.find((loan) => loan.uuid === entry.debt_account_id)?.name ??
+                        "Historical loan")
+                      : "Historical loan"}
+                  </p>
+                )}
                 {entry.note && <p>{entry.note}</p>}
                 {entry.category === "investing" || entry.category === "giving" ? (
                   <p>Correct this entry in Investments and giving.</p>
@@ -247,6 +261,7 @@ export function ActivityScreen(p: ScreenProps) {
                       category: e.target.value as ActivityInput["category"],
                       source_id: null,
                       fixed_cost_id: null,
+                      debt_account_id: null,
                       funding_origin: "income",
                       saving_goal_id: null,
                     })
@@ -272,6 +287,31 @@ export function ActivityScreen(p: ScreenProps) {
                         {cost.canonical_name}
                       </option>
                     ))}
+                  </select>
+                </label>
+              )}
+              {form.category === "fixed_cost" && (
+                <label>
+                  Loan account (optional)
+                  <select
+                    name="loan-account"
+                    value={form.debt_account_id || ""}
+                    onChange={(e) =>
+                      update({
+                        ...form,
+                        debt_account_id: e.target.value || null,
+                      })
+                    }
+                  >
+                    <option value="">Ordinary fixed cost</option>
+                    {loans.kind === "ready" &&
+                      loans.data
+                        .filter((loan) => loan.active || loan.uuid === selected?.debt_account_id)
+                        .map((loan) => (
+                          <option key={loan.uuid} value={loan.uuid}>
+                            {loan.name}
+                          </option>
+                        ))}
                   </select>
                 </label>
               )}
@@ -331,7 +371,12 @@ export function ActivityScreen(p: ScreenProps) {
                     name="saving-goal"
                     required
                     value={form.saving_goal_id ?? ""}
-                    onChange={(e) => update({ ...form, saving_goal_id: e.target.value || null })}
+                    onChange={(e) =>
+                      update({
+                        ...form,
+                        saving_goal_id: e.target.value || null,
+                      })
+                    }
                   >
                     <option value="">Choose a goal</option>
                     {savingGoals

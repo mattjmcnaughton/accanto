@@ -150,6 +150,7 @@ fixed_cost_lines = table(
     Column("plan_id", BigInteger, nullable=False),
     Column("entity_id", BigInteger, nullable=False),
     Column("fixed_cost_id", BigInteger, nullable=False),
+    Column("debt_account_id", BigInteger),
     Column("name", String(120), nullable=False),
     Column("amount", Numeric(14, 2), nullable=False),
     Column("frequency", String, nullable=False),
@@ -160,6 +161,9 @@ fixed_cost_lines = table(
     ForeignKeyConstraint(["plan_id", "entity_id"], ["plan.id", "plan.entity_id"]),
     ForeignKeyConstraint(
         ["fixed_cost_id", "entity_id"], ["fixed_cost.id", "fixed_cost.entity_id"]
+    ),
+    ForeignKeyConstraint(
+        ["debt_account_id", "entity_id"], ["debt_account.id", "debt_account.entity_id"]
     ),
     UniqueConstraint("plan_revision_id", "fixed_cost_id"),
     CheckConstraint("frequency IN ('monthly', 'annual')"),

@@ -1,13 +1,20 @@
 import { useState } from "react";
-import { monthly, type PlanRevision } from "../../lib/monthly";
+import { balances } from "../../lib/balances";
+import { type PlanRevision, monthly } from "../../lib/monthly";
 import { LoadMessage, MoneyInput, type ScreenProps, dollars, useLoad } from "./shared";
 
 import { ComparePlans, CopyPlan } from "./PlanScenarios";
 
-type IncomeRow = { key: string; source_id?: string; name: string; amount: string };
+type IncomeRow = {
+  key: string;
+  source_id?: string;
+  name: string;
+  amount: string;
+};
 type FixedRow = {
   key: string;
   fixed_cost_id?: string;
+  debt_account_id?: string | null;
   name: string;
   amount: string;
   frequency: "monthly" | "annual";
@@ -30,6 +37,7 @@ export function Plans(p: ScreenProps) {
   const [copying, setCopying] = useState(false);
   const [reload, setReload] = useState(0);
   const state = useLoad(() => monthly.plans(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const loans = useLoad(() => balances.loans(p.entity.id), [p.entity.id, p.refresh, reload]);
   const [form, setForm] = useState<Draft | null>(null);
   const [snapshot, setSnapshot] = useState<PlanRevision | null>(null);
   const [changed, setChanged] = useState(false);
@@ -46,8 +54,14 @@ export function Plans(p: ScreenProps) {
       revision: revision.revision,
       name: revision.name,
       spending: revision.spending,
-      incomes: revision.incomes.map((line) => ({ ...line, key: line.source_id })),
-      fixed_costs: revision.fixed_costs.map((line) => ({ ...line, key: line.fixed_cost_id })),
+      incomes: revision.incomes.map((line) => ({
+        ...line,
+        key: line.source_id,
+      })),
+      fixed_costs: revision.fixed_costs.map((line) => ({
+        ...line,
+        key: line.fixed_cost_id,
+      })),
     });
     setSnapshot(revision);
     setChanged(false);
@@ -60,8 +74,14 @@ export function Plans(p: ScreenProps) {
       revision: revision.revision,
       name: revision.name,
       spending: revision.spending,
-      incomes: revision.incomes.map((line) => ({ ...line, key: line.source_id })),
-      fixed_costs: revision.fixed_costs.map((line) => ({ ...line, key: line.fixed_cost_id })),
+      incomes: revision.incomes.map((line) => ({
+        ...line,
+        key: line.source_id,
+      })),
+      fixed_costs: revision.fixed_costs.map((line) => ({
+        ...line,
+        key: line.fixed_cost_id,
+      })),
     });
     setSnapshot(revision);
     setChanged(false);
@@ -170,8 +190,9 @@ export function Plans(p: ScreenProps) {
                     amount,
                   })),
                   fixed_costs: form.fixed_costs.map(
-                    ({ fixed_cost_id, name, amount, frequency }) => ({
+                    ({ fixed_cost_id, debt_account_id, name, amount, frequency }) => ({
                       fixed_cost_id,
+                      debt_account_id,
                       name,
                       amount,
                       frequency,
@@ -303,7 +324,10 @@ export function Plans(p: ScreenProps) {
                             ...form,
                             fixed_costs: form.fixed_costs.map((row) =>
                               row.key === line.key
-                                ? { ...row, frequency: e.target.value as FixedRow["frequency"] }
+                                ? {
+                                    ...row,
+                                    frequency: e.target.value as FixedRow["frequency"],
+                                  }
                                 : row,
                             ),
                           })
@@ -311,6 +335,36 @@ export function Plans(p: ScreenProps) {
                       >
                         <option value="monthly">Monthly</option>
                         <option value="annual">Annual</option>
+                      </select>
+                    </label>
+                    <label>
+                      Loan account (optional)
+                      <select
+                        value={line.debt_account_id ?? ""}
+                        onChange={(e) =>
+                          update({
+                            ...form,
+                            fixed_costs: form.fixed_costs.map((row) =>
+                              row.key === line.key
+                                ? {
+                                    ...row,
+                                    debt_account_id: e.target.value || null,
+                                  }
+                                : row,
+                            ),
+                          })
+                        }
+                      >
+                        <option value="">Ordinary fixed cost</option>
+                        {loans.kind === "ready" &&
+                          loans.data
+                            .filter((loan) => loan.active || loan.uuid === line.debt_account_id)
+                            .map((loan) => (
+                              <option key={loan.uuid} value={loan.uuid}>
+                                {loan.name}
+                                {loan.active ? "" : " (archived: revise allocation)"}
+                              </option>
+                            ))}
                       </select>
                     </label>
                     <button

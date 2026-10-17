@@ -53,6 +53,11 @@ class EditDestination(Input):
         return CreateDestination.valid_target(value)
 
 
+class LatestObservation(BaseModel):
+    date: date
+    amount: str
+
+
 class DestinationResult(BaseModel):
     uuid: UUID
     name: str
@@ -61,6 +66,7 @@ class DestinationResult(BaseModel):
     revision: int
     contribution_progress: str
     opening: Opening | None = None
+    latest: LatestObservation | None = None
 
 
 class ContributionInput(Input):
