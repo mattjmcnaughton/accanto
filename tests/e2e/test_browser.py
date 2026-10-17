@@ -248,6 +248,7 @@ def test_signed_in_workspace(tmp_path):
         assert "Contribution progress $0.00" in page
         assert "Not yet funded" in page and "Funded" in page
         browser("reload")
+        browser("wait", "--text", "Synthetic E2E Entity")
         browser("find", "role", "button", "click", "--name", "Savings", "--exact")
         browser("wait", "--text", "Synthetic savings")
         browser("set", "viewport", "375", "760")
