@@ -153,8 +153,10 @@ giving progress is net donations, never inferred tax eligibility. No regular/
 irregular or funding-paused investment status. Loans track observed amount owed
 separately from payment history. Latest observations show dates, not live balances.
 
-One current investment/debt observation per account/date; correct it explicitly,
-never silently overwrite duplicates. Opening observations retain protection.
+One current ordinary investment/debt observation per account/date; correct it
+explicitly, never silently overwrite duplicates. A protected start-of-day opening
+may coexist with that date's ordinary observation; the ordinary observation takes
+precedence as the latest balance without changing the opening.
 Debt archival requires latest recorded amount owed of zero, not a final payment.
 
 Acceptance: $25,000 investment opening + $1,000 contributed gives $1,000 progress;

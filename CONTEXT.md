@@ -1248,8 +1248,8 @@ opening balances and earlier account history is deferred beyond v1.
 
 ### Decision 23 — One balance observation per account/date (agreed)
 
-For investment and debt accounts, keep one current balance observation per account
-per financial date. Correcting the observed amount for that date updates the
+For investment and debt accounts, keep one current ordinary balance observation
+per account per financial date. Correcting that date's observed amount updates the
 existing observation with audit history rather than adding another competing
 observation. Preserve its previous value in the audit log; corrections remain
 subject to normal authorization, stale-edit, and atomic-write rules.
@@ -1263,6 +1263,18 @@ observation when a create request encounters the same account/date.
 This decision removes same-date ambiguity for ordinary observations; it does not
 authorize changing a protected opening position or bypassing account lifecycle
 rules. Opening observations retain their separately agreed start-of-day meaning.
+
+A protected start-of-day opening and one ordinary observation may coexist on the
+opening date. The ordinary observation is the later observed position and takes
+precedence when showing the latest balance for that date. It does not replace or
+correct the opening. Payments and contributions never calculate either observation.
+
+Example: a loan opens October 1 at $300 owed. After a payment that day, the person
+independently observes $0 owed and records an October 1 ordinary observation.
+Preserve both the $300 opening and $0 observation. The latest observed balance is
+$0, so the normal debt archival rule can be satisfied without inventing a later
+date. Another ordinary October 1 observation must correct the existing ordinary
+observation with audit history, not create a duplicate or change the opening.
 
 ### Interview checkpoint — defer advanced income matching
 

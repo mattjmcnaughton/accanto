@@ -10,6 +10,10 @@ Implement the [MVP PRD](../prd/01-mvp.md) under the
 [architecture](../architecture.md). This design replaces earlier exploratory
 mechanisms. Production uses pure Python rules, application services and relational
 Postgres records; the browser prototype is interaction evidence, not authority.
+The prototype is an example of possible interactions, not a production
+specification. Its incidental restrictions do not establish financial policy or
+require production to reproduce its screens. Agreed domain rules and product
+requirements govern the design; preserve existing data independently of UI choices.
 No rules engine, event sourcing, message bus or generic integration framework.
 
 The implemented first vertical slice lets an admitted User operating one Entity
@@ -151,14 +155,16 @@ Entity-scoped composite FKs or constraint triggers enforce cross-Entity referenc
 integrity. Relationship tables enforce compatible actual-entry categories.
 
 Partial unique indexes enforce one draft per Plan, one Unallocated role per
-savings account, and one non-deleted observation per account/date.
+savings account, and one non-deleted ordinary observation per account/date.
 Opening observations retain their protected start-of-day role and one opening per account.
 A deferred constraint trigger verifies exactly one Unallocated goal and opening
 conservation at transaction end. Account/goal lifecycle provenance is stored as
 `archived_by_account` plus the prior state. A completed goal may later have a
 positive linked-refund balance; completion is not a permanent zero constraint.
 
-Saved revision and line UPDATE/DELETE triggers reject mutation. Review target
+Saved revision UPDATE/DELETE triggers reject mutation. Every saved line table
+also rejects INSERT into a saved revision, UPDATE of or into one, and DELETE
+from one; adding a line must not retroactively alter a version. Review target
 constraints require a saved revision in the same Entity. Source IDs remain tied
 to one Plan. New drafts copy saved lines using new row IDs but stable source IDs.
 Soft deletion never deletes relationships. Index history queries by Entity,
@@ -405,18 +411,25 @@ Observations never enter activity totals or contribution progress. Display the
 latest observed value with its financial date rather than as a live balance.
 
 Apply standard audit, stale-edit, idempotency, and supported soft-deletion rules.
-Decision 23 requires one current observation per account/financial date. Use a
-partial unique index on `(account_id, financial_date)` where not deleted,
-including opening observations, plus a separate unique opening per account.
-This matches the accepted prototype: an opening occupies that date's observation
-slot and remains protected; a second observation on that date rejects rather
-than overwriting it. Same-day contributions/payments still follow the opening
-and never infer a new observed balance. Unassigned investment observations have
-no account and are not folded into an inferred account balance. Use the Entity
-lock for duplicate checks and lifecycle validation; corrections explicitly update
-the existing observation with audit history and stale-edit checks. Duplicate
-creation cannot silently overwrite it. Account-opening positions retain their
-separate protections; this rule does not authorize editing an opening balance.
+[Decision 23](../../CONTEXT.md#decision-23--one-balance-observation-per-accountdate-agreed)
+allows a protected start-of-day opening plus one ordinary observation on that date.
+Use a partial unique index on `(account_id, financial_date)` where not deleted
+and not opening, plus a separate unique opening per account. Select the latest
+balance by financial date, with an ordinary observation after the opening on a
+tie. This ordering is about observed positions, not inferred payment effects.
+Unassigned investment observations have no account and are not folded into an
+inferred account balance. Use the Entity lock for duplicate checks and lifecycle
+validation; corrections explicitly update the existing ordinary observation with
+audit history and stale-edit checks. Duplicate creation cannot silently overwrite
+it. Account-opening positions retain their separate protections.
+
+Verification: a synthetic October 1 loan opening of $300 and an independently
+observed October 1 balance of $0 remain separate; latest owed is $0 and archival
+is eligible. A payment alone leaves latest owed at $300. Pure tests establish
+selection; real-DB tests prove two competing ordinary observations for that date
+cannot both succeed, correction retains the opening, and audit failure rolls back.
+The prototype currently rejects the second same-date record; this is a prototype
+limitation, not the production policy, and is not changed by this document.
 
 #### Monthly Review record
 
@@ -766,6 +779,27 @@ Provider registration/configuration is a delivery dependency; choose a maintaine
 OIDC library when implementing and test its actual provider contract before release.
 No new paid service is selected by this document.
 
+For this controlled slice, the callback resolves the verified `(issuer, subject)`
+to an existing operator-provisioned User. Verified allowlisted email is an
+admission check, never an account-merge key. An unknown identity receives an
+explicit setup-required rejection; do not create a second Entity or attach an
+existing Entity by matching email. Provider changes require deliberate operator
+identity binding outside ordinary sign-in, not automatic account merging.
+
+On session expiry, preserve pending form values and any submitted request's exact
+payload/key in the existing tab's memory. Offer user-initiated sign-in in a
+separate window so an OIDC redirect does not replace that tab. After sign-in,
+explicitly recheck the session through the same-origin API; a window message or
+closing the window is not proof of authentication. Require the same User before
+resuming the pending operation; a different signed-in User must not receive or
+submit its financial input. Refresh the CSRF token, then retry an uncertain save
+with its original key and payload. Cancellation, popup
+blocking or failed sign-in leaves the pending input visible and offers another
+attempt; do not fall back to a full-page redirect that loses it. Explicit logout
+clears the workspace from memory. Reloading or closing an unsaved tab is outside
+this in-memory recovery guarantee; warn on navigation and do not imply that
+unsaved input has been durably saved.
+
 Add an authenticated current-user/Entity read returning external UUID, name and
 zone for the admitted owner; no switching/sharing UI. Use Entity-zone date defaults
 and submit explicit financial dates. The browser gets Plans/activity/Review from
@@ -781,6 +815,8 @@ Acceptance for this increment:
    invalid state/nonce, unverified/unadmitted identity, expired/logged-out session
    and forged cookie writes reject. Direct API keys continue to work independently.
    Real-DB tests prove access loss also denies retries for both credential kinds.
+   Exact issuer/subject lookup preserves the existing User and Entity; unknown
+   identities and same-email/different-subject identities cannot inherit access.
 2. In an isolated synthetic workspace, create $4,000 net income and $800 spending,
    save v1, record $4,000 income and $75 spending, then create October's Review:
    differences are $0 and -$725. Draft edits/new versions leave v1 and its Review
@@ -793,6 +829,9 @@ Acceptance for this increment:
    Reload durability, failed loads, failed saves, stale edits and a lost response
    preserve input and have explicit recovery. Retrying the same successful command
    produces one change/audit outcome, including across credentials of the same User.
+   Expiry during an uncertain save, reauthentication cancellation and popup blocking
+   preserve the pending values/payload/key; successful reauthentication refreshes
+   CSRF credentials and recovers the committed outcome without a duplicate.
 5. Production browser writes have complete atomic audit snapshots and session actor
    attribution; money stays decimal strings and calculations remain in Python.
    Migration tests preserve existing keys, records, saved versions and audit rows.
