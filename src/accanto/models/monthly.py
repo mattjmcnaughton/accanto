@@ -70,6 +70,14 @@ sessions = table(
     Column("expires_at", DateTime(timezone=True), nullable=False),
     Column("revoked_at", DateTime(timezone=True)),
 )
+login_transactions = table(
+    "oidc_login_transaction",
+    Column("state_digest", String(64), nullable=False, unique=True),
+    Column("binding_digest", String(64), nullable=False),
+    Column("nonce", String, nullable=False),
+    Column("verifier", String, nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+)
 plans = table(
     "plan",
     Column("entity_id", ForeignKey("entity.id"), nullable=False),

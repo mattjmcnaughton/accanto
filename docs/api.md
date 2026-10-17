@@ -144,3 +144,45 @@ No financial values/notes or SQL parameters belong in operational telemetry.
 
 Health probes remain `GET /healthz` and `GET /readyz`. Interactive schemas are
 available at `/docs`. No deployment or hosted-provider compatibility is claimed.
+
+## Browser authentication
+
+Browser requests use a same-origin, Secure HttpOnly `accanto_session` cookie.
+`GET /api/auth/login` redirects to the configured identity provider;
+`GET /api/auth/callback` validates the one-use login and redirects to `/`.
+Use a user-initiated popup for reauthentication so unsaved input stays in memory.
+A popup closing is not proof of login: always re-read session metadata.
+
+`GET /api/auth/session` returns:
+
+```json
+{
+  "user": {"id": "00000000-0000-4000-8000-000000000001"},
+  "entities": [{
+    "id": "00000000-0000-4000-8000-000000000002",
+    "name": "Synthetic Entity",
+    "time_zone": "America/New_York",
+    "today": "2026-10-16"
+  }],
+  "csrf_token": "opaque-session-bound-value"
+}
+```
+
+These UUIDs are deliberately synthetic examples. `today` is computed by the server
+in each Entity's zone. A direct API-key request can also read this metadata and
+receives `csrf_token: null`. No request may supply both a session cookie and an
+Authorization header.
+
+Cookie-authenticated writes, including `POST /api/auth/logout`, require exact
+`Origin` and `X-CSRF-Token`. Logout returns `{"signed_out": true}`, invalidates the
+server session and clears its cookie. API-key callers use Bearer credentials and
+need no CSRF token. Session expiry is absolute at 12 hours. Refresh session metadata
+after login, verify the same User, then retry uncertain writes with their original
+Idempotency-Key and exact payload. Clear financial workspace memory on explicit
+logout; do not persist browser credentials or financial state in localStorage.
+
+Authentication errors use `detail: {code, message}`: 401 for invalid/expired,
+ambiguous credentials or invalid login; 403 for CSRF failure, unadmitted identity,
+or `identity_setup_required`; 503 for unconfigured/unavailable sign-in. API
+responses are `no-store`. An unknown `(issuer, subject)` requires operator setup;
+a matching verified email never merges accounts.

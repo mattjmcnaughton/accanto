@@ -7,7 +7,12 @@ from datetime import UTC, datetime
 from sqlalchemy import insert, select, update
 
 from accanto.models.monthly import keys
-from accanto.services.monthly import RejectionError
+from accanto.services.access import (
+    AuthenticatedActor,
+    RejectionError,
+    resolve_actor,
+    revalidate_actor,
+)
 
 
 async def issue_key(session, user_id: int, name: str):
@@ -26,24 +31,25 @@ async def issue_key(session, user_id: int, name: str):
     return {"id": str(record), "key": token, "name": name}
 
 
-async def manage_key(session, token: str, *, name: str | None = None, revoke=None):
+async def manage_key(
+    session, token: str | AuthenticatedActor, *, name: str | None = None, revoke=None
+):
     async with session.begin():
-        # Lock keys in ID order for revocation to avoid cross-key deadlocks.
-        digest = hashlib.sha256(token.encode()).hexdigest()
-        identity = (
-            (await session.execute(select(keys).where(keys.c.digest == digest)))
-            .mappings()
-            .first()
+        # Session first, then keys in ID order; key callers never lock out of order.
+        actor = (
+            token
+            if isinstance(token, AuthenticatedActor)
+            else await resolve_actor(session, token)
         )
-        if not identity:
-            raise RejectionError(
-                "invalid_credential", "API key is invalid or revoked.", 401
-            )
+        if actor.credential_kind not in {"api_key", "session"}:
+            raise RejectionError("invalid_credential", "Credential is invalid.", 401)
+        if actor.credential_kind == "session":
+            await revalidate_actor(session, actor, lock=True)
         records = (
             (
                 await session.execute(
                     select(keys)
-                    .where(keys.c.user_id == identity["user_id"])
+                    .where(keys.c.user_id == actor.user_id)
                     .order_by(keys.c.id)
                     .with_for_update()
                 )
@@ -51,13 +57,10 @@ async def manage_key(session, token: str, *, name: str | None = None, revoke=Non
             .mappings()
             .all()
         )
-        current = next(row for row in records if row["id"] == identity["id"])
-        if current["revoked_at"]:
-            raise RejectionError(
-                "invalid_credential", "API key is invalid or revoked.", 401
-            )
+        if actor.credential_kind == "api_key":
+            await revalidate_actor(session, actor, lock=False)
         if name is not None:
-            return await issue_key(session, current["user_id"], name)
+            return await issue_key(session, actor.user_id, name)
         target = next((row for row in records if row["uuid"] == revoke), None)
         if not target:
             raise RejectionError("key_not_found", "API key is unavailable.", 404)

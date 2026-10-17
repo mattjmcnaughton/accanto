@@ -20,6 +20,8 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0",
     "alembic>=1.13",
     "asyncpg>=0.29",
+    "authlib==1.7.2",
+    "httpx==0.28.1",
 ]
 
 [project.urls]
