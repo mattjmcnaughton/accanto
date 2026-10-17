@@ -207,6 +207,52 @@ async def scenario():
                 },
             )
         ).status_code == 422
+        historical_edit = await command(
+            "PUT",
+            f"/activity/{payment.json()['uuid']}",
+            {
+                "date": "2026-10-02",
+                "category": "fixed_cost",
+                "amount": "299.00",
+                "note": "Corrected synthetic payment",
+                "debt_account_id": loan["uuid"],
+                "fixed_cost_id": fixed_line["fixed_cost_id"],
+                "expected_revision": payment.json()["revision"],
+            },
+        )
+        assert historical_edit.status_code == 200, historical_edit.text
+        assert historical_edit.json()["debt_account_id"] == loan["uuid"]
+        assert historical_edit.json()["amount"] == "299.00"
+        assert (await client.get(path + "/reviews/2026-10-01")).json()["actual"][
+            "fixed_cost_recorded"
+        ] == "299.00"
+        unlinked = await command(
+            "POST",
+            "/activity",
+            {
+                "date": "2026-10-02",
+                "category": "fixed_cost",
+                "amount": "1.00",
+                "note": "",
+            },
+        )
+        assert unlinked.status_code == 200, unlinked.text
+        new_association = await command(
+            "PUT",
+            f"/activity/{unlinked.json()['uuid']}",
+            {
+                "date": "2026-10-02",
+                "category": "fixed_cost",
+                "amount": "1.00",
+                "note": "",
+                "debt_account_id": loan["uuid"],
+                "expected_revision": 1,
+            },
+        )
+        assert new_association.status_code == 422
+        assert (await client.get(path + "/activity")).json()[-1][
+            "debt_account_id"
+        ] is None
         archived = (await client.get(path + "/debts")).json()[0]
         assert len(archived["draft_fixed_cost_lines"]) == 1
         assert (await client.get(path + "/plans")).json()[0]["revisions"][0][

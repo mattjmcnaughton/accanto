@@ -476,7 +476,9 @@ Creation requires `name` and a protected `opening: {date, amount}`. `PUT
 /api/entities/{entity_id}/debts/{debt_id}` accepts `name`, `active`, and
 `expected_revision` to rename, archive or reopen. Archival requires the latest
 recorded amount owed to be zero; a payment alone does not establish zero. An
-archived loan rejects new payments and remains in history. `draft_fixed_cost_lines`
+archived loan rejects new payments and new associations; an existing payment
+retaining that loan identity can still be corrected with its current revision.
+Its history remains visible. `draft_fixed_cost_lines`
 identifies draft Plan lines linked to an archived loan for explicit revision;
 saved versions remain intact.
 

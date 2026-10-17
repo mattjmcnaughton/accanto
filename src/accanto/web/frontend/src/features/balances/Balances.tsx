@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { type Loan, type Observation, type ObservationInput, balances } from "../../lib/balances";
 import { destinations } from "../../lib/destinations";
+import { monthly } from "../../lib/monthly";
 import { LoadMessage, MoneyInput, type ScreenProps, dollars, useLoad } from "../workspace/shared";
 
 export function Balances(p: ScreenProps) {
   const [reload, setReload] = useState(0);
   const [kind, setKind] = useState<"debt" | "investment">("debt");
   const loans = useLoad(() => balances.loans(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const payments = useLoad(() => monthly.activity(p.entity.id), [p.entity.id, p.refresh, reload]);
   const investments = useLoad(
     () => destinations.list(p.entity.id, "investment"),
     [p.entity.id, p.refresh, reload],
@@ -62,6 +64,7 @@ export function Balances(p: ScreenProps) {
         observation.
       </p>
       <LoadMessage state={loans} retry={() => setReload((value) => value + 1)} />
+      <LoadMessage state={payments} retry={() => setReload((value) => value + 1)} />
       <LoadMessage state={investments} retry={() => setReload((value) => value + 1)} />
       <fieldset className="choice-row">
         <legend>Balance type</legend>
@@ -104,6 +107,25 @@ export function Balances(p: ScreenProps) {
                   Opened {loan.opening.date} owing {dollars(loan.opening.amount)}. Latest observed
                   amount owed: {dollars(loan.latest.amount)} on {loan.latest.financial_date}.
                 </p>
+                <h5>Payment history</h5>
+                {payments.kind === "ready" &&
+                  payments.data.filter(
+                    (entry) =>
+                      entry.category === "fixed_cost" && entry.debt_account_id === loan.uuid,
+                  ).length === 0 && <p>No payments recorded for this loan.</p>}
+                {payments.kind === "empty" && <p>No payments recorded for this loan.</p>}
+                {payments.kind === "ready" &&
+                  payments.data
+                    .filter(
+                      (entry) =>
+                        entry.category === "fixed_cost" && entry.debt_account_id === loan.uuid,
+                    )
+                    .map((entry) => (
+                      <p key={entry.uuid}>
+                        <time>{entry.financial_date}</time> · {dollars(entry.amount)} payment{" "}
+                        {entry.fixed_cost_name ? `· ${entry.fixed_cost_name}` : ""}
+                      </p>
+                    ))}
                 {!loan.active && loan.draft_fixed_cost_lines.length > 0 && (
                   <p>Review draft fixed-cost allocations for this archived loan.</p>
                 )}
