@@ -171,7 +171,7 @@ def test_signed_in_workspace(tmp_path):
             .strip()
             .strip('"')
         )
-        browser("find", "label", "Comparison version", "select", choice)
+        browser("select", "select", choice)
         browser("find", "role", "button", "click", "--name", "Create Review", "--exact")
         browser("wait", "--text", "Review notes and checkpoint")
         browser("find", "label", "Review note", "fill", "Synthetic takeaway")
