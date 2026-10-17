@@ -114,6 +114,8 @@ Use a separate restricted database runtime role as described in the API guide.
 - [Product brief](docs/product/brief.md): current direction and delivery status.
 - [MVP PRD](docs/prd/01-mvp.md): agreed requirements, prototype coverage and deferrals.
 - [MVP TDD](docs/tdds/01-mvp.md): technical design and production enforcement.
+- [MVP tickets](docs/technical/tickets/01-mvp.md): implementation order, dependencies
+  and acceptance criteria, beginning with a fresh production frontend.
 - [Domain context](CONTEXT.md): shared financial language.
 - [Architecture](docs/architecture.md): package structure and conventions.
 - [Development](docs/development.md): commands and local environment.
