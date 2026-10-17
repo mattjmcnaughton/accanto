@@ -1,6 +1,6 @@
 # 01 — MVP implementation tickets
 
-Status: Implementation in progress; 001–004 complete locally, 005–006 in progress
+Status: Implementation in progress; 001–005 complete locally, 006–007 and 011 in progress
 
 This backlog implements the [MVP PRD](../../prd/01-mvp.md) and
 [MVP TDD](../../tdds/01-mvp.md), under [CONTEXT](../../../CONTEXT.md) and the
@@ -66,7 +66,7 @@ router/service/repository boundaries; no generic rule engine or event framework.
 
 Dependencies are completion prerequisites, not a requirement to work serially.
 For later financial tickets, dependency 005 supplies the common API-backed UI.
-Tickets 001–004 are **Complete locally**; 005–006 are **In progress**. Other
+Tickets 001–005 are **Complete locally**; 006–007 and 011 are **In progress**. Other
 tickets are **Todo**, except 021 (**Policy blocked**) and 022 (**Provider gated**
 for hosted verification). A dependency being satisfied does not mark a ticket done.
 
@@ -210,6 +210,17 @@ No financial localStorage fallback, optimistic confirmed-save message or JS mone
 calculation becomes authoritative.
 
 ### 005 — Production income/spending Plan → activity → Review loop
+
+**Status: Complete locally.** Integration commit `1082cc6` (ticket commit
+`ea90954`). Integrated gates pass 14 backend and 26 frontend unit tests, plus six
+Postgres integration tests. Review findings on persistent wrong-User concealment
+and accurate conflict-reload messaging were resolved. Frozen mutations detect
+lost source IDs, incorrect newest-version preference and regenerated retry keys.
+The real local signed-provider/browser journey covers the financial example,
+reload, correction/deletion, unknown-to-zero entry, overallocated versions,
+prior-month selection and a lost-response retry with one entry and audit record.
+Keyboard-only Plan entry and 320/390px checks pass. Real-provider compatibility
+remains a manual release requirement.
 
 **Outcome:** first complete new browser journey using the committed backend slice.
 Design fresh screens for these tasks; do not inherit the prototype navigation.
