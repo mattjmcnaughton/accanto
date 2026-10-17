@@ -14,6 +14,7 @@ import { Plans } from "./Plans";
 import { ActivityScreen } from "./Activity";
 import { MonthlyReview } from "./MonthlyReview";
 import { IncomeEstimates } from "../estimates/IncomeEstimates";
+import { Savings } from "../savings/Savings";
 
 export function Workspace({
   initial,
@@ -21,7 +22,7 @@ export function Workspace({
 }: { initial: BrowserSession; signedOut: (message?: string) => void }) {
   const [session, setSession] = useState(initial);
   const [screen, setScreen] = useState<
-    "Plans" | "Activity" | "Monthly Review" | "Income estimates" | "Settings"
+    "Plans" | "Activity" | "Monthly Review" | "Income estimates" | "Savings" | "Settings"
   >("Plans");
   const [refresh, setRefresh] = useState(0);
   const [metadataStale, setMetadataStale] = useState(false);
@@ -196,7 +197,7 @@ export function Workspace({
       {entity && (
         <>
           <nav className="workspace-nav" aria-label="Workspace" hidden={concealed}>
-            {(["Plans", "Activity", "Monthly Review", "Income estimates", "Settings"] as const).map(
+            {(["Plans", "Activity", "Monthly Review", "Income estimates", "Savings", "Settings"] as const).map(
               (item) => (
                 <button
                   type="button"
@@ -221,6 +222,7 @@ export function Workspace({
           {screen === "Activity" && <ActivityScreen {...props} />}
           {screen === "Monthly Review" && <MonthlyReview {...props} />}
           {screen === "Income estimates" && <IncomeEstimates {...props} />}
+          {screen === "Savings" && <Savings {...props} />}
           {screen === "Settings" && (
             <Settings {...props} credentials={credentials} saved={() => void refreshMetadata()} />
           )}
