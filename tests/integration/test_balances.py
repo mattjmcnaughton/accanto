@@ -358,6 +358,88 @@ async def scenario():
             )
             == 1
         )
+        same_day_zero = await command(
+            "POST",
+            "/debt-observations",
+            {"date": "2026-10-01", "amount": "0.00", "account_id": loan["uuid"]},
+        )
+        assert same_day_zero.status_code == 200, same_day_zero.text
+        loan_before_zone = (await client.get(path + "/debts")).json()[0]
+        debt_rows_before_zone = (await client.get(path + "/debt-observations")).json()
+        investment_before_zone = (await client.get(path + "/investments")).json()[0]
+        investment_rows_before_zone = (
+            await client.get(path + "/investment-observations")
+        ).json()
+        activity_before_zone = (await client.get(path + "/activity")).json()
+        payment_before_zone = next(
+            row for row in activity_before_zone if row["uuid"] == payment.json()["uuid"]
+        )
+        assert loan_before_zone["opening"]["date"] == "2026-10-01"
+        assert loan_before_zone["latest"]["financial_date"] == "2026-10-01"
+        assert loan_before_zone["latest"]["amount"] == "0.00"
+        assert investment_before_zone["opening"]["date"] == "2026-10-01"
+        assert investment_before_zone["latest"]["date"] == "2026-10-02"
+        assert payment_before_zone["financial_date"] == "2026-10-02"
+        settings_before = (await client.get(path + "/settings")).json()
+        assert settings_before["time_zone"] == "Pacific/Kiritimati"
+        changed_zone = await command(
+            "PUT",
+            "/settings",
+            {
+                "name": settings_before["name"],
+                "time_zone": "America/Los_Angeles",
+                "expected_revision": settings_before["revision"],
+            },
+        )
+        assert changed_zone.status_code == 200, changed_zone.text
+        assert (await client.get(path + "/settings")).json()[
+            "time_zone"
+        ] == "America/Los_Angeles"
+        assert (await client.get(path + "/debts")).json()[0] == loan_before_zone
+        assert (
+            await client.get(path + "/debt-observations")
+        ).json() == debt_rows_before_zone
+        assert (await client.get(path + "/investments")).json()[
+            0
+        ] == investment_before_zone
+        assert (
+            await client.get(path + "/investment-observations")
+        ).json() == investment_rows_before_zone
+        assert (
+            next(
+                row
+                for row in (await client.get(path + "/activity")).json()
+                if row["uuid"] == payment.json()["uuid"]
+            )
+            == payment_before_zone
+        )
+        assert (
+            await command(
+                "POST",
+                "/debt-observations",
+                {"date": "2026-09-30", "amount": "1.00", "account_id": loan["uuid"]},
+            )
+        ).status_code == 422
+        assert (
+            await command(
+                "POST",
+                "/investment-observations",
+                {"date": "2026-09-30", "amount": "1.00", "account_id": investment_id},
+            )
+        ).status_code == 422
+        assert (
+            await command(
+                "POST",
+                "/activity",
+                {
+                    "date": "2026-09-30",
+                    "category": "fixed_cost",
+                    "amount": "1.00",
+                    "note": "",
+                    "debt_account_id": loan["uuid"],
+                },
+            )
+        ).status_code == 422
         async with sessions() as session:
             entity_id = await session.scalar(
                 select(m.entities.c.id).where(m.entities.c.uuid == entity)
