@@ -9,7 +9,7 @@ Live GitHub issues #13 and #15 were open, unassigned and without active claims. 
 | [MVP-013](MVP-013.md) | `/tmp/accanto-mvp-013-next` | `codex/mvp-013-next` | `7aef8845b18fab3a7b64c9d5fd5e20923708295a` | Reviewed, proven and locally integrated at `157b71862fc865c982f32b588edd554b69815372` |
 | [MVP-015](MVP-015.md) | `/tmp/accanto-mvp-015-next` | `codex/mvp-015-next` | `7aef8845b18fab3a7b64c9d5fd5e20923708295a`; rebased on `157b718` | Reviewed, proven and locally integrated at `276c5c32902a02a9be920586e7b3ff2879fa63ad` |
 
-The orchestrator will independently review each candidate, resolve findings, approve concrete proof plans before capture, integrate in dependency order and run combined checks on fresh disposable databases. MVP-013 must prove real savings-linked activity, including retained soft-deleted history, freezes opening date, amount and designations. This document records progress, not completed acceptance.
+Each candidate received independent review, resolution and orchestrator-approved proof capture before local integration in dependency order. MVP-013 proved that real savings-linked activity, including retained soft-deleted history, fixes the opening date, amount and designations. Combined checks ran on fresh disposable databases.
 
 ## MVP-013 review and proof approval
 
