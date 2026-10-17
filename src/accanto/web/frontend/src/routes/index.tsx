@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { type View, WorkspaceApp } from "../features/workspace/WorkspaceApp";
 import { today } from "../features/workspace/domain";
+import { loadWorkspace } from "../features/workspace/storage";
 
 export const Route = createFileRoute("/")({
   validateSearch: (search: Record<string, unknown>): { view: View; month: string } => ({
@@ -12,7 +13,7 @@ export const Route = createFileRoute("/")({
     month:
       typeof search.month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(search.month)
         ? search.month
-        : today().slice(0, 7),
+        : today(loadWorkspace().state.timeZone).slice(0, 7),
   }),
   component: Home,
 });

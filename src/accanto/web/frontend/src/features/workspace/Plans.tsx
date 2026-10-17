@@ -361,7 +361,13 @@ function Allocation({ calc }: { calc: ReturnType<typeof calculate> }) {
         <p className="footnote" key={k}>
           {labels[k]} ÷ planned net income: {money(calc[k])} ÷ {money(calc.income)} ={" "}
           {calc.income > 0 ? `${((calc[k] / calc.income) * 100).toFixed(1)}%` : "Unavailable"}.
-          Provisional comparison formula.
+          Provisional comparison formula. Alternative: {labels[k]} ÷ total planned funding ={" "}
+          {money(calc[k])} ÷ {money(calc.income + (calc.savingsFunding ?? 0))} ={" "}
+          {calc.income + (calc.savingsFunding ?? 0) > 0
+            ? `${((calc[k] / (calc.income + (calc.savingsFunding ?? 0))) * 100).toFixed(1)}%`
+            : "Unavailable"}
+          . The funding base includes planned net income plus all planned use of savings shown
+          above.
         </p>
       ))}
     </div>

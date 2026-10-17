@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { type Workspace, emptyWorkspace, storageKey, validateWorkspaceChange } from "./domain";
+import {
+  type Workspace,
+  emptyWorkspace,
+  storageKey,
+  validTimeZone,
+  validateWorkspaceChange,
+} from "./domain";
 import { validateLumpSum } from "./lumpSums";
 
 const amount = z.number().int().min(0).max(100_000_000_000);
@@ -91,6 +97,7 @@ const destination = z.object({
   openingAmount: amount.optional(),
 });
 const schema = z.object({
+  timeZone: z.string().refine(validTimeZone, "Invalid Entity time zone").optional(),
   accounts: z.array(z.object({ id, name, date, opening: amount, active: z.boolean() })).optional(),
   movements: z
     .array(

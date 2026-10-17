@@ -1,7 +1,7 @@
 # 01 — Accanto MVP
 
 Status: Agreed workflow baseline; production implementation incremental
-Updated: 2026-10-16
+Updated: 2026-10-17
 
 ## Purpose and authority
 
@@ -213,6 +213,10 @@ baseline; prototype whole-workspace import/reset is not production scope.
 The React prototype and standalone HTML implement direct net Plans, independent
 estimates, account funding, goal-backed savings, movements/reconciliation, linked
 refunds, soft deletion/validated undo, lifecycle, observations and monthly Reviews.
+Opening setup accepts initial goal designations; movement corrections preserve
+recording order. Entity time-zone settings govern new date defaults. Planned and
+actual formula views expose their amounts and provisional bases. Loan accounts
+show payment history separately from observations.
 Legacy versions and legacy label-only data remain preserved. Local snapshots and
 tab conflict checks do not establish database audit immutability or concurrency.
 
@@ -242,7 +246,7 @@ arise only from a concrete blocked command.
 
 Use independently worked examples above at the cheapest sufficient layer:
 financial rule unit tests, real Postgres constraints/rollback/concurrency tests,
-and browser journeys for interactions. Prototype evidence: 30 unit tests and four
+and browser journeys for interactions. Prototype evidence includes unit tests for financial rules and legacy continuity,
 browser journeys, build/typecheck and desktop/mobile inspection. These establish
 prototype behavior, not production authentication, durable audit or hosted-provider
 compatibility. Production progress and remaining checks belong in its implementation

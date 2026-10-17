@@ -154,6 +154,7 @@ export interface IncomeEstimate {
   incomes: Income[];
 }
 export interface Workspace {
+  timeZone?: string;
   debts?: Destination[];
   accounts?: SavingsAccount[];
   movements?: SavingsMovement[];
@@ -204,9 +205,26 @@ export const entryLabels: Record<Kind, string> = {
 };
 export const id = () =>
   `${Date.now().toString(36)}-${Array.from(crypto.getRandomValues(new Uint32Array(2)), (n) => n.toString(36)).join("")}`;
-export const today = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export const validTimeZone = (value: string) => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    return true;
+  } catch {
+    return false;
+  }
+};
+export const today = (
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+  instant = new Date(),
+) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(instant);
+  const part = (type: string) => parts.find((p) => p.type === type)?.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
 };
 export const money = (value: number | null, cents = false) =>
   value === null
@@ -229,6 +247,7 @@ export const shiftMonth = (month: string, delta: number) => {
 export const emptyWorkspace = (): Workspace => ({
   schema: 1,
   name: "My entity",
+  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   plans: [],
   goals: [],
   investments: [],
@@ -490,7 +509,7 @@ export function summarize(state: Workspace, review: Review): ReviewGroup[] {
 export function saveEntry(state: Workspace, input: Entry): Workspace {
   let entry = { ...input };
   const old = state.entries.find((e) => e.id === input.id);
-  entry.order = old?.order ?? input.order ?? nextOrder(state);
+  entry.order = old ? (old.order ?? state.entries.indexOf(old) + 1) : nextOrder(state);
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(entry.date) ||
     Number.isNaN(Date.parse(entry.date)) ||
@@ -665,7 +684,7 @@ export const nextOrder = (state: Workspace) =>
   1 +
   Math.max(
     0,
-    ...state.entries.map((e) => e.order ?? 0),
+    ...state.entries.map((e, i) => e.order ?? i + 1),
     ...(state.movements ?? []).map((m) => m.order),
   );
 export function validateSavingsHistory(state: Workspace) {
@@ -675,9 +694,9 @@ export function validateSavingsHistory(state: Workspace) {
   const events = [
     ...state.entries
       .filter((e) => !e.deleted)
-      .map((e, i) => ({
+      .map((e) => ({
         date: e.date,
-        order: e.order ?? i,
+        order: e.order ?? state.entries.indexOf(e) + 1,
         effects: [
           ...(e.kind === "saving" ? [[e.sourceId, e.amount] as const] : []),
           ...(e.funding ? [[e.funding.goalId, -e.amount] as const] : []),
@@ -712,6 +731,16 @@ export function validateSavingsHistory(state: Workspace) {
 }
 function validateEntryChange(before: Workspace, next: Workspace, entry: Entry) {
   const old = before.entries.find((e) => e.id === entry.id);
+  if (old) {
+    const oldGoalIds = [old.kind === "saving" ? old.sourceId : "", old.funding?.goalId];
+    for (const goalId of oldGoalIds) {
+      const goal = before.goals.find((g) => g.id === goalId);
+      if (goal?.accountId && !before.accounts?.find((a) => a.id === goal.accountId)?.active)
+        throw new Error("Reopen the savings account before changing its activity.");
+    }
+    if (old.debtId && !before.debts?.find((d) => d.id === old.debtId)?.active)
+      throw new Error("Reopen the debt account before changing its activity.");
+  }
   const linkedAccount = entry.debtId
     ? next.debts?.find((d) => d.id === entry.debtId)
     : entry.kind === "investing"
@@ -725,12 +754,22 @@ function validateEntryChange(before: Workspace, next: Workspace, entry: Entry) {
       (linkedAccount.openingDate && entry.date < linkedAccount.openingDate))
   )
     throw new Error("Reopen the account and use a date on or after its opening.");
-  if (!entry.deleted && entry.funding && entry.amount < 0 && !entry.adjustment && !entry.refundOf)
+  if (
+    !entry.deleted &&
+    entry.amount < 0 &&
+    !entry.adjustment &&
+    !entry.refundOf &&
+    (!old || old.amount >= 0 || old.funding)
+  )
     throw new Error("Record a linked refund from its original purchase.");
   const refunds = next.entries.filter((e) => !e.deleted && e.refundOf === entry.id);
   if (refunds.length) {
     if (entry.deleted) throw new Error("Delete linked refunds first.");
-    if (refunds.some((r) => r.kind !== entry.kind || r.sourceId !== entry.sourceId))
+    if (
+      refunds.some(
+        (r) => r.kind !== entry.kind || r.sourceId !== entry.sourceId || r.debtId !== entry.debtId,
+      )
+    )
       throw new Error(
         "Delete linked refunds before changing the purchase category or destination.",
       );
@@ -752,6 +791,7 @@ function validateEntryChange(before: Workspace, next: Workspace, entry: Entry) {
       entry.amount >= 0 ||
       entry.kind !== purchase.kind ||
       entry.sourceId !== purchase.sourceId ||
+      entry.debtId !== purchase.debtId ||
       entry.date < purchase.date ||
       JSON.stringify(entry.funding) !== JSON.stringify(purchase.funding)
     )
@@ -779,7 +819,12 @@ function validateEntryChange(before: Workspace, next: Workspace, entry: Entry) {
     const account = next.accounts?.find((a) => a.id === goal.accountId);
     if (!account?.active) throw new Error("Reopen the savings account before changing activity.");
     if (
-      (!old || old.deleted) &&
+      (!old ||
+        old.deleted ||
+        !(
+          (entry.kind === "saving" && old.kind === "saving" && old.sourceId === goalId) ||
+          (entry.funding?.goalId === goalId && old.funding?.goalId === goalId)
+        )) &&
       !goal.active &&
       !(entry.refundOf && goal.completed) &&
       !(entry.adjustment && !goal.completed)
@@ -798,14 +843,35 @@ export function deleteEntry(state: Workspace, entry: Entry): Workspace {
   validateEntryChange(state, next, deleted);
   return next;
 }
+export interface OpeningDesignation {
+  name: string;
+  amount: number;
+  target: number;
+  purpose: "finite" | "ongoing";
+}
 export function createSavingsAccount(
   state: Workspace,
   name: string,
   date: string,
   opening: number,
+  designations: OpeningDesignation[] = [],
 ): Workspace {
   if (!name.trim() || !Number.isSafeInteger(opening) || opening < 0 || !validDate(date))
     throw new Error("Enter an account name, opening date and nonnegative cents.");
+  const designated = designations.reduce((sum, row) => sum + row.amount, 0);
+  if (
+    designated > opening ||
+    designations.some(
+      (row) =>
+        !row.name.trim() ||
+        !Number.isSafeInteger(row.amount) ||
+        row.amount < 0 ||
+        !Number.isSafeInteger(row.target) ||
+        row.target < 0 ||
+        (row.purpose === "finite" && row.target === 0),
+    )
+  )
+    throw new Error("Opening designations need valid goals and cannot exceed the opening amount.");
   const account = { id: id(), name: name.trim(), date, opening, active: true };
   return {
     ...state,
@@ -816,13 +882,26 @@ export function createSavingsAccount(
         id: id(),
         name: `${account.name} · Unallocated`,
         accountId: account.id,
-        opening,
+        opening: opening - designated,
         role: "unallocated",
         purpose: "ongoing",
         target: 0,
         active: true,
         tag: "",
       },
+      ...designations.map(
+        (row): Goal => ({
+          id: id(),
+          name: row.name.trim(),
+          accountId: account.id,
+          opening: row.amount,
+          role: "ordinary",
+          purpose: row.purpose,
+          target: row.target,
+          active: true,
+          tag: "",
+        }),
+      ),
     ],
   };
 }
@@ -842,11 +921,18 @@ export function saveMovement(state: Workspace, movement: SavingsMovement): Works
     throw new Error("Reassign within one account.");
   if (m.kind === "transfer" && from?.accountId === to.accountId)
     throw new Error("Transfer between different accounts.");
+  // Corrections touch both the previous and proposed endpoints; archived accounts must reopen.
+  for (const goalId of old ? [old.from, old.to] : []) {
+    const goal = state.goals.find((g) => g.id === goalId);
+    if (goal && !state.accounts?.find((a) => a.id === goal.accountId)?.active)
+      throw new Error("Reopen the account before changing its movement.");
+  }
   for (const g of [from, to].filter(Boolean) as Goal[]) {
     if (!state.accounts?.find((a) => a.id === g.accountId)?.active)
       throw new Error("Reopen the account first.");
     if (
       !g.active &&
+      !(old && !old.deleted && !g.completed && (old.from === g.id || old.to === g.id)) &&
       !(g === from && g.completed && to.role === "unallocated" && m.kind === "reassignment")
     )
       throw new Error("Select active goals, or return a completed goal's refund to Unallocated.");
@@ -903,6 +989,14 @@ export function completeGoal(state: Workspace, goalId: string, date: string): Wo
 }
 
 export function saveBalance(state: Workspace, balance: Balance): Workspace {
+  const previous = state.balances.find((b) => b.id === balance.id);
+  if (previous) {
+    const original = previous.debtId
+      ? state.debts?.find((a) => a.id === previous.debtId)
+      : state.investments.find((a) => a.id === previous.investmentId);
+    if (original && !original.active)
+      throw new Error("Reopen the account before changing its observation.");
+  }
   if (
     !balance.name.trim() ||
     !Number.isSafeInteger(balance.amount) ||
@@ -913,6 +1007,8 @@ export function saveBalance(state: Workspace, balance: Balance): Workspace {
   const account = balance.debtId
     ? state.debts?.find((d) => d.id === balance.debtId)
     : state.investments.find((d) => d.id === balance.investmentId);
+  if ((balance.debtId || balance.investmentId) && !account)
+    throw new Error("Choose an existing account.");
   if (account && (!account.active || (account.openingDate && balance.date < account.openingDate)))
     throw new Error("Reopen the account and use a date on or after its opening.");
   if (
@@ -936,6 +1032,8 @@ export const validDate = (date: string) =>
   new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) === date;
 
 export function validateWorkspaceChange(before: Workspace, next: Workspace) {
+  if (next.timeZone !== undefined && !validTimeZone(next.timeZone))
+    throw new Error("Enter a valid IANA Entity time zone, for example America/New_York.");
   for (const p of before.plans)
     for (const v of p.versions) {
       if (
@@ -963,6 +1061,15 @@ export function validateWorkspaceChange(before: Workspace, next: Workspace) {
       throw new Error("Opening positions are protected; use dated reconciliation.");
   }
   for (const g of next.goals) {
+    if (g.accountId) {
+      const account = next.accounts?.find((a) => a.id === g.accountId);
+      if (!account) throw new Error("Choose an existing savings account.");
+      if (g.active && !account.active)
+        throw new Error("Reopen the archived account before its goals.");
+      if (g.completed && g.active) throw new Error("A completed goal cannot be reactivated.");
+      if ((g.purpose === "finite" && g.target <= 0) || g.target < 0)
+        throw new Error("Finite goals require a positive target; ongoing targets are optional.");
+    }
     const old = before.goals.find((o) => o.id === g.id);
     if (
       old?.accountId &&

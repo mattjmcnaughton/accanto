@@ -1,10 +1,14 @@
 import { useState } from "react";
-import { type Destination, id, money, saveBalance, today, validDate } from "./domain";
+import { type Destination, fundingLabel, id, money, saveBalance, today, validDate } from "./domain";
 import { MoneyField, Notice, type ViewProps } from "./ui";
-export function AccountPositions({ state, update }: Pick<ViewProps, "state" | "update">) {
+export function AccountPositions({
+  state,
+  update,
+  openEntry,
+}: Pick<ViewProps, "state" | "update" | "openEntry">) {
   const [kind, setKind] = useState("debt");
   const [name, setName] = useState("");
-  const [date, setDate] = useState(today());
+  const [date, setDate] = useState(today(state.timeZone));
   const [amount, setAmount] = useState(0);
   const [selected, setSelected] = useState("");
   const [editing, setEditing] = useState("");
@@ -122,32 +126,56 @@ export function AccountPositions({ state, update }: Pick<ViewProps, "state" | "u
             .filter((b) => !b.deleted && b.debtId === a.id)
             .sort((x, y) => y.date.localeCompare(x.date))[0];
           return (
-            <div className="read-line" key={a.id}>
-              <span>
-                {a.name} ·{" "}
-                {latest
-                  ? `${money(latest.amount)} owed as of ${latest.date}`
-                  : "Unknown amount owed"}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  run(() => {
-                    if (a.active && latest?.amount !== 0)
-                      throw new Error(
-                        "Record a zero amount owed before archiving. Payments alone are insufficient.",
-                      );
-                    return {
-                      ...state,
-                      debts: state.debts?.map((d) =>
-                        d.id === a.id ? { ...d, active: !d.active } : d,
-                      ),
-                    };
-                  })
-                }
-              >
-                {a.active ? "Archive loan" : "Reopen loan"}
-              </button>
+            <div key={a.id}>
+              <div className="read-line">
+                <span>
+                  {a.name} ·{" "}
+                  {latest
+                    ? `${money(latest.amount)} owed as of ${latest.date}`
+                    : "Unknown amount owed"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    run(() => {
+                      if (a.active && latest?.amount !== 0)
+                        throw new Error(
+                          "Record a zero amount owed before archiving. Payments alone are insufficient.",
+                        );
+                      return {
+                        ...state,
+                        debts: state.debts?.map((d) =>
+                          d.id === a.id ? { ...d, active: !d.active } : d,
+                        ),
+                      };
+                    })
+                  }
+                >
+                  {a.active ? "Archive loan" : "Reopen loan"}
+                </button>
+              </div>
+              <details>
+                <summary>Payment history · {a.name}</summary>
+                {state.entries.filter((e) => !e.deleted && e.debtId === a.id).length === 0 && (
+                  <p>No payments recorded. Observations do not create payments.</p>
+                )}
+                {state.entries
+                  .filter((e) => !e.deleted && e.debtId === a.id)
+                  .map((entry) => (
+                    <button
+                      type="button"
+                      className="read-line"
+                      key={entry.id}
+                      onClick={() => openEntry(entry)}
+                    >
+                      <span>
+                        {entry.date} · {entry.note || "Loan payment"}
+                        <small>{fundingLabel(state, entry)}</small>
+                      </span>
+                      <strong>{money(entry.amount)}</strong>
+                    </button>
+                  ))}
+              </details>
             </div>
           );
         })}

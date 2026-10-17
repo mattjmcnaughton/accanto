@@ -88,6 +88,32 @@ export function Month({
     )
       setSetup(false);
   }
+  const actualAmount = (key: string) => {
+    const group = groups.find((g) => g.key === key);
+    return group && !group.incomplete ? group.actual : null;
+  };
+  const actualIncome = actualAmount("income");
+  const newSaving = actualAmount("saving");
+  const usedSavings = savingsUsed(activity);
+  const outflowsKnown = ["fixed", "giving", "spending", "investing"].every(
+    (key) => actualAmount(key) !== null,
+  );
+  const actualMetrics = [
+    ...(["fixed", "investing"] as const).flatMap((key) => {
+      const value = actualAmount(key);
+      const used = savingsUsed(groups.find((g) => g.key === key)?.entries ?? []);
+      const name = key === "fixed" ? "Fixed costs" : "Investment contributions";
+      return [
+        { name: `All ${name.toLowerCase()}`, value },
+        { name: `${name} funded from current income`, value: value === null ? null : value - used },
+      ];
+    }),
+    { name: "New saving from income", value: newSaving },
+    {
+      name: "Net saving (new saving − savings used)",
+      value: newSaving === null || !outflowsKnown ? null : newSaving - usedSavings,
+    },
+  ];
   const renderLine = (item: ReviewLine, child = false) => {
     const group = groups.find((g) => g.key === item.key);
     const open = expanded.includes(item.key);
@@ -192,11 +218,11 @@ export function Month({
                 <Icon name="arrow" size={17} />
               </button>
             </div>
-            {month !== today().slice(0, 7) && (
+            {month !== today(state.timeZone).slice(0, 7) && (
               <button
                 className="button quiet"
                 type="button"
-                onClick={() => setMonth(today().slice(0, 7))}
+                onClick={() => setMonth(today(state.timeZone).slice(0, 7))}
               >
                 Today
               </button>
@@ -304,7 +330,7 @@ export function Month({
                     ? "You can keep recording activity. Later changes will flag this month for another look."
                     : review.checkpoint
                       ? "Activity, notes or the comparison changed. Take another look when you’re ready."
-                      : month === today().slice(0, 7)
+                      : month === today(state.timeZone).slice(0, 7)
                         ? "This month is in progress. These totals reflect only what you’ve recorded."
                         : "Check the recorded activity, then capture what you want to carry forward."}
                 </p>
@@ -418,6 +444,27 @@ export function Month({
                   add up to the overridden total.
                 </p>
               )}
+              <details className="surface editor-section">
+                <summary>Actual percentage formulas</summary>
+                <p className="footnote">
+                  Recorded amounts for this month only. These comparison formulas are provisional;
+                  unknown or incomplete required amounts are unavailable.
+                </p>
+                {actualMetrics.map(({ name, value }) => (
+                  <p className="footnote" key={name}>
+                    {name} ÷ actual net income: {money(value)} ÷ {money(actualIncome)} ={" "}
+                    {value === null || actualIncome === null || actualIncome === 0
+                      ? "Unavailable"
+                      : `${((value / actualIncome) * 100).toFixed(1)}%`}
+                    .
+                  </p>
+                ))}
+                <p className="footnote">
+                  Net saving components: new saving {money(newSaving)} − savings used{" "}
+                  {outflowsKnown ? money(usedSavings) : "unknown/incomplete"}. Transfers and
+                  reconciliation are excluded.
+                </p>
+              </details>
               <section className="surface recent-section">
                 <div className="section-title">
                   <h2>Recent activity</h2>
@@ -508,13 +555,9 @@ export function Month({
                 </p>
                 <p>
                   Net saving = new saving − savings used:{" "}
-                  {groups.find((g) => g.key === "saving")?.actual === null ||
-                  groups.find((g) => g.key === "saving")?.incomplete
-                    ? "Unavailable (saving incomplete)"
-                    : money(
-                        (groups.find((g) => g.key === "saving")?.actual ?? 0) -
-                          savingsUsed(activity),
-                      )}
+                  {newSaving === null || !outflowsKnown
+                    ? "Unavailable (required actuals incomplete)"
+                    : money(newSaving - usedSavings)}
                 </p>
               </section>
               <section className="aside-section">
@@ -535,17 +578,17 @@ export function Month({
                                 : "No target"}
                             </span>
                           </div>
-                          <div className="progress-track">
-                            <span
-                              style={{
-                                width: `${g.target ? Math.min(100, (total / g.target) * 100) : 0}%`,
-                              }}
-                            />
-                          </div>
+                          {g.target > 0 && (
+                            <div className="progress-track">
+                              <span
+                                style={{ width: `${Math.min(100, (total / g.target) * 100)}%` }}
+                              />
+                            </div>
+                          )}
                           <small>
-                            Remaining ÷ target: {money(total)} ÷{" "}
-                            {g.target ? money(g.target) : "not set"} ·{" "}
-                            {money(goalSavings(state, g.id).remaining)} remaining
+                            {g.target > 0
+                              ? `Remaining ÷ target: ${money(total)} ÷ ${money(g.target)}`
+                              : `${money(total)} remaining`}
                           </small>
                         </div>
                       );

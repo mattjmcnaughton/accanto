@@ -34,7 +34,7 @@ export function Goals({
         }
       />
       <SavingsAccounts state={state} update={update} />
-      <AccountPositions state={state} update={update} />
+      <AccountPositions state={state} update={update} openEntry={openEntry} />
       {state.goals.some((g) => !g.active) && (
         <div className="filter-row">
           <label className="check-label">
@@ -80,7 +80,9 @@ export function Goals({
                   </span>
                   <span className="pill">
                     {!g.active
-                      ? "Inactive"
+                      ? g.completed
+                        ? "Completed"
+                        : "Inactive"
                       : total >= g.target && g.target > 0
                         ? "Target reached"
                         : "Saving"}
@@ -93,11 +95,18 @@ export function Goals({
                 </p>
                 <div className="goal-amount">
                   <strong>{money(total)}</strong>
-                  <span>of {money(g.target)}</span>
+                  {g.target > 0 && <span>of {money(g.target)}</span>}
                 </div>
-                <div className="progress-track">
-                  <span style={{ width: `${Math.min(100, percent)}%` }} />
-                </div>
+                {g.target > 0 && (
+                  <>
+                    <div className="progress-track">
+                      <span style={{ width: `${Math.min(100, percent)}%` }} />
+                    </div>
+                    <p className="footnote">
+                      Remaining saved ÷ target: {money(total)} ÷ {money(g.target)}
+                    </p>
+                  </>
+                )}
                 <div className="goal-card-bottom">
                   <span>
                     {g.target ? `${percent}% funded` : "Ongoing · no target"} ·{" "}
@@ -142,6 +151,14 @@ export function Goals({
               </span>
             </div>
             <div className="detail-numbers">
+              <div>
+                <span>Recorded contributions</span>
+                <strong>{money(goalSavings(state, goal.id).contributed)}</strong>
+              </div>
+              <div>
+                <span>Designated opening savings</span>
+                <strong>{money(goal.opening ?? 0)}</strong>
+              </div>
               <div>
                 <span>Savings used</span>
                 <strong>{money(goalSavings(state, goal.id).used)}</strong>
@@ -194,31 +211,34 @@ export function Goals({
                 <Icon name="edit" size={16} />
                 Edit goal
               </button>
-              {goal.role !== "unallocated" && !goal.completed && (
-                <button
-                  type="button"
-                  className="button quiet"
-                  onClick={() =>
-                    update(
-                      {
-                        ...state,
-                        goals: state.goals.map((g) =>
-                          g.id === goal.id ? { ...g, active: !g.active } : g,
-                        ),
-                      },
-                      goal.active ? "Goal made inactive; history kept" : "Goal reactivated",
-                    )
-                  }
-                >
-                  {goal.active ? "Make inactive" : "Reactivate"}
-                </button>
-              )}
+              {goal.role !== "unallocated" &&
+                !goal.completed &&
+                (!goal.accountId ||
+                  state.accounts?.find((a) => a.id === goal.accountId)?.active) && (
+                  <button
+                    type="button"
+                    className="button quiet"
+                    onClick={() =>
+                      update(
+                        {
+                          ...state,
+                          goals: state.goals.map((g) =>
+                            g.id === goal.id ? { ...g, active: !g.active } : g,
+                          ),
+                        },
+                        goal.active ? "Goal made inactive; history kept" : "Goal reactivated",
+                      )
+                    }
+                  >
+                    {goal.active ? "Make inactive" : "Reactivate"}
+                  </button>
+                )}
               {goal.active && goal.purpose === "finite" && (
                 <button
                   type="button"
                   onClick={() => {
                     try {
-                      update(completeGoal(state, goal.id, today()), "Goal completed");
+                      update(completeGoal(state, goal.id, today(state.timeZone)), "Goal completed");
                     } catch (e) {
                       window.alert((e as Error).message);
                     }
@@ -231,8 +251,9 @@ export function Goals({
             </div>
             {!goal.active && (
               <Notice>
-                This goal is inactive. Its history stays visible; reactivate it before recording a
-                new contribution.
+                {goal.completed
+                  ? "This goal is completed. Linked refunds can return here; explicitly reassign returned money to Unallocated. New contributions stay blocked."
+                  : "This goal is inactive. Reopen its account first if archived, then reactivate the goal before a new contribution."}
               </Notice>
             )}
             <h3>Contribution and use history</h3>
@@ -330,11 +351,13 @@ function GoalEditor({
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
           />
         </label>
-        <MoneyField
-          label="Target amount"
-          value={draft.target}
-          onChange={(n) => setDraft({ ...draft, target: n ?? 0 })}
-        />
+        {draft.role !== "unallocated" && (
+          <MoneyField
+            label={draft.purpose === "ongoing" ? "Target amount (optional)" : "Target amount"}
+            value={draft.target}
+            onChange={(n) => setDraft({ ...draft, target: n ?? 0 })}
+          />
+        )}
         <label className="field">
           <span>Savings account</span>
           <select
