@@ -1,8 +1,9 @@
 # Daily workspace prototype
 
 Updated 2026-10-17. The financial meanings are agreed in [CONTEXT.md](../../CONTEXT.md).
-This browser-local implementation evaluates interactions; it is not production
-financial authority, authenticated access, or database durability.
+Reviewed interaction baseline as of 2026-10-17. This browser-local implementation
+evaluates interactions; it is not production financial authority, authenticated
+access, or database durability.
 
 ## Open and preserve work
 
@@ -20,9 +21,15 @@ per-source net amounts and generic savings funding yourself, especially where a
 legacy total override cannot be attributed to individual sources. Historical
 account labels and goal activity are retained as legacy data; they do not become
 funded accounts automatically. Create tracked accounts with deliberately chosen
-starting positions. Historical HTML experiments remain references only.
+starting positions. Earlier HTML experiments are superseded; this is the current
+prototype. Use synthetic examples for shared demonstrations and keep personal
+exports or recordings outside the repository.
 
 ## Complete journeys
+
+Amounts are synthetic. October/November illustrate separate Review periods; use
+dates consistent with account openings and the Entity’s current date when trying
+completion, which currently uses today rather than a date picker.
 
 1. **Plans → Income estimates:** add two monthly salaries: $6,000 gross less
    $1,200 withholding and $300 payroll deductions; $4,000 less $800 and $200.
@@ -32,9 +39,9 @@ starting positions. Historical HTML experiments remain references only.
 2. **Goals → Open a savings account:** open Savings at $800 on October 1.
    Optionally designate opening amounts to named goals during setup; the remainder
    goes to protected ongoing Unallocated, without new contributions. For this
-   journey leave all $800 Unallocated and create a finite Laptop goal with a $1,000 target. Use **Transfer, reassign or reconcile
-   savings** to reassign $800 from Unallocated to Laptop. Account savings stays
-   $800; there is no contribution or income.
+   journey leave all $800 Unallocated and create a finite Laptop goal with a
+   $1,000 target. Use **Transfer, reassign or reconcile savings** to reassign
+   $800 from Unallocated to Laptop. Account savings stays $800; there is no contribution or income.
 3. **Plans:** enter $4,000 monthly net salary and $1,000 planned use of Savings.
    Total funding is $5,000; the tithe target is $400. Add annual/monthly fixed
    costs and destination allocations. Save even if overallocated. The provisional
@@ -51,12 +58,16 @@ starting positions. Historical HTML experiments remain references only.
    purchase-origin changes while refunds exist, and deleting a purchase before
    its refunds are rejected. Deleting a mistaken entry uses soft deletion; undo
    revalidates the history.
-6. **Goal lifecycle:** complete Laptop, reviewing its return to Unallocated.
-   A later linked refund may restore funds to that completed goal; use an
-   explicit reassignment to Unallocated. New contributions remain blocked.
-   Transfer all remaining savings to another account before archival. Reopen
-   restores only goals active when that account was archived.
-7. **Reconciliation:** select one goal and enter a signed dated correction.
+6. **Goal lifecycle (separate variation):** repeat the purchase journey, then
+   complete Laptop while its remaining amount is $0, before recording the refund.
+   Completion uses today in the Entity time zone. Record a later linked refund:
+   Laptop stays completed with $200 remaining. Show inactive goals to inspect it,
+   then explicitly reassign the $200 to Unallocated on/after the refund date.
+   New contributions stay blocked. Transfer all remaining savings to another
+   account before archival. Reopen restores only goals active when that account
+   was archived. Do not attempt a return before the funds exist historically.
+7. **Reconciliation (separate example):** start with a goal holding $5,200 and
+   enter a signed dated correction.
    Reconcile $5,200 to $5,000 with -$200. Opening and contributions stay intact;
    the adjustment affects neither income nor saving actuals. There is no
    physical-bank-account reconciliation or automatic distribution. Use Edit movement
@@ -87,7 +98,9 @@ Unit tests cover legacy snapshots, unknown/zero, exact-cent results, allocation
 rollups, order-sensitive funding, backdated corrections, refunds, transfers,
 completed goals, archival, and observations. Browser tests exercise the main
 loop, backup/restore, keyboard behavior, checkpoints, and account/refund/estimate
-entry. Test fixtures are isolated from the user's browser storage.
+entry. The frontend gate covers formatting, lint, build/typecheck and unit tests;
+Playwright journeys run separately (see [README](../../README.md#verification)).
+Test fixtures are isolated from the user's browser storage.
 
 Browser writes retain before/after snapshots with prototype actor, UTC time and
 interface. These snapshots and tab-conflict checks are prototype continuity
@@ -99,5 +112,9 @@ Advanced income matching and dedicated restoration interfaces remain deferred.
 Cross-Plan sources are not auto-matched by name; unmatched actuals count once and
 expected sources remain unknown. No matching cardinality policy is inferred.
 Opening positions are protected in this prototype; an opening-edit form is not
-provided. Loan observation correction loads the existing observation into the position form.
+provided, even before activity. Investment destinations created through New
+investment have no opening position unless created through the account-opening
+flow; no historical balance is inferred. Loan observation correction loads the
+existing observation into the position form. Immediate Undo delete applies to
+activity entries; savings movements and balance observations have no restore UI.
 No financial data is sent to an external provider.
