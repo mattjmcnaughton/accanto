@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from accanto.dtos.monthly import (
     ActivityInput,
+    KnownTotalInput,
     PlanCopyInput,
     PlanInput,
     ReviewEditInput,
@@ -130,6 +131,17 @@ async def create_activity(
     request_key: RequestKey,
 ):
     return await command(session, token, entity_id, "create_entry", request_key, body)
+
+
+@router.post("/activity/known-total")
+async def create_known_total(
+    entity_id: UUID,
+    body: KnownTotalInput,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await command(session, token, entity_id, "known_total", request_key, body)
 
 
 @router.put("/activity/{entry_id}")

@@ -12,6 +12,15 @@ export interface PlanInput {
   spending: DecimalString;
   expected_revision?: number;
 }
+export interface KnownTotalInput {
+  date: IsoDate;
+  month: IsoDate;
+  category: "income" | "spending";
+  desired_total: DecimalString;
+  source_id?: UUID | null;
+  note?: string;
+  contributing_entries: Array<{ uuid: UUID; revision: number }>;
+}
 export interface ActivityInput {
   date: IsoDate;
   category: "income" | "spending";
@@ -19,6 +28,7 @@ export interface ActivityInput {
   source_id?: UUID | null;
   note?: string;
   expected_revision?: number;
+  is_adjustment?: boolean;
 }
 export interface RevisionInput {
   expected_revision: number;
@@ -61,6 +71,7 @@ export interface Activity {
   source_id: UUID | null;
   note: string;
   revision: number;
+  is_adjustment: boolean;
 }
 export type ReviewEntry = Omit<Activity, "source_id"> & {
   source_uuid: UUID | null;
@@ -140,6 +151,11 @@ export const monthly = {
   createActivity: (entityId: UUID, body: ActivityInput): WriteSpec<Activity> => ({
     method: "POST",
     path: `${root(entityId)}/activity`,
+    body,
+  }),
+  recordKnownTotal: (entityId: UUID, body: KnownTotalInput): WriteSpec<Activity> => ({
+    method: "POST",
+    path: `${root(entityId)}/activity/known-total`,
     body,
   }),
   editActivity: (entityId: UUID, activityId: UUID, body: ActivityInput): WriteSpec<Activity> => ({

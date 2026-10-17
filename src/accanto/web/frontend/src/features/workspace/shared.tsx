@@ -64,14 +64,15 @@ export function MoneyInput({
   label,
   value,
   onChange,
-}: { label: string; value: string; onChange: (value: string) => void }) {
+  signed = false,
+}: { label: string; value: string; onChange: (value: string) => void; signed?: boolean }) {
   return (
     <label>
       {label}
       <input
         required
         inputMode="decimal"
-        pattern="[0-9]+([.][0-9]{1,2})?"
+        pattern={signed ? "-?[0-9]+([.][0-9]{1,2})?" : "[0-9]+([.][0-9]{1,2})?"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />

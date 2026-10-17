@@ -265,7 +265,8 @@ export function MonthlyReview(p: ScreenProps) {
             <ul className="review-entries">
               {state.data.entries.map((entry) => (
                 <li key={entry.uuid}>
-                  <time>{entry.financial_date}</time> · {entry.category} · {dollars(entry.amount)}
+                  <time>{entry.financial_date}</time> · {entry.category}{" "}
+                  {entry.is_adjustment && "adjustment"} · {dollars(entry.amount)}
                   {entry.note && ` · ${entry.note}`}
                 </li>
               ))}

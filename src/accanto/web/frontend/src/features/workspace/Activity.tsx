@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { monthly, type Activity, type ActivityInput } from "../../lib/monthly";
+import {
+  type Activity,
+  type ActivityInput,
+  type KnownTotalInput,
+  monthly,
+} from "../../lib/monthly";
 import {
   LoadMessage,
   MoneyInput,
@@ -14,6 +19,7 @@ export function ActivityScreen(p: ScreenProps) {
   const plans = useLoad(() => monthly.plans(p.entity.id), [p.entity.id, p.refresh, reload]);
   const [selected, setSelected] = useState<Activity | null>(null);
   const [form, setForm] = useState<ActivityInput | null>(null);
+  const [known, setKnown] = useState<KnownTotalInput | null>(null);
   const sources = plans.kind === "ready" ? sourceChoices(plans.data) : [];
   function update(value: ActivityInput) {
     setForm(value);
@@ -22,6 +28,7 @@ export function ActivityScreen(p: ScreenProps) {
   function open(entry: Activity | null) {
     if (!p.guard()) return;
     setSelected(entry);
+    setKnown(null);
     setForm(
       entry
         ? {
@@ -31,13 +38,30 @@ export function ActivityScreen(p: ScreenProps) {
             source_id: entry.source_id,
             note: entry.note,
             expected_revision: entry.revision,
+            is_adjustment: entry.is_adjustment,
           }
         : { date: p.entity.today, category: "spending", amount: "", source_id: null, note: "" },
     );
     p.dirty(!entry);
   }
+  function openKnown() {
+    if (!p.guard()) return;
+    setSelected(null);
+    setForm(null);
+    setKnown({
+      date: p.entity.today,
+      month: `${p.entity.today.slice(0, 7)}-01`,
+      category: "spending",
+      desired_total: "",
+      source_id: null,
+      note: "",
+      contributing_entries: [],
+    });
+    p.dirty(true);
+  }
   function done() {
     setForm(null);
+    setKnown(null);
     setSelected(null);
     p.dirty(false);
   }
@@ -52,6 +76,9 @@ export function ActivityScreen(p: ScreenProps) {
         <button type="button" disabled={p.busy} onClick={() => open(null)}>
           Record activity
         </button>
+        <button type="button" disabled={p.busy} onClick={openKnown}>
+          Enter known total
+        </button>
       </div>
       <LoadMessage state={entries} retry={() => setReload((x) => x + 1)} />
       <LoadMessage state={plans} retry={() => setReload((x) => x + 1)} />
@@ -64,6 +91,7 @@ export function ActivityScreen(p: ScreenProps) {
                 <p>
                   <time>{entry.financial_date}</time> ·{" "}
                   {entry.category === "income" ? "Income" : "Guilt-free spending"}
+                  {entry.is_adjustment && " · Adjustment"}
                 </p>
                 <strong>{dollars(entry.amount)}</strong>
                 <p>
@@ -123,7 +151,16 @@ export function ActivityScreen(p: ScreenProps) {
                 label="Amount (USD)"
                 value={form.amount}
                 onChange={(amount) => update({ ...form, amount })}
+                signed={form.is_adjustment}
               />
+              <label>
+                <input
+                  type="checkbox"
+                  checked={Boolean(form.is_adjustment)}
+                  onChange={(e) => update({ ...form, is_adjustment: e.target.checked })}
+                />
+                Adjustment to recorded total
+              </label>
               {form.category === "income" && (
                 <label>
                   Income source
@@ -171,6 +208,110 @@ export function ActivityScreen(p: ScreenProps) {
                   Delete activity
                 </button>
               )}
+            </fieldset>
+          </form>
+        )}
+        {known && (
+          <form
+            className="editor"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (entries.kind !== "ready" && entries.kind !== "empty") return;
+              const current = entries.kind === "ready" ? entries.data : [];
+              p.save(
+                monthly.recordKnownTotal(p.entity.id, {
+                  ...known,
+                  contributing_entries: current
+                    .filter(
+                      (entry) =>
+                        entry.financial_date.slice(0, 7) === known.month.slice(0, 7) &&
+                        entry.category === known.category &&
+                        (known.category === "spending" || entry.source_id === known.source_id),
+                    )
+                    .map(({ uuid, revision }) => ({ uuid, revision })),
+                }),
+                done,
+              );
+            }}
+          >
+            <fieldset disabled={p.busy}>
+              <legend>Enter known total</legend>
+              <p>A dated adjustment records the difference. Later detail adds to this total.</p>
+              <label>
+                Financial date
+                <input
+                  type="date"
+                  required
+                  value={known.date}
+                  onChange={(e) => {
+                    const date = e.target.value;
+                    setKnown({ ...known, date, month: `${date.slice(0, 7)}-01` });
+                    p.dirty(true);
+                  }}
+                />
+              </label>
+              <label>
+                Category
+                <select
+                  value={known.category}
+                  onChange={(e) => {
+                    setKnown({
+                      ...known,
+                      category: e.target.value as "income" | "spending",
+                      source_id: null,
+                    });
+                    p.dirty(true);
+                  }}
+                >
+                  <option value="spending">Guilt-free spending</option>
+                  <option value="income">Income</option>
+                </select>
+              </label>
+              {known.category === "income" && (
+                <label>
+                  Income source
+                  <select
+                    value={known.source_id || ""}
+                    onChange={(e) => {
+                      setKnown({ ...known, source_id: e.target.value || null });
+                      p.dirty(true);
+                    }}
+                  >
+                    <option value="">Unassigned income</option>
+                    {sources.map((source) => (
+                      <option key={source.id} value={source.id}>
+                        {source.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <MoneyInput
+                label="Known total (USD)"
+                value={known.desired_total}
+                onChange={(desired_total) => {
+                  setKnown({ ...known, desired_total });
+                  p.dirty(true);
+                }}
+              />
+              <label>
+                Note
+                <textarea
+                  maxLength={2000}
+                  value={known.note || ""}
+                  onChange={(e) => {
+                    setKnown({ ...known, note: e.target.value });
+                    p.dirty(true);
+                  }}
+                />
+              </label>
+              <button
+                className="primary"
+                type="submit"
+                disabled={entries.kind !== "ready" && entries.kind !== "empty"}
+              >
+                Save adjustment
+              </button>
             </fieldset>
           </form>
         )}
