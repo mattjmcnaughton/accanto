@@ -76,7 +76,7 @@ async def write(
     operation: str,
     request_key: str,
     payload: dict,
-    target: UUID | None = None,
+    target: UUID | date | None = None,
 ):
     """One commit includes financial records, snapshots and recorded retry response."""
     async with session.begin():
@@ -468,6 +468,80 @@ async def write(
             )
             response = json_values(dict(record))
             await audit(m.reviews, record["uuid"], None, response)
+        elif operation == "edit_review":
+            old = (
+                (
+                    await session.execute(
+                        select(m.reviews).where(
+                            m.reviews.c.entity_id == entity["id"],
+                            m.reviews.c.month == target,
+                        )
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if old is None:
+                raise RejectionError(
+                    "review_not_found", "Create a Review for this month first.", 404
+                )
+            check_revision(old, payload["expected_revision"])
+            version = await scoped(
+                session, m.revisions, entity["id"], payload["version_id"]
+            )
+            if not version["saved"]:
+                raise RejectionError("unsaved_version", "Choose a saved Plan version.")
+            current_version = await session.scalar(
+                select(m.revisions.c.plan_id).where(
+                    m.revisions.c.id == old["plan_revision_id"]
+                )
+            )
+            if version["plan_id"] != current_version:
+                raise RejectionError(
+                    "cross_plan_retarget_unavailable",
+                    "Choose a saved version of this Review's Plan.",
+                )
+            if payload["checkpoint"] and not payload["reviewed"]:
+                raise RejectionError(
+                    "invalid_checkpoint", "Mark the month reviewed first."
+                )
+            new_checkpoint = payload["reviewed"] and (
+                not old["reviewed_at"] or payload["checkpoint"]
+            )
+            reviewed_at = (
+                (datetime.now(UTC) if new_checkpoint else old["reviewed_at"])
+                if payload["reviewed"]
+                else None
+            )
+            fingerprint = old["checkpoint_fingerprint"] if payload["reviewed"] else None
+            if new_checkpoint:
+                fingerprint = await review_fingerprint(
+                    session,
+                    entity["id"],
+                    old["month"],
+                    version["uuid"],
+                    payload["note"],
+                )
+            record = (
+                (
+                    await session.execute(
+                        update(m.reviews)
+                        .where(m.reviews.c.id == old["id"])
+                        .values(
+                            plan_revision_id=version["id"],
+                            note=payload["note"],
+                            reviewed_at=reviewed_at,
+                            checkpoint_fingerprint=fingerprint,
+                            revision=old["revision"] + 1,
+                        )
+                        .returning(m.reviews)
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            response = json_values(dict(record))
+            await audit(m.reviews, record["uuid"], dict(old), response)
         elif operation in {"create_estimate", "edit_estimate", "duplicate_estimate"}:
             from accanto.services.income_estimates import write_estimate
 
@@ -499,6 +573,27 @@ async def entry_snapshot(session, record):
         .where(m.assignments.c.actual_entry_id == record["id"])
     )
     return json_values({**dict(record), "source_id": source_uuid})
+
+
+async def review_fingerprint(session, entity_id, month, version_uuid, note):
+    next_month = date(month.year + (month.month == 12), month.month % 12 + 1, 1)
+    rows = (
+        await session.execute(
+            select(m.entries.c.uuid, m.entries.c.revision)
+            .where(
+                m.entries.c.entity_id == entity_id,
+                m.entries.c.deleted_at.is_(None),
+                m.entries.c.financial_date >= month,
+                m.entries.c.financial_date < next_month,
+            )
+            .order_by(m.entries.c.uuid)
+        )
+    ).all()
+    canonical = json.dumps(
+        [str(version_uuid), note, [(str(uuid), revision) for uuid, revision in rows]],
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 async def read_review(session, token, entity_uuid, month: date):
@@ -568,6 +663,13 @@ async def read_review(session, token, entity_uuid, month: date):
         return json_values(
             {
                 "review": dict(review),
+                "checkpoint_changed": bool(
+                    review["reviewed_at"]
+                    and review["checkpoint_fingerprint"]
+                    != await review_fingerprint(
+                        session, entity["id"], month, version["uuid"], review["note"]
+                    )
+                ),
                 "version": await plan_snapshot(session, version),
                 "actual": actual,
                 "entries": [dict(e) for e in entries],

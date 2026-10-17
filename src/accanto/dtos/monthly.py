@@ -72,3 +72,11 @@ class ReviewInput(Input):
         if value.day != 1:
             raise ValueError("Use the first calendar day of the Review month.")
         return value
+
+
+class ReviewEditInput(Input):
+    expected_revision: int = Field(ge=1)
+    version_id: UUID
+    note: str = Field(max_length=4000)
+    reviewed: bool
+    checkpoint: bool = False

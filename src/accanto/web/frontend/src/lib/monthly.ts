@@ -27,6 +27,13 @@ export interface ReviewInput {
   month: IsoDate;
   version_id: UUID;
 }
+export interface ReviewEditInput {
+  expected_revision: number;
+  version_id: UUID;
+  note: string;
+  reviewed: boolean;
+  checkpoint?: boolean;
+}
 
 export interface PlanRevision {
   uuid: UUID;
@@ -55,9 +62,18 @@ export interface Activity {
   note: string;
   revision: number;
 }
-export type ReviewEntry = Omit<Activity, "source_id"> & { source_uuid: UUID | null };
+export type ReviewEntry = Omit<Activity, "source_id"> & {
+  source_uuid: UUID | null;
+};
 export interface ReviewResult {
-  review: { uuid: UUID; month: IsoDate };
+  review: {
+    uuid: UUID;
+    month: IsoDate;
+    revision: number;
+    note: string;
+    reviewed_at: string | null;
+  };
+  checkpoint_changed: boolean;
   version: PlanRevision;
   entries: ReviewEntry[];
   actual: {
@@ -139,6 +155,11 @@ export const monthly = {
   createReview: (entityId: UUID, body: ReviewInput): WriteSpec<{ uuid: UUID; month: IsoDate }> => ({
     method: "POST",
     path: `${root(entityId)}/reviews`,
+    body,
+  }),
+  editReview: (entityId: UUID, month: IsoDate, body: ReviewEditInput): WriteSpec<object> => ({
+    method: "PUT",
+    path: `${root(entityId)}/reviews/${encodeURIComponent(month)}`,
     body,
   }),
 };

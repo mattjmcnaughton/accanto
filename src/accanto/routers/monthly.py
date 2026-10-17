@@ -11,6 +11,7 @@ from accanto.dtos.monthly import (
     ActivityInput,
     PlanCopyInput,
     PlanInput,
+    ReviewEditInput,
     ReviewInput,
     RevisionInput,
 )
@@ -180,6 +181,22 @@ async def get_review(entity_id: UUID, month: date, session: Session, token: Toke
         raise HTTPException(
             error.status, {"code": error.code, "message": error.message}
         ) from None
+
+
+@router.put("/reviews/{month}")
+async def edit_review(
+    entity_id: UUID,
+    month: date,
+    body: ReviewEditInput,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    if month.day != 1:
+        raise HTTPException(422, "Use the first day of the calendar month.")
+    return await command(
+        session, token, entity_id, "edit_review", request_key, body, month
+    )
 
 
 @router.get("/plans")

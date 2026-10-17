@@ -166,6 +166,8 @@ reviews = table(
     Column("plan_revision_id", BigInteger, nullable=False),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("note", String(4000), nullable=False, server_default=""),
+    Column("reviewed_at", DateTime(timezone=True)),
+    Column("checkpoint_fingerprint", String(64)),
     ForeignKeyConstraint(
         ["plan_revision_id", "entity_id"],
         ["plan_revision.id", "plan_revision.entity_id"],
