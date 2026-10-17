@@ -1,6 +1,6 @@
 # 01 — MVP implementation tickets
 
-Status: Implementation in progress; 001–002 complete locally, 003–004 in progress
+Status: Implementation in progress; 001–004 complete locally, 005–006 in progress
 
 This backlog implements the [MVP PRD](../../prd/01-mvp.md) and
 [MVP TDD](../../tdds/01-mvp.md), under [CONTEXT](../../../CONTEXT.md) and the
@@ -66,7 +66,7 @@ router/service/repository boundaries; no generic rule engine or event framework.
 
 Dependencies are completion prerequisites, not a requirement to work serially.
 For later financial tickets, dependency 005 supplies the common API-backed UI.
-Tickets 001–002 are **Complete locally**; 003–004 are **In progress**. Other
+Tickets 001–004 are **Complete locally**; 005–006 are **In progress**. Other
 tickets are **Todo**, except 021 (**Policy blocked**) and 022 (**Provider gated**
 for hosted verification). A dependency being satisfied does not mark a ticket done.
 
@@ -160,6 +160,13 @@ No browser UI or hosted provider needed to establish these guarantees.
 
 ### 003 — Browser sign-in, session lifecycle and Entity discovery
 
+**Status: Complete locally.** Integration commit `dddb16d` (ticket commit
+`f73307b`). Backend gates and six real-Postgres integration tests pass. Independent
+review found and resolved an unsupported-actor validation defect. Frozen semantic
+mutations demonstrate Origin and verified-email enforcement; local signed-provider
+agent-browser sign-in, Entity discovery and logout pass. Real-provider configuration
+and hosted compatibility remain manual release requirements.
+
 **Outcome:** an admitted, operator-provisioned User can sign in, discover their
 Entity and sign out without putting a long-lived API key in the browser.
 
@@ -176,6 +183,13 @@ locally; actual provider compatibility is opt-in and required before browser
 release. No public self-registration, sharing or automatic Entity creation.
 
 ### 004 — Frontend API transport and recoverable writes
+
+**Status: Complete locally.** Integration commit `73852d3` (ticket commit
+`1e429bb`). Frontend gates and 15 focused tests pass. Independent review findings
+on superseded requests, logout clearing and Review source identifiers were resolved.
+Frozen mutations detect unsafe transport, regenerated retry keys and wrong-User
+submission/actions. Isolated agent-browser checks pass at 320/390px and distinguish
+the wrong-User UI mutation. Full financial browser journeys belong to 005.
 
 **Outcome:** new screens can load authoritative data and recover from uncertain
 writes without losing input or duplicating activity.
