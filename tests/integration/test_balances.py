@@ -525,18 +525,16 @@ async def scenario():
             )
             == 1
         )
-        assert (
-            await session.scalar(
-                select(func.count())
-                .select_from(m.audit)
-                .where(
-                    m.audit.c.record_type == "debt_balance_observation",
-                    m.audit.c.entity_id
-                    == (
-                        select(m.entities.c.id).where(m.entities.c.uuid == entity)
-                    ).scalar_subquery(),
-                )
+        audit_count = await session.scalar(
+            select(func.count())
+            .select_from(m.audit)
+            .where(
+                m.audit.c.record_type == "debt_balance_observation",
+                m.audit.c.entity_id
+                == (
+                    select(m.entities.c.id).where(m.entities.c.uuid == entity)
+                ).scalar_subquery(),
             )
-            >= 4
         )
+        assert (audit_count or 0) >= 4
     await engine.dispose()
