@@ -4,6 +4,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   gate:
     runs-on: ubuntu-latest
@@ -20,3 +25,71 @@ jobs:
         working-directory: src/accanto/web/frontend
       - uses: extractions/setup-just@v2
       - run: just gate
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: accanto_integration_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: synthetic-ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d accanto_integration_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:synthetic-ci-password@127.0.0.1:5432/accanto_integration_test
+      ACCANTO_TEST_DATABASE_URL: postgresql+asyncpg://postgres:synthetic-ci-password@127.0.0.1:5432/accanto_integration_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv python install 3.12
+      - run: uv sync --dev --frozen --python 3.12
+      - uses: extractions/setup-just@v2
+      - run: uv run alembic upgrade head
+      - run: just test-integration
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: accanto_e2e_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: synthetic-ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d accanto_e2e_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:synthetic-ci-password@127.0.0.1:5432/accanto_e2e_test
+      ACCANTO_E2E_DATABASE_URL: postgresql+asyncpg://postgres:synthetic-ci-password@127.0.0.1:5432/accanto_e2e_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv python install 3.12
+      - run: uv sync --dev --frozen --python 3.12
+      - uses: extractions/setup-just@v2
+      - run: uv run alembic upgrade head
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install -g pnpm@11.21.0
+      - run: pnpm install --frozen-lockfile && pnpm build
+        working-directory: src/accanto/web/frontend
+      # Browser tooling has its own runtime; the application still builds on 22.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install -g agent-browser@0.34.0
+      - run: agent-browser install
+      - run: just test-e2e
