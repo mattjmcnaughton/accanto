@@ -3,24 +3,21 @@
 A financial companion for planning a rich life: conscious spending, giving,
 experiences, consumption, saving, and financial independence.
 
-The active frontend is a new production shell. It explicitly reports that
-sign-in and the Entity workspace are not connected yet; it does not load the
-browser-local design prototype or financial data. The backend supports an
-authenticated direct-API income/spending Plan → activity → monthly Review loop
-with Postgres persistence. See [API usage](docs/api.md). Browser sign-in and
-API-backed workflows are planned in the [MVP tickets](docs/technical/tickets/01-mvp.md).
+The production frontend uses browser sign-in and the authenticated API for
+income/spending Plans, dated activity, and monthly Reviews with Postgres persistence.
+Plans have editable drafts and immutable saved versions; Reviews retain their chosen
+comparison. Failed writes preserve attempted input for explicit recovery in the same
+tab. Remaining financial categories are tracked in the [MVP tickets](docs/technical/tickets/01-mvp.md).
+See [API usage](docs/api.md) and [browser configuration](docs/development.md#browser-identity-setup-manual-provider-configuration).
 
-## Run the production shell
+## Run the production workspace
 
-With Node 22+, pnpm 11.21.0 and just:
+Follow the full-stack setup below, configure browser authentication, and provision
+an admitted identity. The UI reports an unavailable backend or sign-in explicitly;
+it never falls back to browser-local financial data. A local signed provider fixture
+is available for isolated synthetic testing in the development guide.
 
-```sh
-pnpm --dir src/accanto/web/frontend install --frozen-lockfile
-just dev-fe
-```
-
-Follow the local URL printed by Vite (normally http://localhost:5173). The
-shell needs no Python server or database. The accepted browser-local design
+The accepted browser-local design
 [prototype remains available as standalone HTML](docs/product/daily-workspace-prototype.html),
 with its [walkthrough](docs/product/prototype-review.md). It is a legacy reference,
 not the active frontend, and its committed HTML is not rebuilt from the production
@@ -64,9 +61,11 @@ just gate
 ```
 
 Checks formatting, linting, types, the frontend build, and backend and frontend
-unit tests. For frontend-only changes, use `just gate-fe`. The old prototype
-browser suite has been retired; production browser journeys will be added with
-the API-backed workflows.
+unit tests. For frontend-only changes, use `just gate-fe`. Component tests cover
+source identity, Review selection, unknown values, retry identity and session recovery.
+Local agent-browser acceptance covers the real API/Postgres monthly journey using
+synthetic data; the prototype browser suite is retired. Hosted provider compatibility
+remains a manual release check.
 Backend integration tests exercise the monthly API against an explicitly configured local
 test database; see [development](docs/development.md). Backend E2E remains pending.
 
@@ -84,8 +83,9 @@ docker run --rm -p 8000:8000 \
   accanto:local
 ```
 
-The image builds React and runs FastAPI as a non-root user. It serves the new
-production shell while browser access is being built. Run migrations using
+The image builds React and runs FastAPI as a non-root user. It serves the production
+workspace and API. Supply the browser authentication settings described in the
+development guide. Run migrations using
 `alembic upgrade head` inside the image against the same database before startup.
 No deployment, browser identity provider, hosted MCP, or AI provider is configured.
 Use a separate restricted database runtime role as described in the API guide.
