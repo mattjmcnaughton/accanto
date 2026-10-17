@@ -235,6 +235,81 @@ async def scenario():
         current = (await client.get(prefix + "/reviews/2026-10-01")).json()
         assert current["income_difference"] == "0.00"
         assert current["spending_difference"] == "-4400.00"
+        # Known total is a signed correction against the exact displayed entries.
+        assert (
+            await post(
+                "/activity",
+                {"date": "2026-10-16", "category": "spending", "amount": "110"},
+            )
+        ).status_code == 200
+        spending = [
+            entry
+            for entry in (await client.get(prefix + "/activity")).json()
+            if entry["category"] == "spending"
+        ]
+        fingerprint = [
+            {"uuid": entry["uuid"], "revision": entry["revision"]} for entry in spending
+        ]
+        total_body = {
+            "date": "2026-10-16",
+            "month": "2026-10-01",
+            "category": "spending",
+            "desired_total": "250",
+            "contributing_entries": fingerprint,
+        }
+        total = await post("/activity/known-total", total_body)
+        assert total.status_code == 200, total.text
+        adjustment = total.json()
+        assert adjustment["amount"] == "40.00" and adjustment["is_adjustment"]
+        assert (await client.get(prefix + "/reviews/2026-10-01")).json()["actual"][
+            "spending_recorded"
+        ] == "250.00"
+        assert (
+            await post(
+                "/activity",
+                {"date": "2026-10-16", "category": "income", "amount": "-1"},
+            )
+        ).status_code == 422
+        assert (await post("/activity/known-total", total_body)).status_code == 409
+        deleted_adjustment = await client.request(
+            "DELETE",
+            prefix + f"/activity/{adjustment['uuid']}",
+            json={"expected_revision": 1},
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert deleted_adjustment.status_code == 200
+        assert (await client.get(prefix + "/reviews/2026-10-01")).json()["actual"][
+            "spending_recorded"
+        ] == "210.00"
+        # Later detail adds; competing totals cannot share a fingerprint.
+        again = await post("/activity/known-total", total_body)
+        assert again.status_code == 200 and again.json()["amount"] == "40.00"
+        assert (
+            await post(
+                "/activity",
+                {"date": "2026-10-17", "category": "spending", "amount": "40"},
+            )
+        ).status_code == 200
+        assert (await client.get(prefix + "/reviews/2026-10-01")).json()["actual"][
+            "spending_recorded"
+        ] == "290.00"
+        spending = [
+            entry
+            for entry in (await client.get(prefix + "/activity")).json()
+            if entry["category"] == "spending"
+        ]
+        raced_body = {
+            **total_body,
+            "contributing_entries": [
+                {"uuid": entry["uuid"], "revision": entry["revision"]}
+                for entry in spending
+            ],
+        }
+        raced_totals = await asyncio.gather(
+            post("/activity/known-total", {**raced_body, "desired_total": "300"}),
+            post("/activity/known-total", {**raced_body, "desired_total": "310"}),
+        )
+        assert sorted(result.status_code for result in raced_totals) == [200, 409]
         assert (
             await post("/activity", {**entry_body, "amount": "1.001"})
         ).status_code == 422

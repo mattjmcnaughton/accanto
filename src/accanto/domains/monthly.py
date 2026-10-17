@@ -17,6 +17,13 @@ def money(value: str, *, signed: bool = False) -> Decimal:
     return amount.quantize(CENT)
 
 
+def known_total_delta(desired: str, amounts: list[Decimal]) -> Decimal:
+    """A known total adds a dated correction; it never replaces existing entries."""
+    total = money(desired)
+    delta = total - sum(amounts, Decimal("0.00"))
+    return money(str(delta), signed=True)
+
+
 def plan_results(incomes: list[Decimal], spending: Decimal) -> dict[str, str]:
     """Overallocation is a result to display, not a rejection."""
     incomes = [money(str(value)) for value in incomes]

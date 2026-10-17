@@ -10,7 +10,12 @@ from sqlalchemy import delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from accanto.domains.entity import entity_settings
-from accanto.domains.monthly import money, monthly_actuals, plan_results
+from accanto.domains.monthly import (
+    known_total_delta,
+    money,
+    monthly_actuals,
+    plan_results,
+)
 from accanto.models import monthly as m
 from accanto.repositories.monthly import plan_lines
 from accanto.services.access import AuthenticatedActor, RejectionError, revalidate_actor
@@ -373,10 +378,10 @@ async def write(
             }
             await audit(m.revisions, record["uuid"], before, response["version"])
             await audit(m.revisions, draft["uuid"], None, response["draft"])
-        elif operation in {"create_entry", "edit_entry", "delete_entry"}:
+        elif operation in {"create_entry", "edit_entry", "delete_entry", "known_total"}:
             old = None
             before = None
-            if operation != "create_entry":
+            if operation in {"edit_entry", "delete_entry"}:
                 old = await scoped(session, m.entries, entity["id"], target)
                 check_revision(old, payload.get("expected_revision"))
                 if old["deleted_at"]:
@@ -394,6 +399,64 @@ async def write(
                 source = await scoped(
                     session, m.sources, entity["id"], payload["source_id"]
                 )
+            if operation == "known_total":
+                next_month = date(
+                    payload["month"].year + (payload["month"].month == 12),
+                    payload["month"].month % 12 + 1,
+                    1,
+                )
+                contributing = (
+                    (
+                        await session.execute(
+                            select(m.entries, m.sources.c.uuid.label("source_uuid"))
+                            .outerjoin(
+                                m.assignments,
+                                m.assignments.c.actual_entry_id == m.entries.c.id,
+                            )
+                            .outerjoin(
+                                m.sources,
+                                m.sources.c.id == m.assignments.c.income_source_id,
+                            )
+                            .where(
+                                m.entries.c.entity_id == entity["id"],
+                                m.entries.c.deleted_at.is_(None),
+                                m.entries.c.financial_date >= payload["month"],
+                                m.entries.c.financial_date < next_month,
+                                m.entries.c.category == payload["category"],
+                            )
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                if payload["category"] == "income":
+                    contributing = [
+                        row
+                        for row in contributing
+                        if row["source_uuid"] == payload.get("source_id")
+                    ]
+                actual_fingerprint = sorted(
+                    (str(row["uuid"]), row["revision"]) for row in contributing
+                )
+                expected_fingerprint = sorted(
+                    (str(row["uuid"]), row["revision"])
+                    for row in payload["contributing_entries"]
+                )
+                if actual_fingerprint != expected_fingerprint:
+                    raise RejectionError(
+                        "stale_total",
+                        "Activity changed. Review entries before saving this total.",
+                    )
+                payload = {
+                    **payload,
+                    "amount": str(
+                        known_total_delta(
+                            payload["desired_total"],
+                            [row["amount"] for row in contributing],
+                        )
+                    ),
+                    "is_adjustment": True,
+                }
             if operation == "delete_entry":
                 assert old is not None
                 values = {
@@ -405,8 +468,9 @@ async def write(
                     "entity_id": entity["id"],
                     "financial_date": payload["date"],
                     "category": payload["category"],
-                    "amount": money(payload["amount"]),
+                    "amount": money(payload["amount"], signed=payload["is_adjustment"]),
                     "note": payload["note"],
+                    "is_adjustment": payload["is_adjustment"],
                     "revision": old["revision"] + 1 if old else 1,
                 }
             statement = (

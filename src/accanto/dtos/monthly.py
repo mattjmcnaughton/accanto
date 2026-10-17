@@ -4,7 +4,7 @@ from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from accanto.domains.monthly import money
 
@@ -51,11 +51,48 @@ class ActivityInput(Input):
     source_id: UUID | None = None
     note: str = Field(default="", max_length=2000)
     expected_revision: int | None = Field(default=None, ge=1)
+    is_adjustment: bool = False
 
     @field_validator("amount")
     @classmethod
     def valid_amount(cls, value: str) -> str:
+        return str(money(value, signed=True))
+
+    @model_validator(mode="after")
+    def ordinary_amount(self):
+        if not self.is_adjustment:
+            money(self.amount)
+        return self
+
+
+class EntryFingerprint(Input):
+    uuid: UUID
+    revision: int = Field(ge=1)
+
+
+class KnownTotalInput(Input):
+    date: date
+    month: date
+    category: Literal["income", "spending"]
+    desired_total: str
+    source_id: UUID | None = None
+    note: str = Field(default="", max_length=2000)
+    contributing_entries: list[EntryFingerprint]
+
+    @field_validator("desired_total")
+    @classmethod
+    def valid_total(cls, value: str) -> str:
         return str(money(value))
+
+    @model_validator(mode="after")
+    def matching_month(self):
+        if self.month.day != 1 or self.date.strftime("%Y-%m") != self.month.strftime(
+            "%Y-%m"
+        ):
+            raise ValueError("Financial date must be in the selected Review month.")
+        if self.category == "spending" and self.source_id is not None:
+            raise ValueError("Spending totals cannot select an Income source.")
+        return self
 
 
 class RevisionInput(Input):

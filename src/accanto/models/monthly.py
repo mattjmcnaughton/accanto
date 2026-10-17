@@ -140,10 +140,12 @@ entries = table(
     Column("category", String, nullable=False),
     Column("amount", Numeric(14, 2), nullable=False),
     Column("note", String(2000), nullable=False),
+    Column("is_adjustment", Boolean, nullable=False, server_default="false"),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("deleted_at", DateTime(timezone=True)),
     CheckConstraint("category IN ('income', 'spending')"),
-    CheckConstraint("amount >= 0 AND amount <= 999999999.99"),
+    CheckConstraint("amount BETWEEN -999999999.99 AND 999999999.99"),
+    CheckConstraint("is_adjustment OR amount >= 0"),
     UniqueConstraint("id", "entity_id"),
 )
 assignments = table(
