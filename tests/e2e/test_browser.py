@@ -309,6 +309,161 @@ def test_signed_in_workspace(tmp_path):
         review_text = browser("get", "text", "body")
         assert "New saving" in review_text and "$200.00" in review_text
         assert "$1200.00" in review_text
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "Investments and giving",
+            "--exact",
+        )
+        browser("wait", "--text", "No investment destinations yet.")
+        browser(
+            "find", "role", "button", "click", "--name", "Add investment", "--exact"
+        )
+        browser("find", "label", "Name", "fill", "Example fund")
+        browser(
+            "find",
+            "label",
+            "Cumulative contribution target (USD, optional)",
+            "fill",
+            "2000.00",
+        )
+        browser(
+            "find",
+            "label",
+            "Opening observed value (USD, optional)",
+            "fill",
+            "25000.00",
+        )
+        browser(
+            "find", "role", "button", "click", "--name", "Save destination", "--exact"
+        )
+        browser("wait", "--text", "Opening observed value $25000.00")
+        assert "Active · Contributions $0.00" in browser("get", "text", "body")
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "Record contribution",
+            "--exact",
+        )
+        browser("find", "label", "Amount (USD)", "fill", "1000.00")
+        investment_option = (
+            browser(
+                "eval",
+                "Array.from(document.querySelector('form.editor select').options)"
+                ".find(option => option.textContent === 'Example fund').value",
+            )
+            .strip()
+            .strip('"')
+        )
+        browser("select", "form.editor select", investment_option)
+        browser(
+            "find", "role", "button", "click", "--name", "Save contribution", "--exact"
+        )
+        browser("wait", "--text", "Active · Contributions $1000.00")
+        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        browser("wait", "--text", "Investment contribution")
+        investment_activity = browser(
+            "eval",
+            "Array.from(document.querySelectorAll('.record-list article'))"
+            ".find(article => article.textContent"
+            ".includes('Investment contribution')).textContent",
+        )
+        assert (
+            "Example fund" in investment_activity
+            and "Unassigned" not in investment_activity
+        )
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "Investments and giving",
+            "--exact",
+        )
+        browser(
+            "find", "role", "button", "click", "--name", "Giving recipients", "--exact"
+        )
+        browser("wait", "--text", "No giving destinations yet.")
+        browser("find", "role", "button", "click", "--name", "Add recipient", "--exact")
+        browser("find", "label", "Name", "fill", "Example recipient")
+        browser(
+            "find",
+            "label",
+            "Cumulative contribution target (USD, optional)",
+            "fill",
+            "500.00",
+        )
+        browser(
+            "find", "role", "button", "click", "--name", "Save destination", "--exact"
+        )
+        browser("wait", "--text", "Example recipient")
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "Record contribution",
+            "--exact",
+        )
+        browser("find", "label", "Amount (USD)", "fill", "100.00")
+        giving_option = (
+            browser(
+                "eval",
+                "Array.from(document.querySelector('form.editor select').options)"
+                ".find(option => option.textContent === 'Example recipient').value",
+            )
+            .strip()
+            .strip('"')
+        )
+        browser("select", "form.editor select", giving_option)
+        browser(
+            "find", "role", "button", "click", "--name", "Save contribution", "--exact"
+        )
+        browser("wait", "--text", "Active · Contributions $100.00")
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "Record contribution",
+            "--exact",
+        )
+        browser("find", "label", "Adjustment to recorded total", "check")
+        browser("find", "label", "Amount (USD)", "fill", "-25.00")
+        browser("select", "form.editor select", giving_option)
+        browser(
+            "find", "role", "button", "click", "--name", "Save contribution", "--exact"
+        )
+        browser("wait", "--text", "Active · Contributions $75.00")
+        browser("set", "viewport", "360", "780")
+        browser("reload")
+        browser("wait", "--text", "Synthetic E2E Entity")
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "Investments and giving",
+            "--exact",
+        )
+        browser("wait", "--text", "Opening observed value $25000.00")
+        assert "Active · Contributions $1000.00" in browser("get", "text", "body")
+        assert (
+            browser(
+                "eval", "document.documentElement.scrollWidth <= innerWidth"
+            ).strip()
+            == "true"
+        )
         browser("find", "role", "button", "click", "--name", "Sign out", "--exact")
         browser("wait", "--text", "Sign in")
         assert "Synthetic E2E Entity" not in browser("get", "text", "body")

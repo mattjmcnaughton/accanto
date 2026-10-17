@@ -65,12 +65,19 @@ export function MoneyInput({
   value,
   onChange,
   signed = false,
-}: { label: string; value: string; onChange: (value: string) => void; signed?: boolean }) {
+  required = true,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  signed?: boolean;
+  required?: boolean;
+}) {
   return (
     <label>
       {label}
       <input
-        required
+        required={required}
         inputMode="decimal"
         pattern={signed ? "-?[0-9]+([.][0-9]{1,2})?" : "[0-9]+([.][0-9]{1,2})?"}
         value={value}

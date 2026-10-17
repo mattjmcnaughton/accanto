@@ -2,7 +2,8 @@
 
 The production API supports direct net-income Plans and guilt-free spending,
 dated income/spending/saving entries, monthly Reviews against saved versions,
-independent income estimates, and savings account openings/goals. The production
+independent income estimates, savings account openings/goals, and investment/giving
+destinations with recorded contributions. The production
 browser uses these commands with cookie sessions; the preserved standalone
 prototype remains a separate reference. Fixed costs, refunds
 and observations are not yet production endpoints. Unsupported categories/fields
@@ -65,7 +66,7 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | GET | `/plans` | Plans with saved revisions and current drafts |
 | PUT | `/plans/{plan_id}/draft` | Full replacement inputs plus expected revision |
 | POST | `/plans/{plan_id}/versions` | Expected draft revision; freezes snapshot and creates next draft |
-| POST | `/activity` | Explicit date, category, amount, optional source/goal and note; `is_adjustment` for signed corrections; one savings funding origin on spending |
+| POST | `/activity` | Income/spending/saving with explicit date, amount, optional source/goal and note; `is_adjustment` for signed corrections; one savings funding origin on spending |
 | POST | `/activity/known-total` | Desired total and contributing-entry fingerprint; saving requires a goal; creates one signed adjustment |
 | GET | `/activity` | Current entries ordered by financial date and recording order |
 | PUT | `/activity/{entry_id}` | Replacement entry plus expected revision |
@@ -84,6 +85,10 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | PUT | `/savings-accounts/{account_id}` | Correct account name/opening and all goal designations with `expected_revision` |
 | POST | `/savings-accounts/{account_id}/goals` | Create a goal with `expected_account_revision` and zero opening amount |
 | PUT | `/savings-accounts/{account_id}/goals/{goal_id}` | Rename, set target/type or inactivate/reactivate an ordinary goal with `expected_revision` |
+| GET/POST | `/investments`, `/giving-recipients` | List/create named destinations with optional positive cumulative target; investments may have an optional dated opening observation |
+| PUT | `/investments/{destination_id}`, `/giving-recipients/{destination_id}` | Name, target, active state and `expected_revision` |
+| GET/POST | `/investment-activity`, `/giving-activity` | Current history or create contribution/adjustment with optional `destination_id` |
+| PUT/DELETE | `/investment-activity/{entry_id}`, `/giving-activity/{entry_id}` | Correct entry or soft delete with `expected_revision` |
 
 Amounts are USD decimal **strings**, exact cents, maximum absolute value
 `999999999.99` per entered amount. Ordinary entries and known totals are
@@ -91,6 +96,20 @@ nonnegative. Only entries explicitly marked `is_adjustment: true` accept signed
 amounts. Fractional cents and numeric JSON values reject.
 Zero is explicit, absence is unknown. Dates are `YYYY-MM-DD`; there is no implicit
 today. Month selection uses dates, independently of UTC recording timestamps.
+
+Investment and giving contribution commands take `date`, `amount`, optional
+`destination_id`, `note`, and `is_adjustment`; corrections also take
+`expected_revision`. An omitted destination is Unassigned. Ordinary investment
+contributions are nonnegative; signed adjustments can correct recorded totals.
+Giving refunds are deferred. Inactive destinations reject new assigned entries
+but permit correction of their existing assigned entries. Soft deletion removes
+progress while retaining entry and assignment history. Optional investment
+`opening: {"date":"2026-01-01","amount":"25000.00"}` is an observed starting
+value: it is protected and contributes `0.00` to progress. Named investment
+activity cannot predate its opening. Progress sums current assigned entries,
+separately from observed market value or tax eligibility. Monthly Reviews expose
+recorded investing and giving totals when entries exist; full comparison metrics
+are a later increment.
 
 ## Savings accounts and goals
 

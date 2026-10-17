@@ -62,6 +62,48 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+it("shows named investment and giving destinations in shared Activity", async () => {
+  const entries = [
+    {
+      uuid: "investment-entry",
+      financial_date: "2026-11-03",
+      category: "investing",
+      amount: "100.00",
+      source_id: null,
+      saving_goal_id: null,
+      destination_id: "investment-1",
+      funding_origin: "income",
+      note: "",
+      revision: 1,
+      is_adjustment: false,
+    },
+    {
+      uuid: "giving-entry",
+      financial_date: "2026-11-04",
+      category: "giving",
+      amount: "50.00",
+      source_id: null,
+      saving_goal_id: null,
+      destination_id: "recipient-1",
+      funding_origin: "income",
+      note: "",
+      revision: 1,
+      is_adjustment: false,
+    },
+  ];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    if (url.endsWith("/activity")) return json(entries);
+    if (url.endsWith("/investments")) return json([{ uuid: "investment-1", name: "Example fund" }]);
+    if (url.endsWith("/giving-recipients"))
+      return json([{ uuid: "recipient-1", name: "Example recipient" }]);
+    return json([]);
+  });
+  render(<ActivityScreen {...props()} />);
+  expect(await screen.findByText("Example fund")).toBeDefined();
+  expect(await screen.findByText("Example recipient")).toBeDefined();
+  expect(screen.getAllByText("Correct this entry in Investments and giving.")).toHaveLength(2);
+});
 it("keeps the viewed contributing-entry fingerprint through a background refresh", async () => {
   let refreshed = false;
   const first = {

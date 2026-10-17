@@ -1,0 +1,378 @@
+"""Investment/giving API and retained history on a fresh migrated test database."""
+
+import asyncio
+import os
+from uuid import uuid4
+
+import httpx
+import pytest
+from sqlalchemy import func, insert, select, update
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from accanto.app import create_app
+from accanto.db import get_session
+from accanto.models import destinations as d
+from accanto.models import monthly as m
+from accanto.services.api_keys import issue_key
+
+URL = os.environ.get("ACCANTO_TEST_DATABASE_URL")
+pytestmark = pytest.mark.skipif(
+    not URL, reason="Use an isolated migrated test database"
+)
+
+
+def test_destination_lifecycle_activity_and_opening_boundary():
+    asyncio.run(scenario())
+
+
+async def scenario():
+    assert URL and URL.rsplit("/", 1)[-1].endswith("_test")
+    engine = create_async_engine(URL)
+    sessions = async_sessionmaker(engine)
+    async with sessions() as session, session.begin():
+        user = await session.scalar(
+            insert(m.users)
+            .values(issuer="destination-test", subject=str(uuid4()))
+            .returning(m.users.c.id)
+        )
+        other = await session.scalar(
+            insert(m.users)
+            .values(issuer="destination-test", subject=str(uuid4()))
+            .returning(m.users.c.id)
+        )
+        entity = await session.scalar(
+            insert(m.entities)
+            .values(owner_id=user, name="Synthetic Household", time_zone="UTC")
+            .returning(m.entities.c.uuid)
+        )
+        foreign = await session.scalar(
+            insert(m.entities)
+            .values(owner_id=other, name="Other Synthetic Household", time_zone="UTC")
+            .returning(m.entities.c.uuid)
+        )
+        key = await issue_key(session, user, "Destination test")
+        other_key = await issue_key(session, other, "Other destination test")
+    app = create_app()
+
+    async def dependency():
+        async with sessions() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = dependency
+    path = f"/api/entities/{entity}"
+    headers = {"Authorization": f"Bearer {key['key']}"}
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=headers
+    ) as client:
+
+        async def command(method, suffix, body, identity=None):
+            return await client.request(
+                method,
+                path + suffix,
+                json=body,
+                headers={"Idempotency-Key": identity or str(uuid4())},
+            )
+
+        assert (await client.get(path + "/investments")).json() == []
+        assert (await client.get(path + "/giving-recipients")).json() == []
+        assert (
+            await client.get(f"/api/entities/{foreign}/investments")
+        ).status_code == 404
+        invalid = await command(
+            "POST",
+            "/investments",
+            {
+                "name": "Example fund",
+                "target": "0.00",
+                "opening": None,
+            },
+        )
+        assert invalid.status_code == 422
+        investment_body = {
+            "name": "Example fund",
+            "target": "2000.00",
+            "opening": {"date": "2026-01-01", "amount": "25000.00"},
+        }
+        request_key = str(uuid4())
+        created = await command("POST", "/investments", investment_body, request_key)
+        assert created.status_code == 200, created.text
+        investment = created.json()
+        assert investment["opening"]["amount"] == "25000.00"
+        assert investment["contribution_progress"] == "0.00"
+        assert (
+            await command("POST", "/investments", investment_body, request_key)
+        ).json() == investment
+        assert (
+            await command(
+                "POST",
+                "/investments",
+                {
+                    **investment_body,
+                    "name": "Different",
+                },
+                request_key,
+            )
+        ).status_code == 409
+        giving = await command(
+            "POST",
+            "/giving-recipients",
+            {
+                "name": "Example recipient",
+                "target": "500.00",
+            },
+        )
+        assert giving.status_code == 200, giving.text
+        recipient = giving.json()
+        assert recipient["opening"] is None
+        assert (
+            await command(
+                "POST",
+                "/giving-recipients",
+                {
+                    "name": "Invalid",
+                    "opening": investment_body["opening"],
+                },
+            )
+        ).status_code == 422
+        assert (
+            await client.get(f"/api/entities/{foreign}/giving-recipients")
+        ).status_code == 404
+        before = {
+            "date": "2025-12-31",
+            "amount": "100.00",
+            "destination_id": investment["uuid"],
+            "note": "",
+            "is_adjustment": False,
+        }
+        assert (
+            await command("POST", "/investment-activity", before)
+        ).status_code == 422
+        body = {**before, "date": "2026-01-01", "amount": "1000.00"}
+        contribution = await command("POST", "/investment-activity", body)
+        assert contribution.status_code == 200, contribution.text
+        entry = contribution.json()
+        assert entry["destination_id"] == investment["uuid"]
+        assert (await client.get(path + "/investments")).json()[0][
+            "contribution_progress"
+        ] == "1000.00"
+        assert (await client.get(path + "/investment-activity")).json()[0][
+            "uuid"
+        ] == entry["uuid"]
+        assert (await client.get(path + "/activity")).json()[0][
+            "destination_id"
+        ] == investment["uuid"]
+        generic = await command(
+            "PUT",
+            f"/activity/{entry['uuid']}",
+            {
+                "date": "2026-01-01",
+                "category": "spending",
+                "amount": "1000.00",
+                "note": "",
+                "is_adjustment": False,
+            },
+        )
+        assert generic.status_code == 422
+        assert (
+            await command(
+                "DELETE",
+                f"/activity/{entry['uuid']}",
+                {
+                    "expected_revision": 1,
+                },
+            )
+        ).status_code == 422
+        inactive = await command(
+            "PUT",
+            f"/investments/{investment['uuid']}",
+            {
+                "name": "Example fund",
+                "target": "2000.00",
+                "active": False,
+                "expected_revision": 1,
+            },
+        )
+        assert inactive.status_code == 200, inactive.text
+        assert (await command("POST", "/investment-activity", body)).status_code == 422
+        corrected = await command(
+            "PUT",
+            f"/investment-activity/{entry['uuid']}",
+            {
+                **body,
+                "amount": "900.00",
+                "expected_revision": 1,
+            },
+        )
+        assert corrected.status_code == 200, corrected.text
+        assert corrected.json()["amount"] == "900.00"
+        assert (
+            await command(
+                "PUT",
+                f"/investment-activity/{entry['uuid']}",
+                {
+                    **body,
+                    "amount": "800.00",
+                    "expected_revision": 1,
+                },
+            )
+        ).status_code == 409
+        assert (
+            await command(
+                "PUT",
+                f"/investment-activity/{entry['uuid']}",
+                {
+                    **body,
+                    "date": "2025-12-31",
+                    "expected_revision": 2,
+                },
+            )
+        ).status_code == 422
+        assert (
+            await command(
+                "DELETE",
+                f"/investment-activity/{entry['uuid']}",
+                {
+                    "expected_revision": 2,
+                },
+            )
+        ).status_code == 200
+        assert (await client.get(path + "/investments")).json()[0][
+            "contribution_progress"
+        ] == "0.00"
+        assert (await client.get(path + "/investment-activity")).json() == []
+        async with sessions() as session:
+            row = (
+                (
+                    await session.execute(
+                        select(d.investment_entries).where(
+                            d.investment_entries.c.actual_entry_id
+                            == await session.scalar(
+                                select(m.entries.c.id).where(
+                                    m.entries.c.uuid == entry["uuid"]
+                                )
+                            )
+                        )
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert row["investment_id"] is not None
+            opening_id = await session.scalar(
+                select(d.observations.c.id).where(
+                    d.observations.c.investment_id == row["investment_id"],
+                    d.observations.c.is_opening,
+                )
+            )
+            assert opening_id is not None
+            with pytest.raises(SQLAlchemyError):
+                await session.execute(
+                    update(d.observations)
+                    .where(d.observations.c.id == opening_id)
+                    .values(amount="26000.00")
+                )
+            await session.rollback()
+        donation = await command(
+            "POST",
+            "/giving-activity",
+            {
+                "date": "2026-02-01",
+                "amount": "100.00",
+                "destination_id": recipient["uuid"],
+                "note": "",
+                "is_adjustment": False,
+            },
+        )
+        assert donation.status_code == 200, donation.text
+        adjustment = await command(
+            "POST",
+            "/giving-activity",
+            {
+                "date": "2026-02-02",
+                "amount": "-25.00",
+                "destination_id": recipient["uuid"],
+                "note": "Correction",
+                "is_adjustment": True,
+            },
+        )
+        assert adjustment.status_code == 200, adjustment.text
+        assert (await client.get(path + "/giving-recipients")).json()[0][
+            "contribution_progress"
+        ] == "75.00"
+        assert (
+            await command(
+                "POST",
+                "/investment-activity",
+                {
+                    "date": "2026-02-02",
+                    "amount": "-1.00",
+                    "destination_id": None,
+                    "note": "",
+                    "is_adjustment": False,
+                },
+            )
+        ).status_code == 422
+        unassigned = await command(
+            "POST",
+            "/investment-activity",
+            {
+                "date": "2026-02-02",
+                "amount": "40.00",
+                "destination_id": None,
+                "note": "",
+                "is_adjustment": False,
+            },
+        )
+        assert unassigned.status_code == 200, unassigned.text
+        assert (await client.get(path + "/investments")).json()[0][
+            "contribution_progress"
+        ] == "0.00"
+        reopened = await command(
+            "PUT",
+            f"/investments/{investment['uuid']}",
+            {
+                "name": "Example fund",
+                "target": "2000.00",
+                "active": True,
+                "expected_revision": 2,
+            },
+        )
+        assert reopened.status_code == 200, reopened.text
+        resumed = await command(
+            "POST", "/investment-activity", {**body, "amount": "50.00"}
+        )
+        assert resumed.status_code == 200, resumed.text
+        assert (await client.get(path + "/investments")).json()[0][
+            "contribution_progress"
+        ] == "50.00"
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {other_key['key']}"},
+        ) as other_client:
+            assert (
+                await other_client.get(path + "/investment-activity")
+            ).status_code == 404
+            assert (
+                await other_client.put(
+                    path + f"/giving-recipients/{recipient['uuid']}",
+                    json={
+                        "name": "No access",
+                        "target": None,
+                        "active": False,
+                        "expected_revision": 1,
+                    },
+                    headers={"Idempotency-Key": str(uuid4())},
+                )
+            ).status_code == 404
+        async with sessions() as session:
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(m.audit)
+                    .where(m.audit.c.record_uuid == entry["uuid"])
+                )
+                == 3
+            )
+    await engine.dispose()
