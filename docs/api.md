@@ -1,11 +1,12 @@
 # API reference
 
 The production API supports direct net-income Plans and guilt-free spending,
-dated income/spending entries, monthly Reviews against saved versions, and
-independent income estimates. The production browser uses these commands with
-cookie sessions; the preserved standalone prototype remains a separate reference.
-Fixed costs, savings, refunds and observations are not yet production endpoints.
-Unsupported categories/fields reject rather than approximate.
+dated income/spending entries, monthly Reviews against saved versions,
+independent income estimates, and savings account openings/goals. The production
+browser uses these commands with cookie sessions; the preserved standalone
+prototype remains a separate reference. Fixed costs, savings activity, refunds
+and observations are not yet production endpoints. Unsupported categories/fields
+reject rather than approximate.
 Income estimates do not calculate tax or populate Plans.
 
 ## Local setup and credentials
@@ -77,6 +78,12 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | POST | `/income-estimates` | New named scenario and lines; no previous revision |
 | PUT | `/income-estimates/{estimate_id}` | Full replacement assumptions with `expected_revision` |
 | POST | `/income-estimates/{estimate_id}/duplicate` | New independent scenario with `{name, expected_revision}` |
+| GET | `/savings-accounts` | Entity's savings accounts and goals |
+| GET | `/savings-accounts/{account_id}` | One savings account with goal identities and opening positions |
+| POST | `/savings-accounts` | Create account, protected Unallocated goal and opening designations atomically |
+| PUT | `/savings-accounts/{account_id}` | Correct account name/opening and all goal designations with `expected_revision` |
+| POST | `/savings-accounts/{account_id}/goals` | Create a goal with `expected_account_revision` and zero opening amount |
+| PUT | `/savings-accounts/{account_id}/goals/{goal_id}` | Rename, set target/type or inactivate/reactivate an ordinary goal with `expected_revision` |
 
 Amounts are USD decimal **strings**, exact cents, maximum absolute value
 `999999999.99` per entered amount. Ordinary entries and known totals are
@@ -84,6 +91,56 @@ nonnegative. Only entries explicitly marked `is_adjustment: true` accept signed
 amounts. Fractional cents and numeric JSON values reject.
 Zero is explicit, absence is unknown. Dates are `YYYY-MM-DD`; there is no implicit
 today. Month selection uses dates, independently of UTC recording timestamps.
+
+## Savings accounts and goals
+
+Create an account with an opening date, amount and designated ordinary goals:
+
+```json
+{
+  "name": "Example savings",
+  "opening_date": "2026-01-01",
+  "opening_amount": "10000.00",
+  "goals": [
+    {"name":"Emergency","kind":"finite","target":"8000.00","opening_amount":"5000.00"},
+    {"name":"Laptop","kind":"finite","target":"1200.00","opening_amount":"1000.00"}
+  ]
+}
+```
+
+The response includes the account `uuid`, `revision`, `opening_amount`, and
+`balance`, plus stable goal UUIDs. It creates one mandatory ongoing Unallocated
+goal with no target and the remaining `4000.00`. The account balance is
+`10000.00`: opening money is summed from goals once and creates no contribution
+or saving actual. `remaining_saved` initially equals each goal's opening portion;
+`contribution_progress` is `0.00`. `funded_status` is `Funded` when remaining
+saved meets an explicit target, `Not yet funded` below it, and `null` for an
+ongoing goal without a target. Finite targets must be positive; ongoing targets
+may be absent or positive. Excess designations reject the entire request.
+
+`PUT /savings-accounts/{account_id}` takes `name`, `opening_date`,
+`opening_amount`, `expected_revision`, and `designations`: exactly one
+`{"goal_id":"GOAL_UUID","opening_amount":"AMOUNT"}` for every ordinary goal,
+including goals with zero opening. Unallocated is calculated as the remainder.
+Corrections preserve every goal's identity and conserve the opening. After any
+retained linked savings activity exists, including soft-deleted history, opening
+date, amount and designations are fixed; a name edit with unchanged opening remains
+allowed. A stale revision rejects rather than overwriting another edit.
+
+Create a later goal with `{"name":"Home repair","kind":"ongoing","target":null,
+"expected_account_revision":1}`. Its opening is zero and it does not move any
+money. Edit an ordinary goal by sending `name`, `kind`, optional `target`, `active`,
+and its `expected_revision`. Its account association and identity cannot move.
+Inactive goals retain their opening, history and references. Unallocated has no
+independent edit or lifecycle command. All writes require the shared
+`Idempotency-Key`; an identical retry returns the recorded response, while
+reusing the key with different input conflicts. Financial change, complete audit
+snapshot and retry outcome commit together under the Entity lock.
+
+Savings contributions, spending funding and transfers are not yet recorded through
+these endpoints. MVP-013 must link their retained activity to the opening guard,
+including deleted history, and update balances and contribution progress. The
+current display therefore reflects openings only.
 
 ## Independent income estimates
 

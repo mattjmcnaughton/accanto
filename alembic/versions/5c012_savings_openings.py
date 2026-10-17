@@ -85,7 +85,13 @@ def upgrade():
         CREATE FUNCTION check_saving_opening() RETURNS trigger LANGUAGE plpgsql AS $$
         DECLARE account_key bigint; account_total numeric; goal_total numeric; unallocated_count integer;
         BEGIN
-            account_key := CASE WHEN TG_TABLE_NAME = 'saving_account' THEN COALESCE(NEW.id, OLD.id) ELSE COALESCE(NEW.account_id, OLD.account_id) END;
+            IF TG_TABLE_NAME = 'saving_account' THEN
+                account_key := NEW.id;
+            ELSIF TG_OP = 'DELETE' THEN
+                account_key := OLD.account_id;
+            ELSE
+                account_key := NEW.account_id;
+            END IF;
             SELECT opening_amount INTO account_total FROM saving_account WHERE id = account_key;
             IF account_total IS NOT NULL THEN
                 SELECT COALESCE(SUM(opening_amount), 0), COUNT(*) FILTER (WHERE role = 'unallocated')
@@ -129,6 +135,19 @@ def upgrade():
         END $$;
         CREATE TRIGGER saving_activity_date BEFORE INSERT OR UPDATE ON saving_linked_activity
           FOR EACH ROW EXECUTE FUNCTION saving_activity_boundary();
+        CREATE FUNCTION retain_saving_activity() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            IF TG_OP = 'DELETE' THEN
+                RAISE EXCEPTION 'Linked saving activity must be retained';
+            END IF;
+            IF (NEW.account_id, NEW.goal_id, NEW.entity_id)
+                IS DISTINCT FROM (OLD.account_id, OLD.goal_id, OLD.entity_id) THEN
+                RAISE EXCEPTION 'Linked saving activity association is immutable';
+            END IF;
+            RETURN NEW;
+        END $$;
+        CREATE TRIGGER saving_activity_retained BEFORE UPDATE OR DELETE ON saving_linked_activity
+          FOR EACH ROW EXECUTE FUNCTION retain_saving_activity();
     """
     # asyncpg permits one DDL statement per execute call.
     for statement in re.split(r"(?<=END \$\$;)|(?<=\(\);)", script):
@@ -137,6 +156,8 @@ def upgrade():
 
 
 def downgrade():
+    op.execute("DROP TRIGGER saving_activity_retained ON saving_linked_activity")
+    op.execute("DROP FUNCTION retain_saving_activity()")
     op.execute("DROP TRIGGER saving_activity_date ON saving_linked_activity")
     op.execute("DROP FUNCTION saving_activity_boundary()")
     op.execute("DROP TRIGGER saving_goal_history ON saving_goal")
