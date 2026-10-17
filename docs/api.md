@@ -1,7 +1,7 @@
 # API reference
 
-The production API supports direct net-income Plans and guilt-free spending,
-dated income/spending/saving entries, monthly Reviews against saved versions,
+The production API supports direct net-income Plans, named fixed costs and guilt-free spending,
+dated income/fixed-cost/spending/saving entries, monthly Reviews against saved versions,
 independent income estimates, savings account openings/goals, and investment/giving
 destinations with recorded contributions. The production
 browser uses these commands with cookie sessions; the preserved standalone
@@ -62,12 +62,12 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 
 | Method | Suffix | Body / result |
 | --- | --- | --- |
-| POST | `/plans` | Name, income lines and spending; returns Plan UUID and draft |
+| POST | `/plans` | Name, income lines, fixed-cost lines and spending; returns Plan UUID and draft |
 | GET | `/plans` | Plans with saved revisions and current drafts |
 | PUT | `/plans/{plan_id}/draft` | Full replacement inputs plus expected revision |
 | POST | `/plans/{plan_id}/versions` | Expected draft revision; freezes snapshot and creates next draft |
-| POST | `/activity` | Income/spending/saving with explicit date, amount, optional source/goal and note; `is_adjustment` for signed corrections; one savings funding origin on spending |
-| POST | `/activity/known-total` | Desired total and contributing-entry fingerprint; saving requires a goal; creates one signed adjustment |
+| POST | `/activity` | Income/fixed-cost/spending/saving with explicit date, amount, optional source/fixed-cost/goal and note; `is_adjustment` for signed corrections; one savings funding origin on spending |
+| POST | `/activity/known-total` | Desired total and contributing-entry fingerprint; fixed-cost totals remain category-level and unassigned; saving requires a goal; creates one signed adjustment |
 | GET | `/activity` | Current entries ordered by financial date and recording order |
 | PUT | `/activity/{entry_id}` | Replacement entry plus expected revision |
 | DELETE | `/activity/{entry_id}` | Expected revision in JSON body; soft deletes |
@@ -211,6 +211,28 @@ no immutable estimate versions. Users manually copy or type the result into a
 Plan; there is no `Use in Plan` command, link, or automatic synchronization.
 
 ## Plan → activity → Review
+
+### Fixed costs
+
+`POST /plans` and `PUT /plans/{plan_id}/draft` accept `fixed_costs`, an array
+of named lines with `amount` as a USD decimal string and `frequency` of
+`monthly` or `annual`. A persisted line also has a stable `fixed_cost_id` within
+its Plan. Retain that ID when editing the line; omit it to create a new cost.
+Copying a Plan creates new cost IDs. Each line returns its entered amount,
+frequency and cent-valued `monthly_amount`; `fixed_cost_total` sums those
+monthly results. Three annual inputs of `100.00` therefore produce three
+`8.33` monthly lines and a `24.99` monthly total while retaining all three
+`100.00` inputs. The total reduces the Plan's unassigned amount.
+
+`/activity` accepts `category: "fixed_cost"`, an optional `fixed_cost_id`,
+and `funding_origin: "income"`. An omitted ID is Unassigned fixed-cost activity.
+Ordinary payments are nonnegative, including explicit zero. Signed corrections
+require `is_adjustment: true`; refunds are outside this workflow. Current
+activity and Review detail retain an assigned cost's name. In a Review, an
+expected saved fixed-cost line with no assigned payment remains unknown even
+when other fixed-cost payments or a category adjustment exist. The category
+total includes assigned and Unassigned entries once, and its difference from
+the saved Plan is unavailable while expected lines remain unknown.
 
 These bodies can be sent using `/docs` or your own HTTP client with the headers
 above. Use a new request identity for each intended change and retain it for retry.

@@ -32,6 +32,14 @@ export function ActivityScreen(p: ScreenProps) {
   const [form, setForm] = useState<ActivityInput | null>(null);
   const [known, setKnown] = useState<KnownTotalInput | null>(null);
   const sources = plans.kind === "ready" ? sourceChoices(plans.data) : [];
+  const fixedCosts =
+    plans.kind === "ready"
+      ? plans.data.flatMap((plan) =>
+          plan.revisions
+            .filter((revision) => !revision.saved)
+            .flatMap((revision) => revision.fixed_costs),
+        )
+      : [];
   const savingGoals =
     accounts.kind === "ready"
       ? accounts.data.flatMap((account) =>
@@ -54,7 +62,7 @@ export function ActivityScreen(p: ScreenProps) {
   };
   function fingerprint(
     month: string,
-    category: "income" | "spending" | "saving",
+    category: "income" | "spending" | "saving" | "fixed_cost",
     selectionId: string | null,
   ) {
     const current = entries.kind === "ready" ? entries.data : [];
@@ -64,6 +72,7 @@ export function ActivityScreen(p: ScreenProps) {
           entry.financial_date.slice(0, 7) === month.slice(0, 7) &&
           entry.category === category &&
           (category === "spending" ||
+            category === "fixed_cost" ||
             (category === "income"
               ? entry.source_id === selectionId
               : entry.saving_goal_id === selectionId)),
@@ -86,6 +95,7 @@ export function ActivityScreen(p: ScreenProps) {
             category: entry.category as ActivityInput["category"],
             amount: entry.amount,
             source_id: entry.source_id,
+            fixed_cost_id: entry.fixed_cost_id,
             note: entry.note,
             expected_revision: entry.revision,
             is_adjustment: entry.is_adjustment,
@@ -97,6 +107,7 @@ export function ActivityScreen(p: ScreenProps) {
             category: "spending",
             amount: "",
             source_id: null,
+            fixed_cost_id: null,
             note: "",
             funding_origin: "income",
             saving_goal_id: null,
@@ -160,28 +171,32 @@ export function ActivityScreen(p: ScreenProps) {
                   <time>{entry.financial_date}</time> ·{" "}
                   {entry.category === "income"
                     ? "Income"
-                    : entry.category === "saving"
-                      ? "Saving"
-                      : entry.category === "investing"
-                        ? "Investment contribution"
-                        : entry.category === "giving"
-                          ? "Giving"
-                          : "Guilt-free spending"}
+                    : entry.category === "fixed_cost"
+                      ? "Fixed cost payment"
+                      : entry.category === "saving"
+                        ? "Saving"
+                        : entry.category === "investing"
+                          ? "Investment contribution"
+                          : entry.category === "giving"
+                            ? "Giving"
+                            : "Guilt-free spending"}
                   {entry.is_adjustment && " · Adjustment"}
                 </p>
                 <strong>{dollars(entry.amount)}</strong>
                 <p>
-                  {entry.saving_goal_id
-                    ? `${entry.category === "saving" ? "To" : "Funded from"} ${goalLabel(entry.saving_goal_id)}`
-                    : entry.destination_id &&
-                        (entry.category === "investing" || entry.category === "giving")
-                      ? destinationLabel(entry)
-                      : entry.source_id
-                        ? sources.find((s) => s.id === entry.source_id)?.label ||
-                          "Historical Income source"
-                        : entry.category === "spending"
-                          ? "Funded from current income"
-                          : "Unassigned"}
+                  {entry.category === "fixed_cost"
+                    ? (entry.fixed_cost_name ?? "Unassigned fixed cost")
+                    : entry.saving_goal_id
+                      ? `${entry.category === "saving" ? "To" : "Funded from"} ${goalLabel(entry.saving_goal_id)}`
+                      : entry.destination_id &&
+                          (entry.category === "investing" || entry.category === "giving")
+                        ? destinationLabel(entry)
+                        : entry.source_id
+                          ? sources.find((s) => s.id === entry.source_id)?.label ||
+                            "Historical Income source"
+                          : entry.category === "spending"
+                            ? "Funded from current income"
+                            : "Unassigned"}
                 </p>
                 {entry.note && <p>{entry.note}</p>}
                 {entry.category === "investing" || entry.category === "giving" ? (
@@ -225,8 +240,9 @@ export function ActivityScreen(p: ScreenProps) {
                   onChange={(e) =>
                     update({
                       ...form,
-                      category: e.target.value as "income" | "spending" | "saving",
+                      category: e.target.value as ActivityInput["category"],
                       source_id: null,
+                      fixed_cost_id: null,
                       funding_origin: "income",
                       saving_goal_id: null,
                     })
@@ -234,9 +250,27 @@ export function ActivityScreen(p: ScreenProps) {
                 >
                   <option value="income">Income</option>
                   <option value="spending">Guilt-free spending</option>
+                  <option value="fixed_cost">Fixed cost payment</option>
                   <option value="saving">Saving contribution</option>
                 </select>
               </label>
+              {form.category === "fixed_cost" && (
+                <label>
+                  Fixed cost
+                  <select
+                    name="fixed-cost"
+                    value={form.fixed_cost_id || ""}
+                    onChange={(e) => update({ ...form, fixed_cost_id: e.target.value || null })}
+                  >
+                    <option value="">Unassigned fixed cost</option>
+                    {fixedCosts.map((cost) => (
+                      <option key={cost.fixed_cost_id} value={cost.fixed_cost_id}>
+                        {cost.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <MoneyInput
                 label="Amount (USD)"
                 value={form.amount}
@@ -393,7 +427,7 @@ export function ActivityScreen(p: ScreenProps) {
                 <select
                   value={known.category}
                   onChange={(e) => {
-                    const category = e.target.value as "income" | "spending" | "saving";
+                    const category = e.target.value as KnownTotalInput["category"];
                     setKnown({
                       ...known,
                       category,
@@ -405,6 +439,7 @@ export function ActivityScreen(p: ScreenProps) {
                   }}
                 >
                   <option value="spending">Guilt-free spending</option>
+                  <option value="fixed_cost">Fixed costs</option>
                   <option value="income">Income</option>
                   <option value="saving">Saving</option>
                 </select>

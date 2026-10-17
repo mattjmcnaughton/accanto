@@ -95,6 +95,14 @@ sources = table(
     UniqueConstraint("id", "entity_id"),
     UniqueConstraint("id", "plan_id"),
 )
+fixed_costs = table(
+    "fixed_cost",
+    Column("plan_id", BigInteger, nullable=False),
+    Column("entity_id", BigInteger, nullable=False),
+    ForeignKeyConstraint(["plan_id", "entity_id"], ["plan.id", "plan.entity_id"]),
+    UniqueConstraint("id", "entity_id"),
+    UniqueConstraint("id", "plan_id"),
+)
 revisions = table(
     "plan_revision",
     Column("plan_id", BigInteger, nullable=False),
@@ -104,6 +112,7 @@ revisions = table(
     Column("saved", Boolean, nullable=False, server_default="false"),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("spending", Numeric(14, 2), nullable=False),
+    Column("fixed_cost_total", Numeric(14, 2), nullable=False, server_default="0"),
     Column("income", Numeric(14, 2), nullable=False),
     Column("tithe_target", Numeric(14, 2), nullable=False),
     Column("unassigned", Numeric(14, 2), nullable=False),
@@ -137,6 +146,25 @@ income_lines = table(
     UniqueConstraint("plan_revision_id", "income_source_id"),
     CheckConstraint("amount >= 0 AND amount <= 999999999.99"),
 )
+fixed_cost_lines = table(
+    "plan_fixed_cost_line",
+    Column("plan_revision_id", BigInteger, nullable=False),
+    Column("plan_id", BigInteger, nullable=False),
+    Column("fixed_cost_id", BigInteger, nullable=False),
+    Column("name", String(120), nullable=False),
+    Column("amount", Numeric(14, 2), nullable=False),
+    Column("frequency", String, nullable=False),
+    Column("monthly_amount", Numeric(14, 2), nullable=False),
+    ForeignKeyConstraint(
+        ["plan_revision_id", "plan_id"], ["plan_revision.id", "plan_revision.plan_id"]
+    ),
+    ForeignKeyConstraint(
+        ["fixed_cost_id", "plan_id"], ["fixed_cost.id", "fixed_cost.plan_id"]
+    ),
+    UniqueConstraint("plan_revision_id", "fixed_cost_id"),
+    CheckConstraint("frequency IN ('monthly', 'annual')"),
+    CheckConstraint("amount BETWEEN 0 AND 999999999.99"),
+)
 entries = table(
     "actual_entry",
     Column("entity_id", ForeignKey("entity.id"), nullable=False),
@@ -149,7 +177,8 @@ entries = table(
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("deleted_at", DateTime(timezone=True)),
     CheckConstraint(
-        "category IN ('income', 'spending', 'saving', 'investing', 'giving')"
+        "category IN ('income', 'spending', 'saving', "
+        "'investing', 'giving', 'fixed_cost')"
     ),
     CheckConstraint("amount BETWEEN -999999999.99 AND 999999999.99"),
     CheckConstraint("is_adjustment OR amount >= 0"),
@@ -167,6 +196,19 @@ assignments = table(
     ForeignKeyConstraint(
         ["income_source_id", "entity_id"],
         ["income_source.id", "income_source.entity_id"],
+    ),
+)
+fixed_cost_assignments = table(
+    "entry_fixed_cost",
+    Column("actual_entry_id", BigInteger, nullable=False, unique=True),
+    Column("fixed_cost_id", BigInteger, nullable=False),
+    Column("name", String(120), nullable=False),
+    Column("entity_id", BigInteger, nullable=False),
+    ForeignKeyConstraint(
+        ["actual_entry_id", "entity_id"], ["actual_entry.id", "actual_entry.entity_id"]
+    ),
+    ForeignKeyConstraint(
+        ["fixed_cost_id", "entity_id"], ["fixed_cost.id", "fixed_cost.entity_id"]
     ),
 )
 reviews = table(

@@ -241,6 +241,15 @@ export function MonthlyReview(p: ScreenProps) {
                   <td>{dollars(state.data.actual.spending_recorded)}</td>
                   <td>{dollars(state.data.spending_difference)}</td>
                 </tr>
+                <tr>
+                  <th scope="row">Fixed costs</th>
+                  <td>{dollars(state.data.version.fixed_cost_total)}</td>
+                  <td>
+                    {dollars(state.data.actual.fixed_cost_recorded)}
+                    {state.data.actual.fixed_cost_incomplete && " (incomplete)"}
+                  </td>
+                  <td>{dollars(state.data.fixed_cost_difference)}</td>
+                </tr>
                 {"saving_recorded" in state.data.actual && (
                   <tr>
                     <th scope="row">New saving</th>
@@ -273,6 +282,23 @@ export function MonthlyReview(p: ScreenProps) {
               <p>Record an entry for each source, including an explicit zero when appropriate.</p>
             </div>
           )}
+          {state.data.actual.missing_fixed_costs.length > 0 && (
+            <div className="warning">
+              <p>Fixed costs remain unknown for:</p>
+              <ul>
+                {state.data.actual.missing_fixed_costs.map((id) => (
+                  <li key={id}>
+                    {state.data.version.fixed_costs.find((line) => line.fixed_cost_id === id)
+                      ?.name || "Historical fixed cost"}
+                  </li>
+                ))}
+              </ul>
+              <p>
+                Record a payment for each expected cost, including an explicit zero when
+                appropriate.
+              </p>
+            </div>
+          )}
           <h3>Activity in this month</h3>
           {state.data.entries.length === 0 ? (
             <p>No activity recorded. Unknown amounts are not zero.</p>
@@ -282,6 +308,7 @@ export function MonthlyReview(p: ScreenProps) {
                 <li key={entry.uuid}>
                   <time>{entry.financial_date}</time> · {entry.category}{" "}
                   {entry.is_adjustment && "adjustment"} · {dollars(entry.amount)}
+                  {entry.fixed_cost_name && ` · ${entry.fixed_cost_name}`}
                   {entry.note && ` · ${entry.note}`}
                 </li>
               ))}

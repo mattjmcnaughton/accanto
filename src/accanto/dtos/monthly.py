@@ -26,9 +26,22 @@ class IncomeLine(Input):
         return str(money(value))
 
 
+class FixedCostLine(Input):
+    fixed_cost_id: UUID | None = None
+    name: Name
+    amount: str
+    frequency: Literal["monthly", "annual"]
+
+    @field_validator("amount")
+    @classmethod
+    def valid_amount(cls, value: str) -> str:
+        return str(money(value))
+
+
 class PlanInput(Input):
     name: Name
     incomes: list[IncomeLine] = Field(min_length=1, max_length=100)
+    fixed_costs: list[FixedCostLine] = Field(default_factory=list, max_length=100)
     spending: str
     expected_revision: int | None = Field(default=None, ge=1)
 
@@ -46,9 +59,10 @@ class PlanCopyInput(Input):
 
 class ActivityInput(Input):
     date: date
-    category: Literal["income", "spending", "saving"]
+    category: Literal["income", "spending", "saving", "fixed_cost"]
     amount: str
     source_id: UUID | None = None
+    fixed_cost_id: UUID | None = None
     note: str = Field(default="", max_length=2000)
     expected_revision: int | None = Field(default=None, ge=1)
     is_adjustment: bool = False
@@ -71,7 +85,9 @@ class ActivityInput(Input):
                 )
             if self.funding_origin != "income":
                 raise ValueError("New saving must come from current income.")
-        elif self.category == "spending":
+        elif self.category in {"spending", "fixed_cost"}:
+            if self.category == "fixed_cost" and self.funding_origin != "income":
+                raise ValueError("Fixed costs must be funded from current income.")
             if (self.funding_origin == "savings") != (self.saving_goal_id is not None):
                 raise ValueError("Savings funding requires exactly one saving goal.")
             if self.funding_origin == "savings" and self.amount.startswith("-"):
@@ -80,6 +96,8 @@ class ActivityInput(Input):
             raise ValueError(
                 "Income receipts cannot use a saving goal or funding origin."
             )
+        if self.fixed_cost_id is not None and self.category != "fixed_cost":
+            raise ValueError("Only fixed-cost payments select a Fixed cost.")
         return self
 
 
@@ -91,7 +109,7 @@ class EntryFingerprint(Input):
 class KnownTotalInput(Input):
     date: date
     month: date
-    category: Literal["income", "spending", "saving"]
+    category: Literal["income", "spending", "saving", "fixed_cost"]
     desired_total: str
     source_id: UUID | None = None
     saving_goal_id: UUID | None = None
@@ -109,8 +127,8 @@ class KnownTotalInput(Input):
             "%Y-%m"
         ):
             raise ValueError("Financial date must be in the selected Review month.")
-        if self.category == "spending" and self.source_id is not None:
-            raise ValueError("Spending totals cannot select an Income source.")
+        if self.category in {"spending", "fixed_cost"} and self.source_id is not None:
+            raise ValueError("Outflow totals cannot select an Income source.")
         if self.category == "saving" and self.saving_goal_id is None:
             raise ValueError("Saving totals require a saving goal, including for zero.")
         if self.category != "saving" and self.saving_goal_id is not None:

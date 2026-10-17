@@ -13,6 +13,8 @@ const historical: PlanRevision = {
   saved_at: "2025-01-01",
   rule_version: "older-rule",
   incomes: [{ source_id: "income-a", name: "Synthetic salary", amount: "4000.00" }],
+  fixed_costs: [],
+  fixed_cost_total: "0.00",
   income: "4000.00",
   spending: "800.00",
   tithe_target: "375.00",

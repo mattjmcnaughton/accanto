@@ -17,6 +17,8 @@ const version: PlanRevision = {
   saved_at: "2026-10-01",
   rule_version: "1",
   incomes: [{ source_id: "source", name: "Salary", amount: "4000.00" }],
+  fixed_costs: [],
+  fixed_cost_total: "0.00",
   income: "4000.00",
   spending: "800.00",
   tithe_target: "400.00",
@@ -42,9 +44,13 @@ const review = {
     income_incomplete: true,
     missing_sources: ["source"],
     spending_recorded: null,
+    fixed_cost_recorded: null,
+    fixed_cost_incomplete: true,
+    missing_fixed_costs: [],
   },
   income_difference: null,
   spending_difference: null,
+  fixed_cost_difference: null,
 };
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
 const absent = () =>
@@ -61,6 +67,86 @@ const props = (): ScreenProps => ({
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+});
+it("edits annual fixed-cost inputs and keeps the stored monthly result visible", async () => {
+  const fixed = {
+    fixed_cost_id: "fixed-a",
+    name: "Synthetic subscription",
+    amount: "100.00",
+    frequency: "annual" as const,
+    monthly_amount: "8.33",
+  };
+  const fixedDraft = {
+    ...version,
+    uuid: "fixed-draft",
+    saved: false,
+    fixed_costs: [fixed],
+    fixed_cost_total: "8.33",
+    unassigned: "3191.67",
+  };
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    json([{ plan_id: "fixed-plan", revisions: [fixedDraft] }]),
+  );
+  const save = vi.fn();
+  render(<Plans {...props()} save={save} />);
+  fireEvent.click(await screen.findByText("Edit Baseline"));
+  expect(screen.getByText("$8.33")).toBeDefined();
+  expect(screen.getByDisplayValue("100.00")).toBeDefined();
+  fireEvent.change(screen.getByDisplayValue("100.00"), { target: { value: "120.00" } });
+  fireEvent.click(screen.getByText("Save draft"));
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      body: expect.objectContaining({
+        fixed_costs: [
+          {
+            fixed_cost_id: "fixed-a",
+            name: "Synthetic subscription",
+            amount: "120.00",
+            frequency: "annual",
+          },
+        ],
+      }),
+    }),
+    expect.any(Function),
+  );
+});
+it("records a fixed-cost payment with optional assignment and current-income origin", async () => {
+  const fixedDraft = {
+    ...version,
+    saved: false,
+    fixed_costs: [
+      {
+        fixed_cost_id: "fixed-a",
+        name: "Synthetic subscription",
+        amount: "100.00",
+        frequency: "annual" as const,
+        monthly_amount: "8.33",
+      },
+    ],
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/plans")
+      ? json([{ plan_id: "fixed-plan", revisions: [fixedDraft] }])
+      : json([]),
+  );
+  const save = vi.fn();
+  render(<ActivityScreen {...props()} save={save} />);
+  fireEvent.click(await screen.findByText("Record activity"));
+  fireEvent.change(screen.getByLabelText("Category"), { target: { value: "fixed_cost" } });
+  fireEvent.change(screen.getByLabelText("Fixed cost"), { target: { value: "fixed-a" } });
+  fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "12.00" } });
+  fireEvent.click(screen.getByText("Save activity"));
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      body: expect.objectContaining({
+        category: "fixed_cost",
+        fixed_cost_id: "fixed-a",
+        amount: "12.00",
+        funding_origin: "income",
+      }),
+    }),
+    expect.any(Function),
+  );
 });
 it("shows named investment and giving destinations in shared Activity", async () => {
   const entries = [
@@ -248,7 +334,7 @@ it("shows unknown rather than zero, retaining incomplete recorded income", async
   );
   render(<MonthlyReview {...props()} />);
   await screen.findByText("$0.00 (incomplete)");
-  expect(screen.getAllByText("Unknown").length).toBe(3);
+  expect(screen.getAllByText("Unknown").length).toBe(4);
   expect(screen.getByText("Salary")).toBeDefined();
 });
 it("retains the exact attempted write on network failure and retry", async () => {
