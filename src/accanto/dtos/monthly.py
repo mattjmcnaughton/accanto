@@ -28,6 +28,7 @@ class IncomeLine(Input):
 
 class FixedCostLine(Input):
     fixed_cost_id: UUID | None = None
+    debt_account_id: UUID | None = None
     name: Name
     amount: str
     frequency: Literal["monthly", "annual"]
@@ -63,6 +64,7 @@ class ActivityInput(Input):
     amount: str
     source_id: UUID | None = None
     fixed_cost_id: UUID | None = None
+    debt_account_id: UUID | None = None
     note: str = Field(default="", max_length=2000)
     expected_revision: int | None = Field(default=None, ge=1)
     is_adjustment: bool = False
@@ -96,6 +98,8 @@ class ActivityInput(Input):
             raise ValueError(
                 "Income receipts cannot use a saving goal or funding origin."
             )
+        if self.debt_account_id is not None and self.category != "fixed_cost":
+            raise ValueError("Only fixed-cost payments can select a Debt account.")
         if self.fixed_cost_id is not None and self.category != "fixed_cost":
             raise ValueError("Only fixed-cost payments select a Fixed cost.")
         return self

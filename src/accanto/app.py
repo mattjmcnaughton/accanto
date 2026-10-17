@@ -11,6 +11,7 @@ from accanto.logging import configure_logging
 from accanto.oidc import OIDCProvider
 from accanto.routers import (
     api_keys,
+    balances,
     browser_auth,
     destinations,
     entities,
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(income_estimates.router)
     app.include_router(savings.router)
     app.include_router(destinations.router)
+    app.include_router(balances.router)
     app.include_router(api_keys.router)
 
     # Mount frontend static files (only serves if dist/ exists)

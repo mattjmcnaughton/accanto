@@ -117,6 +117,22 @@ def test_signed_in_workspace(tmp_path):
             assert result.returncode == 0, f"Browser command failed: {args[0]}"
         return result.stdout
 
+    def set_date(selector, value):
+        # Native setter triggers React's delegated handlers on date controls.
+        expression = (
+            "(() => { const input = document.querySelector("
+            + repr(selector)
+            + "); const setter = Object.getOwnPropertyDescriptor("
+            "HTMLInputElement.prototype, 'value').set; "
+            + "setter.call(input, "
+            + repr(value)
+            + "); "
+            "input.dispatchEvent(new Event('input', {bubbles: true})); "
+            "input.dispatchEvent(new Event('change', {bubbles: true})); "
+            "return input.value; })()"
+        )
+        assert browser("eval", expression).strip().strip('"') == value
+
     processes = []
     try:
         for module, port in (
@@ -496,6 +512,50 @@ def test_signed_in_workspace(tmp_path):
             ).strip()
             == "true"
         )
+        # Loan payoff: the payment is one fixed-cost outflow and leaves the
+        # dated amount owed unchanged until an independent zero observation.
+        browser(
+            "find", "role", "button", "click", "--name", "Loans and balances", "--exact"
+        )
+        browser("find", "label", "Name", "fill", "Synthetic loan")
+        set_date('form:has(h3) input[type="date"]', "2026-10-01")
+        browser("find", "label", "Opening amount owed", "fill", "300")
+        browser("find", "role", "button", "click", "--name", "Add loan", "--exact")
+        browser("wait", "--text", "Latest observed amount owed: $300.00")
+        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        browser(
+            "find", "role", "button", "click", "--name", "Record activity", "--exact"
+        )
+        browser("select", "form.editor select", "fixed_cost")
+        loan_option = (
+            browser(
+                "eval",
+                "Array.from(document.querySelector('select[name=\"loan-account\"]').options)"
+                ".find(option => option.textContent === 'Synthetic loan').value",
+            )
+            .strip()
+            .strip('"')
+        )
+        browser("select", "select[name='loan-account']", loan_option)
+        browser("find", "label", "Amount (USD)", "fill", "300")
+        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
+        browser(
+            "find", "role", "button", "click", "--name", "Loans and balances", "--exact"
+        )
+        browser("wait", "--text", "Latest observed amount owed: $300.00")
+        browser(
+            "find", "role", "button", "click", "--name", "Record observation", "--exact"
+        )
+        set_date('form:has(h4) input[type="date"]', "2026-10-01")
+        browser("find", "label", "Amount owed", "fill", "0")
+        browser(
+            "find", "role", "button", "click", "--name", "Save observation", "--exact"
+        )
+        browser("wait", "--text", "Latest observed amount owed: $0.00 on 2026-10-01")
+        browser("find", "role", "button", "click", "--name", "Archive loan", "--exact")
+        browser("wait", "--text", "Synthetic loan (archived)")
+        browser("find", "role", "button", "click", "--name", "Reopen loan", "--exact")
+        browser("wait", "--text", "Archive loan")
         browser("find", "role", "button", "click", "--name", "Sign out", "--exact")
         browser("wait", "--text", "Sign in")
         assert "Synthetic E2E Entity" not in browser("get", "text", "body")

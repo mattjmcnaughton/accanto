@@ -468,3 +468,36 @@ its immutable versions, receipts, and Review targets remain unchanged.
 Saved scenario comparisons use the stored `incomes`, `fixed_costs`, result fields, and
 `rule_version` returned by `GET .../plans`. Do not recalculate historical versions
 using current rules. Copies do not infer cross-Plan receipt matching.
+
+## Loan accounts and dated balance observations
+
+`GET/POST /api/entities/{entity_id}/debts` list and create named loan accounts.
+Creation requires `name` and a protected `opening: {date, amount}`. `PUT
+/api/entities/{entity_id}/debts/{debt_id}` accepts `name`, `active`, and
+`expected_revision` to rename, archive or reopen. Archival requires the latest
+recorded amount owed to be zero; a payment alone does not establish zero. An
+archived loan rejects new payments and remains in history. `draft_fixed_cost_lines`
+identifies draft Plan lines linked to an archived loan for explicit revision;
+saved versions remain intact.
+
+`GET/POST /api/entities/{entity_id}/debt-observations` and
+`GET/POST /api/entities/{entity_id}/investment-observations` list and create
+independent dated observations. POST takes `date`, `amount`, and `account_id`.
+Debt observations require a loan account; investment observations may be
+unassigned. PUT on `/{observation_id}` corrects with those fields plus
+`expected_revision`; DELETE takes `expected_revision` and soft deletes. Opening
+observations cannot be corrected or deleted. At most one current ordinary
+observation exists for each account/date. A protected opening and one ordinary
+observation may coexist on that date; the ordinary one is latest on a tie.
+
+`POST/PUT /activity` accepts an optional `debt_account_id` only for a fixed-cost
+entry, alongside an optional `fixed_cost_id` for Plan comparison. The one entry
+contributes once to fixed-cost actuals. A debt-linked fixed-cost Plan line has
+`debt_account_id`; archived loans require explicit removal or reopening before
+saving a new draft allocation. Neither payments nor contributions change observed
+balances. Financial dates are explicit in API writes; browser defaults come from
+the Entity's current time zone.
+
+All writes above require the normal authenticated `Idempotency-Key`, current
+Entity access, and expected revisions for corrections. Financial records, complete
+before/after audit snapshots, and retry outcomes commit together.

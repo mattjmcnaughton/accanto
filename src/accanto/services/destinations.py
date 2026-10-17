@@ -39,6 +39,7 @@ async def snapshot(session, kind, row):
         )
     )
     opening = None
+    latest = None
     if kind == "investment":
         observation = (
             (
@@ -57,6 +58,29 @@ async def snapshot(session, kind, row):
                 "date": observation["financial_date"].isoformat(),
                 "amount": str(observation["amount"]),
             }
+        latest_row = (
+            (
+                await session.execute(
+                    select(d.observations)
+                    .where(
+                        d.observations.c.investment_id == row["id"],
+                        d.observations.c.deleted_at.is_(None),
+                    )
+                    .order_by(
+                        d.observations.c.financial_date.desc(),
+                        d.observations.c.is_opening.asc(),
+                    )
+                    .limit(1)
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if latest_row:
+            latest = {
+                "date": latest_row["financial_date"].isoformat(),
+                "amount": str(latest_row["amount"]),
+            }
     return {
         "uuid": str(row["uuid"]),
         "name": row["name"],
@@ -65,6 +89,7 @@ async def snapshot(session, kind, row):
         "revision": row["revision"],
         "contribution_progress": str(Decimal(progress).quantize(Decimal("0.01"))),
         "opening": opening,
+        "latest": latest,
     }
 
 
