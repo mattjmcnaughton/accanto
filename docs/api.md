@@ -2,9 +2,10 @@
 
 The initial production increment supports direct net-income Plans and guilt-free
 spending, dated income/spending entries, and a monthly Review against a saved
-version. The browser is still a separate local-storage prototype. Fixed costs,
-savings, refunds, observations, Review editing and browser sign-in are not yet
-production endpoints; unsupported categories/fields reject rather than approximate.
+version. The production browser uses these same commands with cookie sessions;
+the preserved standalone prototype remains a separate reference. Fixed costs,
+savings, refunds, observations and Review editing are not yet production endpoints;
+unsupported categories/fields reject rather than approximate.
 
 ## Local setup and credentials
 
@@ -30,8 +31,9 @@ Store the returned key securely. Requests use `Authorization: Bearer <key>`;
 only SHA-256 hashes are persisted. `POST /api/keys` with `{"name":"My script"}`
 issues another key (plaintext returned once); `DELETE /api/keys/{key_id}` revokes
 one of the current User's keys. There is no expiry. Revocation and Entity access
-changes apply to subsequent requests, including retries. Browser credential
-storage and OAuth/OIDC integration remain outside this increment.
+changes apply to subsequent requests, including retries. Browser sign-in uses OIDC
+and opaque server-side sessions; see the browser authentication endpoints below.
+Hosted MCP OAuth remains a separate increment.
 
 For deployment, use a non-owner, non-superuser runtime login distinct from the
 migration owner. After creating that login securely, grant only required access

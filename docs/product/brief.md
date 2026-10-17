@@ -57,12 +57,13 @@ audit or multi-client write safety. Opening-edit forms and dedicated restoration
 interfaces are absent; cross-Plan income matching is not exposed. New date defaults
 use the Entity time zone without moving stored financial dates.
 
-An existing backend increment implements create/save a Plan → record activity →
+The production browser and API implement create/save a Plan → record activity →
 review a month for direct net income and guilt-free spending. It has Python
 Decimal rules, authenticated API access, relational Postgres persistence, atomic
 audit writes, retry outcomes and stale-write protection, verified separately
-from the prototype. Browser sign-in/API-backed UI and remaining financial
-commands are subsequent increments.
+from the prototype. Browser sign-in and the API-backed income/spending workspace
+are implemented; remaining financial commands are subsequent increments. Real
+provider configuration and hosted compatibility verification remain manual.
 The UI must use the same application behavior as direct API access.
 
 Advanced income matching, dedicated restoration UI, annual Plans/Reviews,

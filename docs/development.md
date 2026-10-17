@@ -8,9 +8,9 @@ The frontend lives in `src/accanto/web/frontend`. Vite proxies `/api`,
 
 Run `just gate` before committing. Backend unit tests need no database.
 The frontend typecheck target builds the app first to generate its route tree.
-Frontend unit tests run with `just test-unit-fe`. The current production shell
-works without the backend and shows an explicit unconnected state. Production
-browser journeys will be added with API-backed workflows.
+Frontend unit tests run with `just test-unit-fe`. The production workspace requires
+the backend, migrated database, configured browser authentication and a provisioned
+identity. Missing or failed loads are shown explicitly.
 
 The frontend transport uses same-origin cookie sessions and the implemented
 monthly API. A submitted write keeps its exact JSON body and request identity in
@@ -18,8 +18,12 @@ tab memory until the server confirms it; stale conflicts require explicit
 reconciliation. Session recovery opens a separate sign-in window and verifies the
 same User through `/api/auth/session` before retrying with fresh CSRF. This memory
 is cleared on explicit logout and does not survive closing or reloading the tab.
-The shell does not yet expose the financial workflow; its UI arrives with the
-monthly browser ticket.
+The UI exposes Plans, Activity and Monthly Review. Save a draft before saving an
+immutable version. Activity is independent of Reviews; starting a Review visibly
+preselects the immediately previous month's comparison or requires an explicit
+choice. Income and guilt-free spending are the only supported activity categories.
+Unsaved navigation prompts apply to screens, selected records and months. Conflicts
+retain attempted input while current records reload for explicit reconciliation.
 
 The preserved [standalone prototype](product/daily-workspace-prototype.html) is
 a legacy reference. Do not regenerate it from the new application. Its existing
@@ -47,8 +51,9 @@ ACCANTO_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/
 Skip `createdb` if the test database already exists. Without the explicit test URL,
 the monthly integration check skips. It verifies the authenticated Plan/activity/
 Review journey, concurrent retries and stale edits, revoked access, atomic audit
-failure, soft deletion and protected saved versions. Backend browser E2E remains
-pending until the API-backed UI exists. No hosted provider is needed.
+failure, soft deletion and protected saved versions. The backend E2E suite remains
+unimplemented; local agent-browser acceptance separately exercises the production
+UI with the signed provider fixture below. No hosted provider is needed.
 
 Import application models in `accanto.models` so Alembic sees `Base.metadata`.
 Create subsequent migrations with `uv run alembic revision --autogenerate -m ...`,
@@ -149,3 +154,23 @@ the same origin. Inspect stable User/Entity UUIDs, Entity-zone `today` and CSRF
 metadata; post logout with exact Origin/CSRF and confirm the session then returns
 401. Preserve only synthetic captures outside the checkout. Remove the fixture
 processes and disposable browser profile after verification.
+
+
+### Monthly browser acceptance
+
+Build the frontend (`pnpm --dir src/accanto/web/frontend build`) before starting
+FastAPI so the same origin serves the UI and API. After signing in with the local
+fixture, create a synthetic Plan with $4,000 income and $800 spending and save v1.
+Record $4,000 income assigned to its source and $75 spending, then create that
+month's Review: differences are $0 and -$725. Reload, correct and delete the
+spending entry; save an overallocated Plan version and confirm the existing Review
+stays on v1. The following calendar month preselects v1; a month with no preceding
+Review requires an explicit choice. Missing income sources remain unknown until
+each has an entry, including explicit zero. Inspect keyboard and 320–390px layouts.
+
+Use a fresh agent-browser session with explicit empty configuration and loopback
+allowlist, never an existing profile. Keep synthetic captures outside the checkout.
+The generic agent-browser fill command may not update native date/month controls;
+verify their values and resulting displayed month. Acceptance capture can use the
+native input value setter and dispatched input/change events while retaining the
+production React handlers. This is separate from keyboard-operation verification.
