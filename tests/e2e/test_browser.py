@@ -151,6 +151,45 @@ def test_signed_in_workspace(tmp_path):
         assert "Sign out" in browser("snapshot", "-i")
         browser("reload")
         browser("wait", "--text", "Synthetic E2E Entity")
+        # A reviewed month can contain unknown actuals. Later activity leaves the
+        # annotation set and displays an informational checkpoint mismatch.
+        browser("find", "role", "button", "click", "--name", "New Plan", "--exact")
+        browser("find", "label", "Plan name", "fill", "Synthetic month")
+        browser("find", "label", "Income source 1", "fill", "Synthetic source")
+        browser("find", "label", "Net amount 1", "fill", "4000")
+        browser("find", "label", "Monthly guilt-free spending", "fill", "800")
+        browser("find", "role", "button", "click", "--name", "Save draft", "--exact")
+        browser("wait", "--text", "Save version")
+        browser("find", "role", "button", "click", "--name", "Save version", "--exact")
+        browser("wait", "--text", "View Synthetic month v1")
+        browser(
+            "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
+        )
+        browser("wait", "--text", "Start this month's Review")
+        choice = (
+            browser("eval", "document.querySelector('select').options[1].value")
+            .strip()
+            .strip('"')
+        )
+        browser("find", "label", "Comparison version", "select", choice)
+        browser("find", "role", "button", "click", "--name", "Create Review", "--exact")
+        browser("wait", "--text", "Review notes and checkpoint")
+        browser("find", "label", "Review note", "fill", "Synthetic takeaway")
+        browser("find", "label", "Mark reviewed", "check")
+        browser("find", "role", "button", "click", "--name", "Save Review", "--exact")
+        browser("wait", "--text", "Marked reviewed.")
+        assert "Unknown" in browser("get", "text", "body")
+        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        browser(
+            "find", "role", "button", "click", "--name", "Record activity", "--exact"
+        )
+        browser("find", "label", "Amount (USD)", "fill", "25")
+        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
+        browser("wait", "--text", "$25.00")
+        browser(
+            "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
+        )
+        browser("wait", "--text", "Changed since review. Your annotation remains set.")
         browser("find", "role", "button", "click", "--name", "Sign out", "--exact")
         browser("wait", "--text", "Sign in")
         assert "Synthetic E2E Entity" not in browser("get", "text", "body")

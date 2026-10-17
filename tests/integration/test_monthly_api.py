@@ -159,6 +159,42 @@ async def scenario():
             "/reviews", {"month": "2026-10-01", "version_id": version["uuid"]}
         )
         assert review.status_code == 200, review.text
+        earlier = await post(
+            "/reviews", {"month": "2026-09-01", "version_id": version["uuid"]}
+        )
+        assert earlier.status_code == 200
+        earlier_mark = await client.put(
+            prefix + "/reviews/2026-09-01",
+            json={
+                "expected_revision": 1,
+                "version_id": version["uuid"],
+                "note": "Unknown is allowed",
+                "reviewed": True,
+            },
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert earlier_mark.status_code == 200
+        earlier_read = (await client.get(prefix + "/reviews/2026-09-01")).json()
+        assert earlier_read["actual"]["income_incomplete"] is True
+        assert (
+            earlier_read["review"]["reviewed_at"]
+            and not earlier_read["checkpoint_changed"]
+        )
+        changed_note = await client.put(
+            prefix + "/reviews/2026-09-01",
+            json={
+                "expected_revision": 2,
+                "version_id": version["uuid"],
+                "note": "Revised synthetic takeaway",
+                "reviewed": True,
+            },
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert changed_note.status_code == 200
+        earlier_read = (await client.get(prefix + "/reviews/2026-09-01")).json()
+        assert (
+            earlier_read["checkpoint_changed"] and earlier_read["review"]["reviewed_at"]
+        )
         assert (await client.get(prefix + "/reviews/2026-10-01")).json()["actual"][
             "income_recorded"
         ] is None
@@ -327,6 +363,7 @@ async def scenario():
             "expected_revision": 2,
             "version_id": second_version["uuid"],
         }
+        entries_before_retarget = (await client.get(prefix + "/activity")).json()
         raced_reviews = await asyncio.gather(
             *[
                 client.put(
@@ -339,6 +376,16 @@ async def scenario():
         read = (await client.get(edit_path)).json()
         assert read["version"]["uuid"] == second_version["uuid"]
         assert read["entries"] and read["checkpoint_changed"] is True
+        assert (
+            next(e for e in read["entries"] if e["uuid"] == receipt["uuid"])[
+                "source_uuid"
+            ]
+            == salary
+        )
+        assert (
+            await client.get(prefix + "/activity")
+        ).json() == entries_before_retarget
+        assert (await client.get(prefix + "/reviews/2026-09-01")).json() == earlier_read
         refreshed = await client.put(
             edit_path,
             json={**revised, "expected_revision": 3, "checkpoint": True},
@@ -418,8 +465,15 @@ async def scenario():
                 )
             )
         before_entries = (await client.get(prefix + "/activity")).json()
+        before_review = (await client.get(edit_path)).json()
         failure_key = str(uuid4())
         try:
+            failed_review = await client.put(
+                edit_path,
+                json={**revised, "expected_revision": 5, "reviewed": True},
+                headers={"Idempotency-Key": failure_key},
+            )
+            assert failed_review.status_code == 503
             failed = await post("/activity", entry_body, failure_key)
             assert failed.status_code == 503
             assert "private financial note" not in failed.text
@@ -430,6 +484,7 @@ async def scenario():
                 )
                 await connection.execute(text("DROP FUNCTION fail_this_audit()"))
         assert (await client.get(prefix + "/activity")).json() == before_entries
+        assert (await client.get(edit_path)).json() == before_review
         async with sessions() as session:
             assert (
                 await session.scalar(
