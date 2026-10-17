@@ -53,9 +53,9 @@ ACCANTO_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/
 Skip `createdb` if the test database already exists. Without the explicit test URL,
 the monthly integration check skips. It verifies the authenticated Plan/activity/
 Review journey, concurrent retries and stale edits, revoked access, atomic audit
-failure, soft deletion and protected saved versions. The backend E2E suite remains
-unimplemented; local agent-browser acceptance separately exercises the production
-UI with the signed provider fixture below. No hosted provider is needed.
+failure, soft deletion and protected saved versions. The browser E2E smoke test
+exercises the built production UI with the signed provider fixture below. No hosted
+provider is needed.
 
 Import application models in `accanto.models` so Alembic sees `Base.metadata`.
 Create subsequent migrations with `uv run alembic revision --autogenerate -m ...`,
@@ -176,3 +176,34 @@ The generic agent-browser fill command may not update native date/month controls
 verify their values and resulting displayed month. Acceptance capture can use the
 native input value setter and dispatched input/change events while retaining the
 production React handlers. This is separate from keyboard-operation verification.
+
+## Continuous integration and browser smoke test
+
+GitHub Actions runs three independent checks on pull requests to `main` and pushes
+on `main`: `gate`, `integration`, and `e2e`. Each database job owns a fresh
+PostgreSQL 16 service and applies Alembic migrations before testing. The workflow
+has read-only repository permissions and performs no publishing or deployment.
+
+The E2E job builds the app on Node 22, then uses Node 24 for pinned agent-browser
+0.34.0 and its selected browser binary. It runs `just test-e2e` against the built
+frontend, real database and local signed OIDC provider. The initial smoke journey
+covers sign-in, Entity workspace loading, session persistence across reload and
+sign-out. It does not yet cover all financial workflows.
+
+For local execution, install the approved agent-browser version and its browser
+(`agent-browser install`, without privileged system-dependency flags), build the
+frontend, and migrate a dedicated local database ending in `_test`. Then run:
+
+```sh
+ACCANTO_E2E_DATABASE_URL=postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/accanto_e2e_test \
+  just test-e2e
+```
+
+Missing E2E setup fails the test instead of silently skipping it. The harness
+starts loopback app/provider processes on temporary ports, uses a fresh isolated
+browser session restricted to loopback, and closes them on exit. Both local and CI
+runs use Chromium `--no-sandbox` for hosts that restrict user namespaces; this
+weakens browser process isolation and is only for these synthetic local services.
+It inserts only synthetic fixtures and retains them in the disposable database; never run against
+user data or share the database between concurrent runs. No screenshots, browser
+storage, tokens or server logs are uploaded as CI artifacts.
