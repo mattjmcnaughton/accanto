@@ -64,9 +64,38 @@ async def manage_key(
         target = next((row for row in records if row["uuid"] == revoke), None)
         if not target:
             raise RejectionError("key_not_found", "API key is unavailable.", 404)
+        if target["revoked_at"] is not None:
+            return {"id": str(revoke), "revoked": True}
         await session.execute(
             update(keys)
             .where(keys.c.id == target["id"])
             .values(revoked_at=datetime.now(UTC))
         )
         return {"id": str(revoke), "revoked": True}
+
+
+async def list_keys(session, actor):
+    async with session.begin():
+        current = await revalidate_actor(session, actor, lock=True)
+        rows = (
+            (
+                await session.execute(
+                    select(
+                        keys.c.uuid, keys.c.name, keys.c.created_at, keys.c.revoked_at
+                    )
+                    .where(keys.c.user_id == current.user_id)
+                    .order_by(keys.c.id)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return [
+            {
+                "id": str(row["uuid"]),
+                "name": row["name"],
+                "created_at": row["created_at"],
+                "revoked_at": row["revoked_at"],
+            }
+            for row in rows
+        ]

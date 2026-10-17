@@ -4,10 +4,10 @@ import hashlib
 import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, insert, select
 
+from accanto.domains.entity import entity_today
 from accanto.models import monthly as m
 from accanto.services.access import RejectionError, issue_session, revalidate_actor
 
@@ -119,9 +119,7 @@ async def account_metadata(session, actor):
                     "id": str(entity["uuid"]),
                     "name": entity["name"],
                     "time_zone": entity["time_zone"],
-                    "today": now.astimezone(ZoneInfo(entity["time_zone"]))
-                    .date()
-                    .isoformat(),
+                    "today": entity_today(now, entity["time_zone"]).isoformat(),
                 }
                 for entity in entities
             ],

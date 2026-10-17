@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { BrowserSession } from "../../lib/api";
+import { type BrowserSession, readSession } from "../../lib/api";
+import { Settings } from "../settings/Settings";
 import type { WriteSpec } from "../../lib/monthly";
 import {
   RecoverableWrite,
@@ -18,8 +19,12 @@ export function Workspace({
   signedOut,
 }: { initial: BrowserSession; signedOut: (message?: string) => void }) {
   const [session, setSession] = useState(initial);
-  const [screen, setScreen] = useState<"Plans" | "Activity" | "Monthly Review">("Plans");
+  const [screen, setScreen] = useState<"Plans" | "Activity" | "Monthly Review" | "Settings">(
+    "Plans",
+  );
   const [refresh, setRefresh] = useState(0);
+  const [metadataStale, setMetadataStale] = useState(false);
+  const [metadataError, setMetadataError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<RecoveryStatus | null>(null);
   const [message, setMessage] = useState("");
@@ -39,7 +44,9 @@ export function Workspace({
     };
   }, []);
   const guard = () =>
-    !busy && confirmInAppNavigation(() => dirty.current || pending.current.hasPending());
+    !busy &&
+    !metadataStale &&
+    confirmInAppNavigation(() => dirty.current || pending.current.hasPending());
   async function submit(credentials: BrowserSession) {
     setBusy(true);
     setMessage("");
@@ -97,10 +104,40 @@ export function Workspace({
       ),
     );
   }
+  async function credentials(signIn = false) {
+    const next = signIn
+      ? await reauthenticate(initial.user.id)
+      : { kind: "ready" as const, session: await readSession() };
+    if (!live.current) throw new Error("Workspace closed");
+    if (
+      next.kind === "wrong_user" ||
+      (next.kind === "ready" && next.session.user.id !== initial.user.id)
+    ) {
+      setConcealed(true);
+      setStatus("wrong_user");
+      throw new Error("Account changed");
+    }
+    if (next.kind !== "ready") throw new Error("Sign-in incomplete");
+    if (signIn) setSession((current) => ({ ...current, csrf_token: next.session.csrf_token }));
+    return next.session;
+  }
+  async function refreshMetadata(signIn = false) {
+    setMetadataStale(true);
+    setMetadataError(false);
+    try {
+      const current = await credentials(signIn);
+      if (live.current) {
+        setSession(current);
+        setMetadataStale(false);
+      }
+    } catch {
+      if (live.current) setMetadataError(true);
+    }
+  }
   const props = {
     entity,
     concealed,
-    busy: busy || pending.current.hasPending(),
+    busy: busy || pending.current.hasPending() || metadataStale,
     refresh,
     guard,
     dirty: (value: boolean) => {
@@ -135,11 +172,30 @@ export function Workspace({
         />
       )}
       {message && !concealed && <output>{message}</output>}
+      {metadataStale && !concealed && (
+        <div aria-live="polite">
+          <p>
+            {metadataError
+              ? "Settings were saved, but current Entity date defaults could not be refreshed. Refresh before continuing."
+              : "Refreshing Entity date defaults…"}
+          </p>
+          {metadataError && (
+            <>
+              <button type="button" onClick={() => void refreshMetadata()}>
+                Refresh Entity defaults
+              </button>
+              <button type="button" onClick={() => void refreshMetadata(true)}>
+                Sign in and refresh defaults
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {!entity && <p>No Entity is available. Contact the operator to complete setup.</p>}
       {entity && (
         <>
           <nav className="workspace-nav" aria-label="Workspace" hidden={concealed}>
-            {(["Plans", "Activity", "Monthly Review"] as const).map((item) => (
+            {(["Plans", "Activity", "Monthly Review", "Settings"] as const).map((item) => (
               <button
                 type="button"
                 key={item}
@@ -161,6 +217,9 @@ export function Workspace({
           {screen === "Plans" && <Plans {...props} />}
           {screen === "Activity" && <ActivityScreen {...props} />}
           {screen === "Monthly Review" && <MonthlyReview {...props} />}
+          {screen === "Settings" && (
+            <Settings {...props} credentials={credentials} saved={() => void refreshMetadata()} />
+          )}
         </>
       )}
     </>

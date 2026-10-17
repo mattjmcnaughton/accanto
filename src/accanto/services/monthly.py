@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from accanto.domains.entity import entity_settings
 from accanto.domains.monthly import money, monthly_actuals, plan_results
 from accanto.models import monthly as m
 from accanto.repositories.monthly import plan_lines
@@ -130,7 +131,32 @@ async def write(
                 )
             )
 
-        if operation in {"create_plan", "edit_plan"}:
+        if operation == "edit_entity":
+            check_revision(entity, payload.get("expected_revision"))
+            try:
+                values = entity_settings(payload["name"], payload["time_zone"])
+            except ValueError as error:
+                raise RejectionError("invalid_settings", str(error), 422) from None
+            record = (
+                (
+                    await session.execute(
+                        update(m.entities)
+                        .where(m.entities.c.id == entity["id"])
+                        .values(**values, revision=entity["revision"] + 1)
+                        .returning(m.entities)
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            await audit(m.entities, entity["uuid"], dict(entity), dict(record))
+            response = {
+                "id": str(record["uuid"]),
+                "name": record["name"],
+                "time_zone": record["time_zone"],
+                "revision": record["revision"],
+            }
+        elif operation in {"create_plan", "edit_plan"}:
             before = None
             if operation == "create_plan":
                 if payload.get("expected_revision") is not None:

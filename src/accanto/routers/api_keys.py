@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from accanto.dtos.monthly import Input, Name
 from accanto.routers.monthly import Session, Token
-from accanto.services.api_keys import manage_key
+from accanto.services.api_keys import list_keys, manage_key
 from accanto.services.monthly import RejectionError
 
 router = APIRouter(prefix="/api/keys", tags=["API keys"])
@@ -14,6 +14,11 @@ router = APIRouter(prefix="/api/keys", tags=["API keys"])
 
 class KeyInput(Input):
     name: Name
+
+
+@router.get("")
+async def get_keys(session: Session, token: Token):
+    return await list_keys(session, token)
 
 
 @router.post("")
