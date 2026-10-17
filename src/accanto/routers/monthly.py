@@ -7,7 +7,13 @@ from uuid import UUID
 from fastapi import APIRouter, Header, HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from accanto.dtos.monthly import ActivityInput, PlanInput, ReviewInput, RevisionInput
+from accanto.dtos.monthly import (
+    ActivityInput,
+    PlanCopyInput,
+    PlanInput,
+    ReviewInput,
+    RevisionInput,
+)
 from accanto.routers.authentication import Session, Token
 from accanto.services.monthly import (
     RejectionError,
@@ -70,6 +76,20 @@ async def create_plan(
     request_key: RequestKey,
 ):
     return await command(session, token, entity_id, "create_plan", request_key, body)
+
+
+@router.post("/plans/{plan_id}/copies")
+async def copy_plan(
+    entity_id: UUID,
+    plan_id: UUID,
+    body: PlanCopyInput,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await command(
+        session, token, entity_id, "copy_plan", request_key, body, plan_id
+    )
 
 
 @router.put("/plans/{plan_id}/draft")

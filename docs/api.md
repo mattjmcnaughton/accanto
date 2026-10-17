@@ -212,3 +212,18 @@ recoverable and is never stored in retry outcomes. Report creation as unconfirme
 reload the metadata list, revoke an unwanted key, then explicitly create another.
 Keep a newly displayed secret only in memory; clear it on dismissal, navigation
 and logout. Do not record it in browser storage, logs, screenshots or recordings.
+
+### Copy a Plan
+
+`POST /api/entities/{entity_id}/plans/{plan_id}/copies` accepts
+`{"name":"Alternative", "source_revision_id":"<draft-or-saved-revision-uuid>", "expected_revision":1}`.
+Choose the exact stored draft or saved version from `GET .../plans`; supply that
+revision's concurrency revision. A stale selection is rejected. The command uses
+the normal authentication, CSRF (browser), and `Idempotency-Key` requirements.
+It returns `{plan_id, draft}` with fresh Plan and Income source identities.
+The new draft calculates current rules from the selected inputs. The source,
+its immutable versions, receipts, and Review targets remain unchanged.
+
+Saved scenario comparisons use the stored `incomes`, result fields, and
+`rule_version` returned by `GET .../plans`. Do not recalculate historical versions
+using current rules. Copies do not infer cross-Plan receipt matching.

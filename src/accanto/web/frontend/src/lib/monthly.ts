@@ -94,6 +94,15 @@ export const monthly = {
     path: `${root(entityId)}/plans`,
     body,
   }),
+  copyPlan: (
+    entityId: UUID,
+    planId: UUID,
+    body: { name: string; source_revision_id: UUID; expected_revision: number },
+  ): WriteSpec<{ plan_id: UUID; draft: PlanRevision }> => ({
+    method: "POST",
+    path: `${root(entityId)}/plans/${target(planId)}/copies`,
+    body,
+  }),
   editPlan: (
     entityId: UUID,
     planId: UUID,

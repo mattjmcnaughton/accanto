@@ -131,6 +131,27 @@ async def write(
                 )
             )
 
+        if operation == "copy_plan":
+            source_plan = await scoped(session, m.plans, entity["id"], target)
+            source_revision = await scoped(
+                session, m.revisions, entity["id"], payload["source_revision_id"]
+            )
+            if source_revision["plan_id"] != source_plan["id"]:
+                raise RejectionError(
+                    "record_not_found", "Revision is unavailable in this Plan.", 404
+                )
+            check_revision(source_revision, payload["expected_revision"])
+            # Derive new inputs only after recording the original request identity.
+            # The creation path assigns fresh Plan and Income source identities.
+            payload = {
+                "name": payload["name"],
+                "spending": str(source_revision["spending"]),
+                "incomes": [
+                    {"name": line["name"], "amount": str(line["amount"])}
+                    for line in await plan_lines(session, source_revision["id"])
+                ],
+            }
+
         if operation == "edit_entity":
             check_revision(entity, payload.get("expected_revision"))
             try:
@@ -156,9 +177,9 @@ async def write(
                 "time_zone": record["time_zone"],
                 "revision": record["revision"],
             }
-        elif operation in {"create_plan", "edit_plan"}:
+        elif operation in {"create_plan", "edit_plan", "copy_plan"}:
             before = None
-            if operation == "create_plan":
+            if operation in {"create_plan", "copy_plan"}:
                 if payload.get("expected_revision") is not None:
                     raise RejectionError(
                         "unexpected_revision", "A new Plan has no prior revision."
