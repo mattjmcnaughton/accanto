@@ -60,6 +60,16 @@ keys = table(
     ),
     Column("revoked_at", DateTime(timezone=True)),
 )
+sessions = table(
+    "browser_session",
+    Column("user_id", ForeignKey("app_user.id"), nullable=False),
+    Column("digest", String(64), nullable=False, unique=True),
+    Column(
+        "created_at", DateTime(timezone=True), server_default=func.now(), nullable=False
+    ),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("revoked_at", DateTime(timezone=True)),
+)
 plans = table(
     "plan",
     Column("entity_id", ForeignKey("entity.id"), nullable=False),
@@ -159,7 +169,8 @@ audit = table(
     "audit_log",
     Column("entity_id", ForeignKey("entity.id"), nullable=False),
     Column("actor_id", ForeignKey("app_user.id"), nullable=False),
-    Column("api_key_uuid", Uuid, nullable=False),
+    Column("api_key_uuid", Uuid),
+    Column("session_uuid", Uuid),
     Column("interface", String, nullable=False),
     Column("operation_uuid", Uuid, nullable=False),
     Column("record_type", String, nullable=False),
