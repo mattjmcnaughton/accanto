@@ -168,6 +168,7 @@ export function ActivityScreen(p: ScreenProps) {
       <LoadMessage state={plans} retry={() => setReload((x) => x + 1)} />
       <LoadMessage state={accounts} retry={() => setReload((x) => x + 1)} />
       <LoadMessage state={investments} retry={() => setReload((x) => x + 1)} />
+      <LoadMessage state={loans} retry={() => setReload((x) => x + 1)} />
       <LoadMessage state={recipients} retry={() => setReload((x) => x + 1)} />
       <div className="workspace-columns">
         <div className="record-list">
@@ -206,6 +207,15 @@ export function ActivityScreen(p: ScreenProps) {
                             ? "Funded from current income"
                             : "Unassigned"}
                 </p>
+                {entry.category === "fixed_cost" && entry.debt_account_id && (
+                  <p>
+                    Loan:{" "}
+                    {loans.kind === "ready"
+                      ? (loans.data.find((loan) => loan.uuid === entry.debt_account_id)?.name ??
+                        "Historical loan")
+                      : "Historical loan"}
+                  </p>
+                )}
                 {entry.note && <p>{entry.note}</p>}
                 {entry.category === "investing" || entry.category === "giving" ? (
                   <p>Correct this entry in Investments and giving.</p>

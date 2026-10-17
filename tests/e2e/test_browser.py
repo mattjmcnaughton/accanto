@@ -539,9 +539,11 @@ def test_signed_in_workspace(tmp_path):
         browser("select", "select[name='loan-account']", loan_option)
         browser("find", "label", "Amount (USD)", "fill", "300")
         browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
+        browser("wait", "--text", "Loan: Synthetic loan")
         browser(
             "find", "role", "button", "click", "--name", "Loans and balances", "--exact"
         )
+        browser("wait", "--text", "$300.00 payment")
         browser("wait", "--text", "Latest observed amount owed: $300.00")
         browser(
             "find", "role", "button", "click", "--name", "Record observation", "--exact"

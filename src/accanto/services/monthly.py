@@ -509,7 +509,19 @@ async def write(
                     raise RejectionError(
                         "debt_payment_category", "Debt payments are fixed costs.", 422
                     )
-                if not debt_account["active"]:
+                previous_debt_id = (
+                    await session.scalar(
+                        select(b.entry_debts.c.debt_account_id).where(
+                            b.entry_debts.c.actual_entry_id == old["id"]
+                        )
+                    )
+                    if old
+                    else None
+                )
+                if (
+                    not debt_account["active"]
+                    and previous_debt_id != debt_account["id"]
+                ):
                     raise RejectionError(
                         "archived_debt",
                         "Reopen the debt account before recording payments.",
