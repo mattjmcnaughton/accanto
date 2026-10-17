@@ -46,7 +46,8 @@ def test_signed_in_workspace(tmp_path):
     assert (ROOT / "src/accanto/web/frontend/dist/index.html").is_file(), (
         "Build the production frontend before E2E"
     )
-    app_port, issuer_port = free_port(), free_port()
+    app_port = int(os.environ.get("ACCANTO_E2E_APP_PORT", free_port()))
+    issuer_port = int(os.environ.get("ACCANTO_E2E_ISSUER_PORT", free_port()))
     assert app_port != issuer_port
     origin = f"http://127.0.0.1:{app_port}"
     issuer = f"http://127.0.0.1:{issuer_port}"
@@ -253,6 +254,61 @@ def test_signed_in_workspace(tmp_path):
         browser("wait", "--text", "Synthetic savings")
         browser("set", "viewport", "375", "760")
         assert "Unallocated" in browser("snapshot")
+        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        browser("wait", "--text", "Record activity")
+        browser(
+            "find", "role", "button", "click", "--name", "Record activity", "--exact"
+        )
+        browser("find", "label", "Amount (USD)", "fill", "1200.00")
+        browser("select", "select[name='funding-origin']", "savings")
+        goal_option = (
+            browser(
+                "eval",
+                "Array.from(document.querySelector('select[name=\"saving-goal\"]').options)"
+                ".find(option => option.textContent.includes('Laptop')).value",
+            )
+            .strip()
+            .strip('"')
+        )
+        browser("select", "select[name='saving-goal']", goal_option)
+        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
+        browser(
+            "wait", "--text", "The input needs correction. Your entries are still here."
+        )
+        assert "1200.00" in browser(
+            "get", "value", "form.editor input[inputmode='decimal']"
+        )
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "Discard pending save",
+            "--exact",
+        )
+        browser("select", "form.editor select", "saving")
+        browser("find", "label", "Amount (USD)", "fill", "200.00")
+        browser("select", "select[name='saving-goal']", goal_option)
+        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
+        browser("wait", "--text", "$200.00")
+        browser(
+            "find", "role", "button", "click", "--name", "Record activity", "--exact"
+        )
+        browser("find", "label", "Amount (USD)", "fill", "1200.00")
+        browser("select", "select[name='funding-origin']", "savings")
+        browser("select", "select[name='saving-goal']", goal_option)
+        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
+        browser("wait", "--text", "$1200.00")
+        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
+        browser("wait", "--text", "Contribution progress $200.00")
+        browser(
+            "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
+        )
+        browser("wait", "--text", "Spending funded from previously saved money")
+        review_text = browser("get", "text", "body")
+        assert "New saving" in review_text and "$200.00" in review_text
+        assert "$1200.00" in review_text
         browser("find", "role", "button", "click", "--name", "Sign out", "--exact")
         browser("wait", "--text", "Sign in")
         assert "Synthetic E2E Entity" not in browser("get", "text", "body")

@@ -1,16 +1,20 @@
 """Savings commands under the shared authorized Entity transaction."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import insert, select, update
 
 from accanto.domains.savings import (
+    SavingEvent,
+    SavingsShortfallError,
     funded_status,
     goal_target,
     opening_change_allowed,
     opening_designations,
+    replay_savings,
 )
+from accanto.models import monthly as m
 from accanto.models import savings as s
 from accanto.services.access import RejectionError
 from accanto.services.monthly import authorize, check_revision, scoped
@@ -18,6 +22,185 @@ from accanto.services.monthly import authorize, check_revision, scoped
 
 def invalid(error: ValueError):
     raise RejectionError("invalid_savings", str(error), 422) from None
+
+
+async def current_link(session, entry_id):
+    return (
+        (
+            await session.execute(
+                select(s.linked_activity).where(
+                    s.linked_activity.c.actual_entry_id == entry_id,
+                    s.linked_activity.c.deleted_at.is_(None),
+                )
+            )
+        )
+        .mappings()
+        .first()
+    )
+
+
+async def saving_facts(session, entity_id):
+    goals = (
+        (
+            await session.execute(
+                select(
+                    s.goals,
+                    s.accounts.c.opening_date,
+                    s.accounts.c.active.label("account_active"),
+                )
+                .join(s.accounts, s.accounts.c.id == s.goals.c.account_id)
+                .where(s.goals.c.entity_id == entity_id)
+            )
+        )
+        .mappings()
+        .all()
+    )
+    links = (
+        (
+            await session.execute(
+                select(
+                    s.linked_activity,
+                    m.entries.c.category,
+                    m.entries.c.amount,
+                    m.entries.c.deleted_at.label("entry_deleted_at"),
+                )
+                .join(m.entries, m.entries.c.id == s.linked_activity.c.actual_entry_id)
+                .where(
+                    s.linked_activity.c.entity_id == entity_id,
+                    s.linked_activity.c.deleted_at.is_(None),
+                    m.entries.c.deleted_at.is_(None),
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
+    openings = {str(goal["uuid"]): goal["opening_amount"] for goal in goals}
+    goal_ids = {goal["id"]: str(goal["uuid"]) for goal in goals}
+    events = [
+        SavingEvent(
+            link["financial_date"],
+            link["recording_order"],
+            goal_ids[link["goal_id"]],
+            link["amount"] if link["category"] == "saving" else -link["amount"],
+            link["category"] == "saving",
+        )
+        for link in links
+    ]
+    try:
+        balances, contributions = replay_savings(openings, events)
+    except SavingsShortfallError as error:
+        raise RejectionError("savings_shortfall", str(error), 422) from None
+    return goals, balances, contributions
+
+
+async def attach_entry(
+    session, entity, entry, previous_link, goal_uuid, audit, previous_category=None
+):
+    """Retain prior associations and preserve order while changing an entry."""
+    goal = None
+    account = None
+    if goal_uuid is not None:
+        goal = await scoped(session, s.goals, entity["id"], goal_uuid)
+        account = (
+            (
+                await session.execute(
+                    select(s.accounts).where(s.accounts.c.id == goal["account_id"])
+                )
+            )
+            .mappings()
+            .one()
+        )
+        if not account["active"]:
+            raise RejectionError(
+                "archived_account", "Reopen the savings account first."
+            )
+        if entry["financial_date"] < account["opening_date"]:
+            raise RejectionError(
+                "before_opening",
+                "Savings activity cannot precede the account opening date.",
+                422,
+            )
+        # Corrections may retain an inactive goal, but new contributions may not.
+        if (
+            entry["category"] == "saving"
+            and not goal["active"]
+            and (
+                previous_link is None
+                or previous_link["goal_id"] != goal["id"]
+                or previous_category != "saving"
+            )
+        ):
+            raise RejectionError("inactive_goal", "Choose an active saving goal.")
+    if previous_link:
+        previous_account = (
+            await session.execute(
+                select(s.accounts.c.active).where(
+                    s.accounts.c.id == previous_link["account_id"]
+                )
+            )
+        ).scalar_one()
+        if not previous_account:
+            raise RejectionError(
+                "archived_account", "Reopen the original savings account first."
+            )
+    if previous_link and goal and previous_link["goal_id"] == goal["id"]:
+        if previous_link["financial_date"] != entry["financial_date"]:
+            changed = (
+                (
+                    await session.execute(
+                        update(s.linked_activity)
+                        .where(s.linked_activity.c.id == previous_link["id"])
+                        .values(financial_date=entry["financial_date"])
+                        .returning(s.linked_activity)
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            await audit(
+                s.linked_activity, changed["uuid"], dict(previous_link), dict(changed)
+            )
+    else:
+        if previous_link:
+            changed = (
+                (
+                    await session.execute(
+                        update(s.linked_activity)
+                        .where(s.linked_activity.c.id == previous_link["id"])
+                        .values(deleted_at=datetime.now(UTC))
+                        .returning(s.linked_activity)
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            await audit(
+                s.linked_activity, changed["uuid"], dict(previous_link), dict(changed)
+            )
+        if goal:
+            assert account is not None
+            values = dict(
+                entity_id=entity["id"],
+                account_id=account["id"],
+                goal_id=goal["id"],
+                actual_entry_id=entry["id"],
+                financial_date=entry["financial_date"],
+                recording_order=entry["recording_order"],
+            )
+            link = (
+                (
+                    await session.execute(
+                        insert(s.linked_activity)
+                        .values(**values)
+                        .returning(s.linked_activity)
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            await audit(s.linked_activity, link["uuid"], None, dict(link))
+    await saving_facts(session, entity["id"])
 
 
 async def snapshot(session, account):
@@ -32,6 +215,7 @@ async def snapshot(session, account):
         .mappings()
         .all()
     )
+    _, balances, contributions = await saving_facts(session, account["entity_id"])
     goals = [
         {
             "uuid": str(row["uuid"]),
@@ -40,9 +224,9 @@ async def snapshot(session, account):
             "kind": row["kind"],
             "target": str(row["target"]) if row["target"] is not None else None,
             "opening_amount": str(row["opening_amount"]),
-            "remaining_saved": str(row["opening_amount"]),
-            "contribution_progress": "0.00",
-            "funded_status": funded_status(row["opening_amount"], row["target"]),
+            "remaining_saved": str(balances[str(row["uuid"])]),
+            "contribution_progress": str(contributions[str(row["uuid"])]),
+            "funded_status": funded_status(balances[str(row["uuid"])], row["target"]),
             "revision": row["revision"],
             "active": row["active"],
         }
@@ -53,7 +237,9 @@ async def snapshot(session, account):
         "name": account["name"],
         "opening_date": account["opening_date"].isoformat(),
         "opening_amount": str(account["opening_amount"]),
-        "balance": str(sum((row["opening_amount"] for row in rows), Decimal("0.00"))),
+        "balance": str(
+            sum((balances[str(row["uuid"])] for row in rows), Decimal("0.00"))
+        ),
         "revision": account["revision"],
         "active": account["active"],
         "goals": goals,

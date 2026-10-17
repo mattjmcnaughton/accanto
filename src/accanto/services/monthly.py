@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from accanto.domains.entity import entity_settings
@@ -389,6 +389,9 @@ async def write(
                         "deleted_entry", "Entry has already been deleted."
                     )
                 before = await entry_snapshot(session, old)
+            from accanto.services.savings import attach_entry, current_link
+
+            previous_link = await current_link(session, old["id"]) if old else None
             source = None
             if payload.get("source_id"):
                 if payload["category"] != "income":
@@ -400,6 +403,8 @@ async def write(
                     session, m.sources, entity["id"], payload["source_id"]
                 )
             if operation == "known_total":
+                from accanto.models import savings as s
+
                 next_month = date(
                     payload["month"].year + (payload["month"].month == 12),
                     payload["month"].month % 12 + 1,
@@ -408,7 +413,11 @@ async def write(
                 contributing = (
                     (
                         await session.execute(
-                            select(m.entries, m.sources.c.uuid.label("source_uuid"))
+                            select(
+                                m.entries,
+                                m.sources.c.uuid.label("source_uuid"),
+                                s.goals.c.uuid.label("goal_uuid"),
+                            )
                             .outerjoin(
                                 m.assignments,
                                 m.assignments.c.actual_entry_id == m.entries.c.id,
@@ -416,6 +425,15 @@ async def write(
                             .outerjoin(
                                 m.sources,
                                 m.sources.c.id == m.assignments.c.income_source_id,
+                            )
+                            .outerjoin(
+                                s.linked_activity,
+                                (s.linked_activity.c.actual_entry_id == m.entries.c.id)
+                                & s.linked_activity.c.deleted_at.is_(None),
+                            )
+                            .outerjoin(
+                                s.goals,
+                                s.goals.c.id == s.linked_activity.c.goal_id,
                             )
                             .where(
                                 m.entries.c.entity_id == entity["id"],
@@ -434,6 +452,12 @@ async def write(
                         row
                         for row in contributing
                         if row["source_uuid"] == payload.get("source_id")
+                    ]
+                if payload["category"] == "saving":
+                    contributing = [
+                        row
+                        for row in contributing
+                        if row["goal_uuid"] == payload["saving_goal_id"]
                     ]
                 actual_fingerprint = sorted(
                     (str(row["uuid"]), row["revision"]) for row in contributing
@@ -483,6 +507,29 @@ async def write(
                 .mappings()
                 .one()
             )
+            if operation == "delete_entry":
+                await attach_entry(
+                    session,
+                    entity,
+                    record,
+                    previous_link,
+                    None,
+                    audit,
+                    old["category"] if old else None,
+                )
+            elif operation != "known_total" or payload["category"] == "saving":
+                await attach_entry(
+                    session,
+                    entity,
+                    record,
+                    previous_link,
+                    payload.get("saving_goal_id")
+                    if payload["category"] == "saving"
+                    or payload.get("funding_origin") == "savings"
+                    else None,
+                    audit,
+                    old["category"] if old else None,
+                )
             if operation != "delete_entry":
                 await session.execute(
                     delete(m.assignments).where(
@@ -647,7 +694,40 @@ async def entry_snapshot(session, record):
         .join(m.assignments, m.assignments.c.income_source_id == m.sources.c.id)
         .where(m.assignments.c.actual_entry_id == record["id"])
     )
-    return json_values({**dict(record), "source_id": source_uuid})
+    from accanto.models import savings as s
+    from accanto.services.savings import current_link
+
+    link = await current_link(session, record["id"])
+    if link is None and record["deleted_at"] is not None:
+        link = (
+            (
+                await session.execute(
+                    select(s.linked_activity)
+                    .where(s.linked_activity.c.actual_entry_id == record["id"])
+                    .order_by(s.linked_activity.c.id.desc())
+                    .limit(1)
+                )
+            )
+            .mappings()
+            .first()
+        )
+    goal_uuid = (
+        await session.scalar(
+            select(s.goals.c.uuid).where(s.goals.c.id == link["goal_id"])
+        )
+        if link
+        else None
+    )
+    return json_values(
+        {
+            **dict(record),
+            "source_id": source_uuid,
+            "saving_goal_id": goal_uuid,
+            "funding_origin": "savings"
+            if record["category"] == "spending" and link
+            else "income",
+        }
+    )
 
 
 async def review_fingerprint(session, entity_id, month, version_uuid, note):
@@ -735,6 +815,28 @@ async def read_review(session, token, entity_uuid, month: date):
             ],
             [e["amount"] for e in entries if e["category"] == "spending"],
         )
+        saving_entries = [e["amount"] for e in entries if e["category"] == "saving"]
+        actual["saving_recorded"] = (
+            str(sum(saving_entries, Decimal("0.00"))) if saving_entries else None
+        )
+        from accanto.models import savings as s
+
+        savings_used = await session.scalar(
+            select(func.coalesce(func.sum(m.entries.c.amount), 0))
+            .join(
+                s.linked_activity,
+                s.linked_activity.c.actual_entry_id == m.entries.c.id,
+            )
+            .where(
+                m.entries.c.entity_id == entity["id"],
+                m.entries.c.category == "spending",
+                m.entries.c.deleted_at.is_(None),
+                m.entries.c.financial_date >= month,
+                m.entries.c.financial_date < next_month,
+                s.linked_activity.c.deleted_at.is_(None),
+            )
+        )
+        actual["savings_used"] = str(savings_used)
         return json_values(
             {
                 "review": dict(review),

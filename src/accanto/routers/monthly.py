@@ -39,7 +39,8 @@ def public_result(value):
         return {
             k: public_result(v)
             for k, v in value.items()
-            if not (isinstance(v, int) and (k == "id" or k.endswith("_id")))
+            if k != "recording_order"
+            and not (isinstance(v, int) and (k == "id" or k.endswith("_id")))
         }
     return value
 

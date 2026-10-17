@@ -5,6 +5,7 @@ import {
   type KnownTotalInput,
   monthly,
 } from "../../lib/monthly";
+import { savings } from "../../lib/savings";
 import {
   LoadMessage,
   MoneyInput,
@@ -17,18 +18,38 @@ export function ActivityScreen(p: ScreenProps) {
   const [reload, setReload] = useState(0);
   const entries = useLoad(() => monthly.activity(p.entity.id), [p.entity.id, p.refresh, reload]);
   const plans = useLoad(() => monthly.plans(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const accounts = useLoad(() => savings.list(p.entity.id), [p.entity.id, p.refresh, reload]);
   const [selected, setSelected] = useState<Activity | null>(null);
   const [form, setForm] = useState<ActivityInput | null>(null);
   const [known, setKnown] = useState<KnownTotalInput | null>(null);
   const sources = plans.kind === "ready" ? sourceChoices(plans.data) : [];
-  function fingerprint(month: string, category: "income" | "spending", sourceId: string | null) {
+  const savingGoals =
+    accounts.kind === "ready"
+      ? accounts.data.flatMap((account) =>
+          account.goals.map((goal) => ({
+            account,
+            goal,
+            label: `${account.name} · ${goal.name}`,
+          })),
+        )
+      : [];
+  const goalLabel = (id: string | null) =>
+    savingGoals.find(({ goal }) => goal.uuid === id)?.label ?? "Historical saving goal";
+  function fingerprint(
+    month: string,
+    category: "income" | "spending" | "saving",
+    selectionId: string | null,
+  ) {
     const current = entries.kind === "ready" ? entries.data : [];
     return current
       .filter(
         (entry) =>
           entry.financial_date.slice(0, 7) === month.slice(0, 7) &&
           entry.category === category &&
-          (category === "spending" || entry.source_id === sourceId),
+          (category === "spending" ||
+            (category === "income"
+              ? entry.source_id === selectionId
+              : entry.saving_goal_id === selectionId)),
       )
       .map(({ uuid, revision }) => ({ uuid, revision }));
   }
@@ -50,8 +71,18 @@ export function ActivityScreen(p: ScreenProps) {
             note: entry.note,
             expected_revision: entry.revision,
             is_adjustment: entry.is_adjustment,
+            funding_origin: entry.funding_origin,
+            saving_goal_id: entry.saving_goal_id,
           }
-        : { date: p.entity.today, category: "spending", amount: "", source_id: null, note: "" },
+        : {
+            date: p.entity.today,
+            category: "spending",
+            amount: "",
+            source_id: null,
+            note: "",
+            funding_origin: "income",
+            saving_goal_id: null,
+          },
     );
     p.dirty(!entry);
   }
@@ -65,6 +96,7 @@ export function ActivityScreen(p: ScreenProps) {
       category: "spending",
       desired_total: "",
       source_id: null,
+      saving_goal_id: null,
       note: "",
       contributing_entries: fingerprint(`${p.entity.today.slice(0, 7)}-01`, "spending", null),
     });
@@ -97,6 +129,7 @@ export function ActivityScreen(p: ScreenProps) {
       </div>
       <LoadMessage state={entries} retry={() => setReload((x) => x + 1)} />
       <LoadMessage state={plans} retry={() => setReload((x) => x + 1)} />
+      <LoadMessage state={accounts} retry={() => setReload((x) => x + 1)} />
       <div className="workspace-columns">
         <div className="record-list">
           {entries.kind === "empty" && <p>No activity recorded yet.</p>}
@@ -105,15 +138,23 @@ export function ActivityScreen(p: ScreenProps) {
               <article key={entry.uuid}>
                 <p>
                   <time>{entry.financial_date}</time> ·{" "}
-                  {entry.category === "income" ? "Income" : "Guilt-free spending"}
+                  {entry.category === "income"
+                    ? "Income"
+                    : entry.category === "saving"
+                      ? "Saving"
+                      : "Guilt-free spending"}
                   {entry.is_adjustment && " · Adjustment"}
                 </p>
                 <strong>{dollars(entry.amount)}</strong>
                 <p>
-                  {entry.source_id
-                    ? sources.find((s) => s.id === entry.source_id)?.label ||
-                      "Historical Income source"
-                    : "Unassigned"}
+                  {entry.saving_goal_id
+                    ? `${entry.category === "saving" ? "To" : "Funded from"} ${goalLabel(entry.saving_goal_id)}`
+                    : entry.source_id
+                      ? sources.find((s) => s.id === entry.source_id)?.label ||
+                        "Historical Income source"
+                      : entry.category === "spending"
+                        ? "Funded from current income"
+                        : "Unassigned"}
                 </p>
                 {entry.note && <p>{entry.note}</p>}
                 <button type="button" disabled={p.busy} onClick={() => open(entry)}>
@@ -153,13 +194,16 @@ export function ActivityScreen(p: ScreenProps) {
                   onChange={(e) =>
                     update({
                       ...form,
-                      category: e.target.value as "income" | "spending",
+                      category: e.target.value as "income" | "spending" | "saving",
                       source_id: null,
+                      funding_origin: "income",
+                      saving_goal_id: null,
                     })
                   }
                 >
                   <option value="income">Income</option>
                   <option value="spending">Guilt-free spending</option>
+                  <option value="saving">Saving contribution</option>
                 </select>
               </label>
               <MoneyInput
@@ -189,6 +233,52 @@ export function ActivityScreen(p: ScreenProps) {
                         {source.label}
                       </option>
                     ))}
+                  </select>
+                </label>
+              )}
+              {form.category === "spending" && (
+                <label>
+                  Funding origin
+                  <select
+                    name="funding-origin"
+                    value={form.funding_origin ?? "income"}
+                    onChange={(e) =>
+                      update({
+                        ...form,
+                        funding_origin: e.target.value as "income" | "savings",
+                        saving_goal_id: null,
+                      })
+                    }
+                  >
+                    <option value="income">Current income</option>
+                    <option value="savings">Previously saved money</option>
+                  </select>
+                </label>
+              )}
+              {(form.category === "saving" || form.funding_origin === "savings") && (
+                <label>
+                  Saving goal
+                  <select
+                    name="saving-goal"
+                    required
+                    value={form.saving_goal_id ?? ""}
+                    onChange={(e) => update({ ...form, saving_goal_id: e.target.value || null })}
+                  >
+                    <option value="">Choose a goal</option>
+                    {savingGoals
+                      .filter(
+                        ({ account, goal }) =>
+                          account.active &&
+                          account.opening_date <= form.date &&
+                          (form.category !== "saving" ||
+                            goal.active ||
+                            goal.uuid === selected?.saving_goal_id),
+                      )
+                      .map(({ goal, label }) => (
+                        <option key={goal.uuid} value={goal.uuid}>
+                          {label}
+                        </option>
+                      ))}
                   </select>
                 </label>
               )}
@@ -258,7 +348,9 @@ export function ActivityScreen(p: ScreenProps) {
                       contributing_entries: fingerprint(
                         month,
                         known.category,
-                        known.source_id || null,
+                        known.category === "saving"
+                          ? known.saving_goal_id || null
+                          : known.source_id || null,
                       ),
                     });
                     p.dirty(true);
@@ -270,11 +362,12 @@ export function ActivityScreen(p: ScreenProps) {
                 <select
                   value={known.category}
                   onChange={(e) => {
-                    const category = e.target.value as "income" | "spending";
+                    const category = e.target.value as "income" | "spending" | "saving";
                     setKnown({
                       ...known,
                       category,
                       source_id: null,
+                      saving_goal_id: null,
                       contributing_entries: fingerprint(known.month, category, null),
                     });
                     p.dirty(true);
@@ -282,6 +375,7 @@ export function ActivityScreen(p: ScreenProps) {
                 >
                   <option value="spending">Guilt-free spending</option>
                   <option value="income">Income</option>
+                  <option value="saving">Saving</option>
                 </select>
               </label>
               {known.category === "income" && (
@@ -305,6 +399,37 @@ export function ActivityScreen(p: ScreenProps) {
                         {source.label}
                       </option>
                     ))}
+                  </select>
+                </label>
+              )}
+              {known.category === "saving" && (
+                <label>
+                  Saving goal
+                  <select
+                    name="known-saving-goal"
+                    required
+                    value={known.saving_goal_id || ""}
+                    onChange={(e) => {
+                      const saving_goal_id = e.target.value || null;
+                      setKnown({
+                        ...known,
+                        saving_goal_id,
+                        contributing_entries: fingerprint(known.month, "saving", saving_goal_id),
+                      });
+                      p.dirty(true);
+                    }}
+                  >
+                    <option value="">Choose a goal</option>
+                    {savingGoals
+                      .filter(
+                        ({ account, goal }) =>
+                          account.active && account.opening_date <= known.date && goal.active,
+                      )
+                      .map(({ goal, label }) => (
+                        <option key={goal.uuid} value={goal.uuid}>
+                          {label}
+                        </option>
+                      ))}
                   </select>
                 </label>
               )}

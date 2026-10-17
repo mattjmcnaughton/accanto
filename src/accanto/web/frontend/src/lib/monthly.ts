@@ -15,20 +15,23 @@ export interface PlanInput {
 export interface KnownTotalInput {
   date: IsoDate;
   month: IsoDate;
-  category: "income" | "spending";
+  category: "income" | "spending" | "saving";
   desired_total: DecimalString;
   source_id?: UUID | null;
+  saving_goal_id?: UUID | null;
   note?: string;
   contributing_entries: Array<{ uuid: UUID; revision: number }>;
 }
 export interface ActivityInput {
   date: IsoDate;
-  category: "income" | "spending";
+  category: "income" | "spending" | "saving";
   amount: DecimalString;
   source_id?: UUID | null;
   note?: string;
   expected_revision?: number;
   is_adjustment?: boolean;
+  funding_origin?: "income" | "savings";
+  saving_goal_id?: UUID | null;
 }
 export interface RevisionInput {
   expected_revision: number;
@@ -66,12 +69,14 @@ export interface PlanGroup {
 export interface Activity {
   uuid: UUID;
   financial_date: IsoDate;
-  category: "income" | "spending";
+  category: "income" | "spending" | "saving";
   amount: DecimalString;
   source_id: UUID | null;
   note: string;
   revision: number;
   is_adjustment: boolean;
+  funding_origin: "income" | "savings";
+  saving_goal_id: UUID | null;
 }
 export type ReviewEntry = Omit<Activity, "source_id"> & {
   source_uuid: UUID | null;
@@ -92,6 +97,8 @@ export interface ReviewResult {
     income_incomplete: boolean;
     missing_sources: UUID[];
     spending_recorded: DecimalString | null;
+    saving_recorded?: DecimalString | null;
+    savings_used?: DecimalString;
   };
   income_difference: DecimalString | null;
   spending_difference: DecimalString | null;

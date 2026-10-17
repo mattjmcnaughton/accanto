@@ -241,9 +241,24 @@ export function MonthlyReview(p: ScreenProps) {
                   <td>{dollars(state.data.actual.spending_recorded)}</td>
                   <td>{dollars(state.data.spending_difference)}</td>
                 </tr>
+                {"saving_recorded" in state.data.actual && (
+                  <tr>
+                    <th scope="row">New saving</th>
+                    <td>Not yet planned by goal</td>
+                    <td>{dollars(state.data.actual.saving_recorded ?? null)}</td>
+                    <td>—</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
+          {"savings_used" in state.data.actual && (
+            <p>
+              Spending funded from previously saved money:{" "}
+              {dollars(state.data.actual.savings_used ?? null)}. This is included in spending and
+              does not add income.
+            </p>
+          )}
           {state.data.actual.missing_sources.length > 0 && (
             <div className="warning">
               <p>Income remains unknown for:</p>
