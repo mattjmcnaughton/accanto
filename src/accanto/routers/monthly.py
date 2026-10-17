@@ -4,12 +4,11 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from accanto.db import get_session
 from accanto.dtos.monthly import ActivityInput, PlanInput, ReviewInput, RevisionInput
+from accanto.routers.authentication import Session, Token
 from accanto.services.monthly import (
     RejectionError,
     read_activity,
@@ -19,19 +18,9 @@ from accanto.services.monthly import (
 )
 
 router = APIRouter(prefix="/api/entities/{entity_id}", tags=["monthly core"])
-Session = Annotated[AsyncSession, Depends(get_session)]
 RequestKey = Annotated[
     str, Header(alias="Idempotency-Key", min_length=1, max_length=120)
 ]
-
-
-def credential(authorization: Annotated[str | None, Header()] = None) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "A Bearer API key is required.")
-    return authorization.removeprefix("Bearer ")
-
-
-Token = Annotated[str, Depends(credential)]
 
 
 def public_result(value):

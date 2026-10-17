@@ -98,7 +98,7 @@ gate-external: gate-expensive test-external
 
 # Start backend dev server
 dev-be:
-    uv run uvicorn accanto.app:app --reload
+    uv run uvicorn accanto.app:app --reload --no-access-log
 
 # Start frontend dev server
 dev-fe:

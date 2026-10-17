@@ -6,8 +6,11 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
+from accanto.config import settings
 from accanto.logging import configure_logging
-from accanto.routers import api_keys, health, monthly
+from accanto.oidc import OIDCProvider
+from accanto.routers import api_keys, browser_auth, health, monthly
+from accanto.services.access import RejectionError
 from accanto.web.serve import mount_frontend
 
 
@@ -27,6 +30,25 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.state.auth_settings = settings
+    app.state.oidc_provider = OIDCProvider(settings)
+
+    @app.middleware("http")
+    async def private_api_responses(request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
+    @app.exception_handler(RejectionError)
+    async def rejected(_request, error):
+        return JSONResponse(
+            status_code=error.status,
+            content={"detail": {"code": error.code, "message": error.message}},
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.exception_handler(SQLAlchemyError)
     async def database_failure(_request, _error):
         # SQLAlchemy exceptions can contain financial bind parameters. Never log them.
@@ -42,6 +64,7 @@ def create_app() -> FastAPI:
             },
         )
 
+    app.include_router(browser_auth.router)
     app.include_router(health.router)
     app.include_router(monthly.router)
     app.include_router(api_keys.router)
