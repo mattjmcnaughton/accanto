@@ -1,6 +1,6 @@
 # Accanto product direction
 
-Updated 2026-10-16. Accanto helps an Entity plan its money, record activity and
+Updated 2026-10-17. Accanto helps an Entity plan its money, record activity and
 review a month without confusing intentions, receipts, contributions and balances.
 [CONTEXT.md](../../CONTEXT.md) owns financial meanings; the
 [constitution](../../CONSTITUTION.md) owns engineering obligations. The
@@ -47,12 +47,17 @@ are ordinary guilt-free spending, counted once.
 ## Delivery status
 
 The [browser prototype](daily-workspace-prototype.html) and
-[walkthrough](prototype-review.md) implement the refined interaction paths.
+[walkthrough](prototype-review.md) represent the accepted interaction baseline
+reviewed on 2026-10-17. The [PRD coverage table](../prd/01-mvp.md#implemented-prototype-versus-production-delivery)
+separates implemented paths, prototype limits and production work.
 Legacy saved versions and label-only histories are preserved; they are not
 silently converted into tracked accounts. Browser storage, backup/restore and
-local audit snapshots are prototype continuity tools.
+local audit snapshots are prototype continuity tools, not authoritative production
+audit or multi-client write safety. Opening-edit forms and dedicated restoration
+interfaces are absent; cross-Plan income matching is not exposed. New date defaults
+use the Entity time zone without moving stored financial dates.
 
-The first production increment implements create/save a Plan → record activity →
+An existing backend increment implements create/save a Plan → record activity →
 review a month for direct net income and guilt-free spending. It has Python
 Decimal rules, authenticated API access, relational Postgres persistence, atomic
 audit writes, retry outcomes and stale-write protection, verified separately
@@ -62,6 +67,7 @@ The UI must use the same application behavior as direct API access.
 
 Advanced income matching, dedicated restoration UI, annual Plans/Reviews,
 credit-card settlement, split funding, tax estimation, automated bank ingestion,
-FIRE projections and AI features remain deferred. Existing household-loop and
-information-architecture HTML files are historical experiments, not competing
-current flows. No additional workflow interview is a prerequisite for core work.
+FIRE projections and AI features remain deferred. Earlier household-loop and
+information-architecture experiments are superseded; the daily-workspace prototype
+is the single current interaction reference. No additional workflow interview is
+a prerequisite for core work.

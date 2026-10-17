@@ -127,6 +127,12 @@ export function Destinations({
                   </span>
                   <Icon name="arrow" size={16} />
                 </div>
+                {row.target !== null && (
+                  <p className="footnote">
+                    {investing ? "Cumulative contributions" : "Cumulative net donations"} ÷
+                    contribution target: {money(contributed)} ÷ {money(row.target)}.
+                  </p>
+                )}
                 {investing && (
                   <p className="observed-balance">
                     {observed

@@ -1,6 +1,6 @@
 # 01 — Accanto MVP
 
-Status: Agreed workflow baseline; production implementation incremental
+Status: Agreed workflow baseline; prototype reviewed 2026-10-17; production incomplete
 Updated: 2026-10-17
 
 ## Purpose and authority
@@ -220,7 +220,24 @@ show payment history separately from observations.
 Legacy versions and legacy label-only data remain preserved. Local snapshots and
 tab conflict checks do not establish database audit immutability or concurrency.
 
-The first production increment implements schema/migrations, pure Python money
+The prototype is the accepted interaction baseline, not a claim that every
+production acceptance criterion is delivered. Current coverage and boundaries:
+
+| Requirement | Prototype behavior and limits |
+| --- | --- |
+| MVP-01–02: Plans and estimates | Direct monthly net income, independent multi-income estimates, manual handoff, generic savings funding, immutable versions and scenario comparison. No annual Plan editor or tax estimator. |
+| MVP-03: Openings and goals | Savings setup accepts goal designations and creates Unallocated. Goals also offers investment/loan openings. Investment destinations may be created without a tracked opening; no opening is inferred. No opening-edit form, even before activity. |
+| MVP-04–06: Activity and savings | Entries, linked refunds, movement corrections, goal-level reconciliation, lifecycle and ordered sufficient-funds checks run locally. Entry deletion has immediate validated undo; movements/observations have no restoration interface. |
+| MVP-07: Destinations and balances | Investment/giving progress uses cumulative contributions/net donations. Loan payments and dated observations stay separate. Opening observations are protected. |
+| MVP-08: Review | Saved-version comparison, unknown versus zero, dated delta adjustments, annotations and explicit ratios. No cross-Plan matching UI; unmatched actuals remain included once and expected sources remain unknown. Goal progress uses remaining saved; investment/giving progress uses cumulative contributions/net donations, unlike same-month actual ratios. |
+| MVP-09: Production guarantees | Browser storage and local snapshots only. The prototype does not use the authenticated monthly API and does not establish durable database audit, authorization or atomic multi-client safety. |
+
+Legacy data is preserved rather than treated as newly validated account history.
+Unsupported replacement-total backups are rejected with recovery guidance, not
+converted to activity automatically. These compatibility limits do not change
+the agreed requirements above.
+
+An existing backend increment implements schema/migrations, pure Python money
 and monthly rules, authenticated direct APIs, and real Postgres write-safety
 tests for an income/spending Plan → activity → Review slice. It includes saved
 versions, corrections, soft deletion, audit, retries and stale-write protection.
@@ -246,8 +263,10 @@ arise only from a concrete blocked command.
 
 Use independently worked examples above at the cheapest sufficient layer:
 financial rule unit tests, real Postgres constraints/rollback/concurrency tests,
-and browser journeys for interactions. Prototype evidence includes unit tests for financial rules and legacy continuity,
-browser journeys, build/typecheck and desktop/mobile inspection. These establish
+and browser journeys for interactions. Prototype evidence includes unit tests
+for financial rules and legacy continuity, browser journeys, build/typecheck and desktop/mobile inspection. These establish
 prototype behavior, not production authentication, durable audit or hosted-provider
 compatibility. Production progress and remaining checks belong in its implementation
-plan and diary.
+plan and diary. The [prototype walkthrough](../product/prototype-review.md) records
+the supported journeys and limitations; [README](../../README.md#verification)
+provides the verification commands.
