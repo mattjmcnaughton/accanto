@@ -129,6 +129,20 @@ schema sections describe additions required as command families ship.
 | [Credentials](../../src/accanto/services/api_keys.py), [bootstrap](../../src/accanto/bootstrap.py) | Hashed user-owned keys, issue/revoke, operator-provisioned identity/Entity and validated zone | Browser sign-in/session/logout, authenticated Entity discovery/settings; hosted MCP |
 | [Frontend transport](../../src/accanto/web/frontend/src/lib/api.ts) | Generic fetch helper only; workspace saves to localStorage | Typed monthly API responses, error/retry handling and API-backed screens; no production workspace exists yet |
 
+MVP-010 adds named fixed-cost identities, immutable saved lines with original
+monthly/annual amounts and per-line monthly results, and a stored monthly
+fixed-cost total. It adds `entry_fixed_cost` as an optional assignment with a
+frozen label for current-income-funded payments. The pure monthly rule rounds
+each annual input to cents using half-even before summing. The Entity lock
+protects Plan and activity writes, assignment changes, audit snapshots and retry
+outcomes in one transaction. Scoped foreign keys and a deferred category trigger
+protect assignments; the saved-line trigger protects historical comparisons.
+Three annual `100.00` inputs give three `8.33` results and `24.99` total.
+Reviews compare only identical fixed-cost IDs from the targeted saved version;
+unassigned payments and category adjustments contribute once to totals but do
+not complete a missing expected cost. This slice does not add debt or
+savings-funded fixed-cost payments.
+
 Activity input and DB checks currently reject all negative amounts; replacing a
 record is a correction, not the agreed signed delta-adjustment workflow. There is
 no funding-origin field: this slice cannot represent savings-funded spending.

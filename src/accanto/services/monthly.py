@@ -11,13 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from accanto.domains.entity import entity_settings
 from accanto.domains.monthly import (
+    fixed_cost_monthly,
     known_total_delta,
     money,
     monthly_actuals,
     plan_results,
 )
 from accanto.models import monthly as m
-from accanto.repositories.monthly import plan_lines
+from accanto.repositories.monthly import plan_fixed_costs, plan_lines
 from accanto.services.access import AuthenticatedActor, RejectionError, revalidate_actor
 
 
@@ -70,7 +71,11 @@ def check_revision(record, expected):
 
 async def plan_snapshot(session, record):
     return json_values(
-        {**dict(record), "incomes": await plan_lines(session, record["id"])}
+        {
+            **dict(record),
+            "incomes": await plan_lines(session, record["id"]),
+            "fixed_costs": await plan_fixed_costs(session, record["id"]),
+        }
     )
 
 
@@ -155,6 +160,14 @@ async def write(
                     {"name": line["name"], "amount": str(line["amount"])}
                     for line in await plan_lines(session, source_revision["id"])
                 ],
+                "fixed_costs": [
+                    {
+                        "name": line["name"],
+                        "amount": str(line["amount"]),
+                        "frequency": line["frequency"],
+                    }
+                    for line in await plan_fixed_costs(session, source_revision["id"])
+                ],
             }
 
         if operation == "edit_entity":
@@ -221,6 +234,10 @@ async def write(
             results = plan_results(
                 [Decimal(line["amount"]) for line in payload["incomes"]],
                 Decimal(payload["spending"]),
+                [
+                    fixed_cost_monthly(line["amount"], line["frequency"])
+                    for line in payload["fixed_costs"]
+                ],
             )
             values = {
                 **{k: Decimal(v) for k, v in results.items()},
@@ -234,6 +251,11 @@ async def write(
                 await session.execute(
                     delete(m.income_lines).where(
                         m.income_lines.c.plan_revision_id == old["id"]
+                    )
+                )
+                await session.execute(
+                    delete(m.fixed_cost_lines).where(
+                        m.fixed_cost_lines.c.plan_revision_id == old["id"]
                     )
                 )
                 record = (
@@ -294,6 +316,47 @@ async def write(
                         income_source_id=source["id"],
                         name=line["name"],
                         amount=Decimal(line["amount"]),
+                    )
+                )
+            seen_fixed = set()
+            for line in payload["fixed_costs"]:
+                if line.get("fixed_cost_id"):
+                    fixed = await scoped(
+                        session, m.fixed_costs, entity["id"], line["fixed_cost_id"]
+                    )
+                    if fixed["plan_id"] != plan["id"]:
+                        raise RejectionError(
+                            "fixed_cost_plan", "Fixed cost belongs to a different Plan."
+                        )
+                else:
+                    fixed = (
+                        (
+                            await session.execute(
+                                insert(m.fixed_costs)
+                                .values(plan_id=plan["id"], entity_id=entity["id"])
+                                .returning(m.fixed_costs)
+                            )
+                        )
+                        .mappings()
+                        .one()
+                    )
+                    await audit(m.fixed_costs, fixed["uuid"], None, dict(fixed))
+                if fixed["id"] in seen_fixed:
+                    raise RejectionError(
+                        "duplicate_fixed_cost", "Include each Fixed cost once."
+                    )
+                seen_fixed.add(fixed["id"])
+                await session.execute(
+                    insert(m.fixed_cost_lines).values(
+                        plan_revision_id=record["id"],
+                        plan_id=plan["id"],
+                        fixed_cost_id=fixed["id"],
+                        name=line["name"],
+                        amount=money(line["amount"]),
+                        frequency=line["frequency"],
+                        monthly_amount=fixed_cost_monthly(
+                            line["amount"], line["frequency"]
+                        ),
                     )
                 )
             response = {
@@ -372,6 +435,28 @@ async def write(
                         plan_revision_id=draft["id"],
                     )
                 )
+            fixed_rows = (
+                (
+                    await session.execute(
+                        select(m.fixed_cost_lines).where(
+                            m.fixed_cost_lines.c.plan_revision_id == old["id"]
+                        )
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            for line in fixed_rows:
+                await session.execute(
+                    insert(m.fixed_cost_lines).values(
+                        **{
+                            k: v
+                            for k, v in dict(line).items()
+                            if k not in {"id", "uuid", "plan_revision_id"}
+                        },
+                        plan_revision_id=draft["id"],
+                    )
+                )
             response = {
                 "version": await plan_snapshot(session, record),
                 "draft": await plan_snapshot(session, draft),
@@ -399,6 +484,8 @@ async def write(
 
             previous_link = await current_link(session, old["id"]) if old else None
             source = None
+            fixed_cost = None
+            fixed_name = None
             if payload.get("source_id"):
                 if payload["category"] != "income":
                     raise RejectionError(
@@ -408,6 +495,48 @@ async def write(
                 source = await scoped(
                     session, m.sources, entity["id"], payload["source_id"]
                 )
+            if payload.get("fixed_cost_id"):
+                if payload["category"] != "fixed_cost":
+                    raise RejectionError(
+                        "fixed_cost_category",
+                        "Only fixed-cost payments can select a Fixed cost.",
+                    )
+                fixed_cost = await scoped(
+                    session, m.fixed_costs, entity["id"], payload["fixed_cost_id"]
+                )
+                previous_assignment = (
+                    (
+                        await session.execute(
+                            select(m.fixed_cost_assignments).where(
+                                m.fixed_cost_assignments.c.actual_entry_id
+                                == (old["id"] if old else -1)
+                            )
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                fixed_name = await session.scalar(
+                    select(m.fixed_cost_lines.c.name)
+                    .join(
+                        m.revisions,
+                        m.revisions.c.id == m.fixed_cost_lines.c.plan_revision_id,
+                    )
+                    .where(
+                        m.fixed_cost_lines.c.fixed_cost_id == fixed_cost["id"],
+                        ~m.revisions.c.saved,
+                    )
+                )
+                if (
+                    previous_assignment
+                    and previous_assignment["fixed_cost_id"] == fixed_cost["id"]
+                ):
+                    fixed_name = previous_assignment["name"]
+                if fixed_name is None:
+                    raise RejectionError(
+                        "fixed_cost_unavailable",
+                        "Choose a Fixed cost in a current Plan draft.",
+                    )
             if operation == "known_total":
                 from accanto.models import savings as s
 
@@ -542,12 +671,26 @@ async def write(
                         m.assignments.c.actual_entry_id == record["id"]
                     )
                 )
+                await session.execute(
+                    delete(m.fixed_cost_assignments).where(
+                        m.fixed_cost_assignments.c.actual_entry_id == record["id"]
+                    )
+                )
                 if source:
                     await session.execute(
                         insert(m.assignments).values(
                             actual_entry_id=record["id"],
                             income_source_id=source["id"],
                             entity_id=entity["id"],
+                        )
+                    )
+                if fixed_cost:
+                    await session.execute(
+                        insert(m.fixed_cost_assignments).values(
+                            actual_entry_id=record["id"],
+                            fixed_cost_id=fixed_cost["id"],
+                            entity_id=entity["id"],
+                            name=fixed_name,
                         )
                     )
             response = await entry_snapshot(session, record)
@@ -724,6 +867,23 @@ async def entry_snapshot(session, record):
         .join(m.assignments, m.assignments.c.income_source_id == m.sources.c.id)
         .where(m.assignments.c.actual_entry_id == record["id"])
     )
+    fixed_assignment = (
+        (
+            await session.execute(
+                select(
+                    m.fixed_costs.c.uuid.label("fixed_cost_id"),
+                    m.fixed_cost_assignments.c.name.label("fixed_cost_name"),
+                )
+                .join(
+                    m.fixed_costs,
+                    m.fixed_costs.c.id == m.fixed_cost_assignments.c.fixed_cost_id,
+                )
+                .where(m.fixed_cost_assignments.c.actual_entry_id == record["id"])
+            )
+        )
+        .mappings()
+        .first()
+    )
     from accanto.models import savings as s
     from accanto.services.savings import current_link
 
@@ -760,6 +920,12 @@ async def entry_snapshot(session, record):
         {
             **dict(record),
             "source_id": source_uuid,
+            "fixed_cost_id": fixed_assignment["fixed_cost_id"]
+            if fixed_assignment
+            else None,
+            "fixed_cost_name": fixed_assignment["fixed_cost_name"]
+            if fixed_assignment
+            else None,
             "saving_goal_id": goal_uuid,
             "destination_id": destination_uuid,
             "funding_origin": "savings"
@@ -826,12 +992,25 @@ async def read_review(session, token, entity_uuid, month: date):
         entries = (
             (
                 await session.execute(
-                    select(m.entries, m.sources.c.uuid.label("source_uuid"))
+                    select(
+                        m.entries,
+                        m.sources.c.uuid.label("source_uuid"),
+                        m.fixed_costs.c.uuid.label("fixed_cost_uuid"),
+                        m.fixed_cost_assignments.c.name.label("fixed_cost_name"),
+                    )
                     .outerjoin(
                         m.assignments, m.assignments.c.actual_entry_id == m.entries.c.id
                     )
                     .outerjoin(
                         m.sources, m.sources.c.id == m.assignments.c.income_source_id
+                    )
+                    .outerjoin(
+                        m.fixed_cost_assignments,
+                        m.fixed_cost_assignments.c.actual_entry_id == m.entries.c.id,
+                    )
+                    .outerjoin(
+                        m.fixed_costs,
+                        m.fixed_costs.c.id == m.fixed_cost_assignments.c.fixed_cost_id,
                     )
                     .where(
                         m.entries.c.entity_id == entity["id"],
@@ -853,6 +1032,18 @@ async def read_review(session, token, entity_uuid, month: date):
                 if e["category"] == "income"
             ],
             [e["amount"] for e in entries if e["category"] == "spending"],
+            [
+                str(line["fixed_cost_id"])
+                for line in await plan_fixed_costs(session, version["id"])
+            ],
+            [
+                (
+                    str(e["fixed_cost_uuid"]) if e["fixed_cost_uuid"] else None,
+                    e["amount"],
+                )
+                for e in entries
+                if e["category"] == "fixed_cost"
+            ],
         )
         saving_entries = [e["amount"] for e in entries if e["category"] == "saving"]
         actual["saving_recorded"] = (
@@ -900,6 +1091,11 @@ async def read_review(session, token, entity_uuid, month: date):
                 "spending_difference": None
                 if actual["spending_recorded"] is None
                 else str(Decimal(actual["spending_recorded"]) - version["spending"]),
+                "fixed_cost_difference": None
+                if actual["fixed_cost_incomplete"]
+                else str(
+                    Decimal(actual["fixed_cost_recorded"]) - version["fixed_cost_total"]
+                ),
             }
         )
 

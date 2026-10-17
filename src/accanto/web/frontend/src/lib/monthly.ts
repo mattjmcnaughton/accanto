@@ -6,16 +6,23 @@ export interface IncomeLineInput {
   name: string;
   amount: DecimalString;
 }
+export interface FixedCostLineInput {
+  fixed_cost_id?: UUID | null;
+  name: string;
+  amount: DecimalString;
+  frequency: "monthly" | "annual";
+}
 export interface PlanInput {
   name: string;
   incomes: IncomeLineInput[];
+  fixed_costs: FixedCostLineInput[];
   spending: DecimalString;
   expected_revision?: number;
 }
 export interface KnownTotalInput {
   date: IsoDate;
   month: IsoDate;
-  category: "income" | "spending" | "saving";
+  category: "income" | "spending" | "saving" | "fixed_cost";
   desired_total: DecimalString;
   source_id?: UUID | null;
   saving_goal_id?: UUID | null;
@@ -24,9 +31,10 @@ export interface KnownTotalInput {
 }
 export interface ActivityInput {
   date: IsoDate;
-  category: "income" | "spending" | "saving";
+  category: "income" | "spending" | "saving" | "fixed_cost";
   amount: DecimalString;
   source_id?: UUID | null;
+  fixed_cost_id?: UUID | null;
   note?: string;
   expected_revision?: number;
   is_adjustment?: boolean;
@@ -57,8 +65,16 @@ export interface PlanRevision {
   saved_at: string | null;
   rule_version: string;
   incomes: Array<{ source_id: UUID; name: string; amount: DecimalString }>;
+  fixed_costs: Array<{
+    fixed_cost_id: UUID;
+    name: string;
+    amount: DecimalString;
+    frequency: "monthly" | "annual";
+    monthly_amount: DecimalString;
+  }>;
   income: DecimalString;
   spending: DecimalString;
+  fixed_cost_total: DecimalString;
   tithe_target: DecimalString;
   unassigned: DecimalString;
 }
@@ -69,9 +85,11 @@ export interface PlanGroup {
 export interface Activity {
   uuid: UUID;
   financial_date: IsoDate;
-  category: "income" | "spending" | "saving" | "investing" | "giving";
+  category: "income" | "spending" | "saving" | "fixed_cost" | "investing" | "giving";
   amount: DecimalString;
   source_id: UUID | null;
+  fixed_cost_id: UUID | null;
+  fixed_cost_name: string | null;
   note: string;
   revision: number;
   is_adjustment: boolean;
@@ -81,6 +99,7 @@ export interface Activity {
 }
 export type ReviewEntry = Omit<Activity, "source_id"> & {
   source_uuid: UUID | null;
+  fixed_cost_uuid: UUID | null;
 };
 export interface ReviewResult {
   review: {
@@ -98,6 +117,9 @@ export interface ReviewResult {
     income_incomplete: boolean;
     missing_sources: UUID[];
     spending_recorded: DecimalString | null;
+    fixed_cost_recorded: DecimalString | null;
+    fixed_cost_incomplete: boolean;
+    missing_fixed_costs: UUID[];
     saving_recorded?: DecimalString | null;
     investing_recorded?: DecimalString | null;
     giving_recorded?: DecimalString | null;
@@ -105,6 +127,7 @@ export interface ReviewResult {
   };
   income_difference: DecimalString | null;
   spending_difference: DecimalString | null;
+  fixed_cost_difference: DecimalString | null;
 }
 
 export interface WriteSpec<T> {

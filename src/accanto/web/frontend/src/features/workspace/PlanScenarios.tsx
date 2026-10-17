@@ -38,7 +38,7 @@ export function CopyPlan({
         <legend>Copy a Plan</legend>
         <p>
           Choose the stored draft or saved version to copy. The copy has independent Income sources.
-          Existing Reviews and receipts stay unchanged.
+          Existing Reviews, receipts, and fixed-cost payments stay unchanged.
         </p>
         <label>
           Copy from
@@ -137,6 +137,8 @@ export function ComparePlans({ plans }: { plans: PlanGroup[] }) {
                     <dd>{dollars(version.spending)}</dd>
                     <dt>Tithe target</dt>
                     <dd>{dollars(version.tithe_target)}</dd>
+                    <dt>Fixed costs (monthly)</dt>
+                    <dd>{dollars(version.fixed_cost_total)}</dd>
                     <dt>Unassigned</dt>
                     <dd>{dollars(version.unassigned)}</dd>
                   </dl>
@@ -144,6 +146,14 @@ export function ComparePlans({ plans }: { plans: PlanGroup[] }) {
                     {version.incomes.map((line) => (
                       <li key={line.source_id}>
                         {line.name}: {dollars(line.amount)}
+                      </li>
+                    ))}
+                  </ul>
+                  <ul>
+                    {version.fixed_costs.map((line) => (
+                      <li key={line.fixed_cost_id}>
+                        {line.name}: {dollars(line.amount)} {line.frequency} →{" "}
+                        {dollars(line.monthly_amount)} monthly
                       </li>
                     ))}
                   </ul>

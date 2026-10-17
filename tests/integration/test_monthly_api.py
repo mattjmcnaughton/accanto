@@ -648,6 +648,105 @@ async def scenario():
         assert (await client.get(prefix + "/reviews/2026-10-01")).json()["actual"][
             "income_incomplete"
         ] is True
+        fixed_body = {
+            "name": "Synthetic fixed costs",
+            "incomes": [{"name": "Example income", "amount": "1000.00"}],
+            "spending": "100.00",
+            "fixed_costs": [
+                {"name": name, "amount": "100.00", "frequency": "annual"}
+                for name in ("Service A", "Service B", "Service C")
+            ],
+        }
+        fixed_created = await post("/plans", fixed_body)
+        assert fixed_created.status_code == 200, fixed_created.text
+        fixed_plan = fixed_created.json()
+        fixed_draft = fixed_plan["draft"]
+        assert [line["monthly_amount"] for line in fixed_draft["fixed_costs"]] == [
+            "8.33",
+            "8.33",
+            "8.33",
+        ]
+        assert fixed_draft["fixed_cost_total"] == "24.99"
+        assert [line["amount"] for line in fixed_draft["fixed_costs"]] == ["100.00"] * 3
+        fixed_saved_response = await post(
+            f"/plans/{fixed_plan['plan_id']}/versions", {"expected_revision": 1}
+        )
+        assert fixed_saved_response.status_code == 200, fixed_saved_response.text
+        fixed_saved = fixed_saved_response.json()["version"]
+        copied_response = await post(
+            f"/plans/{fixed_plan['plan_id']}/copies",
+            {
+                "name": "Independent copy",
+                "source_revision_id": fixed_saved["uuid"],
+                "expected_revision": fixed_saved["revision"],
+            },
+        )
+        assert copied_response.status_code == 200, copied_response.text
+        copied = copied_response.json()["draft"]
+        assert copied["fixed_cost_total"] == "24.99"
+        assert {line["fixed_cost_id"] for line in copied["fixed_costs"]}.isdisjoint(
+            line["fixed_cost_id"] for line in fixed_saved["fixed_costs"]
+        )
+        fixed_review = await post(
+            "/reviews", {"month": "2026-11-01", "version_id": fixed_saved["uuid"]}
+        )
+        assert fixed_review.status_code == 200, fixed_review.text
+        fixed_read = (await client.get(prefix + "/reviews/2026-11-01")).json()
+        assert fixed_read["actual"]["fixed_cost_recorded"] is None
+        assert len(fixed_read["actual"]["missing_fixed_costs"]) == 3
+        cost_id = fixed_saved["fixed_costs"][0]["fixed_cost_id"]
+        payment_body = {
+            "date": "2026-11-10",
+            "category": "fixed_cost",
+            "amount": "10.00",
+            "fixed_cost_id": cost_id,
+        }
+        payment_response = await post("/activity", payment_body)
+        assert payment_response.status_code == 200, payment_response.text
+        payment = payment_response.json()
+        assert payment["fixed_cost_name"] == "Service A"
+        assert payment["funding_origin"] == "income"
+        corrected = await client.put(
+            prefix + f"/activity/{payment['uuid']}",
+            json={**payment_body, "amount": "12.00", "expected_revision": 1},
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert corrected.status_code == 200, corrected.text
+        unassigned = await post(
+            "/activity",
+            {
+                "date": "2026-11-11",
+                "category": "fixed_cost",
+                "amount": "2.00",
+            },
+        )
+        assert unassigned.status_code == 200, unassigned.text
+        adjustment = await post(
+            "/activity",
+            {
+                "date": "2026-11-12",
+                "category": "fixed_cost",
+                "amount": "-1.00",
+                "is_adjustment": True,
+            },
+        )
+        assert adjustment.status_code == 200, adjustment.text
+        fixed_read = (await client.get(prefix + "/reviews/2026-11-01")).json()
+        assert fixed_read["actual"]["fixed_cost_recorded"] == "13.00"
+        assert fixed_read["actual"]["fixed_cost_incomplete"] is True
+        assert len(fixed_read["actual"]["missing_fixed_costs"]) == 2
+        assert fixed_read["fixed_cost_difference"] is None
+        deleted_payment = await client.request(
+            "DELETE",
+            prefix + f"/activity/{payment['uuid']}",
+            json={"expected_revision": 2},
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert deleted_payment.status_code == 200, deleted_payment.text
+        assert deleted_payment.json()["fixed_cost_name"] == "Service A"
+        assert (await client.get(prefix + "/reviews/2026-11-01")).json()["actual"][
+            "fixed_cost_recorded"
+        ] == "1.00"
         # Removing access denies an already successful idempotency replay.
         async with sessions() as session, session.begin():
             await session.execute(

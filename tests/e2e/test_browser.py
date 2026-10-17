@@ -179,7 +179,14 @@ def test_signed_in_workspace(tmp_path):
         browser("find", "label", "Income source 1", "fill", "Synthetic source")
         browser("find", "label", "Net amount 1", "fill", "4000")
         browser("find", "label", "Monthly guilt-free spending", "fill", "800")
+        browser(
+            "find", "role", "button", "click", "--name", "Add fixed cost", "--exact"
+        )
+        browser("find", "label", "Fixed cost 1", "fill", "Synthetic annual service")
+        browser("find", "label", "Fixed cost amount 1 (USD)", "fill", "100.00")
+        browser("select", "form.editor select", "annual")
         browser("find", "role", "button", "click", "--name", "Save draft", "--exact")
+        browser("wait", "--text", "$8.33")
         browser(
             "wait",
             "--fn",
@@ -205,6 +212,31 @@ def test_signed_in_workspace(tmp_path):
         browser("find", "role", "button", "click", "--name", "Save Review", "--exact")
         browser("wait", "--text", "Marked reviewed.")
         assert "Unknown" in browser("get", "text", "body")
+        assert "Fixed costs remain unknown for:" in browser("get", "text", "body")
+        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        browser(
+            "find", "role", "button", "click", "--name", "Record activity", "--exact"
+        )
+        browser("select", "form.editor select", "fixed_cost")
+        fixed_option = (
+            browser(
+                "eval",
+                "Array.from(document.querySelector('select[name=\"fixed-cost\"]').options)"
+                ".find(option => option.textContent.includes("
+                "'Synthetic annual service')).value",
+            )
+            .strip()
+            .strip('"')
+        )
+        browser("select", "select[name='fixed-cost']", fixed_option)
+        browser("find", "label", "Amount (USD)", "fill", "8.33")
+        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
+        browser("wait", "--text", "Synthetic annual service")
+        browser(
+            "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
+        )
+        browser("wait", "--text", "$8.33")
+        assert "Fixed costs remain unknown for:" not in browser("get", "text", "body")
         browser("find", "role", "button", "click", "--name", "Activity", "--exact")
         browser(
             "find", "role", "button", "click", "--name", "Record activity", "--exact"

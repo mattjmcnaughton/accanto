@@ -5,16 +5,25 @@ import { LoadMessage, MoneyInput, type ScreenProps, dollars, useLoad } from "./s
 import { ComparePlans, CopyPlan } from "./PlanScenarios";
 
 type IncomeRow = { key: string; source_id?: string; name: string; amount: string };
+type FixedRow = {
+  key: string;
+  fixed_cost_id?: string;
+  name: string;
+  amount: string;
+  frequency: "monthly" | "annual";
+};
 type Draft = {
   planId?: string;
   revision?: number;
   name: string;
   incomes: IncomeRow[];
+  fixed_costs: FixedRow[];
   spending: string;
 };
 const blank = (): Draft => ({
   name: "",
   incomes: [{ key: crypto.randomUUID(), name: "", amount: "" }],
+  fixed_costs: [],
   spending: "",
 });
 export function Plans(p: ScreenProps) {
@@ -38,6 +47,7 @@ export function Plans(p: ScreenProps) {
       name: revision.name,
       spending: revision.spending,
       incomes: revision.incomes.map((line) => ({ ...line, key: line.source_id })),
+      fixed_costs: revision.fixed_costs.map((line) => ({ ...line, key: line.fixed_cost_id })),
     });
     setSnapshot(revision);
     setChanged(false);
@@ -51,6 +61,7 @@ export function Plans(p: ScreenProps) {
       name: revision.name,
       spending: revision.spending,
       incomes: revision.incomes.map((line) => ({ ...line, key: line.source_id })),
+      fixed_costs: revision.fixed_costs.map((line) => ({ ...line, key: line.fixed_cost_id })),
     });
     setSnapshot(revision);
     setChanged(false);
@@ -158,6 +169,14 @@ export function Plans(p: ScreenProps) {
                     name,
                     amount,
                   })),
+                  fixed_costs: form.fixed_costs.map(
+                    ({ fixed_cost_id, name, amount, frequency }) => ({
+                      fixed_cost_id,
+                      name,
+                      amount,
+                      frequency,
+                    }),
+                  ),
                   ...(form.planId ? { expected_revision: form.revision } : {}),
                 };
                 p.save(
@@ -244,6 +263,89 @@ export function Plans(p: ScreenProps) {
                   value={form.spending}
                   onChange={(spending) => update({ ...form, spending })}
                 />
+                <h3>Fixed costs</h3>
+                {form.fixed_costs.map((line, index) => (
+                  <div className="income-row" key={line.key}>
+                    <label>
+                      Fixed cost {index + 1}
+                      <input
+                        required
+                        maxLength={120}
+                        value={line.name}
+                        onChange={(e) =>
+                          update({
+                            ...form,
+                            fixed_costs: form.fixed_costs.map((row) =>
+                              row.key === line.key ? { ...row, name: e.target.value } : row,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    <MoneyInput
+                      label={`Fixed cost amount ${index + 1} (USD)`}
+                      value={line.amount}
+                      onChange={(amount) =>
+                        update({
+                          ...form,
+                          fixed_costs: form.fixed_costs.map((row) =>
+                            row.key === line.key ? { ...row, amount } : row,
+                          ),
+                        })
+                      }
+                    />
+                    <label>
+                      Frequency
+                      <select
+                        value={line.frequency}
+                        onChange={(e) =>
+                          update({
+                            ...form,
+                            fixed_costs: form.fixed_costs.map((row) =>
+                              row.key === line.key
+                                ? { ...row, frequency: e.target.value as FixedRow["frequency"] }
+                                : row,
+                            ),
+                          })
+                        }
+                      >
+                        <option value="monthly">Monthly</option>
+                        <option value="annual">Annual</option>
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        update({
+                          ...form,
+                          fixed_costs: form.fixed_costs.filter((row) => row.key !== line.key),
+                        })
+                      }
+                    >
+                      Remove fixed cost {index + 1}
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  disabled={form.fixed_costs.length >= 100}
+                  onClick={() =>
+                    update({
+                      ...form,
+                      fixed_costs: [
+                        ...form.fixed_costs,
+                        {
+                          key: crypto.randomUUID(),
+                          name: "",
+                          amount: "",
+                          frequency: "monthly",
+                        },
+                      ],
+                    })
+                  }
+                >
+                  Add fixed cost
+                </button>
                 <button className="primary" type="submit">
                   Save draft
                 </button>
@@ -281,6 +383,8 @@ export function Plans(p: ScreenProps) {
                 <dd>{dollars(snapshot.income)}</dd>
                 <dt>Guilt-free spending</dt>
                 <dd>{dollars(snapshot.spending)}</dd>
+                <dt>Fixed costs (monthly)</dt>
+                <dd>{dollars(snapshot.fixed_cost_total)}</dd>
                 <dt>Tithe target (10% of net income)</dt>
                 <dd>{dollars(snapshot.tithe_target)}</dd>
                 <dt>Unassigned</dt>
@@ -293,13 +397,24 @@ export function Plans(p: ScreenProps) {
                 </output>
               )}
               {snapshot.saved && (
-                <ul>
-                  {snapshot.incomes.map((line) => (
-                    <li key={line.source_id}>
-                      {line.name}: {dollars(line.amount)}
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <ul>
+                    {snapshot.incomes.map((line) => (
+                      <li key={line.source_id}>
+                        {line.name}: {dollars(line.amount)}
+                      </li>
+                    ))}
+                  </ul>
+                  <h4>Fixed-cost inputs and monthly results</h4>
+                  <ul>
+                    {snapshot.fixed_costs.map((line) => (
+                      <li key={line.fixed_cost_id}>
+                        {line.name}: {dollars(line.amount)} {line.frequency} →{" "}
+                        {dollars(line.monthly_amount)} monthly
+                      </li>
+                    ))}
+                  </ul>
+                </>
               )}
             </section>
           )}

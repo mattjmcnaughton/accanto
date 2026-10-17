@@ -2,7 +2,12 @@ from decimal import Decimal
 
 import pytest
 
-from accanto.domains.monthly import money, monthly_actuals, plan_results
+from accanto.domains.monthly import (
+    fixed_cost_monthly,
+    money,
+    monthly_actuals,
+    plan_results,
+)
 
 
 def test_exact_money_and_overallocated_plan():
@@ -13,9 +18,28 @@ def test_exact_money_and_overallocated_plan():
     assert plan_results([money("4000"), money("1000")], money("5300")) == {
         "income": "5000.00",
         "spending": "5300.00",
+        "fixed_cost_total": "0.00",
         "tithe_target": "500.00",
         "unassigned": "-300.00",
     }
+
+
+def test_annual_fixed_costs_round_per_line_and_preserve_unknowns():
+    lines = [fixed_cost_monthly("100.00", "annual") for _ in range(3)]
+    assert lines == [Decimal("8.33")] * 3
+    result = plan_results([money("1000")], money("100"), lines)
+    assert result["fixed_cost_total"] == "24.99"
+    assert result["unassigned"] == "875.01"
+    actual = monthly_actuals(
+        ["salary"],
+        [("salary", money("1000"))],
+        [],
+        ["rent", "insurance"],
+        [("rent", money("200")), (None, money("5"))],
+    )
+    assert actual["fixed_cost_recorded"] == "205.00"
+    assert actual["fixed_cost_incomplete"] is True
+    assert actual["missing_fixed_costs"] == ["insurance"]
     assert plan_results([money("10.05")], money("0"))["tithe_target"] == "1.00"
     assert plan_results([money("10.15")], money("0"))["tithe_target"] == "1.02"
 
