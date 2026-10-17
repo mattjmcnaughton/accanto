@@ -9,10 +9,12 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     Numeric,
     String,
     UniqueConstraint,
+    text,
 )
 
 from accanto.models.monthly import table
@@ -55,6 +57,16 @@ observations = table(
     CheckConstraint("amount BETWEEN 0 AND 999999999.99"),
     CheckConstraint("NOT is_opening OR investment_id IS NOT NULL"),
 )
+Index(
+    "one_investment_daily_observation",
+    observations.c.investment_id,
+    observations.c.financial_date,
+    unique=True,
+    postgresql_where=text(
+        "NOT is_opening AND deleted_at IS NULL AND investment_id IS NOT NULL"
+    ),
+)
+
 investment_entries = table(
     "entry_investment_destination",
     Column("entity_id", BigInteger, nullable=False),

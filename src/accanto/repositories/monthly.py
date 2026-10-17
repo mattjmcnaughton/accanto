@@ -3,6 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from accanto.models.debts import debts
 from accanto.models.monthly import (
     fixed_cost_lines,
     fixed_costs,
@@ -37,8 +38,10 @@ async def plan_fixed_costs(session: AsyncSession, revision_id: int) -> list[dict
                 fixed_cost_lines.c.monthly_amount,
                 fixed_costs.c.uuid.label("fixed_cost_id"),
                 fixed_costs.c.name.label("canonical_name"),
+                debts.c.uuid.label("debt_account_id"),
             )
             .join(fixed_costs, fixed_costs.c.id == fixed_cost_lines.c.fixed_cost_id)
+            .outerjoin(debts, debts.c.id == fixed_cost_lines.c.debt_account_id)
             .where(fixed_cost_lines.c.plan_revision_id == revision_id)
             .order_by(fixed_cost_lines.c.id)
         )

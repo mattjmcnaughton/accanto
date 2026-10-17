@@ -8,10 +8,11 @@ import {
   logout,
   reauthenticate,
 } from "../../lib/recoverableWrite";
+import { Balances } from "../balances/Balances";
+import { Destinations } from "../destinations/Destinations";
 import { IncomeEstimates } from "../estimates/IncomeEstimates";
 import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice";
 import { Savings } from "../savings/Savings";
-import { Destinations } from "../destinations/Destinations";
 import { Settings } from "../settings/Settings";
 import { ActivityScreen } from "./Activity";
 import { MonthlyReview } from "./MonthlyReview";
@@ -29,6 +30,7 @@ export function Workspace({
     | "Income estimates"
     | "Savings"
     | "Investments and giving"
+    | "Loans and balances"
     | "Settings"
   >("Plans");
   const [refresh, setRefresh] = useState(0);
@@ -127,7 +129,11 @@ export function Workspace({
       throw new Error("Account changed");
     }
     if (next.kind !== "ready") throw new Error("Sign-in incomplete");
-    if (signIn) setSession((current) => ({ ...current, csrf_token: next.session.csrf_token }));
+    if (signIn)
+      setSession((current) => ({
+        ...current,
+        csrf_token: next.session.csrf_token,
+      }));
     return next.session;
   }
   async function refreshMetadata(signIn = false) {
@@ -212,6 +218,7 @@ export function Workspace({
                 "Income estimates",
                 "Savings",
                 "Investments and giving",
+                "Loans and balances",
                 "Settings",
               ] as const
             ).map((item) => (
@@ -239,6 +246,7 @@ export function Workspace({
           {screen === "Income estimates" && <IncomeEstimates {...props} />}
           {screen === "Savings" && <Savings {...props} />}
           {screen === "Investments and giving" && <Destinations {...props} />}
+          {screen === "Loans and balances" && <Balances {...props} />}
           {screen === "Settings" && (
             <Settings {...props} credentials={credentials} saved={() => void refreshMetadata()} />
           )}

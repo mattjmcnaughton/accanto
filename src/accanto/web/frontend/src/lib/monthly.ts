@@ -8,6 +8,7 @@ export interface IncomeLineInput {
 }
 export interface FixedCostLineInput {
   fixed_cost_id?: UUID | null;
+  debt_account_id?: UUID | null;
   name: string;
   amount: DecimalString;
   frequency: "monthly" | "annual";
@@ -35,6 +36,7 @@ export interface ActivityInput {
   amount: DecimalString;
   source_id?: UUID | null;
   fixed_cost_id?: UUID | null;
+  debt_account_id?: UUID | null;
   note?: string;
   expected_revision?: number;
   is_adjustment?: boolean;
@@ -67,6 +69,7 @@ export interface PlanRevision {
   incomes: Array<{ source_id: UUID; name: string; amount: DecimalString }>;
   fixed_costs: Array<{
     fixed_cost_id: UUID;
+    debt_account_id: UUID | null;
     name: string;
     canonical_name: string;
     amount: DecimalString;
@@ -91,6 +94,7 @@ export interface Activity {
   source_id: UUID | null;
   fixed_cost_id: UUID | null;
   fixed_cost_name: string | null;
+  debt_account_id: UUID | null;
   note: string;
   revision: number;
   is_adjustment: boolean;

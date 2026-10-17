@@ -163,6 +163,7 @@ async def write(
                 "fixed_costs": [
                     {
                         "fixed_cost_id": line["fixed_cost_id"],
+                        "debt_account_id": line["debt_account_id"],
                         "name": line["name"],
                         "amount": str(line["amount"]),
                         "frequency": line["frequency"],
@@ -343,12 +344,26 @@ async def write(
                         "duplicate_fixed_cost", "Include each Fixed cost once."
                     )
                 seen_fixed.add(fixed["id"])
+                debt_line = None
+                if line.get("debt_account_id"):
+                    from accanto.models import debts as b
+
+                    debt_line = await scoped(
+                        session, b.debts, entity["id"], line["debt_account_id"]
+                    )
+                    if not debt_line["active"]:
+                        raise RejectionError(
+                            "archived_debt",
+                            "Reopen the debt account or remove its draft allocation.",
+                            422,
+                        )
                 await session.execute(
                     insert(m.fixed_cost_lines).values(
                         plan_revision_id=record["id"],
                         plan_id=plan["id"],
                         entity_id=entity["id"],
                         fixed_cost_id=fixed["id"],
+                        debt_account_id=debt_line["id"] if debt_line else None,
                         name=line["name"],
                         amount=money(line["amount"]),
                         frequency=line["frequency"],
@@ -483,6 +498,35 @@ async def write(
             previous_link = await current_link(session, old["id"]) if old else None
             source = None
             fixed_cost = None
+            debt_account = None
+            if payload.get("debt_account_id") and operation != "delete_entry":
+                from accanto.models import debts as b
+
+                debt_account = await scoped(
+                    session, b.debts, entity["id"], payload["debt_account_id"]
+                )
+                if payload["category"] != "fixed_cost":
+                    raise RejectionError(
+                        "debt_payment_category", "Debt payments are fixed costs.", 422
+                    )
+                if not debt_account["active"]:
+                    raise RejectionError(
+                        "archived_debt",
+                        "Reopen the debt account before recording payments.",
+                        422,
+                    )
+                opening_date = await session.scalar(
+                    select(b.observations.c.financial_date).where(
+                        b.observations.c.debt_account_id == debt_account["id"],
+                        b.observations.c.is_opening,
+                    )
+                )
+                if payload["date"] < opening_date:
+                    raise RejectionError(
+                        "before_opening",
+                        "Payment cannot predate the debt opening.",
+                        422,
+                    )
             if payload.get("source_id"):
                 if payload["category"] != "income":
                     raise RejectionError(
@@ -630,6 +674,13 @@ async def write(
                     old["category"] if old else None,
                 )
             if operation != "delete_entry":
+                from accanto.models import debts as b
+
+                await session.execute(
+                    delete(b.entry_debts).where(
+                        b.entry_debts.c.actual_entry_id == record["id"]
+                    )
+                )
                 await session.execute(
                     delete(m.assignments).where(
                         m.assignments.c.actual_entry_id == record["id"]
@@ -645,6 +696,14 @@ async def write(
                         insert(m.assignments).values(
                             actual_entry_id=record["id"],
                             income_source_id=source["id"],
+                            entity_id=entity["id"],
+                        )
+                    )
+                if debt_account:
+                    await session.execute(
+                        insert(b.entry_debts).values(
+                            actual_entry_id=record["id"],
+                            debt_account_id=debt_account["id"],
                             entity_id=entity["id"],
                         )
                     )
@@ -793,6 +852,25 @@ async def write(
             response = await write_movement(
                 session, entity, operation, payload, target, audit
             )
+        elif operation in {"create_debt", "edit_debt"}:
+            from accanto.services.balances import write_debt
+
+            response = await write_debt(
+                session, entity, operation, payload, target, audit
+            )
+        elif operation in {
+            "create_debt_observation",
+            "edit_debt_observation",
+            "delete_debt_observation",
+            "create_investment_observation",
+            "edit_investment_observation",
+            "delete_investment_observation",
+        }:
+            from accanto.services.balances import write_observation
+
+            response = await write_observation(
+                session, entity, operation, payload, target, audit
+            )
         elif operation in {
             "create_investment",
             "edit_investment",
@@ -858,7 +936,14 @@ async def entry_snapshot(session, record):
         .mappings()
         .first()
     )
+    from accanto.models import debts as b
     from accanto.models import savings as s
+
+    debt_uuid = await session.scalar(
+        select(b.debts.c.uuid)
+        .join(b.entry_debts, b.entry_debts.c.debt_account_id == b.debts.c.id)
+        .where(b.entry_debts.c.actual_entry_id == record["id"])
+    )
     from accanto.services.savings import current_link
 
     link = await current_link(session, record["id"])
@@ -897,6 +982,7 @@ async def entry_snapshot(session, record):
             "fixed_cost_id": fixed_assignment["fixed_cost_id"]
             if fixed_assignment
             else None,
+            "debt_account_id": debt_uuid,
             "fixed_cost_name": fixed_assignment["fixed_cost_name"]
             if fixed_assignment
             else None,

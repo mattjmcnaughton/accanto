@@ -140,6 +140,13 @@ export function Destinations(p: ScreenProps) {
             <p>
               {row.target ? `Cumulative target ${dollars(row.target)}` : "No cumulative target"}
             </p>
+            {kind === "investment" && (
+              <p>
+                {row.latest
+                  ? `Latest observed value ${dollars(row.latest.amount)} on ${row.latest.date}`
+                  : "No observed value yet"}
+              </p>
+            )}
             {row.opening && (
               <p>
                 Opening observed value {dollars(row.opening.amount)} on {row.opening.date}; excluded
@@ -194,7 +201,10 @@ export function Destinations(p: ScreenProps) {
                 maxLength={120}
                 value={destinationForm.name}
                 onChange={(event) => {
-                  setDestinationForm({ ...destinationForm, name: event.target.value });
+                  setDestinationForm({
+                    ...destinationForm,
+                    name: event.target.value,
+                  });
                   p.dirty(true);
                 }}
               />
@@ -217,7 +227,10 @@ export function Destinations(p: ScreenProps) {
                     type="date"
                     value={destinationForm.openingDate}
                     onChange={(event) => {
-                      setDestinationForm({ ...destinationForm, openingDate: event.target.value });
+                      setDestinationForm({
+                        ...destinationForm,
+                        openingDate: event.target.value,
+                      });
                       p.dirty(true);
                     }}
                   />
@@ -239,7 +252,10 @@ export function Destinations(p: ScreenProps) {
                   type="checkbox"
                   checked={destinationForm.active}
                   onChange={(event) => {
-                    setDestinationForm({ ...destinationForm, active: event.target.checked });
+                    setDestinationForm({
+                      ...destinationForm,
+                      active: event.target.checked,
+                    });
                     p.dirty(true);
                   }}
                 />
@@ -319,7 +335,10 @@ export function Destinations(p: ScreenProps) {
                 type="checkbox"
                 checked={entryForm.is_adjustment}
                 onChange={(event) => {
-                  setEntryForm({ ...entryForm, is_adjustment: event.target.checked });
+                  setEntryForm({
+                    ...entryForm,
+                    is_adjustment: event.target.checked,
+                  });
                   p.dirty(true);
                 }}
               />
@@ -330,7 +349,10 @@ export function Destinations(p: ScreenProps) {
               <select
                 value={entryForm.destination_id ?? ""}
                 onChange={(event) => {
-                  setEntryForm({ ...entryForm, destination_id: event.target.value || null });
+                  setEntryForm({
+                    ...entryForm,
+                    destination_id: event.target.value || null,
+                  });
                   p.dirty(true);
                 }}
               >
