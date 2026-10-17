@@ -27,9 +27,13 @@ def test_category_adjustment_does_not_resolve_unknown_income_source():
 
 
 def test_only_explicit_adjustments_allow_signed_amounts():
-    base = {"date": "2026-10-16", "category": "spending", "amount": "-10"}
     with pytest.raises(ValueError):
-        ActivityInput(**base)
-    assert ActivityInput(**base, is_adjustment=True).amount == "-10.00"
+        ActivityInput(date="2026-10-16", category="spending", amount="-10")
+    assert (
+        ActivityInput(
+            date="2026-10-16", category="spending", amount="-10", is_adjustment=True
+        ).amount
+        == "-10.00"
+    )
     with pytest.raises(ValueError):
         money("-10")

@@ -1,5 +1,7 @@
 """Pure rules for savings openings and goal definitions."""
 
+from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from accanto.domains.monthly import money
@@ -37,3 +39,39 @@ def funded_status(remaining_saved: Decimal, target: Decimal | None) -> str | Non
     if target is None:
         return None
     return "Funded" if remaining_saved >= target else "Not yet funded"
+
+
+@dataclass(frozen=True)
+class SavingEvent:
+    financial_date: date
+    recording_order: int
+    goal_id: str
+    amount: Decimal
+    contribution: bool
+
+
+class SavingsShortfallError(ValueError):
+    def __init__(self, goal_id: str, financial_date: date, shortfall: Decimal):
+        self.goal_id = goal_id
+        self.financial_date = financial_date
+        self.shortfall = shortfall
+        super().__init__(
+            f"Goal {goal_id} is short by ${shortfall:.2f} "
+            f"on {financial_date.isoformat()}."
+        )
+
+
+def replay_savings(
+    openings: dict[str, Decimal], events: list[SavingEvent]
+) -> tuple[dict[str, Decimal], dict[str, Decimal]]:
+    """Replay selected-date activity in stable recording order; openings come first."""
+    balances = openings.copy()
+    contributions = {goal_id: Decimal("0.00") for goal_id in openings}
+    for event in sorted(events, key=lambda e: (e.financial_date, e.recording_order)):
+        balance = balances[event.goal_id] + event.amount
+        if balance < 0:
+            raise SavingsShortfallError(event.goal_id, event.financial_date, -balance)
+        balances[event.goal_id] = balance
+        if event.contribution:
+            contributions[event.goal_id] += event.amount
+    return balances, contributions

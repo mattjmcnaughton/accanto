@@ -15,6 +15,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    Sequence,
     String,
     Table,
     UniqueConstraint,
@@ -35,6 +36,9 @@ def identity():
 
 def table(name, *columns):
     return Table(name, Base.metadata, *identity(), *columns)
+
+
+entry_order = Sequence("saving_activity_recording_order_seq")
 
 
 users = table(
@@ -137,16 +141,18 @@ entries = table(
     "actual_entry",
     Column("entity_id", ForeignKey("entity.id"), nullable=False),
     Column("financial_date", Date, nullable=False),
+    Column("recording_order", BigInteger, entry_order, nullable=False),
     Column("category", String, nullable=False),
     Column("amount", Numeric(14, 2), nullable=False),
     Column("note", String(2000), nullable=False),
     Column("is_adjustment", Boolean, nullable=False, server_default="false"),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("deleted_at", DateTime(timezone=True)),
-    CheckConstraint("category IN ('income', 'spending')"),
+    CheckConstraint("category IN ('income', 'spending', 'saving')"),
     CheckConstraint("amount BETWEEN -999999999.99 AND 999999999.99"),
     CheckConstraint("is_adjustment OR amount >= 0"),
     UniqueConstraint("id", "entity_id"),
+    UniqueConstraint("recording_order"),
 )
 assignments = table(
     "entry_income_source",

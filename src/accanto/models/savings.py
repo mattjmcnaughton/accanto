@@ -63,14 +63,16 @@ Index(
     postgresql_where=goals.c.role == "unallocated",
 )
 
-# MVP-013 adds financial entries here. No deletion operation may remove this row;
-# deleted_at excludes activity from totals but leaves the opening boundary fixed.
+# Retained links preserve every account association, even after corrections or
+# deletion. Only current links participate in balances.
 linked_activity = table(
     "saving_linked_activity",
     Column("entity_id", BigInteger, nullable=False),
     Column("account_id", BigInteger, nullable=False),
     Column("goal_id", BigInteger, nullable=False),
     Column("financial_date", Date, nullable=False),
+    Column("actual_entry_id", BigInteger),
+    Column("recording_order", BigInteger, nullable=True),
     Column("deleted_at", DateTime(timezone=True)),
     ForeignKeyConstraint(
         ["account_id", "entity_id"], ["saving_account.id", "saving_account.entity_id"]
@@ -78,4 +80,13 @@ linked_activity = table(
     ForeignKeyConstraint(
         ["goal_id", "account_id"], ["saving_goal.id", "saving_goal.account_id"]
     ),
+    ForeignKeyConstraint(
+        ["actual_entry_id", "entity_id"], ["actual_entry.id", "actual_entry.entity_id"]
+    ),
+)
+Index(
+    "one_current_saving_link_per_entry",
+    linked_activity.c.actual_entry_id,
+    unique=True,
+    postgresql_where=linked_activity.c.deleted_at.is_(None),
 )

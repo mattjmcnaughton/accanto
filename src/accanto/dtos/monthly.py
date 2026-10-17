@@ -46,12 +46,14 @@ class PlanCopyInput(Input):
 
 class ActivityInput(Input):
     date: date
-    category: Literal["income", "spending"]
+    category: Literal["income", "spending", "saving"]
     amount: str
     source_id: UUID | None = None
     note: str = Field(default="", max_length=2000)
     expected_revision: int | None = Field(default=None, ge=1)
     is_adjustment: bool = False
+    funding_origin: Literal["income", "savings"] = "income"
+    saving_goal_id: UUID | None = None
 
     @field_validator("amount")
     @classmethod
@@ -62,6 +64,22 @@ class ActivityInput(Input):
     def ordinary_amount(self):
         if not self.is_adjustment:
             money(self.amount)
+        if self.category == "saving":
+            if self.saving_goal_id is None:
+                raise ValueError(
+                    "Choose a saving goal, including for zero adjustments."
+                )
+            if self.funding_origin != "income":
+                raise ValueError("New saving must come from current income.")
+        elif self.category == "spending":
+            if (self.funding_origin == "savings") != (self.saving_goal_id is not None):
+                raise ValueError("Savings funding requires exactly one saving goal.")
+            if self.funding_origin == "savings" and self.amount.startswith("-"):
+                raise ValueError("Savings-funded spending cannot be negative.")
+        elif self.saving_goal_id is not None or self.funding_origin != "income":
+            raise ValueError(
+                "Income receipts cannot use a saving goal or funding origin."
+            )
         return self
 
 
@@ -73,9 +91,10 @@ class EntryFingerprint(Input):
 class KnownTotalInput(Input):
     date: date
     month: date
-    category: Literal["income", "spending"]
+    category: Literal["income", "spending", "saving"]
     desired_total: str
     source_id: UUID | None = None
+    saving_goal_id: UUID | None = None
     note: str = Field(default="", max_length=2000)
     contributing_entries: list[EntryFingerprint]
 
@@ -92,6 +111,12 @@ class KnownTotalInput(Input):
             raise ValueError("Financial date must be in the selected Review month.")
         if self.category == "spending" and self.source_id is not None:
             raise ValueError("Spending totals cannot select an Income source.")
+        if self.category == "saving" and self.saving_goal_id is None:
+            raise ValueError("Saving totals require a saving goal, including for zero.")
+        if self.category != "saving" and self.saving_goal_id is not None:
+            raise ValueError("Only saving totals select a saving goal.")
+        if self.category == "saving" and self.source_id is not None:
+            raise ValueError("Saving totals cannot select an Income source.")
         return self
 
 

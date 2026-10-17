@@ -1,10 +1,10 @@
 # API reference
 
 The production API supports direct net-income Plans and guilt-free spending,
-dated income/spending entries, monthly Reviews against saved versions,
+dated income/spending/saving entries, monthly Reviews against saved versions,
 independent income estimates, and savings account openings/goals. The production
 browser uses these commands with cookie sessions; the preserved standalone
-prototype remains a separate reference. Fixed costs, savings activity, refunds
+prototype remains a separate reference. Fixed costs, refunds
 and observations are not yet production endpoints. Unsupported categories/fields
 reject rather than approximate.
 Income estimates do not calculate tax or populate Plans.
@@ -65,8 +65,8 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | GET | `/plans` | Plans with saved revisions and current drafts |
 | PUT | `/plans/{plan_id}/draft` | Full replacement inputs plus expected revision |
 | POST | `/plans/{plan_id}/versions` | Expected draft revision; freezes snapshot and creates next draft |
-| POST | `/activity` | Explicit date, category, amount, optional source and note; `is_adjustment` for signed corrections |
-| POST | `/activity/known-total` | Desired total and contributing-entry fingerprint; creates one signed adjustment |
+| POST | `/activity` | Explicit date, category, amount, optional source/goal and note; `is_adjustment` for signed corrections; one savings funding origin on spending |
+| POST | `/activity/known-total` | Desired total and contributing-entry fingerprint; saving requires a goal; creates one signed adjustment |
 | GET | `/activity` | Current entries ordered by financial date and recording order |
 | PUT | `/activity/{entry_id}` | Replacement entry plus expected revision |
 | DELETE | `/activity/{entry_id}` | Expected revision in JSON body; soft deletes |
@@ -137,10 +137,25 @@ independent edit or lifecycle command. All writes require the shared
 reusing the key with different input conflicts. Financial change, complete audit
 snapshot and retry outcome commit together under the Entity lock.
 
-Savings contributions, spending funding and transfers are not yet recorded through
-these endpoints. MVP-013 must link their retained activity to the opening guard,
-including deleted history, and update balances and contribution progress. The
-current display therefore reflects openings only.
+Saving contributions and savings-funded spending use `/activity`. Each saving
+entry, including a zero or signed adjustment, supplies `saving_goal_id`. A
+spending entry uses `funding_origin: "income"` by default. To spend previously
+saved money, send `funding_origin: "savings"` and the one `saving_goal_id`; the
+goal determines its account. For example, with a synthetic Laptop goal holding
+`800.00`, a `1000.00` savings-funded purchase rejects. Record a `200.00` saving
+contribution on the same date first, then the purchase succeeds. The month has
+`200.00` new saving and `1000.00` spending; the purchase also appears as
+`1000.00` savings used. The goal retains `200.00` contribution progress and has
+`0.00` remaining. A saving known-total adjustment also requires one goal and
+its fingerprint contains only that goal's saving entries.
+
+All linked saving activity receives immutable recording order. Earlier-than-opening
+activity and any correction or deletion that makes a goal negative at that or a
+later recorded point reject with goal, date and shortfall. Corrections retain
+original order; links to original accounts remain stored even after movement or
+soft deletion, permanently fixing their opening setup. Transactions include
+balance validation, audit snapshots and retry outcomes under the Entity lock.
+Transfers and independent balance reconciliation remain separate future commands.
 
 ## Independent income estimates
 
