@@ -118,3 +118,16 @@ flow; no historical balance is inferred. Loan observation correction loads the
 existing observation into the position form. Immediate Undo delete applies to
 activity entries; savings movements and balance observations have no restore UI.
 No financial data is sent to an external provider.
+
+## Usability checks for further refinement
+
+Exercise complete tasks with long names, crowded lists, missing amounts,
+explicit zeros, cents, large amounts, inactive goals and multiple saved versions.
+Check contrast, visible keyboard focus and focus restoration after dialogs,
+screen-reader labels, zoom/reflow, and readable layouts at 320–390px. Check that
+loading, save errors and unsaved edits remain understandable and recoverable.
+Use isolated synthetic fixtures for these checks.
+
+Optional benchmarks for future usability sessions: a familiar user adds a typical
+entry within 20 seconds and finds/corrects an entry within 30 seconds. These are
+unvalidated suggestions, not agreed acceptance criteria or measured results.
