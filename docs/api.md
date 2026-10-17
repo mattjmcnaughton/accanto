@@ -188,3 +188,27 @@ ambiguous credentials or invalid login; 403 for CSRF failure, unadmitted identit
 or `identity_setup_required`; 503 for unconfigured/unavailable sign-in. API
 responses are `no-store`. An unknown `(issuer, subject)` requires operator setup;
 a matching verified email never merges accounts.
+
+## Entity settings and API key metadata
+
+`GET /api/entities/{id}/settings` returns `id`, `name`, `time_zone`, `revision`
+and Entity-zone `today`. To update, send `PUT` to the same path with
+`Idempotency-Key` and `{name, time_zone, expected_revision}`. The response returns
+current `id`, `name`, `time_zone` and the incremented `revision`; reload settings
+or session metadata for current date defaults. A valid IANA zone is required.
+A zone change affects future defaults only; existing financial dates, Review
+months/targets and saved Plan versions stay unchanged. Settings edits and their
+before/after audit snapshots and retry outcomes commit atomically. Stale revisions
+return 409; current authorization is required even for successful retry outcomes.
+
+`GET /api/keys` lists the authenticated User's keys as `{id, name, created_at,
+revoked_at}`, including revoked metadata. It never returns a token or digest.
+Existing `POST /api/keys` shows a new token once; `DELETE /api/keys/{id}` revokes
+that key only, and repeated owner-session revocation retains its original timestamp.
+Foreign-user key identifiers return 404. A revoked key cannot authenticate again.
+
+Do not automatically retry an uncertain key-creation response: its secret is not
+recoverable and is never stored in retry outcomes. Report creation as unconfirmed,
+reload the metadata list, revoke an unwanted key, then explicitly create another.
+Keep a newly displayed secret only in memory; clear it on dismissal, navigation
+and logout. Do not record it in browser storage, logs, screenshots or recordings.
