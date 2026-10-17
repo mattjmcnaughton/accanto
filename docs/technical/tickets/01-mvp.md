@@ -1,6 +1,6 @@
 # 01 — MVP implementation tickets
 
-Status: Implementation in progress; 001–005 complete locally, 006–007 and 011 in progress
+Status: Implementation in progress; 001–007 complete locally, 008–009 and 011 in progress
 
 This backlog implements the [MVP PRD](../../prd/01-mvp.md) and
 [MVP TDD](../../tdds/01-mvp.md), under [CONTEXT](../../../CONTEXT.md) and the
@@ -31,7 +31,8 @@ HTML remain recoverable references. Do not move or rewrite browser storage, save
 Plan versions or private exports; do not package browser data or database contents.
 A clean checkout must build without `.agentic/`.
 
-This is ticket planning only. The current frontend has not yet been moved or reset.
+This starting-point description is historical. Ticket statuses below track the
+production implementation; the standalone prototype reference is preserved.
 
 ## Shared completion requirements
 
@@ -66,7 +67,7 @@ router/service/repository boundaries; no generic rule engine or event framework.
 
 Dependencies are completion prerequisites, not a requirement to work serially.
 For later financial tickets, dependency 005 supplies the common API-backed UI.
-Tickets 001–005 are **Complete locally**; 006–007 and 011 are **In progress**. Other
+Tickets 001–007 are **Complete locally**; 008–009 and 011 are **In progress**. Other
 tickets are **Todo**, except 021 (**Policy blocked**) and 022 (**Provider gated**
 for hosted verification). A dependency being satisfied does not mark a ticket done.
 
@@ -242,6 +243,14 @@ activity and shares the same audit behavior as direct API commands.
 
 ### 006 — Entity settings and user-owned API key management
 
+**Status: Complete locally.** Integration commit `29c495d` (ticket commit
+`2e455b3`). Integrated gates pass 27 backend and 35 frontend tests; settings DB
+workflow passes. Independent review resolved metadata-refresh recovery and stale
+credential-read races. Frozen mutations detect stale revision acceptance, UTC-only
+date defaults, skipped metadata refresh and retained one-time secret display.
+The same isolated local-provider browser harness detects failed secret dismissal;
+persistence, revocation and 320/390px checks pass without secret captures.
+
 **Outcome:** the admitted owner manages Entity name/time zone and script access.
 
 **Acceptance / evidence:** authenticated settings edits use revisions, audit and
@@ -253,6 +262,14 @@ boundary instants, stale settings, foreign-user key denial and revocation throug
 the API; browser checks cover one-time secret handling without recordings/logs.
 
 ### 007 — Copy Plans and compare saved scenarios
+
+**Status: Complete locally.** Integration commit `5fb20ca` (ticket commit
+`18f8b77`). Combined gates pass 27 backend and 38 frontend tests; copy, settings
+and monthly DB workflows pass. Shared-command integration conflicts received
+independent review. Frozen base comparisons detect absent API/UI behavior;
+semantic mutations detect copying the newer draft instead of the selected saved
+version and recalculating historical results. A fresh local-provider browser
+journey verifies copy/edit/save, unchanged originals, comparison and mobile layout.
 
 **Outcome:** independently edit copied intentions and compare immutable versions.
 
