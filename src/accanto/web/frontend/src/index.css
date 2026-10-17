@@ -150,3 +150,35 @@ h1 {
     align-items: flex-start;
   }
 }
+
+.recovery-notice {
+  max-width: 40rem;
+  padding: 1rem;
+  border: 1px solid #b87f48;
+  border-radius: .75rem;
+  background: #fff9ef;
+  color: #343f3a;
+}
+.recovery-notice p {
+  margin: 0 0 .75rem;
+  line-height: 1.5;
+}
+.recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+}
+.recovery-actions button {
+  min-height: 2.75rem;
+  padding: .5rem .8rem;
+  border: 1px solid #705942;
+  border-radius: .4rem;
+  background: white;
+  color: #263834;
+  font: inherit;
+  cursor: pointer;
+}
+.recovery-actions button:focus-visible {
+  outline: 3px solid #987549;
+  outline-offset: 2px;
+}

@@ -12,6 +12,15 @@ Frontend unit tests run with `just test-unit-fe`. The current production shell
 works without the backend and shows an explicit unconnected state. Production
 browser journeys will be added with API-backed workflows.
 
+The frontend transport uses same-origin cookie sessions and the implemented
+monthly API. A submitted write keeps its exact JSON body and request identity in
+tab memory until the server confirms it; stale conflicts require explicit
+reconciliation. Session recovery opens a separate sign-in window and verifies the
+same User through `/api/auth/session` before retrying with fresh CSRF. This memory
+is cleared on explicit logout and does not survive closing or reloading the tab.
+The shell does not yet expose the financial workflow; its UI arrives with the
+monthly browser ticket.
+
 The preserved [standalone prototype](product/daily-workspace-prototype.html) is
 a legacy reference. Do not regenerate it from the new application. Its existing
 browser data and saved Plan versions are not migrated or cleared; browser storage
