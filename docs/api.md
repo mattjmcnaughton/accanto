@@ -4,8 +4,8 @@ The production API supports direct net-income Plans and guilt-free spending,
 dated income/spending entries, monthly Reviews against saved versions, and
 independent income estimates. The production browser uses these commands with
 cookie sessions; the preserved standalone prototype remains a separate reference.
-Fixed costs, savings, refunds, observations and Review editing are not yet
-production endpoints. Unsupported categories/fields reject rather than approximate.
+Fixed costs, savings, refunds and observations are not yet production endpoints.
+Unsupported categories/fields reject rather than approximate.
 Income estimates do not calculate tax or populate Plans.
 
 ## Local setup and credentials
@@ -70,6 +70,7 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | DELETE | `/activity/{entry_id}` | Expected revision in JSON body; soft deletes |
 | POST | `/reviews` | Month's first date and saved version UUID |
 | GET | `/reviews/{YYYY-MM-01}` | Saved expectations, current entries and partial actuals |
+| PUT | `/reviews/{YYYY-MM-01}` | Expected revision, same-Plan saved version, note, reviewed flag and optional checkpoint refresh |
 | GET | `/income-estimates` | Entity's saved estimate scenarios and authoritative results |
 | GET | `/income-estimates/{estimate_id}` | One scenario with ordered assumption lines |
 | POST | `/income-estimates` | New named scenario and lines; no previous revision |
@@ -163,6 +164,22 @@ and spending difference is `-725.00`. Missing expected income sources make the
 income difference `null`; no spending entries makes spending actual/difference
 `null`. Explicit zero entries are known zero. This partial slice does not claim a
 complete cashflow or savings result.
+
+Edit a Review with `PUT /reviews/2026-10-01`, for example
+`{"expected_revision":1,"version_id":"SAVED_VERSION_UUID","note":"Synthetic takeaway","reviewed":true}`.
+This marks the month even when actuals remain unknown. The response's Review
+revision increments; `GET` returns `review.reviewed_at` and
+`checkpoint_changed`. Later entry changes, note edits or same-Plan retargets
+leave the annotation in place and show `checkpoint_changed: true`. Set
+`checkpoint: true` with `reviewed: true` to deliberately update the checkpoint;
+set `reviewed: false` to clear it. The chosen saved version must belong to the
+Review's current Plan. Retargeting creates no activity and does not change other
+Reviews. Cross-Plan retargeting awaits the explicit matching policy.
+The edit requires `Idempotency-Key`; replaying the same key and body returns the
+recorded outcome. A stale `expected_revision`, reused key with different input,
+or cross-Plan version is a `409` with a specific error code. Reload the Review
+before reconciling an attempted edit. The edit response contains the updated
+Review record; use `GET` for the comparison and current activity rollup.
 
 ## Corrections and failure recovery
 
