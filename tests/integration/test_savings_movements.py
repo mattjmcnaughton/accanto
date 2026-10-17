@@ -120,9 +120,17 @@ async def scenario():
         assert (await write("POST", movements, base)).status_code == 422
         invalid_kind = await write("POST", movements, {**base, "kind": "reassignment"})
         assert invalid_kind.status_code == 422
-        transfer = await write("POST", movements, {**base, "amount": "100.00"})
+        transfer_key = str(uuid4())
+        transfer_body = {**base, "amount": "100.00"}
+        transfer = await write("POST", movements, transfer_body, transfer_key)
         assert transfer.status_code == 200, transfer.text
         moved = transfer.json()
+        repeated = await write("POST", movements, transfer_body, transfer_key)
+        assert repeated.status_code == 200 and repeated.json() == moved
+        changed_retry = await write(
+            "POST", movements, {**base, "amount": "50.00"}, transfer_key
+        )
+        assert changed_retry.status_code == 409
         assert (
             await write(
                 "POST",
@@ -162,13 +170,16 @@ async def scenario():
         assert (await client.get(movements)).json() == before
         async with sessions() as session:
             assert (
-                await session.scalar(
-                    select(m.audit.c.id)
-                    .where(m.audit.c.record_uuid == moved["uuid"])
-                    .order_by(m.audit.c.id.desc())
-                    .limit(1)
+                len(
+                    (
+                        await session.execute(
+                            select(m.audit.c.id).where(
+                                m.audit.c.record_uuid == moved["uuid"]
+                            )
+                        )
+                    ).all()
                 )
-                is not None
+                == 1
             )
             assert (
                 await session.execute(
@@ -280,4 +291,26 @@ async def scenario():
         assert (await client.get(f"{root}/{order_account['uuid']}")).json()[
             "balance"
         ] == "100.00"
+        inactive = await write(
+            "PUT",
+            f"{root}/{order_account['uuid']}/goals/{order_source['uuid']}",
+            {
+                "name": "Order source goal",
+                "kind": "ongoing",
+                "target": None,
+                "active": False,
+                "expected_revision": order_source["revision"],
+            },
+        )
+        assert inactive.status_code == 200, inactive.text
+        retained_correction = await write(
+            "PUT",
+            f"{movements}/{ordered['uuid']}",
+            {
+                **ordered_body,
+                "note": "Corrected synthetic note",
+                "expected_revision": ordered["revision"],
+            },
+        )
+        assert retained_correction.status_code == 200, retained_correction.text
     await engine.dispose()

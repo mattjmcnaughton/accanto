@@ -461,7 +461,7 @@ async def write_movement(session, entity, operation, payload, target, audit):
             goal, _ = await goal_for_movement(
                 session, entity["id"], payload["goal_id"], when
             )
-            if not goal["active"]:
+            if not goal["active"] and (old is None or old["goal_id"] != goal["id"]):
                 raise RejectionError(
                     "inactive_goal", "Choose an active saving goal.", 422
                 )
@@ -508,13 +508,15 @@ async def write_movement(session, entity, operation, payload, target, audit):
                     "Transfer requires goals in different accounts.",
                     422,
                 )
-            if not destination["active"]:
+            if not destination["active"] and (
+                old is None or old["to_goal_id"] != destination["id"]
+            ):
                 raise RejectionError(
                     "inactive_goal", "Choose an active destination goal.", 422
                 )
-            # A completed source may move restored refunds to Unallocated only in
-            # its own account; normal lifecycle remains strict in this slice.
-            if not source["active"]:
+            if not source["active"] and (
+                old is None or old["from_goal_id"] != source["id"]
+            ):
                 raise RejectionError(
                     "inactive_goal", "Choose an active source goal.", 422
                 )

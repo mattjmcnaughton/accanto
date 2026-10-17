@@ -3,7 +3,8 @@
 The production API supports direct net-income Plans, named fixed costs and guilt-free spending,
 dated income/fixed-cost/spending/saving entries, monthly Reviews against saved versions,
 independent income estimates, savings account openings/goals, and investment/giving
-destinations with recorded contributions. The production
+destinations with recorded contributions, plus savings movements and goal-level
+reconciliation. The production
 browser uses these commands with cookie sessions; the preserved standalone
 prototype remains a separate reference. Fixed costs, refunds
 and observations are not yet production endpoints. Unsupported categories/fields
@@ -85,6 +86,10 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | PUT | `/savings-accounts/{account_id}` | Correct account name/opening and all goal designations with `expected_revision` |
 | POST | `/savings-accounts/{account_id}/goals` | Create a goal with `expected_account_revision` and zero opening amount |
 | PUT | `/savings-accounts/{account_id}/goals/{goal_id}` | Rename, set target/type or inactivate/reactivate an ordinary goal with `expected_revision` |
+| GET | `/savings-accounts/movements` | Current reassignments, transfers and reconciliations in financial-date/recording order |
+| POST | `/savings-accounts/movements` | Create one movement or one goal-level reconciliation |
+| PUT | `/savings-accounts/movements/{movement_id}` | Correct an existing record with its kind and `expected_revision`; original recording order is retained |
+| DELETE | `/savings-accounts/movements/{movement_id}` | Soft delete with `{kind, expected_revision}`; replay later history |
 | GET/POST | `/investments`, `/giving-recipients` | List/create named destinations with optional positive cumulative target; investments may have an optional dated opening observation |
 | PUT | `/investments/{destination_id}`, `/giving-recipients/{destination_id}` | Name, target, active state and `expected_revision` |
 | GET/POST | `/investment-activity`, `/giving-activity` | Current history or create contribution/adjustment with optional `destination_id` |
@@ -174,7 +179,36 @@ later recorded point reject with goal, date and shortfall. Corrections retain
 original order; links to original accounts remain stored even after movement or
 soft deletion, permanently fixing their opening setup. Transactions include
 balance validation, audit snapshots and retry outcomes under the Entity lock.
-Transfers and independent balance reconciliation remain separate future commands.
+
+For a same-account reassignment, `POST /savings-accounts/movements` takes
+`{kind: "reassignment", date, from_goal_id, to_goal_id, amount, note}`. For a
+cross-account transfer, use `kind: "transfer"` with the same fields. `amount` is
+a positive exact-cent USD string. The goals must differ and belong to the same
+account for reassignment or different accounts for transfer. Both goals and
+accounts must be active; neither endpoint may precede its account opening date.
+One record applies equal negative and positive effects, without creating income,
+spending or a contribution.
+
+To reconcile one goal, send `{kind: "reconciliation", date, goal_id,
+known_amount, note}`. `known_amount` is a nonnegative exact-cent USD string
+observed for that goal at that point in ordered history. For example, a goal
+with `5200.00` recorded remaining savings and `known_amount: "5000.00"`
+records one `-200.00` adjustment. The account balance changes through its
+goal rollup, while opening amounts, other goals and contribution totals remain
+unchanged. Account-wide reconciliation is not offered. A zero difference rejects
+with `no_correction`.
+
+`PUT` sends the same fields plus `expected_revision`; its `kind` must identify
+the existing record type. A corrected reconciliation recomputes its signed
+difference at its financial date and retained recording order, excluding its
+prior effect. Corrections may retain an existing inactive goal endpoint while
+its account remains active; a new endpoint or new reconciliation requires an
+active goal. `DELETE` sends `{kind, expected_revision}`. Corrections and
+deletions reject when either old or new affected history would go negative.
+The record, full audit snapshots and retry outcome commit atomically under the
+Entity lock. A stale revision conflicts; retrying the same request key and input
+returns its recorded result, while reusing a key with changed input conflicts.
+Deleted movements stay stored for audit; there is no restoration endpoint.
 
 ## Independent income estimates
 
