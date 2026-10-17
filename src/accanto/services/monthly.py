@@ -237,7 +237,7 @@ async def write(
                 Decimal(payload["spending"]),
                 [
                     fixed_cost_monthly(line["amount"], line["frequency"])
-                    for line in payload["fixed_costs"]
+                    for line in payload.get("fixed_costs", [])
                 ],
             )
             values = {
@@ -320,7 +320,7 @@ async def write(
                     )
                 )
             seen_fixed = set()
-            for line in payload["fixed_costs"]:
+            for line in payload.get("fixed_costs", []):
                 if line.get("fixed_cost_id"):
                     fixed = await scoped(
                         session, m.fixed_costs, entity["id"], line["fixed_cost_id"]
