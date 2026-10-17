@@ -12,12 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from accanto.domains.monthly import money, monthly_actuals, plan_results
 from accanto.models import monthly as m
 from accanto.repositories.monthly import plan_lines
-
-
-class RejectionError(Exception):
-    def __init__(self, code: str, message: str, status: int = 409):
-        self.code, self.message, self.status = code, message, status
-        super().__init__(message)
+from accanto.services.access import AuthenticatedActor, RejectionError, revalidate_actor
 
 
 def json_values(value):
@@ -25,26 +20,20 @@ def json_values(value):
 
 
 async def authorize(
-    session: AsyncSession, token: str, entity_uuid: UUID, *, lock: bool
+    session: AsyncSession,
+    token: str | AuthenticatedActor,
+    entity_uuid: UUID,
+    *,
+    lock: bool,
 ):
-    digest = hashlib.sha256(token.encode()).hexdigest()
-    query = select(m.keys).where(
-        m.keys.c.digest == digest, m.keys.c.revoked_at.is_(None)
-    )
-    if lock:
-        query = query.with_for_update()
-    key = (await session.execute(query)).mappings().first()
-    if not key:
-        raise RejectionError(
-            "invalid_credential", "API key is invalid or revoked.", 401
-        )
+    actor = await revalidate_actor(session, token, lock=lock)
     query = select(m.entities).where(m.entities.c.uuid == entity_uuid)
     if lock:
         query = query.with_for_update()
     entity = (await session.execute(query)).mappings().first()
-    if not entity or entity["owner_id"] != key["user_id"]:
+    if not entity or entity["owner_id"] != actor.user_id:
         raise RejectionError("entity_not_found", "Entity is unavailable.", 404)
-    return key, entity
+    return actor, entity
 
 
 async def scoped(session, table, entity_id, record_uuid):
@@ -81,7 +70,7 @@ async def plan_snapshot(session, record):
 
 async def write(
     session: AsyncSession,
-    token: str,
+    token: str | AuthenticatedActor,
     entity_uuid: UUID,
     operation: str,
     request_key: str,
@@ -90,7 +79,7 @@ async def write(
 ):
     """One commit includes financial records, snapshots and recorded retry response."""
     async with session.begin():
-        key, entity = await authorize(session, token, entity_uuid, lock=True)
+        actor, entity = await authorize(session, token, entity_uuid, lock=True)
         scope = f"{operation}:{target or ''}"
         digest = hashlib.sha256(
             json.dumps(
@@ -102,7 +91,7 @@ async def write(
                 await session.execute(
                     select(m.outcomes).where(
                         m.outcomes.c.entity_id == entity["id"],
-                        m.outcomes.c.user_id == key["user_id"],
+                        m.outcomes.c.user_id == actor.user_id,
                         m.outcomes.c.operation == scope,
                         m.outcomes.c.request_key == request_key,
                     )
@@ -124,9 +113,14 @@ async def write(
             await session.execute(
                 insert(m.audit).values(
                     entity_id=entity["id"],
-                    actor_id=key["user_id"],
-                    api_key_uuid=key["uuid"],
-                    interface="direct_api",
+                    actor_id=actor.user_id,
+                    api_key_uuid=actor.credential_uuid
+                    if actor.credential_kind == "api_key"
+                    else None,
+                    session_uuid=actor.credential_uuid
+                    if actor.credential_kind == "session"
+                    else None,
+                    interface=actor.interface,
                     operation_uuid=operation_uuid,
                     record_type=table.name,
                     record_uuid=record_uuid,
@@ -435,7 +429,7 @@ async def write(
         await session.execute(
             insert(m.outcomes).values(
                 entity_id=entity["id"],
-                user_id=key["user_id"],
+                user_id=actor.user_id,
                 operation=scope,
                 request_key=request_key,
                 request_hash=digest,
