@@ -30,10 +30,53 @@ export interface OpeningGoal {
   target: string | null;
   opening_amount: string;
 }
+export interface SavingsMovement {
+  uuid: string;
+  kind: "reassignment" | "transfer" | "reconciliation";
+  date: string;
+  amount: string;
+  note: string;
+  revision: number;
+  from_goal_id: string | null;
+  to_goal_id: string | null;
+  goal_id: string | null;
+}
+export type MovementBody = {
+  kind: SavingsMovement["kind"];
+  date: string;
+  from_goal_id?: string;
+  to_goal_id?: string;
+  goal_id?: string;
+  amount?: string;
+  known_amount?: string;
+  note: string;
+};
 const root = (entity: string) => `/api/entities/${encodeURIComponent(entity)}/savings-accounts`;
+const movements = (entity: string) => `${root(entity)}/movements`;
 const record = (entity: string, account: string) =>
   `${root(entity)}/${encodeURIComponent(account)}`;
 export const savings = {
+  movements: (entity: string): Promise<LoadState<SavingsMovement[]>> =>
+    loadResource(movements(entity), (rows: SavingsMovement[]) => rows.length === 0),
+  move: (entity: string, body: MovementBody): WriteSpec<SavingsMovement> => ({
+    method: "POST",
+    path: movements(entity),
+    body,
+  }),
+  correctMovement: (
+    entity: string,
+    movement: string,
+    body: MovementBody & { expected_revision: number },
+  ): WriteSpec<SavingsMovement> => ({
+    method: "PUT",
+    path: `${movements(entity)}/${encodeURIComponent(movement)}`,
+    body,
+  }),
+  deleteMovement: (entity: string, movement: SavingsMovement): WriteSpec<SavingsMovement> => ({
+    method: "DELETE",
+    path: `${movements(entity)}/${encodeURIComponent(movement.uuid)}`,
+    body: { kind: movement.kind, expected_revision: movement.revision },
+  }),
   list: (entity: string): Promise<LoadState<SavingsAccount[]>> =>
     loadResource(root(entity), (rows: SavingsAccount[]) => rows.length === 0),
   create: (

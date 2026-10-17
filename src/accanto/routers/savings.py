@@ -8,17 +8,84 @@ from accanto.dtos.savings import (
     AccountResult,
     CreateAccount,
     CreateGoal,
+    DeleteMovement,
     EditAccount,
     EditGoal,
+    EditMovement,
+    MovementInput,
+    MovementResult,
 )
 from accanto.routers.authentication import Session, Token
 from accanto.routers.income_estimates import RequestKey
 from accanto.services.monthly import write
-from accanto.services.savings import read_account, read_accounts
+from accanto.services.savings import read_account, read_accounts, read_movements
 
 router = APIRouter(
     prefix="/api/entities/{entity_id}/savings-accounts", tags=["savings"]
 )
+
+
+@router.get("/movements", response_model=list[MovementResult])
+async def list_movements(entity_id: UUID, session: Session, token: Token):
+    return await read_movements(session, token, entity_id)
+
+
+@router.post("/movements", response_model=MovementResult)
+async def create_movement(
+    entity_id: UUID,
+    body: MovementInput,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await write(
+        session,
+        token,
+        entity_id,
+        "create_savings_movement",
+        request_key,
+        body.model_dump(mode="json"),
+    )
+
+
+@router.put("/movements/{movement_id}", response_model=MovementResult)
+async def edit_movement(
+    entity_id: UUID,
+    movement_id: UUID,
+    body: EditMovement,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await write(
+        session,
+        token,
+        entity_id,
+        "edit_savings_movement",
+        request_key,
+        body.model_dump(mode="json"),
+        movement_id,
+    )
+
+
+@router.delete("/movements/{movement_id}", response_model=MovementResult)
+async def delete_movement(
+    entity_id: UUID,
+    movement_id: UUID,
+    body: DeleteMovement,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await write(
+        session,
+        token,
+        entity_id,
+        "delete_savings_movement",
+        request_key,
+        body.model_dump(mode="json"),
+        movement_id,
+    )
 
 
 @router.get("", response_model=list[AccountResult])

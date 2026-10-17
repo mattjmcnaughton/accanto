@@ -75,3 +75,24 @@ def replay_savings(
         if event.contribution:
             contributions[event.goal_id] += event.amount
     return balances, contributions
+
+
+def movement_events(
+    financial_date: date,
+    recording_order: int,
+    source: str,
+    destination: str,
+    amount: Decimal,
+) -> list[SavingEvent]:
+    """One movement contributes equal and opposite effects at one position."""
+    if source == destination or amount <= 0:
+        raise ValueError("Choose distinct goals and a positive amount.")
+    return [
+        SavingEvent(financial_date, recording_order, source, -amount, False),
+        SavingEvent(financial_date, recording_order, destination, amount, False),
+    ]
+
+
+def reconciliation_delta(known: str, remaining: Decimal) -> Decimal:
+    """Correct one recorded pot without changing its opening or contribution total."""
+    return money(str(money(known) - remaining), signed=True)

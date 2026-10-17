@@ -784,6 +784,16 @@ async def write(
                 session, entity, operation, payload, target, audit
             )
         elif operation in {
+            "create_savings_movement",
+            "edit_savings_movement",
+            "delete_savings_movement",
+        }:
+            from accanto.services.savings import write_movement
+
+            response = await write_movement(
+                session, entity, operation, payload, target, audit
+            )
+        elif operation in {
             "create_investment",
             "edit_investment",
             "create_giving",

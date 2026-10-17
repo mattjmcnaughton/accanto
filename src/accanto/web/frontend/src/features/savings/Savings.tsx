@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { type Goal, type OpeningGoal, type SavingsAccount, savings } from "../../lib/savings";
+import {
+  type Goal,
+  type MovementBody,
+  type OpeningGoal,
+  type SavingsAccount,
+  type SavingsMovement,
+  savings,
+} from "../../lib/savings";
 import { LoadMessage, MoneyInput, type ScreenProps, useLoad } from "../workspace/shared";
 
 type FormGoal = OpeningGoal & { key: string };
@@ -167,6 +174,7 @@ export function Savings(p: ScreenProps) {
           </button>
         </article>
       ))}
+      <SavingsMovements {...p} accounts={rows} onSaved={() => setReload((value) => value + 1)} />
       {mode && (
         <form
           onSubmit={(event) => {
@@ -423,6 +431,263 @@ export function Savings(p: ScreenProps) {
                 setMode(null);
                 p.dirty(false);
               }
+            }}
+          >
+            Cancel
+          </button>
+        </form>
+      )}
+    </section>
+  );
+}
+
+function SavingsMovements(p: ScreenProps & { accounts: SavingsAccount[]; onSaved: () => void }) {
+  const [reload, setReload] = useState(0);
+  const state = useLoad(() => savings.movements(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const rows = state.kind === "ready" ? state.data : [];
+  const [editing, setEditing] = useState<SavingsMovement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState<MovementBody["kind"]>("reassignment");
+  const [date, setDate] = useState(p.entity.today);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [goal, setGoal] = useState("");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [error, setError] = useState("");
+  const choices = p.accounts.flatMap((account) =>
+    account.goals.map((item) => ({
+      id: item.uuid,
+      label: `${account.name} / ${item.name} (${dollars(item.remaining_saved)} saved)`,
+      account: account.uuid,
+      active: item.active && account.active,
+    })),
+  );
+  const names = new Map(choices.map((choice) => [choice.id, choice.label]));
+  const changed = () => {
+    p.dirty(true);
+    setError("");
+  };
+  const close = () => {
+    setOpen(false);
+    setEditing(null);
+    setError("");
+    p.dirty(false);
+  };
+  const done = () => {
+    close();
+    setReload((n) => n + 1);
+    p.onSaved();
+  };
+  const begin = (row: SavingsMovement | null) => {
+    if (!p.guard()) return;
+    setEditing(row);
+    setKind(row?.kind ?? "reassignment");
+    setDate(row?.date ?? p.entity.today);
+    setFrom(row?.from_goal_id ?? "");
+    setTo(row?.to_goal_id ?? "");
+    setGoal(row?.goal_id ?? "");
+    setAmount(row?.kind === "reconciliation" ? "" : (row?.amount ?? ""));
+    setNote(row?.note ?? "");
+    setError("");
+    setOpen(true);
+    p.dirty(false);
+  };
+  return (
+    <section aria-labelledby="savings-movements-title">
+      <h3 id="savings-movements-title">Savings movements and reconciliation</h3>
+      <p>Move existing savings between goals, or correct the recorded amount of one goal.</p>
+      <button type="button" disabled={p.busy} onClick={() => begin(null)}>
+        Record movement or reconciliation
+      </button>
+      <LoadMessage state={state} retry={() => setReload((n) => n + 1)} />
+      {state.kind === "empty" && <p>No savings movements yet.</p>}
+      {rows.length > 0 && (
+        <ul>
+          {rows.map((row) => (
+            <li key={row.uuid}>
+              {row.date} ·{" "}
+              {row.kind === "reconciliation"
+                ? `Reconcile ${names.get(row.goal_id ?? "") ?? "goal"} by ${dollars(row.amount)}`
+                : `${row.kind === "transfer" ? "Transfer" : "Reassign"} ${dollars(row.amount)} from ${names.get(row.from_goal_id ?? "") ?? "goal"} to ${names.get(row.to_goal_id ?? "") ?? "goal"}`}
+              {row.note && ` · ${row.note}`}
+              <button type="button" disabled={p.busy} onClick={() => begin(row)}>
+                Correct
+              </button>
+              <button
+                type="button"
+                disabled={p.busy}
+                onClick={() => {
+                  if (!p.guard()) return;
+                  p.save(savings.deleteMovement(p.entity.id, row), done);
+                }}
+              >
+                Delete
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {open && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (p.busy) return;
+            if (kind === "reconciliation" ? !goal : !from || !to || from === to) {
+              setError("Choose valid, distinct savings goals.");
+              return;
+            }
+            if (kind !== "reconciliation") {
+              const source = choices.find((choice) => choice.id === from);
+              const destination = choices.find((choice) => choice.id === to);
+              if (
+                !source ||
+                !destination ||
+                (kind === "transfer") !== (source.account !== destination.account)
+              ) {
+                setError(
+                  kind === "transfer"
+                    ? "Choose goals in different accounts."
+                    : "Choose goals in one account.",
+                );
+                return;
+              }
+            }
+            const body: MovementBody =
+              kind === "reconciliation"
+                ? { kind, date, goal_id: goal, known_amount: amount, note }
+                : { kind, date, from_goal_id: from, to_goal_id: to, amount, note };
+            if (editing)
+              p.save(
+                savings.correctMovement(p.entity.id, editing.uuid, {
+                  ...body,
+                  expected_revision: editing.revision,
+                }),
+                done,
+              );
+            else p.save(savings.move(p.entity.id, body), done);
+          }}
+        >
+          <h4>{editing ? "Correct savings record" : "New savings record"}</h4>
+          <label>
+            Action
+            <select
+              value={kind}
+              disabled={!!editing}
+              onChange={(event) => {
+                setKind(event.target.value as MovementBody["kind"]);
+                changed();
+              }}
+            >
+              <option value="reassignment">Reassign within account</option>
+              <option value="transfer">Transfer between accounts</option>
+              <option value="reconciliation">Reconcile one goal</option>
+            </select>
+          </label>
+          <label>
+            Financial date
+            <input
+              type="date"
+              required
+              value={date}
+              onChange={(event) => {
+                setDate(event.target.value);
+                changed();
+              }}
+            />
+          </label>
+          {kind === "reconciliation" ? (
+            <label>
+              Goal
+              <select
+                required
+                value={goal}
+                onChange={(event) => {
+                  setGoal(event.target.value);
+                  changed();
+                }}
+              >
+                <option value="">Choose goal</option>
+                {choices
+                  .filter((choice) => choice.active || choice.id === goal)
+                  .map((choice) => (
+                    <option key={choice.id} value={choice.id}>
+                      {choice.label}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          ) : (
+            <>
+              <label>
+                From goal
+                <select
+                  required
+                  value={from}
+                  onChange={(event) => {
+                    setFrom(event.target.value);
+                    changed();
+                  }}
+                >
+                  <option value="">Choose source</option>
+                  {choices
+                    .filter((choice) => choice.active || choice.id === from)
+                    .map((choice) => (
+                      <option key={choice.id} value={choice.id}>
+                        {choice.label}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label>
+                To goal
+                <select
+                  required
+                  value={to}
+                  onChange={(event) => {
+                    setTo(event.target.value);
+                    changed();
+                  }}
+                >
+                  <option value="">Choose destination</option>
+                  {choices
+                    .filter((choice) => choice.active || choice.id === to)
+                    .map((choice) => (
+                      <option key={choice.id} value={choice.id}>
+                        {choice.label}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </>
+          )}
+          <MoneyInput
+            label={kind === "reconciliation" ? "Known saved amount on this date" : "Amount to move"}
+            value={amount}
+            onChange={(value) => {
+              setAmount(value);
+              changed();
+            }}
+          />
+          <label>
+            Note
+            <input
+              maxLength={2000}
+              value={note}
+              onChange={(event) => {
+                setNote(event.target.value);
+                changed();
+              }}
+            />
+          </label>
+          {error && <p role="alert">{error}</p>}
+          <button type="submit" disabled={p.busy}>
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (p.guard()) close();
             }}
           >
             Cancel

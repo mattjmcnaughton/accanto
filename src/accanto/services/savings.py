@@ -10,8 +10,10 @@ from accanto.domains.savings import (
     SavingsShortfallError,
     funded_status,
     goal_target,
+    movement_events,
     opening_change_allowed,
     opening_designations,
+    reconciliation_delta,
     replay_savings,
 )
 from accanto.models import monthly as m
@@ -39,7 +41,7 @@ async def current_link(session, entry_id):
     )
 
 
-async def saving_facts(session, entity_id):
+async def saving_facts(session, entity_id, *, as_of=None, excluded_adjustment_id=None):
     goals = (
         (
             await session.execute(
@@ -87,6 +89,57 @@ async def saving_facts(session, entity_id):
         )
         for link in links
     ]
+    for table in (s.reassignments, s.transfers):
+        rows = (
+            (
+                await session.execute(
+                    select(table).where(
+                        table.c.entity_id == entity_id, table.c.deleted_at.is_(None)
+                    )
+                )
+            )
+            .mappings()
+            .all()
+        )
+        for row in rows:
+            events.extend(
+                movement_events(
+                    row["financial_date"],
+                    row["recording_order"],
+                    goal_ids[row["from_goal_id"]],
+                    goal_ids[row["to_goal_id"]],
+                    row["amount"],
+                )
+            )
+    adjustments = (
+        (
+            await session.execute(
+                select(s.adjustments).where(
+                    s.adjustments.c.entity_id == entity_id,
+                    s.adjustments.c.deleted_at.is_(None),
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
+    events.extend(
+        SavingEvent(
+            row["financial_date"],
+            row["recording_order"],
+            goal_ids[row["goal_id"]],
+            row["amount"],
+            False,
+        )
+        for row in adjustments
+        if row["id"] != excluded_adjustment_id
+    )
+    if as_of is not None:
+        events = [
+            event
+            for event in events
+            if (event.financial_date, event.recording_order) < as_of
+        ]
     try:
         balances, contributions = replay_savings(openings, events)
     except SavingsShortfallError as error:
@@ -271,6 +324,242 @@ async def read_account(session, token, entity_uuid, account_uuid):
         )
 
 
+def movement_result(row, kind, goal_ids):
+    result = {
+        "uuid": str(row["uuid"]),
+        "kind": kind,
+        "date": row["financial_date"].isoformat(),
+        "amount": str(row["amount"]),
+        "note": row["note"],
+        "revision": row["revision"],
+    }
+    if kind == "reconciliation":
+        result["goal_id"] = goal_ids[row["goal_id"]]
+    else:
+        result["from_goal_id"] = goal_ids[row["from_goal_id"]]
+        result["to_goal_id"] = goal_ids[row["to_goal_id"]]
+    return result
+
+
+async def read_movements(session, token, entity_uuid):
+    async with session.begin():
+        _, entity = await authorize(session, token, entity_uuid, lock=True)
+        goals = (
+            await session.execute(
+                select(s.goals.c.id, s.goals.c.uuid).where(
+                    s.goals.c.entity_id == entity["id"]
+                )
+            )
+        ).all()
+        goal_ids = {id_: str(uuid) for id_, uuid in goals}
+        records = []
+        for kind, table in (
+            ("reassignment", s.reassignments),
+            ("transfer", s.transfers),
+            ("reconciliation", s.adjustments),
+        ):
+            rows = (
+                (
+                    await session.execute(
+                        select(table).where(
+                            table.c.entity_id == entity["id"],
+                            table.c.deleted_at.is_(None),
+                        )
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            records.extend(
+                (
+                    row["financial_date"],
+                    row["recording_order"],
+                    movement_result(row, kind, goal_ids),
+                )
+                for row in rows
+            )
+        return [result for _, _, result in sorted(records)]
+
+
+async def goal_for_movement(session, entity_id, goal_uuid, financial_date):
+    goal = await scoped(session, s.goals, entity_id, goal_uuid)
+    account = (
+        (
+            await session.execute(
+                select(s.accounts).where(s.accounts.c.id == goal["account_id"])
+            )
+        )
+        .mappings()
+        .one()
+    )
+    if not account["active"]:
+        raise RejectionError(
+            "archived_account", "Reopen the savings account first.", 422
+        )
+    if financial_date < account["opening_date"]:
+        raise RejectionError(
+            "before_opening",
+            "Savings activity cannot precede the account opening date.",
+            422,
+        )
+    return goal, account
+
+
+async def write_movement(session, entity, operation, payload, target, audit):
+    kind = payload["kind"]
+    tables = {
+        "reassignment": s.reassignments,
+        "transfer": s.transfers,
+        "reconciliation": s.adjustments,
+    }
+    table = tables[kind]
+    old = None
+    if operation != "create_savings_movement":
+        old = await scoped(session, table, entity["id"], target)
+        if old["deleted_at"] is not None:
+            raise RejectionError("record_not_found", "Movement is deleted.", 404)
+        check_revision(old, payload["expected_revision"])
+        old_goal_ids = (
+            [old["goal_id"]]
+            if kind == "reconciliation"
+            else [old["from_goal_id"], old["to_goal_id"]]
+        )
+        old_accounts = (
+            (
+                await session.execute(
+                    select(s.accounts.c.active)
+                    .join(s.goals, s.goals.c.account_id == s.accounts.c.id)
+                    .where(s.goals.c.id.in_(old_goal_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not all(old_accounts):
+            raise RejectionError(
+                "archived_account", "Reopen the original savings account first.", 422
+            )
+    if operation == "delete_savings_movement":
+        # Deletion can expose a later shortfall at either former endpoint.
+        assert old is not None
+        changed = (
+            (
+                await session.execute(
+                    update(table)
+                    .where(table.c.id == old["id"])
+                    .values(deleted_at=datetime.now(UTC), revision=old["revision"] + 1)
+                    .returning(table)
+                )
+            )
+            .mappings()
+            .one()
+        )
+    else:
+        when = date.fromisoformat(payload["date"])
+        values = {"financial_date": when, "note": payload["note"]}
+        if kind == "reconciliation":
+            goal, _ = await goal_for_movement(
+                session, entity["id"], payload["goal_id"], when
+            )
+            if not goal["active"]:
+                raise RejectionError(
+                    "inactive_goal", "Choose an active saving goal.", 422
+                )
+            # Compare with the position immediately before this ordered correction.
+            cutoff = (when, old["recording_order"] if old else 2**63 - 1)
+            _, balances, _ = await saving_facts(
+                session,
+                entity["id"],
+                as_of=cutoff,
+                excluded_adjustment_id=old["id"] if old else None,
+            )
+            remaining = balances[str(goal["uuid"])]
+            amount = reconciliation_delta(payload["known_amount"], remaining)
+            if amount == 0:
+                raise RejectionError(
+                    "no_correction",
+                    "Known amount already matches recorded savings.",
+                    422,
+                )
+            values.update(goal_id=goal["id"], amount=amount)
+        else:
+            source, source_account = await goal_for_movement(
+                session, entity["id"], payload["from_goal_id"], when
+            )
+            destination, destination_account = await goal_for_movement(
+                session, entity["id"], payload["to_goal_id"], when
+            )
+            if source["id"] == destination["id"]:
+                raise RejectionError(
+                    "same_goal", "Choose different source and destination goals.", 422
+                )
+            if (
+                kind == "reassignment"
+                and source_account["id"] != destination_account["id"]
+            ):
+                raise RejectionError(
+                    "different_account",
+                    "Reassignment requires goals in one account.",
+                    422,
+                )
+            if kind == "transfer" and source_account["id"] == destination_account["id"]:
+                raise RejectionError(
+                    "same_account",
+                    "Transfer requires goals in different accounts.",
+                    422,
+                )
+            if not destination["active"]:
+                raise RejectionError(
+                    "inactive_goal", "Choose an active destination goal.", 422
+                )
+            # A completed source may move restored refunds to Unallocated only in
+            # its own account; normal lifecycle remains strict in this slice.
+            if not source["active"]:
+                raise RejectionError(
+                    "inactive_goal", "Choose an active source goal.", 422
+                )
+            values.update(
+                from_goal_id=source["id"],
+                to_goal_id=destination["id"],
+                amount=Decimal(payload["amount"]),
+            )
+        if old:
+            changed = (
+                (
+                    await session.execute(
+                        update(table)
+                        .where(table.c.id == old["id"])
+                        .values(**values, revision=old["revision"] + 1)
+                        .returning(table)
+                    )
+                )
+                .mappings()
+                .one()
+            )
+        else:
+            changed = (
+                (
+                    await session.execute(
+                        insert(table)
+                        .values(entity_id=entity["id"], **values)
+                        .returning(table)
+                    )
+                )
+                .mappings()
+                .one()
+            )
+    await saving_facts(session, entity["id"])
+    await audit(table, changed["uuid"], dict(old) if old else None, dict(changed))
+    goals = (
+        await session.execute(
+            select(s.goals.c.id, s.goals.c.uuid).where(
+                s.goals.c.entity_id == entity["id"]
+            )
+        )
+    ).all()
+    return movement_result(changed, kind, {id_: str(uuid) for id_, uuid in goals})
+
+
 async def write_savings(session, entity, operation, payload, target, audit):
     if operation == "create_saving_account":
         try:
@@ -384,6 +673,29 @@ async def write_savings(session, entity, operation, payload, target, audit):
                     .limit(1)
                 )
             ) is not None
+            if not has_activity:
+                goal_ids = [row["id"] for row in rows]
+                for movement_table in (s.reassignments, s.transfers):
+                    has_activity = (
+                        await session.scalar(
+                            select(movement_table.c.id)
+                            .where(
+                                movement_table.c.from_goal_id.in_(goal_ids)
+                                | movement_table.c.to_goal_id.in_(goal_ids)
+                            )
+                            .limit(1)
+                        )
+                    ) is not None
+                    if has_activity:
+                        break
+                if not has_activity:
+                    has_activity = (
+                        await session.scalar(
+                            select(s.adjustments.c.id)
+                            .where(s.adjustments.c.goal_id.in_(goal_ids))
+                            .limit(1)
+                        )
+                    ) is not None
             opening_change_allowed(has_activity, changed)
         except ValueError as error:
             invalid(error)

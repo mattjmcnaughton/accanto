@@ -16,7 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 
-from accanto.models.monthly import table
+from accanto.models.monthly import entry_order, table
 
 accounts = table(
     "saving_account",
@@ -89,4 +89,63 @@ Index(
     linked_activity.c.actual_entry_id,
     unique=True,
     postgresql_where=linked_activity.c.deleted_at.is_(None),
+)
+
+
+def movement_table(name):
+    return table(
+        name,
+        Column("entity_id", BigInteger, ForeignKey("entity.id"), nullable=False),
+        Column("financial_date", Date, nullable=False),
+        Column("from_goal_id", BigInteger, nullable=False),
+        Column("to_goal_id", BigInteger, nullable=False),
+        Column("amount", Numeric(14, 2), nullable=False),
+        Column("note", String(2000), nullable=False, server_default=""),
+        Column(
+            "recording_order",
+            BigInteger,
+            entry_order,
+            server_default=entry_order.next_value(),
+            nullable=False,
+            unique=True,
+        ),
+        Column("revision", Integer, nullable=False, server_default="1"),
+        Column("deleted_at", DateTime(timezone=True)),
+        ForeignKeyConstraint(
+            ["from_goal_id", "entity_id"], ["saving_goal.id", "saving_goal.entity_id"]
+        ),
+        ForeignKeyConstraint(
+            ["to_goal_id", "entity_id"], ["saving_goal.id", "saving_goal.entity_id"]
+        ),
+        CheckConstraint("from_goal_id <> to_goal_id"),
+        CheckConstraint("amount > 0 AND amount <= 999999999.99"),
+        CheckConstraint("revision >= 1"),
+    )
+
+
+reassignments = movement_table("savings_reassignment")
+transfers = movement_table("savings_transfer")
+adjustments = table(
+    "savings_balance_adjustment",
+    Column("entity_id", BigInteger, ForeignKey("entity.id"), nullable=False),
+    Column("goal_id", BigInteger, nullable=False),
+    Column("financial_date", Date, nullable=False),
+    Column("amount", Numeric(14, 2), nullable=False),
+    Column("note", String(2000), nullable=False, server_default=""),
+    Column(
+        "recording_order",
+        BigInteger,
+        entry_order,
+        server_default=entry_order.next_value(),
+        nullable=False,
+        unique=True,
+    ),
+    Column("revision", Integer, nullable=False, server_default="1"),
+    Column("deleted_at", DateTime(timezone=True)),
+    ForeignKeyConstraint(
+        ["goal_id", "entity_id"], ["saving_goal.id", "saving_goal.entity_id"]
+    ),
+    CheckConstraint("amount BETWEEN -999999999.99 AND 999999999.99"),
+    CheckConstraint("amount <> 0"),
+    CheckConstraint("revision >= 1"),
 )
