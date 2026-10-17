@@ -612,6 +612,17 @@ async def write(
             response = await write_estimate(
                 session, entity, operation, payload, target, audit
             )
+        elif operation in {
+            "create_saving_account",
+            "edit_saving_account",
+            "create_saving_goal",
+            "edit_saving_goal",
+        }:
+            from accanto.services.savings import write_savings
+
+            response = await write_savings(
+                session, entity, operation, payload, target, audit
+            )
         else:
             raise RejectionError(
                 "unsupported_command", "Command is not implemented.", 404
