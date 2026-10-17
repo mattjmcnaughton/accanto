@@ -9,7 +9,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from accanto.config import settings
 from accanto.logging import configure_logging
 from accanto.oidc import OIDCProvider
-from accanto.routers import api_keys, browser_auth, entities, health, monthly
+from accanto.routers import (
+    api_keys,
+    browser_auth,
+    entities,
+    health,
+    income_estimates,
+    monthly,
+)
 from accanto.services.access import RejectionError
 from accanto.web.serve import mount_frontend
 
@@ -68,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(browser_auth.router)
     app.include_router(health.router)
     app.include_router(monthly.router)
+    app.include_router(income_estimates.router)
     app.include_router(api_keys.router)
 
     # Mount frontend static files (only serves if dist/ exists)

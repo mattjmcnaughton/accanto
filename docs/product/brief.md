@@ -61,8 +61,9 @@ The production browser and API implement create/save a Plan → record activity 
 review a month for direct net income and guilt-free spending. It has Python
 Decimal rules, authenticated API access, relational Postgres persistence, atomic
 audit writes, retry outcomes and stale-write protection, verified separately
-from the prototype. Browser sign-in and the API-backed income/spending workspace
-are implemented; remaining financial commands are subsequent increments. Real
+from the prototype. The browser and API also support named, editable, independent
+income estimates with multiple assumption lines and manual Plan handoff. Remaining
+financial commands are subsequent increments. Real
 provider configuration and hosted compatibility verification remain manual.
 The UI must use the same application behavior as direct API access.
 
