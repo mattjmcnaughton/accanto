@@ -1,6 +1,6 @@
 # 01 — MVP implementation tickets
 
-Status: Ready for incremental implementation; no tickets started
+Status: Implementation in progress; 001–002 complete locally, 003–004 in progress
 
 This backlog implements the [MVP PRD](../../prd/01-mvp.md) and
 [MVP TDD](../../tdds/01-mvp.md), under [CONTEXT](../../../CONTEXT.md) and the
@@ -66,8 +66,9 @@ router/service/repository boundaries; no generic rule engine or event framework.
 
 Dependencies are completion prerequisites, not a requirement to work serially.
 For later financial tickets, dependency 005 supplies the common API-backed UI.
-All tickets below are **Todo**, except 021 (**Policy blocked**) and 022
-(**Provider gated**). A dependency being satisfied does not mark a ticket done.
+Tickets 001–002 are **Complete locally**; 003–004 are **In progress**. Other
+tickets are **Todo**, except 021 (**Policy blocked**) and 022 (**Provider gated**
+for hosted verification). A dependency being satisfied does not mark a ticket done.
 
 | ID | Ticket | Depends on | PRD coverage |
 | --- | --- | --- | --- |
@@ -106,6 +107,13 @@ cross-Plan matching or hosted MCP complete unless their tickets actually ship.
 
 ### 001 — Retire prototype and establish a fresh frontend shell
 
+**Status: Complete locally.** Integration commit `a234137` (ticket commit
+`48e6741`). Frontend format/lint/build/types and focused shell test pass; backend
+static/deep-link tests pass. Frozen clean-copy builds pass without `.agentic/`.
+Isolated agent-browser checks prove the new shell and absence of prototype-storage
+access against the baseline; keyboard and 320/390px checks pass. The standalone
+HTML remains byte-identical. Independent review found no actionable findings.
+
 **Outcome:** the active frontend is a small, new production application, with no
 implicit browser-local financial workspace. No financial-domain change.
 
@@ -127,6 +135,14 @@ moving origins/files can affect access to browser-local data. Do not manufacture
 an import/migration feature or copy financial state into the new app.
 
 ### 002 — Share authenticated application access across API keys and sessions
+
+**Status: Complete locally.** Integration commit `54820ac` (ticket commit
+`c9f7ac8`). Backend gates and four real-Postgres tests pass, including populated
+schema preservation, current authorization, cross-credential retries, rollback,
+foreign-resource denial and deterministic logout/command serialization. Independent
+review coverage findings were resolved. Frozen semantic-mutation checks detect
+removed ownership, expiry and session-lock enforcement. These prove the named
+conditions; they do not claim hosted provider compatibility.
 
 **Outcome:** existing monthly services accept an explicit authenticated actor
 without duplicating financial commands or trusting an adapter-supplied User ID.
