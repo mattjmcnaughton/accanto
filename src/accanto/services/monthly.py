@@ -383,6 +383,12 @@ async def write(
             before = None
             if operation in {"edit_entry", "delete_entry"}:
                 old = await scoped(session, m.entries, entity["id"], target)
+                if old["category"] in {"investing", "giving"}:
+                    raise RejectionError(
+                        "entry_category",
+                        "Use the matching contribution workflow.",
+                        422,
+                    )
                 check_revision(old, payload.get("expected_revision"))
                 if old["deleted_at"]:
                     raise RejectionError(
@@ -670,6 +676,30 @@ async def write(
             response = await write_savings(
                 session, entity, operation, payload, target, audit
             )
+        elif operation in {
+            "create_investment",
+            "edit_investment",
+            "create_giving",
+            "edit_giving",
+        }:
+            from accanto.services.destinations import write_destination
+
+            response = await write_destination(
+                session, entity, operation, payload, target, audit
+            )
+        elif operation in {
+            "create_investment_entry",
+            "edit_investment_entry",
+            "delete_investment_entry",
+            "create_giving_entry",
+            "edit_giving_entry",
+            "delete_giving_entry",
+        }:
+            from accanto.services.destinations import write_contribution
+
+            response = await write_contribution(
+                session, entity, operation, payload, target, audit
+            )
         else:
             raise RejectionError(
                 "unsupported_command", "Command is not implemented.", 404
@@ -718,11 +748,20 @@ async def entry_snapshot(session, record):
         if link
         else None
     )
+    destination_uuid = None
+    if record["category"] in {"investing", "giving"}:
+        from accanto.services.destinations import entry_snapshot as destination_snapshot
+
+        kind = "investment" if record["category"] == "investing" else "giving"
+        destination_uuid = (await destination_snapshot(session, kind, record))[
+            "destination_id"
+        ]
     return json_values(
         {
             **dict(record),
             "source_id": source_uuid,
             "saving_goal_id": goal_uuid,
+            "destination_id": destination_uuid,
             "funding_origin": "savings"
             if record["category"] == "spending" and link
             else "income",
@@ -819,6 +858,11 @@ async def read_review(session, token, entity_uuid, month: date):
         actual["saving_recorded"] = (
             str(sum(saving_entries, Decimal("0.00"))) if saving_entries else None
         )
+        for category in ("investing", "giving"):
+            values = [e["amount"] for e in entries if e["category"] == category]
+            actual[f"{category}_recorded"] = (
+                str(sum(values, Decimal("0.00"))) if values else None
+            )
         from accanto.models import savings as s
 
         savings_used = await session.scalar(

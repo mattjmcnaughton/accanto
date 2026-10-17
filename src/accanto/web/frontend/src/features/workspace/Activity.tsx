@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { destinations } from "../../lib/destinations";
 import {
   type Activity,
   type ActivityInput,
@@ -19,6 +20,14 @@ export function ActivityScreen(p: ScreenProps) {
   const entries = useLoad(() => monthly.activity(p.entity.id), [p.entity.id, p.refresh, reload]);
   const plans = useLoad(() => monthly.plans(p.entity.id), [p.entity.id, p.refresh, reload]);
   const accounts = useLoad(() => savings.list(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const investments = useLoad(
+    () => destinations.list(p.entity.id, "investment"),
+    [p.entity.id, p.refresh, reload],
+  );
+  const recipients = useLoad(
+    () => destinations.list(p.entity.id, "giving"),
+    [p.entity.id, p.refresh, reload],
+  );
   const [selected, setSelected] = useState<Activity | null>(null);
   const [form, setForm] = useState<ActivityInput | null>(null);
   const [known, setKnown] = useState<KnownTotalInput | null>(null);
@@ -35,6 +44,14 @@ export function ActivityScreen(p: ScreenProps) {
       : [];
   const goalLabel = (id: string | null) =>
     savingGoals.find(({ goal }) => goal.uuid === id)?.label ?? "Historical saving goal";
+  const destinationLabel = (entry: Activity) => {
+    const state = entry.category === "investing" ? investments : recipients;
+    const fallback =
+      entry.category === "investing" ? "Historical investment" : "Historical recipient";
+    return state.kind === "ready"
+      ? (state.data.find((row) => row.uuid === entry.destination_id)?.name ?? fallback)
+      : fallback;
+  };
   function fingerprint(
     month: string,
     category: "income" | "spending" | "saving",
@@ -58,6 +75,7 @@ export function ActivityScreen(p: ScreenProps) {
     p.dirty(true);
   }
   function open(entry: Activity | null) {
+    if (entry && (entry.category === "investing" || entry.category === "giving")) return;
     if (!p.guard()) return;
     setSelected(entry);
     setKnown(null);
@@ -65,7 +83,7 @@ export function ActivityScreen(p: ScreenProps) {
       entry
         ? {
             date: entry.financial_date,
-            category: entry.category,
+            category: entry.category as ActivityInput["category"],
             amount: entry.amount,
             source_id: entry.source_id,
             note: entry.note,
@@ -130,6 +148,8 @@ export function ActivityScreen(p: ScreenProps) {
       <LoadMessage state={entries} retry={() => setReload((x) => x + 1)} />
       <LoadMessage state={plans} retry={() => setReload((x) => x + 1)} />
       <LoadMessage state={accounts} retry={() => setReload((x) => x + 1)} />
+      <LoadMessage state={investments} retry={() => setReload((x) => x + 1)} />
+      <LoadMessage state={recipients} retry={() => setReload((x) => x + 1)} />
       <div className="workspace-columns">
         <div className="record-list">
           {entries.kind === "empty" && <p>No activity recorded yet.</p>}
@@ -142,24 +162,35 @@ export function ActivityScreen(p: ScreenProps) {
                     ? "Income"
                     : entry.category === "saving"
                       ? "Saving"
-                      : "Guilt-free spending"}
+                      : entry.category === "investing"
+                        ? "Investment contribution"
+                        : entry.category === "giving"
+                          ? "Giving"
+                          : "Guilt-free spending"}
                   {entry.is_adjustment && " · Adjustment"}
                 </p>
                 <strong>{dollars(entry.amount)}</strong>
                 <p>
                   {entry.saving_goal_id
                     ? `${entry.category === "saving" ? "To" : "Funded from"} ${goalLabel(entry.saving_goal_id)}`
-                    : entry.source_id
-                      ? sources.find((s) => s.id === entry.source_id)?.label ||
-                        "Historical Income source"
-                      : entry.category === "spending"
-                        ? "Funded from current income"
-                        : "Unassigned"}
+                    : entry.destination_id &&
+                        (entry.category === "investing" || entry.category === "giving")
+                      ? destinationLabel(entry)
+                      : entry.source_id
+                        ? sources.find((s) => s.id === entry.source_id)?.label ||
+                          "Historical Income source"
+                        : entry.category === "spending"
+                          ? "Funded from current income"
+                          : "Unassigned"}
                 </p>
                 {entry.note && <p>{entry.note}</p>}
-                <button type="button" disabled={p.busy} onClick={() => open(entry)}>
-                  Edit {entry.category} on {entry.financial_date}
-                </button>
+                {entry.category === "investing" || entry.category === "giving" ? (
+                  <p>Correct this entry in Investments and giving.</p>
+                ) : (
+                  <button type="button" disabled={p.busy} onClick={() => open(entry)}>
+                    Edit {entry.category} on {entry.financial_date}
+                  </button>
+                )}
               </article>
             ))}
         </div>

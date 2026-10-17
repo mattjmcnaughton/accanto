@@ -11,6 +11,7 @@ import {
 import { IncomeEstimates } from "../estimates/IncomeEstimates";
 import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice";
 import { Savings } from "../savings/Savings";
+import { Destinations } from "../destinations/Destinations";
 import { Settings } from "../settings/Settings";
 import { ActivityScreen } from "./Activity";
 import { MonthlyReview } from "./MonthlyReview";
@@ -22,7 +23,13 @@ export function Workspace({
 }: { initial: BrowserSession; signedOut: (message?: string) => void }) {
   const [session, setSession] = useState(initial);
   const [screen, setScreen] = useState<
-    "Plans" | "Activity" | "Monthly Review" | "Income estimates" | "Savings" | "Settings"
+    | "Plans"
+    | "Activity"
+    | "Monthly Review"
+    | "Income estimates"
+    | "Savings"
+    | "Investments and giving"
+    | "Settings"
   >("Plans");
   const [refresh, setRefresh] = useState(0);
   const [metadataStale, setMetadataStale] = useState(false);
@@ -204,6 +211,7 @@ export function Workspace({
                 "Monthly Review",
                 "Income estimates",
                 "Savings",
+                "Investments and giving",
                 "Settings",
               ] as const
             ).map((item) => (
@@ -230,6 +238,7 @@ export function Workspace({
           {screen === "Monthly Review" && <MonthlyReview {...props} />}
           {screen === "Income estimates" && <IncomeEstimates {...props} />}
           {screen === "Savings" && <Savings {...props} />}
+          {screen === "Investments and giving" && <Destinations {...props} />}
           {screen === "Settings" && (
             <Settings {...props} credentials={credentials} saved={() => void refreshMetadata()} />
           )}

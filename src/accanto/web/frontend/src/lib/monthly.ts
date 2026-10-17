@@ -69,7 +69,7 @@ export interface PlanGroup {
 export interface Activity {
   uuid: UUID;
   financial_date: IsoDate;
-  category: "income" | "spending" | "saving";
+  category: "income" | "spending" | "saving" | "investing" | "giving";
   amount: DecimalString;
   source_id: UUID | null;
   note: string;
@@ -77,6 +77,7 @@ export interface Activity {
   is_adjustment: boolean;
   funding_origin: "income" | "savings";
   saving_goal_id: UUID | null;
+  destination_id?: UUID | null;
 }
 export type ReviewEntry = Omit<Activity, "source_id"> & {
   source_uuid: UUID | null;
@@ -98,6 +99,8 @@ export interface ReviewResult {
     missing_sources: UUID[];
     spending_recorded: DecimalString | null;
     saving_recorded?: DecimalString | null;
+    investing_recorded?: DecimalString | null;
+    giving_recorded?: DecimalString | null;
     savings_used?: DecimalString;
   };
   income_difference: DecimalString | null;
