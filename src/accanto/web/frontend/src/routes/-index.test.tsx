@@ -15,9 +15,7 @@ test("shows a clear, accessible entry state without opening browser-local financ
   expect(screen.getByRole("banner")).toBeDefined();
   expect(screen.getByRole("main")).toBeDefined();
   expect(screen.getByRole("status")).toBeDefined();
-  expect(
-    screen.getByRole("heading", { level: 1, name: "Your financial workspace" }),
-  ).toBeDefined();
+  expect(screen.getByRole("heading", { level: 1, name: "Your financial workspace" })).toBeDefined();
   expect(screen.getByText(/not connected yet/i)).toBeDefined();
   expect(read).not.toHaveBeenCalled();
   expect(write).not.toHaveBeenCalled();
