@@ -728,6 +728,14 @@ work or the authenticated direct-API slice.
 
 ## Delivery and compatibility
 
+The [implementation tickets](../technical/tickets/01-mvp.md) own execution order
+and completion evidence. Build the production frontend afresh using the existing
+React/Vite toolchain and backend services. Retire the browser-local workspace
+from the active application rather than adapting its components and calculations
+into the production model. Preserve the standalone prototype and existing data;
+an optional ignored `.agentic/legacy/prototype/` source copy is local reference
+only, never a build dependency. The reset is ticketed, not yet implemented.
+
 1. Complete: accepted prototype and reconciled product baseline, preserving legacy
    local data and immutable versions.
 2. Implemented subset: typed persistence, shared rules and authenticated API for
