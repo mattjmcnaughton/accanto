@@ -4,10 +4,9 @@ The production API supports direct net-income Plans, named fixed costs and guilt
 dated income/fixed-cost/spending/saving entries, monthly Reviews against saved versions,
 independent income estimates, savings account openings/goals, and investment/giving
 destinations with recorded contributions, plus savings movements and goal-level
-reconciliation. The production
-browser uses these commands with cookie sessions; the preserved standalone
-prototype remains a separate reference. Fixed costs, refunds
-and observations are not yet production endpoints. Unsupported categories/fields
+reconciliation. The production browser uses these commands with cookie sessions;
+the preserved standalone prototype remains a separate reference. Refunds and
+observations are not yet production endpoints. Unsupported categories/fields
 reject rather than approximate.
 Income estimates do not calculate tax or populate Plans.
 
