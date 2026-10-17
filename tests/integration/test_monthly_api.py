@@ -280,6 +280,128 @@ async def scenario():
         assert (await client.get(prefix + "/reviews/2026-10-01")).json()[
             "version"
         ] == version
+        # Unknowns do not prevent review, and later activity changes only the
+        # informational checkpoint status.
+        edit_path = prefix + "/reviews/2026-10-01"
+        edit = {
+            "expected_revision": 1,
+            "version_id": version["uuid"],
+            "note": "Synthetic takeaway",
+            "reviewed": True,
+        }
+        review_key = str(uuid4())
+        marked = await client.put(
+            edit_path, json=edit, headers={"Idempotency-Key": review_key}
+        )
+        assert marked.status_code == 200, marked.text
+        assert (
+            await client.put(
+                edit_path, json=edit, headers={"Idempotency-Key": review_key}
+            )
+        ).json() == marked.json()
+        read = (await client.get(edit_path)).json()
+        assert read["review"]["reviewed_at"] and not read["checkpoint_changed"]
+        assert read["actual"]["income_incomplete"] is False
+        changed_activity = await post(
+            "/activity", {"date": "2026-10-20", "category": "spending", "amount": "7"}
+        )
+        assert changed_activity.status_code == 200
+        read = (await client.get(edit_path)).json()
+        assert read["checkpoint_changed"] and read["review"]["reviewed_at"]
+        assert (
+            await client.put(
+                edit_path, json=edit, headers={"Idempotency-Key": str(uuid4())}
+            )
+        ).status_code == 409
+        # Saving a later version leaves this Review pinned until deliberate edit.
+        later = await post(
+            f"/plans/{plan['plan_id']}/versions", {"expected_revision": 2}
+        )
+        assert later.status_code == 200, later.text
+        second_version = later.json()["version"]
+        assert (await client.get(edit_path)).json()["version"]["uuid"] == version[
+            "uuid"
+        ]
+        revised = {
+            **edit,
+            "expected_revision": 2,
+            "version_id": second_version["uuid"],
+        }
+        raced_reviews = await asyncio.gather(
+            *[
+                client.put(
+                    edit_path, json=revised, headers={"Idempotency-Key": str(uuid4())}
+                )
+                for _ in range(2)
+            ]
+        )
+        assert sorted(r.status_code for r in raced_reviews) == [200, 409]
+        read = (await client.get(edit_path)).json()
+        assert read["version"]["uuid"] == second_version["uuid"]
+        assert read["entries"] and read["checkpoint_changed"] is True
+        refreshed = await client.put(
+            edit_path,
+            json={**revised, "expected_revision": 3, "checkpoint": True},
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert refreshed.status_code == 200
+        assert (await client.get(edit_path)).json()["checkpoint_changed"] is False
+        assert (await client.get(prefix + "/activity")).json()
+        # A copied Plan has distinct source identity and cannot be selected here.
+        copied = await post(
+            f"/plans/{plan['plan_id']}/copies",
+            {
+                "name": "Separate scenario",
+                "source_revision_id": second_version["uuid"],
+                "expected_revision": second_version["revision"],
+            },
+        )
+        assert copied.status_code == 200
+        foreign_version = await post(
+            f"/plans/{copied.json()['plan_id']}/versions", {"expected_revision": 1}
+        )
+        assert foreign_version.status_code == 200
+        reject = await client.put(
+            edit_path,
+            json={
+                **revised,
+                "expected_revision": 4,
+                "version_id": foreign_version.json()["version"]["uuid"],
+            },
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert reject.status_code == 409
+        assert (await client.get(edit_path)).json()["version"][
+            "uuid"
+        ] == second_version["uuid"]
+        cleared = await client.put(
+            edit_path,
+            json={
+                **revised,
+                "expected_revision": 4,
+                "reviewed": False,
+                "note": "",
+            },
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert cleared.status_code == 200
+        assert (await client.get(edit_path)).json()["review"]["reviewed_at"] is None
+        async with sessions() as session:
+            edits = (
+                (
+                    await session.execute(
+                        select(m.audit).where(
+                            m.audit.c.record_uuid == UUID(marked.json()["uuid"]),
+                            m.audit.c.action == "edit_review",
+                        )
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert len(edits) == 4
+            assert sorted(row["before"]["revision"] for row in edits) == [1, 2, 3, 4]
+            assert sorted(row["after"]["revision"] for row in edits) == [2, 3, 4, 5]
         # A failed audit insert must roll back its financial record and retry result.
         async with admin.begin() as connection:
             await connection.execute(

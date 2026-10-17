@@ -32,7 +32,8 @@ const plans = [
   },
 ];
 const review = {
-  review: { uuid: "review", month: "2026-10-01" },
+  review: { uuid: "review", month: "2026-10-01", revision: 1, note: "", reviewed_at: null },
+  checkpoint_changed: false,
   version,
   entries: [],
   actual: {
@@ -94,6 +95,54 @@ it("preselects the previous calendar month version rather than a newer version",
     expect.objectContaining({ body: { month: "2026-11-01", version_id: "v1" } }),
     expect.any(Function),
   );
+});
+it("edits an incomplete Review with same-Plan version, notes, and annotation", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/plans")
+      ? json(plans)
+      : String(path).endsWith("2026-11-01")
+        ? json(review)
+        : absent(),
+  );
+  const p = props();
+  render(<MonthlyReview {...p} />);
+  const target = (await screen.findByLabelText("Comparison version")) as HTMLSelectElement;
+  await waitFor(() => expect(target.value).toBe("v1"));
+  fireEvent.change(target, { target: { value: "v2" } });
+  fireEvent.change(screen.getByLabelText("Review note"), {
+    target: { value: "Synthetic takeaway" },
+  });
+  fireEvent.click(screen.getByLabelText("Mark reviewed"));
+  fireEvent.click(screen.getByRole("button", { name: "Save Review" }));
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      body: {
+        expected_revision: 1,
+        version_id: "v2",
+        note: "Synthetic takeaway",
+        reviewed: true,
+        checkpoint: false,
+      },
+    }),
+    expect.any(Function),
+  );
+});
+it("keeps attempted Review input across a conflict reload", async () => {
+  let current = review;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/plans")
+      ? json(plans)
+      : String(path).endsWith("2026-11-01")
+        ? json(current)
+        : absent(),
+  );
+  const p = props();
+  const { rerender } = render(<MonthlyReview {...p} />);
+  const note = (await screen.findByLabelText("Review note")) as HTMLTextAreaElement;
+  fireEvent.change(note, { target: { value: "Unsaved synthetic note" } });
+  current = { ...review, review: { ...review.review, revision: 2, note: "Other writer" } };
+  rerender(<MonthlyReview {...p} refresh={1} />);
+  await waitFor(() => expect(note.value).toBe("Unsaved synthetic note"));
 });
 it("requires explicit choice without a preceding Review and blocks creation after a failed load", async () => {
   const fetch = vi

@@ -14,15 +14,46 @@ export function MonthlyReview(p: ScreenProps) {
   );
   const plans = useLoad(() => monthly.plans(p.entity.id), [p.entity.id, p.refresh, reload]);
   const [choice, setChoice] = useState("");
+  const [target, setTarget] = useState("");
+  const [note, setNote] = useState("");
+  const [reviewed, setReviewed] = useState(false);
+  const [edited, setEdited] = useState(false);
   useEffect(() => {
     setChoice(previous.kind === "ready" ? previous.data.version.uuid : "");
   }, [previous]);
+  useEffect(() => {
+    if (state.kind === "ready" && !edited) {
+      setTarget(state.data.version.uuid);
+      setNote(state.data.review.note);
+      setReviewed(Boolean(state.data.review.reviewed_at));
+    }
+  }, [state, edited]);
   if (p.concealed) return null;
   const versions =
     plans.kind === "ready"
       ? plans.data.flatMap((plan) => plan.revisions.filter((r) => r.saved))
       : [];
+  const currentPlan =
+    plans.kind === "ready" && state.kind === "ready"
+      ? plans.data.find((plan) => plan.revisions.some((r) => r.uuid === state.data.version.uuid))
+      : null;
   const retry = () => setReload((x) => x + 1);
+  const saveReview = (checkpoint = false) => {
+    if (state.kind !== "ready") return;
+    p.save(
+      monthly.editReview(p.entity.id, `${month}-01`, {
+        expected_revision: state.data.review.revision,
+        version_id: target,
+        note,
+        reviewed,
+        checkpoint,
+      }),
+      () => {
+        setEdited(false);
+        p.dirty(false);
+      },
+    );
+  };
   const canChoose =
     state.kind === "empty" &&
     (previous.kind === "ready" || previous.kind === "empty") &&
@@ -45,6 +76,7 @@ export function MonthlyReview(p: ScreenProps) {
               if (e.target.value && p.guard()) {
                 setMonth(e.target.value);
                 setChoice("");
+                setEdited(false);
                 p.dirty(false);
               }
             }}
@@ -64,7 +96,10 @@ export function MonthlyReview(p: ScreenProps) {
           onSubmit={(e) => {
             e.preventDefault();
             p.save(
-              monthly.createReview(p.entity.id, { month: `${month}-01`, version_id: choice }),
+              monthly.createReview(p.entity.id, {
+                month: `${month}-01`,
+                version_id: choice,
+              }),
               () => p.dirty(false),
             );
           }}
@@ -104,6 +139,77 @@ export function MonthlyReview(p: ScreenProps) {
       )}
       {state.kind === "ready" && (
         <>
+          <form
+            className="editor"
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveReview();
+            }}
+          >
+            <fieldset disabled={p.busy}>
+              <legend>Review notes and checkpoint</legend>
+              <label>
+                Comparison version
+                <select
+                  value={target}
+                  required
+                  onChange={(e) => {
+                    setTarget(e.target.value);
+                    setEdited(true);
+                    p.dirty(true);
+                  }}
+                >
+                  {(currentPlan?.revisions.filter((r) => r.saved) || [state.data.version]).map(
+                    (r) => (
+                      <option key={r.uuid} value={r.uuid}>
+                        {r.name} · v{r.number}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+              <label>
+                Review note
+                <textarea
+                  value={note}
+                  maxLength={4000}
+                  onChange={(e) => {
+                    setNote(e.target.value);
+                    setEdited(true);
+                    p.dirty(true);
+                  }}
+                />
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={reviewed}
+                  onChange={(e) => {
+                    setReviewed(e.target.checked);
+                    setEdited(true);
+                    p.dirty(true);
+                  }}
+                />{" "}
+                Mark reviewed
+              </label>
+              <button type="submit" className="primary" disabled={!target}>
+                Save Review
+              </button>
+              {reviewed && state.data.review.reviewed_at && (
+                <button type="button" onClick={() => saveReview(true)}>
+                  Update checkpoint
+                </button>
+              )}
+              <p>A reviewed month remains editable even when amounts are unknown.</p>
+            </fieldset>
+          </form>
+          {state.data.review.reviewed_at && (
+            <p>
+              {state.data.checkpoint_changed
+                ? "Changed since review. Your annotation remains set."
+                : "Marked reviewed."}
+            </p>
+          )}
           <h3>
             {state.data.version.name} · v{state.data.version.number}
           </h3>
