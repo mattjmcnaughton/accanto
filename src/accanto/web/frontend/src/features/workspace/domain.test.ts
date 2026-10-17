@@ -224,7 +224,16 @@ describe("financial workflow contract", () => {
   it("isolates Periods and supports exact-cent corrections and refunds", () => {
     let s = workspace();
     s = saveEntry(s, entry({ kind: "spending", sourceId: "", amount: 1001 }));
-    s = saveEntry(s, entry({ id: "refund", kind: "spending", sourceId: "", amount: -201 }));
+    s = saveEntry(
+      s,
+      entry({
+        id: "refund",
+        refundOf: s.entries[0].id,
+        kind: "spending",
+        sourceId: "",
+        amount: -201,
+      }),
+    );
     s = saveEntry(
       s,
       entry({ id: "next", date: "2026-11-01", kind: "spending", sourceId: "", amount: 10000 }),

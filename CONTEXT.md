@@ -137,7 +137,7 @@ that comparison requires an explicit change to the Review's linked version.
 
 Example: October targets version 2. Even if version 3 has since been saved,
 starting November preselects version 2, visibly, until the person chooses otherwise.
-This default is agreed direction and still needs prototype implementation.
+The prototype preselects this version and requires an explicit save.
 
 ### Annotate a month as reviewed or closed
 
@@ -243,9 +243,7 @@ leaves October's purchase visible and records -$1,000 of spending in November.
 The Laptop goal returns to $1,000 contributed, $0 net used, and $1,000 remaining.
 A $200 partial refund instead leaves $800 net used and $200 remaining.
 
-This is agreed workflow direction. The prototype supports negative payment
-entries, but a linked Record refund action and automatic origin restoration
-still need implementation. Repurposing a refund is outside this initial flow.
+The prototype implements linked Record refund with original-origin restoration. Repurposing a refund is outside this initial flow.
 
 ## Bounded context and external integrations
 
@@ -319,12 +317,12 @@ establish a match. Fixed-cost identity behavior is unchanged by this income deci
   Using an estimate in a Plan is an explicit choice; later estimator edits never
   silently change a draft, saved version, or actual receipt. Withholding remains
   an entered assumption, not a calculation of final tax owed.
-- This separation is agreed direction pending prototype implementation. Preserve
+- The prototype implements this separation. Preserve
   historical gross-income inputs, take-home overrides, and saved results; do not
   silently reinterpret or recompute existing versions.
 - Entity tax estimates, tax-year and filing-status selection, standard/itemized
   deduction calculations, and under-withholding flags are deferred beyond v1.
-  The prototype's illustrative tax panel is pending removal from the v1 flow;
+  The prototype no longer presents the illustrative tax panel in the v1 flow;
   existing saved versions retain their stored inputs and results unchanged.
 - An Entity is not automatically a tax return or legal person. Future tax
   estimation requires explicit scope and verified calculation rules. Recorded
@@ -353,8 +351,8 @@ establish a match. Fixed-cost identity behavior is unchanged by this income deci
   recording contributions. Each goal links to exactly one savings account;
   several goals can share that account, including its mandatory Unallocated goal.
   Contributions to a goal identify its linked account. Spending from that goal
-  uses the same account as funding origin. The prototype still uses optional
-  descriptive cash-account tags; those are not yet the agreed account model.
+  uses the same account as funding origin. New prototype goals use this account
+  model; legacy descriptive tags remain preserved without inferred accounts.
 
   Inactive goals remain visible in history but cannot be selected for new
   contributions.
@@ -440,8 +438,7 @@ They define behavior without prescribing production storage or architecture:
   Ordinary Income receipts and saving/investment contributions are nonnegative.
   Signed adjustments correct recorded amounts; they are not withdrawals or refunds.
   The agreed funding-origin workflow below adds savings used for recorded outflows.
-  The prototype supports linked savings use; simple savings-account transfers
-  are agreed direction pending implementation. Independent withdrawals remain deferred.
+  The prototype supports linked savings use and simple savings-account transfers. Independent withdrawals remain deferred.
 - Goals, Investments, and Charitable giving are parallel workspaces. Investments
   and giving recipients have optional cumulative contribution targets and preserve
   history when inactive. Plans allocate investing by destination, saving by goal or account’s Unallocated savings, and giving by recipient.
@@ -499,9 +496,8 @@ $1,000 contributed, $1,000 used, and $0 remaining. If the money instead goes to 
 investment, that investment records a $1,000 contribution funded from savings,
 without counting it as $1,000 newly allocated from current income.
 
-The prototype now supports a single origin per outflow, with an account label
-and optional goal for saved-money origins. The PRD still needs this workflow
-incorporated.
+The prototype supports a single origin per outflow with an explicit tracked goal
+for new saved-money origins. Legacy label-only records remain preserved.
 Savings and investment accounts have dated opening amounts as agreed below.
 Account selection remains an interaction decision. Split funding within one
 entry is deferred; the single-origin workflow is intentional. Naming
@@ -525,8 +521,8 @@ cumulative contribution targets.
   come from a dated balance observation; it is not assumed to be $26,000.
 - Activity already reflected in an opening amount must not be added a second
   time to the starting position. The opening amount represents the start of its calendar date; same-day
-  activity applies afterward. Backdated-entry and correction behavior still
-  needs design. Investment and debt observations remain separate from
+  activity applies afterward. Backdated changes follow the ordered historical
+  validation rules below. Investment and debt observations remain separate from
   contributions/payments; this boundary does not make their balances automatic.
 
 Each saving goal belongs to exactly one savings account in current scope. An
@@ -548,10 +544,10 @@ savings money reduces the account's remaining saved and its undesignated portion
 without changing other goals' remaining amounts or creating income. Existing saved
 money can also be reassigned between goals and unallocated savings within the account,
 without changing the account total or recording new contributions.
-The prototype currently uses account labels and has no account-opening flow;
-this section records domain direction awaiting PRD and prototype implementation.
+The prototype implements account openings and initial goal designations.
+Legacy account labels are preserved separately, without inferred balances.
 
-## Debt accounts — agreed direction, pending implementation
+## Debt accounts
 
 Current Debt account scope covers loans. Credit-card debt, repayment tracking,
 and settlement workflows are deferred. This does not require recording the
@@ -588,8 +584,8 @@ $9,750 owed; Accanto does not assume that the payment reduced debt to $9,700.
 
 Principal/interest splits, automatic debt-balance calculations, and repayment
 projections are deferred. Loan payments belong to fixed costs and link to the relevant Debt account. Credit-card debt and settlements are outside current scope. If introduced later,
-their design must avoid counting a purchase and its settlement as spending twice. Debt accounts await PRD and
-prototype implementation.
+their design must avoid counting a purchase and its settlement as spending twice.
+The prototype supports loan openings, payment history and separate observations.
 
 ## Destination allocations
 
@@ -672,10 +668,9 @@ saving contributions to Unallocated savings reference that account’s Unallocat
 goal, count once in monthly saving actuals, and increase that goal’s remaining
 saved and contribution history. They do not increase other goals’ progress.
 Reassigning that money to a goal later remains a reassignment, not another new
-contribution. The account-based allocation and contribution flow still needs
-prototype implementation.
+contribution. The prototype implements account-based allocation and contribution.
 
-## Finite and ongoing saving goals — agreed direction, pending implementation
+## Finite and ongoing saving goals
 
 A finite goal such as Laptop has a funding target. An ongoing goal such as Home
 repair remains available for repeated saving and use, and may have an optional
@@ -760,10 +755,8 @@ could spread a chosen portion over months; it is not a prerequisite for the
 generic funding model. Cross-month guidance and overcommitment checks still need
 design, without confusing independent scenarios with cumulative commitments.
 
-The current prototype's receipt-linked lump-sum spread and isolated example
-predate this simplification. They are exploratory UI, not the agreed required
-workflow. Replacing them with generic savings funding, and separating the income
-estimator from direct monthly net-income entry, remain pending prototype work.
+The prototype replaces receipt-linked lump-sum spreading with generic savings
+funding and separates income estimates from direct monthly net-income entry.
 Historical saved inputs and results must be preserved. Annual Plans and annual
 Reviews remain deferred.
 
@@ -805,9 +798,10 @@ Examples to retain when evaluating defaults:
   contributions and $0 contributions funded from current income. It is not new
   income or new saving. Savings used includes this recorded investment outflow.
 
-The prototype has not yet implemented this presentation. Defaults and exact
-controls remain open for evidence from use; precise meanings and transparent
-formulas are agreed now.
+The prototype shows planned income and total-funding comparisons, and separate
+actual income-based comparisons for all/income-funded costs and investments,
+new saving and net saving. Defaults remain provisional for evidence from use;
+precise meanings and transparent formulas are agreed.
 
 ## Workflow finalization interview
 

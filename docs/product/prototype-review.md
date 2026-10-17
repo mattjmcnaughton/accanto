@@ -1,6 +1,6 @@
 # Daily workspace prototype
 
-Updated 2026-10-16. The financial meanings are agreed in [CONTEXT.md](../../CONTEXT.md).
+Updated 2026-10-17. The financial meanings are agreed in [CONTEXT.md](../../CONTEXT.md).
 This browser-local implementation evaluates interactions; it is not production
 financial authority, authenticated access, or database durability.
 
@@ -30,8 +30,9 @@ starting positions. Historical HTML experiments remain references only.
    scenario. Manually copy the desired amount into a Plan. No tax calculation,
    automatic application or estimate-to-Plan relationship exists.
 2. **Goals → Open a savings account:** open Savings at $800 on October 1.
-   Its protected ongoing Unallocated goal holds $800. Create a finite Laptop
-   goal in that account with a $1,000 target. Use **Transfer, reassign or reconcile
+   Optionally designate opening amounts to named goals during setup; the remainder
+   goes to protected ongoing Unallocated, without new contributions. For this
+   journey leave all $800 Unallocated and create a finite Laptop goal with a $1,000 target. Use **Transfer, reassign or reconcile
    savings** to reassign $800 from Unallocated to Laptop. Account savings stays
    $800; there is no contribution or income.
 3. **Plans:** enter $4,000 monthly net salary and $1,000 planned use of Savings.
@@ -58,7 +59,9 @@ starting positions. Historical HTML experiments remain references only.
 7. **Reconciliation:** select one goal and enter a signed dated correction.
    Reconcile $5,200 to $5,000 with -$200. Opening and contributions stay intact;
    the adjustment affects neither income nor saving actuals. There is no
-   physical-bank-account reconciliation or automatic distribution.
+   physical-bank-account reconciliation or automatic distribution. Use Edit movement
+   to correct a transfer, reassignment or reconciliation. Original same-day order
+   remains fixed, and later balances are revalidated.
 8. **Investments and loans:** Goals also offers opening positions for investments
    and loans. Record subsequent observations separately. A $300 loan payment is
    one fixed-cost entry linked to the loan; it does not reduce observed principal.
@@ -70,10 +73,13 @@ starting positions. Historical HTML experiments remain references only.
    or explicit zeros; missing expected items stay unknown. A known total creates
    a dated delta; saving adjustments require an explicit goal. Mark reviewed with
    unknowns still present, without acknowledgment or locking. Later edits flag
-   changes while preserving the annotation and saved comparison.
+   changes while preserving the annotation and saved comparison. Expand Actual
+   percentage formulas to compare all versus income-funded costs/investments,
+   and new versus net saving; missing required values remain unavailable.
 10. **Continuity:** reload, export/restore, edit/delete/undo and inspect at narrow
     mobile widths. Keyboard: N, Ctrl/Cmd K, Alt 1–6; dialogs contain focus and
-    unsaved Plan navigation is guarded.
+    unsaved Plan navigation is guarded. Settings accepts an Entity time zone for
+    new date defaults; changing it never moves recorded financial dates.
 
 ## Verification and limits
 

@@ -13,6 +13,7 @@ import {
   saveEntry,
   storageKey,
   today,
+  validTimeZone,
   validateWorkspaceChange,
 } from "./domain";
 import { download, loadWorkspace, parseWorkspace } from "./storage";
@@ -383,6 +384,9 @@ function Settings({
   recover: () => void;
 }) {
   const [name, setName] = useState(state.name);
+  const [timeZone, setTimeZone] = useState(
+    state.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
   const [error, setError] = useState("");
   const file = useRef<HTMLInputElement>(null);
   return (
@@ -395,7 +399,17 @@ function Settings({
               setError("Enter an Entity name.");
               return;
             }
-            if (update({ ...state, name: name.trim() }, "Entity renamed")) onClose();
+            if (!validTimeZone(timeZone.trim())) {
+              setError("Enter a valid IANA time zone.");
+              return;
+            }
+            if (
+              update(
+                { ...state, name: name.trim(), timeZone: timeZone.trim() },
+                "Entity settings saved",
+              )
+            )
+              onClose();
           }}
         >
           <label className="field">
@@ -407,8 +421,19 @@ function Settings({
               onChange={(e) => setName(e.target.value)}
             />
           </label>
+          <label className="field">
+            <span>Entity time zone</span>
+            <input
+              value={timeZone}
+              onChange={(e) => setTimeZone(e.target.value)}
+              placeholder="America/New_York"
+            />
+          </label>
+          <p className="subtle">
+            Used for today and this month. Existing financial dates never move.
+          </p>
           <button type="submit" className="button secondary settings-save">
-            Save name
+            Save settings
           </button>
         </form>
         <div className="settings-section">
@@ -429,7 +454,10 @@ function Settings({
               type="button"
               className="button secondary"
               onClick={() =>
-                download(JSON.stringify(state, null, 2), `accanto-prototype-${today()}.json`)
+                download(
+                  JSON.stringify(state, null, 2),
+                  `accanto-prototype-${today(state.timeZone)}.json`,
+                )
               }
             >
               <Icon name="download" size={16} />

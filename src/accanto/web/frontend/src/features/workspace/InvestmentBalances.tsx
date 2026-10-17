@@ -14,7 +14,9 @@ export function InvestmentBalances({ state, update }: Pick<ViewProps, "state" | 
           <button
             type="button"
             className="button secondary"
-            onClick={() => setBalance({ id: id(), name: "", date: today(), amount: 0 })}
+            onClick={() =>
+              setBalance({ id: id(), name: "", date: today(state.timeZone), amount: 0 })
+            }
           >
             <Icon name="plus" size={16} />
             Record balance

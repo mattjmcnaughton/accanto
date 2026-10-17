@@ -1,7 +1,7 @@
 # 01 — Accanto MVP technical design
 
 Status: Workflow baseline agreed; implementation design selected; delivery incremental
-Updated: 2026-10-16
+Updated: 2026-10-17
 
 ## Purpose and scope
 
@@ -658,3 +658,37 @@ public endpoint and compatibility verification. No new service/cost is authorize
 implicitly. Concrete code/schema choices above are selected and testable; remaining
 columns are added with the corresponding command slice. Dedicated restoration and
 opening-history reconstruction remain out of v1 scope.
+
+### Prototype alignment verification (2026-10-17)
+
+This increment changes browser-local interactions only. Production design and
+API delivery status above remain unchanged. `workspace/domain.ts` enforces
+opening conservation, refund associations, archived-origin checks and ordered
+savings history; components pass proposed changes before the workspace save.
+
+- CONTEXT Opening amounts / Decision 10: account creation accepts goal opening
+  designations and assigns the residual to Unallocated in one workspace write.
+  Unit and browser checks prove $1,000 = $400 designated + $600 Unallocated,
+  without contributions; overdesignation rejects without writing.
+- CONTEXT same-day order / corrections: create, edit and delete movements validate
+  the full proposed history. Edits retain order; legacy entries use their original
+  array position consistently. Both old and proposed endpoint accounts must be
+  active. Tests cover insufficient funds and correction on independently inactive
+  goals. Browser correction preserves one movement and its order.
+- CONTEXT refunds / Decision 14: create/edit/delete checks original as well as
+  proposed account references. Refunds retain loan association too; switching an
+  archived origin to a different origin cannot bypass reopening. Legacy unlinked
+  negative records remain readable; new refunds require an original purchase.
+- Constitution financial dates: settings validates an IANA zone using Intl;
+  entry, refund, account and observation defaults use it. Stored financial dates
+  stay unchanged. Unit checks use an instant straddling two calendar dates.
+- CONTEXT Percentage metrics: Plan views disclose net-income and total-funding
+  bases; actual views use only same-month recorded values and withhold ratios
+  for incomplete required amounts. No saved calculation is rewritten.
+
+These checks and their audit snapshots are accepted together by the existing
+browser save path. Tab-conflict detection is best-effort continuity, not database
+concurrency safety. Production must implement the transaction/locking boundaries
+above. Opening-edit and dedicated restoration interfaces remain absent; opening
+positions are protected and later reconciliation is explicit. Advanced matching
+and its unresolved cardinality remain deferred.

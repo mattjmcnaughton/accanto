@@ -96,6 +96,12 @@ test("complete prototype workflow, corrections, history and mobile", async ({ pa
   await expect(
     page.getByRole("button", { name: "Inspect Fixed costs actual", exact: true }),
   ).toHaveText("$1,840");
+  await page.getByText("Actual percentage formulas", { exact: true }).click();
+  await expect(
+    page.getByText("All fixed costs ÷ actual net income: $1,840 ÷ $6,000 = 30.7%.", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.screenshot({ path: "/tmp/accanto-prototype-month.png", fullPage: true });
   await page
     .getByRole("button", { name: "Inspect Guilt-free spending actual", exact: true })
@@ -350,4 +356,43 @@ test("account opening, same-day funding, linked refund and saved estimates", asy
         JSON.parse(localStorage.getItem("accanto-workspace-prototype-v1") ?? "{}").estimates.length,
     ),
   ).toBe(2);
+});
+
+test("opening designations, movement correction and Entity time zone survive reload", async ({
+  page,
+}) => {
+  await page.goto("/#/?view=goals&month=2026-10");
+  await page.getByText("Open a savings account", { exact: true }).click();
+  await page.getByLabel("Account name", { exact: true }).fill("Reserve account");
+  await page.getByLabel("Opening date", { exact: true }).fill("2026-10-01");
+  await page.getByLabel("Opening amount", { exact: true }).fill("1000");
+  await page.getByRole("button", { name: "Designate opening savings to a goal" }).click();
+  await page.getByLabel("Opening goal name 1", { exact: true }).fill("Home repairs");
+  await page.getByLabel("Opening goal purpose 1").selectOption("ongoing");
+  await page.getByLabel("Opening designation 1", { exact: true }).fill("400");
+  await page.getByRole("button", { name: "Open account", exact: true }).click();
+  await page.getByText("Transfer, reassign or reconcile savings", { exact: true }).click();
+  await page.getByRole("combobox", { name: "From goal", exact: true }).selectOption({ index: 1 });
+  await page.getByRole("combobox", { name: "To goal", exact: true }).selectOption({ index: 2 });
+  await page.getByLabel("Movement date").fill("2026-10-16");
+  await page.getByLabel("Movement amount", { exact: true }).fill("200");
+  await page.getByRole("button", { name: "Record savings movement" }).click();
+  await page.getByRole("button", { name: "Edit movement", exact: true }).click();
+  await page.getByLabel("Movement amount", { exact: true }).fill("700");
+  await page.getByRole("button", { name: "Save movement correction" }).click();
+  await expect(page.getByText(/short \$100/)).toBeVisible();
+  await page.getByLabel("Movement amount", { exact: true }).fill("100");
+  await page.getByRole("button", { name: "Save movement correction" }).click();
+  await page.getByRole("button", { name: "Settings & data", exact: true }).click();
+  await page.getByLabel("Entity time zone", { exact: true }).fill("America/New_York");
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await page.reload();
+  const state = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("accanto-workspace-prototype-v1") ?? "{}"),
+  );
+  expect(state.timeZone).toBe("America/New_York");
+  expect(state.entries).toEqual([]);
+  expect(state.goals.map((g: { opening: number }) => g.opening)).toEqual([60000, 40000]);
+  expect(state.movements).toHaveLength(1);
+  expect(state.movements[0]).toMatchObject({ amount: 10000, date: "2026-10-16", order: 1 });
 });

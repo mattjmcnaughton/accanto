@@ -44,7 +44,7 @@ export function EntryEditor({
     ).find((r) => r.id === last.sourceId);
   const fresh = (): Entry => ({
     id: id(),
-    date: month === today().slice(0, 7) ? today() : `${month}-01`,
+    date: month === today(state.timeZone).slice(0, 7) ? today(state.timeZone) : `${month}-01`,
     kind: last?.kind ?? "spending",
     amount: 0,
     sourceId: lastDestination && !lastDestination.active ? "" : (last?.sourceId ?? ""),
@@ -141,6 +141,7 @@ export function EntryEditor({
           <label className="field">
             <span>Type</span>
             <select
+              disabled={Boolean(draft.refundOf)}
               value={draft.kind}
               onChange={(e) =>
                 patch({ kind: e.target.value as Kind, sourceId: "", funding: undefined })
@@ -170,6 +171,7 @@ export function EntryEditor({
               {!requiresSource && <span className="optional"> optional</span>}
             </span>
             <select
+              disabled={Boolean(draft.refundOf)}
               aria-label={sourceLabel}
               required={requiresSource}
               value={draft.sourceId}
@@ -208,6 +210,7 @@ export function EntryEditor({
           <label className="field">
             <span>Debt account (optional)</span>
             <select
+              disabled={Boolean(draft.refundOf)}
               value={draft.debtId ?? ""}
               onChange={(e) => patch({ debtId: e.target.value || undefined })}
             >
@@ -230,7 +233,9 @@ export function EntryEditor({
           signed={draft.adjustment || ["fixed", "giving", "spending"].includes(draft.kind)}
           hint={
             ["fixed", "giving", "spending"].includes(draft.kind)
-              ? "Use a negative amount for a refund."
+              ? draft.refundOf
+                ? "Enter the returned amount as a negative value."
+                : "For a refund, open the original purchase and choose Record refund."
               : undefined
           }
         />
@@ -266,11 +271,19 @@ export function EntryEditor({
         )}
         {entry &&
           !entry.refundOf &&
+          !draft.refundOf &&
           entry.amount > 0 &&
           ["fixed", "spending", "giving"].includes(entry.kind) && (
             <button
               type="button"
               className="button secondary"
+              disabled={
+                entry.amount +
+                  state.entries
+                    .filter((e) => !e.deleted && e.refundOf === entry.id)
+                    .reduce((sum, e) => sum + e.amount, 0) <=
+                0
+              }
               onClick={() => {
                 const remaining =
                   entry.amount -
@@ -283,7 +296,7 @@ export function EntryEditor({
                   order: undefined,
                   refundOf: entry.id,
                   amount: -remaining,
-                  date: today(),
+                  date: today(state.timeZone),
                   note: "Refund",
                 });
               }}
@@ -304,7 +317,7 @@ export function EntryEditor({
           </Notice>
         )}
         <div className="modal-actions">
-          {entry && (
+          {entry && draft.id === entry.id && (
             <button
               type="button"
               className="button danger-quiet"
@@ -380,7 +393,7 @@ export function FundingFields({
           >
             <option value="">Choose goal, including Unallocated</option>
             {state.goals
-              .filter((g) => g.accountId && g.active)
+              .filter((g) => g.accountId && (g.active || g.id === funding.goalId))
               .map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.name} · {money(goalSavings(state, g.id).remaining)} remaining
