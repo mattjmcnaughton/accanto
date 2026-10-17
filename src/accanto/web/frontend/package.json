@@ -13,9 +13,7 @@
     "lint": "biome lint .",
     "lint-fix": "biome lint --write .",
     "typecheck": "pnpm build",
-    "test": "vitest run --passWithNoTests",
-    "prototype": "pnpm run build && node scripts/package-prototype.mjs",
-    "test:browser": "playwright test"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "react": "^19.0",
