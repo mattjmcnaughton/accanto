@@ -1,6 +1,6 @@
 # 01 — MVP implementation tickets
 
-Status: Implementation in progress; 001–007 complete locally, 008–009 and 011 in progress
+Status: Implementation in progress; 001–007 and 011 complete locally, 008–009 and 012 in progress
 
 This backlog implements the [MVP PRD](../../prd/01-mvp.md) and
 [MVP TDD](../../tdds/01-mvp.md), under [CONTEXT](../../../CONTEXT.md) and the
@@ -67,7 +67,7 @@ router/service/repository boundaries; no generic rule engine or event framework.
 
 Dependencies are completion prerequisites, not a requirement to work serially.
 For later financial tickets, dependency 005 supplies the common API-backed UI.
-Tickets 001–007 are **Complete locally**; 008–009 and 011 are **In progress**. Other
+Tickets 001–007 and 011 are **Complete locally**; 008–009 and 012 are **In progress**. Other
 tickets are **Todo**, except 021 (**Policy blocked**) and 022 (**Provider gated**
 for hosted verification). A dependency being satisfied does not mark a ticket done.
 
@@ -321,6 +321,17 @@ results. Unit rounding/rollup tests, migration/snapshot integration tests and a
 focused annual-cost-versus-dated-payment UI journey pass. Refunds await 018.
 
 ### 011 — Independent multi-income estimates
+
+**Status: Complete locally.** Integration commit `7af6533` (ticket commit
+`6f11b44`). Combined gates pass 38 backend and 43 frontend tests, plus all ten
+local database integration tests. The additive migration preserves twelve populated
+prior tables. Frozen semantic mutations detect the weekly factor, duplicate
+identity and stale-revision defects; restored candidates pass. A fresh signed-local
+provider browser journey verifies $7,500 create/reopen, $7,600 edit, independent
+$7,800 duplicate and manual Plan handoff, with no actual receipt or live link.
+Keyboard and 320/390px checks pass. Browser and migration checks are regression
+evidence; real-provider interoperability remains manual. Integration conflicts
+received independent review before the combined checks.
 
 **Outcome:** create, reopen, edit and duplicate named assumption scenarios.
 
