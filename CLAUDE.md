@@ -82,10 +82,24 @@ tests/
 - Never put personal financial records, identifying financial examples, exports,
   screenshots of real data, or credentials in source, docs, fixtures, task notes,
   generated artifacts, or commit messages. Use deliberately synthetic examples.
+- Do not derive examples from the user's finances, even with names changed.
+  Exclude private contact details, account identifiers, statement references,
+  and identifying employer, bank, income, expense or balance combinations.
+- Record demos, screenshots and videos only in an isolated browser populated
+  with synthetic data. Never capture the user's existing workspace. Keep media
+  outside the checkout unless explicitly requested for inclusion and reviewed.
 - Keep private working data outside the checkout. Git ignores are a secondary
   safeguard; local tool snapshots can retain even untracked files.
 - Stage explicit paths and inspect the staged diff before committing. Check
   generated standalone HTML as well as its source. Do not blindly stage all work.
+- Privacy checks must cover tracked and untracked task artifacts, generated
+  files and staged changes. Confirm that packaging bundles code/assets only,
+  never browser storage, exports or database contents. Pattern scans alone do
+  not establish that financial examples are synthetic; review their provenance.
+- Report exactly what was checked. Do not promise that the repository contains
+  "no personal information": normal author names/emails may remain in Git and
+  project metadata. Distinguish that metadata from private financial/user data,
+  and do not expand a repository check to external storage without authorization.
 - A deletion commit does not remove old sensitive data. If found, stop publication
   and inspect branches, tags, tool refs, reflogs and unreachable objects; obtain
   authorization before destructive history cleanup. Never push automatically.
