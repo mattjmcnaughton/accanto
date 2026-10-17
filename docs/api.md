@@ -1,12 +1,146 @@
-# API Reference
+# API reference
 
-## Health
+The initial production increment supports direct net-income Plans and guilt-free
+spending, dated income/spending entries, and a monthly Review against a saved
+version. The browser is still a separate local-storage prototype. Fixed costs,
+savings, refunds, observations, Review editing and browser sign-in are not yet
+production endpoints; unsupported categories/fields reject rather than approximate.
 
-| Method | Path | Description |
-| ------ | ---- | ----------- |
-| GET | `/healthz` | Liveness probe — returns 200 if the process is alive |
-| GET | `/readyz` | Readiness probe — returns 200 if the service is ready to accept traffic |
+## Local setup and credentials
 
-## Endpoints
+Start Postgres and apply migrations with the migration owner's `DATABASE_URL`:
 
-Add API endpoint documentation here as you build out the service.
+```sh
+docker compose up -d --wait postgres
+uv run alembic upgrade head
+```
+
+An operator can provision an **already admitted and verified identity** in a
+trusted terminal. This command is not public registration or identity verification.
+Use the actual issuer/subject of the admitted identity; it creates its first Entity
+and prints a secret API key once. Do not capture that output in logs.
+
+```sh
+uv run python -m accanto.bootstrap \
+  --issuer YOUR_VERIFIED_ISSUER --subject YOUR_VERIFIED_SUBJECT \
+  --entity 'My finances' --time-zone America/New_York
+```
+
+Store the returned key securely. Requests use `Authorization: Bearer <key>`;
+only SHA-256 hashes are persisted. `POST /api/keys` with `{"name":"My script"}`
+issues another key (plaintext returned once); `DELETE /api/keys/{key_id}` revokes
+one of the current User's keys. There is no expiry. Revocation and Entity access
+changes apply to subsequent requests, including retries. Browser credential
+storage and OAuth/OIDC integration remain outside this increment.
+
+For deployment, use a non-owner, non-superuser runtime login distinct from the
+migration owner. After creating that login securely, grant only required access
+(example role name `accanto_app`):
+
+```sql
+GRANT USAGE ON SCHEMA public TO accanto_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO accanto_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO accanto_app;
+REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM accanto_app;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+```
+
+Do not grant table ownership, role administration, trigger bypass or TRUNCATE.
+Reapply grants deliberately when migrations add tables. Database triggers also
+reject audit changes and mutation of saved versions/lines. The bootstrap requires
+operator database access. The local Compose superuser is for development only.
+
+## Supported routes
+
+All financial routes are below `/api/entities/{entity_id}`, where `entity_id` is
+an external UUID. Financial writes require `Idempotency-Key` (1–120 characters).
+
+| Method | Suffix | Body / result |
+| --- | --- | --- |
+| POST | `/plans` | Name, income lines and spending; returns Plan UUID and draft |
+| GET | `/plans` | Plans with saved revisions and current drafts |
+| PUT | `/plans/{plan_id}/draft` | Full replacement inputs plus expected revision |
+| POST | `/plans/{plan_id}/versions` | Expected draft revision; freezes snapshot and creates next draft |
+| POST | `/activity` | Explicit date, category, amount, optional source and note |
+| GET | `/activity` | Current entries ordered by financial date and recording order |
+| PUT | `/activity/{entry_id}` | Replacement entry plus expected revision |
+| DELETE | `/activity/{entry_id}` | Expected revision in JSON body; soft deletes |
+| POST | `/reviews` | Month's first date and saved version UUID |
+| GET | `/reviews/{YYYY-MM-01}` | Saved expectations, current entries and partial actuals |
+
+Amounts are USD decimal **strings**, nonnegative exact cents, maximum
+`999999999.99` per entered amount. Fractional cents and numeric JSON values reject.
+Zero is explicit, absence is unknown. Dates are `YYYY-MM-DD`; there is no implicit
+today. Month selection uses dates, independently of UTC recording timestamps.
+
+## Plan → activity → Review
+
+These bodies can be sent using `/docs` or your own HTTP client with the headers
+above. Use a new request identity for each intended change and retain it for retry.
+
+Create a Plan (`POST /plans`):
+
+```json
+{
+  "name": "Regular month",
+  "incomes": [{"name": "Salary", "amount": "4000.00"}],
+  "spending": "800.00"
+}
+```
+
+The response includes `plan_id`, `draft.revision` and
+`draft.incomes[].source_id`. Preserve source UUIDs when editing an existing line;
+omitting one creates a new source identity. Save with
+`POST /plans/{plan_id}/versions`, body `{"expected_revision":1}`. Keep the returned
+`version.uuid`; its inputs, results and rule version will not change. The new
+draft starts at revision 1. An overallocated Plan can be saved; negative unassigned
+money is a visible result. The provisional tithe target is 10% of net income,
+half-even rounded; it is guidance, not an additional allocation in this slice.
+
+Record income (`POST /activity`), substituting the returned source UUID:
+
+```json
+{
+  "date": "2026-10-15",
+  "category": "income",
+  "amount": "4000.00",
+  "source_id": "SOURCE_UUID",
+  "note": "October receipt"
+}
+```
+
+Record spending with `{"date":"2026-10-16","category":"spending","amount":"75.00"}`.
+Income may be unassigned; it counts once in the month's recorded income, but does
+not resolve a missing expected source. Assignments in this increment support the
+original Plan only; future cross-Plan matching policy is not settled by this API.
+
+Create the Review with `POST /reviews`, body
+`{"month":"2026-10-01","version_id":"SAVED_VERSION_UUID"}`, then retrieve it using
+`GET /reviews/2026-10-01`. With the example entries, income difference is `0.00`
+and spending difference is `-725.00`. Missing expected income sources make the
+income difference `null`; no spending entries makes spending actual/difference
+`null`. Explicit zero entries are known zero. This partial slice does not claim a
+complete cashflow or savings result.
+
+## Corrections and failure recovery
+
+Edits/deletions carry the current `expected_revision`; reload with GET and
+reconcile after `409 stale_revision`. A correction replaces supplied entry fields;
+retain the source UUID if it still applies. Deleted entries remain in storage and
+audit but leave current totals. There is no restoration endpoint yet.
+
+Each financial mutation commits its records, complete before/after audit and retry
+outcome together, under an Entity lock. Repeating the same request identity/input
+returns the recorded outcome even after later edits; reusing it with different
+input gives `409 key_reuse`. Scope is User + Entity + operation + target, so another
+key for the same User can retry. Outcomes currently remain indefinitely (minimum
+retention policy is 30 days); current authorization is checked before replay.
+
+`401` means invalid/revoked credential, `404` means unavailable scoped record,
+`409` means conflict and `422` means invalid input. A `503 storage_unavailable` or
+lost response means the caller must retry with the **same** identity and input;
+it must not assume either success or a new operation. Retain attempted inputs.
+No financial values/notes or SQL parameters belong in operational telemetry.
+
+Health probes remain `GET /healthz` and `GET /readyz`. Interactive schemas are
+available at `/docs`. No deployment or hosted-provider compatibility is claimed.

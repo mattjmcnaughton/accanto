@@ -4,6 +4,11 @@
 
 accanto is a Python web application using FastAPI for the backend and a separately-scaffolded frontend.
 
+Read the [constitution](../CONSTITUTION.md) for governing principles and
+[CONTEXT.md](../CONTEXT.md) for domain meanings. This document owns code placement
+and dependency guidance. Concrete MVP data-model and audit-log decisions belong
+in the [TDD](tdds/01-mvp.md).
+
 ## Project Structure
 
 ```
@@ -37,6 +42,67 @@ routers (HTTP endpoints, parse requests into DTOs)
 ```
 
 DTOs (Pydantic models) are used at the router level for API I/O. They are always separate from database models.
+
+## Where new behavior belongs
+
+Use the existing structure, with independent domain logic and narrow external
+boundaries where needed. A formal ports-and-adapters directory layout is not
+required.
+
+| Location | Responsibility |
+| --- | --- |
+| `routers/` | HTTP parsing, authentication dependencies, API DTOs, and response/error mapping. Delegate financial behavior to services or domain functions. |
+| `services/` | Application workflows: coordinate authorization, domain calculations, persistence, and external calls. Define transaction boundaries for operations that must succeed together. |
+| `domains/` (when needed) | Pure financial calculations and domain rules with explicit inputs/results. No FastAPI, SQLAlchemy, network, browser, configuration loading, or implicit clock access. Create modules for concrete behavior, not an empty framework. |
+| `repositories/` and `models/` | Database queries, persistence, relationships, and constraints. Repositories may return SQLAlchemy models to services; services pass plain values into pure calculations. |
+| `dtos/` | Pydantic API contracts, separate from database models. |
+| `web/frontend/src/routes/` | Route composition and navigation. |
+| `web/frontend/src/features/` | Feature UI, interactions, and presentation state. The current workspace prototype lives here. |
+| `web/frontend/src/lib/api.ts` | Existing frontend API transport entry point. Production workflows call the backend API. |
+
+Follow the constitution's explicit domain-rule requirements. Each TDD uses
+[the template](tdds/template.md) to identify affected rules, all supported commands
+that can change their facts, enforcement boundaries, and verification. Services
+must protect rule evaluation and persistence in the same transaction/concurrency
+boundary; a pure preflight check is insufficient for competing balance changes.
+
+Pure domain modules must not import routers, services, repositories, or ORM models.
+Services may depend on domain functions and persistence; keep HTTP request and
+response objects at the router boundary. Do not introduce duplicate domain types
+or repository interfaces merely to hide every SQLAlchemy dependency.
+
+When a real external integration is added, keep its provider-specific transport
+and payload mapping in a dedicated module. Place a small interface near the
+application code that consumes it and supply the implementation at composition
+time. A Python `Protocol` is appropriate when structural typing helps a real
+client and a fake satisfy the same contract. Choose the module location in that
+integration's design; do not scaffold a generic provider framework now.
+
+## AI framework
+
+Use Pydantic AI for approved Accanto-owned AI features, following applicable
+Aleph patterns for runtime model injection, typed outputs, and deterministic
+model substitutes in tests. Services retain persistence and authorization;
+financial calculations stay independent of the model. See the
+[TDD framework decision](tdds/01-mvp.md#ai-framework) for rationale and scope.
+
+## Testing boundaries
+
+- Put pure calculations and service behavior that can use small fakes in
+  `tests/unit/`.
+- Put real database, API, and authentication interactions in `tests/integration/`.
+  Test persistence guarantees with the database rather than assuming an in-memory
+  fake reproduces constraints or transactions.
+- Keep frontend unit tests alongside the feature under the frontend's test
+  configuration. Current prototype browser workflows live in
+  `web/frontend/tests/browser/`, relative to `src/accanto/`.
+- Keep provider compatibility checks separate from fake-backed application tests;
+  mark live external-service tests `external` and run them explicitly.
+
+Select the lowest level that establishes the behavior. Fakes belong at useful
+dependency boundaries, not around every internal function. The current prototype
+contains browser-local calculations and storage for design exploration; this is
+not the chosen production authority or persistence model.
 
 ## Frontend
 

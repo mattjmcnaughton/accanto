@@ -2,6 +2,13 @@
 
 A financial companion for planning a rich life.
 
+Read [CONSTITUTION.md](CONSTITUTION.md) for the agreed product and engineering
+principles before planning, implementation, or review.
+
+Read [CONTEXT.md](CONTEXT.md) before domain or product work. Use its ubiquitous
+language consistently in code, tests, and UI copy; update it when domain meanings
+change.
+
 Python web application using FastAPI, uvicorn, uv, ruff, ty, and pytest. Frontend lives in `src/accanto/web/frontend/`.
 
 ## Quick Reference
@@ -54,6 +61,7 @@ tests/
 
 - Source code lives in `src/accanto/` (src layout).
 - **Layering:** routers -> services -> repositories.
+- **Placement:** read `docs/architecture.md` before adding modules. Keep pure financial rules independent of HTTP and persistence; introduce narrow interfaces only at useful testing or integration boundaries.
 - **DTOs** are Pydantic models for API I/O, always separate from DB models.
 - **Frontend** is composed into `src/accanto/web/frontend/` using the `frontend-react` template.
 - Tests are organized by type in `tests/unit/`, `tests/integration/`, `tests/e2e/`.
@@ -63,6 +71,21 @@ tests/
 
 ## More Information
 
+- `docs/product/brief.md` — current product direction
+- `CONTEXT.md` — shared financial domain language
 - `docs/architecture.md` — read before adding new modules or changing project structure
 - `docs/development.md` — read for environment setup, debugging, or common tasks
 - `docs/api.md` — API endpoint reference
+
+## Privacy and committing
+
+- Never put personal financial records, identifying financial examples, exports,
+  screenshots of real data, or credentials in source, docs, fixtures, task notes,
+  generated artifacts, or commit messages. Use deliberately synthetic examples.
+- Keep private working data outside the checkout. Git ignores are a secondary
+  safeguard; local tool snapshots can retain even untracked files.
+- Stage explicit paths and inspect the staged diff before committing. Check
+  generated standalone HTML as well as its source. Do not blindly stage all work.
+- A deletion commit does not remove old sensitive data. If found, stop publication
+  and inspect branches, tags, tool refs, reflogs and unreachable objects; obtain
+  authorization before destructive history cleanup. Never push automatically.
