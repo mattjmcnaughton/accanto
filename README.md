@@ -4,10 +4,12 @@ A financial companion for planning a rich life: conscious spending, giving,
 experiences, consumption, saving, and financial independence.
 
 The production frontend uses browser sign-in and the authenticated API for
-income/spending Plans, dated activity, and monthly Reviews with Postgres persistence.
+income/spending Plans, dated activity, monthly Reviews, and independent income
+estimates with Postgres persistence.
 Plans have editable drafts and immutable saved versions; Reviews retain their chosen
 comparison. Failed writes preserve attempted input for explicit recovery in the same
-tab. Remaining financial categories are tracked in the [MVP tickets](docs/technical/tickets/01-mvp.md).
+tab. Estimate results are entered into Plans manually; there is no live link.
+Remaining financial categories are tracked in the [MVP tickets](docs/technical/tickets/01-mvp.md).
 See [API usage](docs/api.md) and [browser configuration](docs/development.md#browser-identity-setup-manual-provider-configuration).
 
 ## Run the production workspace

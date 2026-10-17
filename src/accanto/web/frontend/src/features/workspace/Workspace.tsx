@@ -13,15 +13,16 @@ import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice"
 import { Plans } from "./Plans";
 import { ActivityScreen } from "./Activity";
 import { MonthlyReview } from "./MonthlyReview";
+import { IncomeEstimates } from "../estimates/IncomeEstimates";
 
 export function Workspace({
   initial,
   signedOut,
 }: { initial: BrowserSession; signedOut: (message?: string) => void }) {
   const [session, setSession] = useState(initial);
-  const [screen, setScreen] = useState<"Plans" | "Activity" | "Monthly Review" | "Settings">(
-    "Plans",
-  );
+  const [screen, setScreen] = useState<
+    "Plans" | "Activity" | "Monthly Review" | "Income estimates" | "Settings"
+  >("Plans");
   const [refresh, setRefresh] = useState(0);
   const [metadataStale, setMetadataStale] = useState(false);
   const [metadataError, setMetadataError] = useState(false);
@@ -195,28 +196,31 @@ export function Workspace({
       {entity && (
         <>
           <nav className="workspace-nav" aria-label="Workspace" hidden={concealed}>
-            {(["Plans", "Activity", "Monthly Review", "Settings"] as const).map((item) => (
-              <button
-                type="button"
-                key={item}
-                aria-current={screen === item ? "page" : undefined}
-                onClick={() => {
-                  if (item !== screen && guard()) {
-                    pending.current.clear();
-                    dirty.current = false;
-                    setStatus(null);
-                    setMessage("");
-                    setScreen(item);
-                  }
-                }}
-              >
-                {item}
-              </button>
-            ))}
+            {(["Plans", "Activity", "Monthly Review", "Income estimates", "Settings"] as const).map(
+              (item) => (
+                <button
+                  type="button"
+                  key={item}
+                  aria-current={screen === item ? "page" : undefined}
+                  onClick={() => {
+                    if (item !== screen && guard()) {
+                      pending.current.clear();
+                      dirty.current = false;
+                      setStatus(null);
+                      setMessage("");
+                      setScreen(item);
+                    }
+                  }}
+                >
+                  {item}
+                </button>
+              ),
+            )}
           </nav>
           {screen === "Plans" && <Plans {...props} />}
           {screen === "Activity" && <ActivityScreen {...props} />}
           {screen === "Monthly Review" && <MonthlyReview {...props} />}
+          {screen === "Income estimates" && <IncomeEstimates {...props} />}
           {screen === "Settings" && (
             <Settings {...props} credentials={credentials} saved={() => void refreshMetadata()} />
           )}

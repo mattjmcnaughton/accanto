@@ -18,7 +18,9 @@ tab memory until the server confirms it; stale conflicts require explicit
 reconciliation. Session recovery opens a separate sign-in window and verifies the
 same User through `/api/auth/session` before retrying with fresh CSRF. This memory
 is cleared on explicit logout and does not survive closing or reloading the tab.
-The UI exposes Plans, Activity and Monthly Review. Save a draft before saving an
+The UI exposes Plans, Activity, Monthly Review and independent Income estimates.
+Estimates save per-payment assumptions and show server-calculated monthly line and
+combined results; manually copy a result into a Plan. Save a draft before saving an
 immutable version. Activity is independent of Reviews; starting a Review visibly
 preselects the immediately previous month's comparison or requires an explicit
 choice. Income and guilt-free spending are the only supported activity categories.

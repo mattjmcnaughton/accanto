@@ -1,11 +1,12 @@
 # API reference
 
-The initial production increment supports direct net-income Plans and guilt-free
-spending, dated income/spending entries, and a monthly Review against a saved
-version. The production browser uses these same commands with cookie sessions;
-the preserved standalone prototype remains a separate reference. Fixed costs,
-savings, refunds, observations and Review editing are not yet production endpoints;
-unsupported categories/fields reject rather than approximate.
+The production API supports direct net-income Plans and guilt-free spending,
+dated income/spending entries, monthly Reviews against saved versions, and
+independent income estimates. The production browser uses these commands with
+cookie sessions; the preserved standalone prototype remains a separate reference.
+Fixed costs, savings, refunds, observations and Review editing are not yet
+production endpoints. Unsupported categories/fields reject rather than approximate.
+Income estimates do not calculate tax or populate Plans.
 
 ## Local setup and credentials
 
@@ -69,11 +70,50 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | DELETE | `/activity/{entry_id}` | Expected revision in JSON body; soft deletes |
 | POST | `/reviews` | Month's first date and saved version UUID |
 | GET | `/reviews/{YYYY-MM-01}` | Saved expectations, current entries and partial actuals |
+| GET | `/income-estimates` | Entity's saved estimate scenarios and authoritative results |
+| GET | `/income-estimates/{estimate_id}` | One scenario with ordered assumption lines |
+| POST | `/income-estimates` | New named scenario and lines; no previous revision |
+| PUT | `/income-estimates/{estimate_id}` | Full replacement assumptions with `expected_revision` |
+| POST | `/income-estimates/{estimate_id}/duplicate` | New independent scenario with `{name, expected_revision}` |
 
 Amounts are USD decimal **strings**, nonnegative exact cents, maximum
 `999999999.99` per entered amount. Fractional cents and numeric JSON values reject.
 Zero is explicit, absence is unknown. Dates are `YYYY-MM-DD`; there is no implicit
 today. Month selection uses dates, independently of UTC recording timestamps.
+
+## Independent income estimates
+
+An estimate is an optional assumption scenario, separate from actual receipts and
+Plan Income sources. A line contains per-payment gross, entered withholding and
+payroll deductions. Create one with `POST /income-estimates`:
+
+```json
+{
+  "name": "Two synthetic roles",
+  "lines": [
+    {"name":"Role A","gross":"6000.00","withholding":"1200.00","payroll":"300.00","frequency":"monthly"},
+    {"name":"Role B","gross":"4000.00","withholding":"800.00","payroll":"200.00","frequency":"monthly"}
+  ]
+}
+```
+
+The returned lines have `uuid` and `monthly_net` values of `4500.00` and
+`3000.00`, and `monthly_total` is `7500.00`. Frequencies are `annual` (1/year),
+`monthly` (12/year), `twice_monthly` (24/year), `weekly` (52/year), and `daily`
+(explicit nonnegative `paid_days` per year, including zero). Enter paid days as
+integer digits; responses serialize the count as an exact string. Non-daily lines omit
+`paid_days`. Entered amounts are exact nonnegative cents; monthly line results
+are rounded half-even to cents before totaling. Negative estimated net is not
+clamped. The smoothed result is not an exact payment schedule or a tax calculation.
+
+To edit, send the whole name and lines plus `expected_revision`. Include
+`line_id` with a previously returned line `uuid` to retain that line identity;
+omitting it creates a new line, and omitted old lines are removed from the
+current scenario. Stale edits reject without modifying inputs. Duplicate with a
+new name and the current expected revision; it copies assumptions into new
+estimate and line identities. These editable scenarios have audit history but
+no immutable estimate versions. Users manually copy or type the result into a
+Plan; there is no `Use in Plan` command, link, or automatic synchronization.
 
 ## Plan → activity → Review
 

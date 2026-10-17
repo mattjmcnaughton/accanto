@@ -468,6 +468,12 @@ async def write(
             )
             response = json_values(dict(record))
             await audit(m.reviews, record["uuid"], None, response)
+        elif operation in {"create_estimate", "edit_estimate", "duplicate_estimate"}:
+            from accanto.services.income_estimates import write_estimate
+
+            response = await write_estimate(
+                session, entity, operation, payload, target, audit
+            )
         else:
             raise RejectionError(
                 "unsupported_command", "Command is not implemented.", 404
