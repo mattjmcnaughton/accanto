@@ -68,6 +68,7 @@ export interface PlanRevision {
   fixed_costs: Array<{
     fixed_cost_id: UUID;
     name: string;
+    canonical_name: string;
     amount: DecimalString;
     frequency: "monthly" | "annual";
     monthly_amount: DecimalString;

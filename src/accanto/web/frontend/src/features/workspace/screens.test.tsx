@@ -72,6 +72,7 @@ it("edits annual fixed-cost inputs and keeps the stored monthly result visible",
   const fixed = {
     fixed_cost_id: "fixed-a",
     name: "Synthetic subscription",
+    canonical_name: "Synthetic subscription",
     amount: "100.00",
     frequency: "annual" as const,
     monthly_amount: "8.33",
@@ -110,14 +111,14 @@ it("edits annual fixed-cost inputs and keeps the stored monthly result visible",
     expect.any(Function),
   );
 });
-it("records a fixed-cost payment with optional assignment and current-income origin", async () => {
-  const fixedDraft = {
+it("records a payment assigned to a saved cost removed from the current draft", async () => {
+  const fixedVersion = {
     ...version,
-    saved: false,
     fixed_costs: [
       {
         fixed_cost_id: "fixed-a",
         name: "Synthetic subscription",
+        canonical_name: "Synthetic subscription",
         amount: "100.00",
         frequency: "annual" as const,
         monthly_amount: "8.33",
@@ -126,7 +127,15 @@ it("records a fixed-cost payment with optional assignment and current-income ori
   };
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
     String(path).endsWith("/plans")
-      ? json([{ plan_id: "fixed-plan", revisions: [fixedDraft] }])
+      ? json([
+          {
+            plan_id: "fixed-plan",
+            revisions: [
+              fixedVersion,
+              { ...fixedVersion, uuid: "draft", saved: false, fixed_costs: [] },
+            ],
+          },
+        ])
       : json([]),
   );
   const save = vi.fn();

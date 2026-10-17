@@ -37,8 +37,9 @@ export function CopyPlan({
       <fieldset disabled={screen.busy || plans.length === 0}>
         <legend>Copy a Plan</legend>
         <p>
-          Choose the stored draft or saved version to copy. The copy has independent Income sources.
-          Existing Reviews, receipts, and fixed-cost payments stay unchanged.
+          Choose the stored draft or saved version to copy. The copy has independent Income sources
+          and shared Fixed cost identities. Existing Reviews, receipts, and fixed-cost payments stay
+          unchanged.
         </p>
         <label>
           Copy from

@@ -34,11 +34,15 @@ export function ActivityScreen(p: ScreenProps) {
   const sources = plans.kind === "ready" ? sourceChoices(plans.data) : [];
   const fixedCosts =
     plans.kind === "ready"
-      ? plans.data.flatMap((plan) =>
-          plan.revisions
-            .filter((revision) => !revision.saved)
-            .flatMap((revision) => revision.fixed_costs),
-        )
+      ? [
+          ...new Map(
+            plans.data.flatMap((plan) =>
+              plan.revisions.flatMap((revision) =>
+                revision.fixed_costs.map((cost) => [cost.fixed_cost_id, cost] as const),
+              ),
+            ),
+          ).values(),
+        ]
       : [];
   const savingGoals =
     accounts.kind === "ready"
@@ -265,7 +269,7 @@ export function ActivityScreen(p: ScreenProps) {
                     <option value="">Unassigned fixed cost</option>
                     {fixedCosts.map((cost) => (
                       <option key={cost.fixed_cost_id} value={cost.fixed_cost_id}>
-                        {cost.name}
+                        {cost.canonical_name}
                       </option>
                     ))}
                   </select>
