@@ -2,6 +2,8 @@ import { useState } from "react";
 import { monthly, type PlanRevision } from "../../lib/monthly";
 import { LoadMessage, MoneyInput, type ScreenProps, dollars, useLoad } from "./shared";
 
+import { ComparePlans, CopyPlan } from "./PlanScenarios";
+
 type IncomeRow = { key: string; source_id?: string; name: string; amount: string };
 type Draft = {
   planId?: string;
@@ -16,6 +18,7 @@ const blank = (): Draft => ({
   spending: "",
 });
 export function Plans(p: ScreenProps) {
+  const [copying, setCopying] = useState(false);
   const [reload, setReload] = useState(0);
   const state = useLoad(() => monthly.plans(p.entity.id), [p.entity.id, p.refresh, reload]);
   const [form, setForm] = useState<Draft | null>(null);
@@ -28,6 +31,7 @@ export function Plans(p: ScreenProps) {
   }
   function edit(planId: string, revision: PlanRevision) {
     if (!p.guard()) return;
+    setCopying(false);
     setForm({
       planId,
       revision: revision.revision,
@@ -40,6 +44,7 @@ export function Plans(p: ScreenProps) {
     p.dirty(false);
   }
   function saved(planId: string, revision: PlanRevision) {
+    setCopying(false);
     setForm({
       planId,
       revision: revision.revision,
@@ -64,6 +69,7 @@ export function Plans(p: ScreenProps) {
           disabled={p.busy}
           onClick={() => {
             if (p.guard()) {
+              setCopying(false);
               setForm(blank());
               setSnapshot(null);
               setChanged(true);
@@ -72,6 +78,21 @@ export function Plans(p: ScreenProps) {
           }}
         >
           New Plan
+        </button>
+        <button
+          type="button"
+          disabled={p.busy || state.kind !== "ready"}
+          onClick={() => {
+            if (p.guard()) {
+              setCopying(true);
+              setForm(null);
+              setSnapshot(null);
+              setChanged(false);
+              p.dirty(false);
+            }
+          }}
+        >
+          Copy Plan
         </button>
       </div>
       <LoadMessage state={state} retry={() => setReload((x) => x + 1)} />
@@ -103,6 +124,7 @@ export function Plans(p: ScreenProps) {
                             disabled={p.busy}
                             onClick={() => {
                               if (p.guard()) {
+                                setCopying(false);
                                 setForm(null);
                                 setChanged(false);
                                 p.dirty(false);
@@ -120,6 +142,9 @@ export function Plans(p: ScreenProps) {
             })}
         </aside>
         <div>
+          {copying && (
+            <CopyPlan plans={state.kind === "ready" ? state.data : []} screen={p} copied={saved} />
+          )}
           {form && (
             <form
               className="editor"
@@ -278,9 +303,10 @@ export function Plans(p: ScreenProps) {
               )}
             </section>
           )}
-          {!form && !snapshot && <p>Select a Plan or create a new one.</p>}
+          {!copying && !form && !snapshot && <p>Select a Plan or create a new one.</p>}
         </div>
       </div>
+      {state.kind === "ready" && <ComparePlans plans={state.data} />}
     </section>
   );
 }

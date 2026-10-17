@@ -38,6 +38,12 @@ class PlanInput(Input):
         return str(money(value))
 
 
+class PlanCopyInput(Input):
+    name: Name
+    source_revision_id: UUID
+    expected_revision: int = Field(ge=1)
+
+
 class ActivityInput(Input):
     date: date
     category: Literal["income", "spending"]
