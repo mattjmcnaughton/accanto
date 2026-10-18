@@ -18,7 +18,7 @@ from accanto.domains.monthly import (
     plan_results,
 )
 from accanto.models import monthly as m
-from accanto.repositories.monthly import plan_fixed_costs, plan_lines
+from accanto.repositories.monthly import plan_allocations, plan_fixed_costs, plan_lines
 from accanto.services.access import AuthenticatedActor, RejectionError, revalidate_actor
 
 
@@ -75,6 +75,7 @@ async def plan_snapshot(session, record):
             **dict(record),
             "incomes": await plan_lines(session, record["id"]),
             "fixed_costs": await plan_fixed_costs(session, record["id"]),
+            **(await plan_allocations(session, record["id"])),
         }
     )
 
@@ -151,6 +152,7 @@ async def write(
                     "record_not_found", "Revision is unavailable in this Plan.", 404
                 )
             check_revision(source_revision, payload["expected_revision"])
+            allocations = await plan_allocations(session, source_revision["id"])
             # Derive new inputs only after recording the original request identity.
             # The creation path assigns fresh Plan and Income source identities.
             payload = {
@@ -164,12 +166,49 @@ async def write(
                     {
                         "fixed_cost_id": line["fixed_cost_id"],
                         "debt_account_id": line["debt_account_id"],
+                        "_debt_account_name": line["debt_account_name"],
                         "name": line["name"],
                         "amount": str(line["amount"]),
                         "frequency": line["frequency"],
                     }
                     for line in await plan_fixed_costs(session, source_revision["id"])
                 ],
+                **{
+                    key: [
+                        {
+                            id_key: line[id_key],
+                            "amount": str(line["amount"]),
+                            "_snapshot_name": line[label_key],
+                        }
+                        for line in lines
+                    ]
+                    for key, id_key, label_key, lines in (
+                        (
+                            "savings_funding",
+                            "account_id",
+                            "account_name",
+                            allocations["savings_funding"],
+                        ),
+                        (
+                            "saving_goals",
+                            "goal_id",
+                            "goal_name",
+                            allocations["saving_goals"],
+                        ),
+                        (
+                            "investments",
+                            "destination_id",
+                            "destination_name",
+                            allocations["investments"],
+                        ),
+                        (
+                            "giving",
+                            "destination_id",
+                            "destination_name",
+                            allocations["giving"],
+                        ),
+                    )
+                },
             }
 
         if operation == "edit_entity":
@@ -199,6 +238,7 @@ async def write(
             }
         elif operation in {"create_plan", "edit_plan", "copy_plan"}:
             before = None
+            old_allocations = None
             if operation in {"create_plan", "copy_plan"}:
                 if payload.get("expected_revision") is not None:
                     raise RejectionError(
@@ -232,6 +272,7 @@ async def write(
                 )
                 check_revision(old, payload.get("expected_revision"))
                 before = await plan_snapshot(session, old)
+                old_allocations = await plan_allocations(session, old["id"])
                 number, revision = old["number"], old["revision"] + 1
             results = plan_results(
                 [Decimal(line["amount"]) for line in payload["incomes"]],
@@ -240,6 +281,15 @@ async def write(
                     fixed_cost_monthly(line["amount"], line["frequency"])
                     for line in payload.get("fixed_costs", [])
                 ],
+                *(
+                    [Decimal(line["amount"]) for line in payload.get(key, [])]
+                    for key in (
+                        "savings_funding",
+                        "saving_goals",
+                        "investments",
+                        "giving",
+                    )
+                ),
             )
             values = {
                 **{k: Decimal(v) for k, v in results.items()},
@@ -248,6 +298,7 @@ async def write(
                 "entity_id": entity["id"],
                 "number": number,
                 "revision": revision,
+                "rule_version": "monthly-allocation-2",
             }
             if before:
                 await session.execute(
@@ -260,6 +311,15 @@ async def write(
                         m.fixed_cost_lines.c.plan_revision_id == old["id"]
                     )
                 )
+                for table in (
+                    m.savings_funding_lines,
+                    m.saving_goal_lines,
+                    m.investment_lines,
+                    m.giving_lines,
+                ):
+                    await session.execute(
+                        delete(table).where(table.c.plan_revision_id == old["id"])
+                    )
                 record = (
                     (
                         await session.execute(
@@ -352,11 +412,20 @@ async def write(
                         session, b.debts, entity["id"], line["debt_account_id"]
                     )
                     if not debt_line["active"]:
-                        raise RejectionError(
-                            "archived_debt",
-                            "Reopen the debt account or remove its draft allocation.",
-                            422,
+                        retained = bool(line.get("_debt_account_name")) or bool(
+                            before
+                            and any(
+                                prior["fixed_cost_id"] == str(fixed["uuid"])
+                                and prior["debt_account_id"] == str(debt_line["uuid"])
+                                for prior in before["fixed_costs"]
+                            )
                         )
+                        if not retained:
+                            raise RejectionError(
+                                "archived_debt",
+                                "Reopen the Debt account or remove the draft line.",
+                                422,
+                            )
                 await session.execute(
                     insert(m.fixed_cost_lines).values(
                         plan_revision_id=record["id"],
@@ -364,6 +433,28 @@ async def write(
                         entity_id=entity["id"],
                         fixed_cost_id=fixed["id"],
                         debt_account_id=debt_line["id"] if debt_line else None,
+                        debt_account_name=(
+                            line.get("_debt_account_name")
+                            or (
+                                next(
+                                    (
+                                        prior["debt_account_name"]
+                                        for prior in before["fixed_costs"]
+                                        if prior["fixed_cost_id"] == str(fixed["uuid"])
+                                        and prior["debt_account_id"]
+                                        == (
+                                            str(line["debt_account_id"])
+                                            if line.get("debt_account_id")
+                                            else None
+                                        )
+                                    ),
+                                    None,
+                                )
+                                if before
+                                else None
+                            )
+                            or (debt_line["name"] if debt_line else None)
+                        ),
                         name=line["name"],
                         amount=money(line["amount"]),
                         frequency=line["frequency"],
@@ -372,6 +463,75 @@ async def write(
                         ),
                     )
                 )
+            from accanto.models import destinations as d
+            from accanto.models import savings as s
+
+            for key, table, target_table, id_key, name_key in (
+                (
+                    "savings_funding",
+                    m.savings_funding_lines,
+                    s.accounts,
+                    "account_id",
+                    "account_name",
+                ),
+                ("saving_goals", m.saving_goal_lines, s.goals, "goal_id", "goal_name"),
+                (
+                    "investments",
+                    m.investment_lines,
+                    d.investments,
+                    "destination_id",
+                    "destination_name",
+                ),
+                (
+                    "giving",
+                    m.giving_lines,
+                    d.recipients,
+                    "destination_id",
+                    "destination_name",
+                ),
+            ):
+                seen_targets = set()
+                for line in payload.get(key, []):
+                    target_row = await scoped(
+                        session, target_table, entity["id"], line[id_key]
+                    )
+                    if target_row["id"] in seen_targets:
+                        raise RejectionError(
+                            "duplicate_allocation",
+                            f"Include each {key} reference once.",
+                            422,
+                        )
+                    seen_targets.add(target_row["id"])
+                    prior_label = next(
+                        (
+                            prior[name_key]
+                            for prior in (old_allocations or {}).get(key, [])
+                            if prior[id_key] == line[id_key]
+                        ),
+                        None,
+                    )
+                    if not target_row["active"] and not (
+                        prior_label or line.get("_snapshot_name")
+                    ):
+                        raise RejectionError(
+                            "inactive_plan_reference",
+                            "Reactivate the reference or remove its draft allocation.",
+                            422,
+                        )
+                    # Inactive references are retained for deliberate draft revision.
+                    await session.execute(
+                        insert(table).values(
+                            plan_revision_id=record["id"],
+                            entity_id=entity["id"],
+                            **{
+                                id_key: target_row["id"],
+                                name_key: line.get("_snapshot_name")
+                                or prior_label
+                                or target_row["name"],
+                            },
+                            amount=money(line["amount"]),
+                        )
+                    )
             response = {
                 "plan_id": str(plan["uuid"]),
                 "draft": await plan_snapshot(session, record),
@@ -470,6 +630,32 @@ async def write(
                         plan_revision_id=draft["id"],
                     )
                 )
+            for table in (
+                m.savings_funding_lines,
+                m.saving_goal_lines,
+                m.investment_lines,
+                m.giving_lines,
+            ):
+                allocation_rows = (
+                    (
+                        await session.execute(
+                            select(table).where(table.c.plan_revision_id == old["id"])
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                for line in allocation_rows:
+                    await session.execute(
+                        insert(table).values(
+                            **{
+                                k: v
+                                for k, v in dict(line).items()
+                                if k not in {"id", "uuid", "plan_revision_id"}
+                            },
+                            plan_revision_id=draft["id"],
+                        )
+                    )
             response = {
                 "version": await plan_snapshot(session, record),
                 "draft": await plan_snapshot(session, draft),
@@ -1028,6 +1214,78 @@ async def review_fingerprint(session, entity_id, month, version_uuid, note):
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+async def destination_comparisons(session, version, entries):
+    """Compare matching recorded destinations; missing entries remain unknown."""
+    from accanto.models import destinations as d
+    from accanto.models import savings as s
+
+    planned = await plan_allocations(session, version["id"])
+    entry_ids = [row["id"] for row in entries]
+    recorded = {}
+    if entry_ids:
+        for category, entry_category, assignment, target, column, extra_filter in (
+            (
+                "saving_goals",
+                "saving",
+                s.linked_activity,
+                s.goals,
+                "goal_id",
+                s.linked_activity.c.deleted_at.is_(None),
+            ),
+            (
+                "investments",
+                "investing",
+                d.investment_entries,
+                d.investments,
+                "investment_id",
+                True,
+            ),
+            (
+                "giving",
+                "giving",
+                d.giving_entries,
+                d.recipients,
+                "giving_recipient_id",
+                True,
+            ),
+        ):
+            rows = (
+                await session.execute(
+                    select(target.c.uuid, m.entries.c.amount)
+                    .select_from(m.entries)
+                    .join(assignment, assignment.c.actual_entry_id == m.entries.c.id)
+                    .join(target, target.c.id == assignment.c[column])
+                    .where(
+                        m.entries.c.id.in_(entry_ids),
+                        m.entries.c.category == entry_category,
+                        extra_filter,
+                    )
+                )
+            ).all()
+            amounts = {}
+            for uuid, amount in rows:
+                amounts[uuid] = amounts.get(uuid, Decimal("0.00")) + amount
+            recorded[category] = amounts
+    result = {}
+    for category, id_key in (
+        ("saving_goals", "goal_id"),
+        ("investments", "destination_id"),
+        ("giving", "destination_id"),
+    ):
+        result[category] = []
+        for line in planned[category]:
+            amount = recorded.get(category, {}).get(line[id_key])
+            result[category].append(
+                {
+                    **line,
+                    "planned": line["amount"],
+                    "recorded": amount,
+                    "difference": None if amount is None else amount - line["amount"],
+                }
+            )
+    return result
+
+
 async def read_review(session, token, entity_uuid, month: date):
     async with session.begin():
         # Same Entity lock gives a consistent multi-query view of current records.
@@ -1155,6 +1413,34 @@ async def read_review(session, token, entity_uuid, month: date):
                     )
                 ),
                 "version": await plan_snapshot(session, version),
+                "expected": {
+                    "saving": version["saving_total"],
+                    "investing": version["investing_total"],
+                    "giving": version["giving_total"],
+                    "savings_funding": version["savings_funding_total"],
+                    "funding": version["funding_total"],
+                    "allocation": version["allocation_total"],
+                },
+                "differences": {
+                    category: (
+                        None
+                        if actual[f"{category}_recorded"] is None
+                        or version[column] is None
+                        else str(
+                            Decimal(actual[f"{category}_recorded"]) - version[column]
+                        )
+                    )
+                    for category, column in (
+                        ("saving", "saving_total"),
+                        ("investing", "investing_total"),
+                        ("giving", "giving_total"),
+                    )
+                },
+                "destination_comparisons": (
+                    None
+                    if version["saving_total"] is None
+                    else await destination_comparisons(session, version, entries)
+                ),
                 "actual": actual,
                 "entries": [dict(e) for e in entries],
                 "income_difference": None
