@@ -184,7 +184,7 @@ export interface ReviewResult {
       recorded: DecimalString | null;
       difference: DecimalString | null;
     }>;
-  };
+  } | null;
 }
 
 export interface WriteSpec<T> {

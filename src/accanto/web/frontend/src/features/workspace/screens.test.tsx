@@ -339,12 +339,17 @@ it("shows unknown rather than zero, retaining incomplete recorded income", async
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
     String(path).endsWith("/plans")
       ? json(plans)
-      : json({ ...review, actual: { ...review.actual, income_recorded: "0.00" } }),
+      : json({
+          ...review,
+          destination_comparisons: null,
+          actual: { ...review.actual, income_recorded: "0.00" },
+        }),
   );
   render(<MonthlyReview {...props()} />);
   await screen.findByText("$0.00 (incomplete)");
   expect(screen.getAllByText("Unknown").length).toBeGreaterThanOrEqual(4);
   expect(screen.getByText("Salary")).toBeDefined();
+  expect(screen.getByText("Destination comparison for this older version: Unknown")).toBeDefined();
 });
 it("shows saved destination expectations and category differences in Review", async () => {
   const planned = {
