@@ -250,17 +250,75 @@ export function MonthlyReview(p: ScreenProps) {
                   </td>
                   <td>{dollars(state.data.fixed_cost_difference)}</td>
                 </tr>
-                {"saving_recorded" in state.data.actual && (
-                  <tr>
-                    <th scope="row">New saving</th>
-                    <td>Not yet planned by goal</td>
-                    <td>{dollars(state.data.actual.saving_recorded ?? null)}</td>
-                    <td>—</td>
+                {(["saving", "investing", "giving"] as const).map((category) => (
+                  <tr key={category}>
+                    <th scope="row">
+                      {category === "saving"
+                        ? "New saving"
+                        : category === "investing"
+                          ? "Investing"
+                          : "Giving"}
+                    </th>
+                    <td>{dollars(state.data.expected?.[category] ?? null)}</td>
+                    <td>{dollars(state.data.actual[`${category}_recorded`] ?? null)}</td>
+                    <td>{dollars(state.data.differences?.[category] ?? null)}</td>
                   </tr>
-                )}
+                ))}
               </tbody>
             </table>
           </div>
+          <p>
+            Expected planned use of savings: {dollars(state.data.expected?.savings_funding ?? null)}
+            . Total planned funding: {dollars(state.data.expected?.funding ?? null)}. Total planned
+            allocation: {dollars(state.data.expected?.allocation ?? null)}.
+          </p>
+          <section aria-label="Expected destination allocations">
+            <h4>Destination allocations</h4>
+            <p>Differences stay in this Review month; they do not change a later Plan.</p>
+            {state.data.destination_comparisons ? (
+              <div className="comparison-scroll">
+                <table className="comparison">
+                  <caption>USD · recorded minus planned, by destination</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Destination</th>
+                      <th scope="col">Planned</th>
+                      <th scope="col">Recorded</th>
+                      <th scope="col">Difference</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.data.destination_comparisons.saving_goals.map((line) => (
+                      <tr key={`saving-${line.goal_id}`}>
+                        <th scope="row">Saving · {line.goal_name}</th>
+                        <td>{dollars(line.planned)}</td>
+                        <td>{dollars(line.recorded)}</td>
+                        <td>{dollars(line.difference)}</td>
+                      </tr>
+                    ))}
+                    {state.data.destination_comparisons.investments.map((line) => (
+                      <tr key={`investing-${line.destination_id}`}>
+                        <th scope="row">Investing · {line.destination_name}</th>
+                        <td>{dollars(line.planned)}</td>
+                        <td>{dollars(line.recorded)}</td>
+                        <td>{dollars(line.difference)}</td>
+                      </tr>
+                    ))}
+                    {state.data.destination_comparisons.giving.map((line) => (
+                      <tr key={`giving-${line.destination_id}`}>
+                        <th scope="row">Giving · {line.destination_name}</th>
+                        <td>{dollars(line.planned)}</td>
+                        <td>{dollars(line.recorded)}</td>
+                        <td>{dollars(line.difference)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p>Destination comparison for this older version: Unknown</p>
+            )}
+          </section>
           {"savings_used" in state.data.actual && (
             <p>
               Spending funded from previously saved money:{" "}

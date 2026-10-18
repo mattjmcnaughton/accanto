@@ -18,6 +18,10 @@ export interface PlanInput {
   incomes: IncomeLineInput[];
   fixed_costs: FixedCostLineInput[];
   spending: DecimalString;
+  savings_funding: Array<{ account_id: UUID; amount: DecimalString }>;
+  saving_goals: Array<{ goal_id: UUID; amount: DecimalString }>;
+  investments: Array<{ destination_id: UUID; amount: DecimalString }>;
+  giving: Array<{ destination_id: UUID; amount: DecimalString }>;
   expected_revision?: number;
 }
 export interface KnownTotalInput {
@@ -70,16 +74,28 @@ export interface PlanRevision {
   fixed_costs: Array<{
     fixed_cost_id: UUID;
     debt_account_id: UUID | null;
+    debt_account_name?: string | null;
     name: string;
     canonical_name: string;
     amount: DecimalString;
     frequency: "monthly" | "annual";
     monthly_amount: DecimalString;
   }>;
+  savings_funding?: Array<{ account_id: UUID; account_name: string; amount: DecimalString }>;
+  saving_goals?: Array<{ goal_id: UUID; goal_name: string; amount: DecimalString }>;
+  investments?: Array<{ destination_id: UUID; destination_name: string; amount: DecimalString }>;
+  giving?: Array<{ destination_id: UUID; destination_name: string; amount: DecimalString }>;
   income: DecimalString;
   spending: DecimalString;
   fixed_cost_total: DecimalString;
   tithe_target: DecimalString;
+  savings_funding_total?: DecimalString | null;
+  funding_total?: DecimalString | null;
+  saving_total?: DecimalString | null;
+  investing_total?: DecimalString | null;
+  giving_total?: DecimalString | null;
+  allocation_total?: DecimalString | null;
+  giving_difference?: DecimalString | null;
   unassigned: DecimalString;
 }
 export interface PlanGroup {
@@ -133,6 +149,42 @@ export interface ReviewResult {
   income_difference: DecimalString | null;
   spending_difference: DecimalString | null;
   fixed_cost_difference: DecimalString | null;
+  expected?: {
+    saving: DecimalString | null;
+    investing: DecimalString | null;
+    giving: DecimalString | null;
+    savings_funding: DecimalString | null;
+    funding: DecimalString | null;
+    allocation: DecimalString | null;
+  };
+  differences?: {
+    saving: DecimalString | null;
+    investing: DecimalString | null;
+    giving: DecimalString | null;
+  };
+  destination_comparisons?: {
+    saving_goals: Array<{
+      goal_id: UUID;
+      goal_name: string;
+      planned: DecimalString;
+      recorded: DecimalString | null;
+      difference: DecimalString | null;
+    }>;
+    investments: Array<{
+      destination_id: UUID;
+      destination_name: string;
+      planned: DecimalString;
+      recorded: DecimalString | null;
+      difference: DecimalString | null;
+    }>;
+    giving: Array<{
+      destination_id: UUID;
+      destination_name: string;
+      planned: DecimalString;
+      recorded: DecimalString | null;
+      difference: DecimalString | null;
+    }>;
+  };
 }
 
 export interface WriteSpec<T> {

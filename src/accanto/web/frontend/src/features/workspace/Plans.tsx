@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { balances } from "../../lib/balances";
+import { destinations } from "../../lib/destinations";
 import { type PlanRevision, monthly } from "../../lib/monthly";
+import { savings } from "../../lib/savings";
 import { LoadMessage, MoneyInput, type ScreenProps, dollars, useLoad } from "./shared";
 
 import { ComparePlans, CopyPlan } from "./PlanScenarios";
@@ -19,6 +21,7 @@ type FixedRow = {
   amount: string;
   frequency: "monthly" | "annual";
 };
+type AllocationRow = { key: string; id: string; amount: string };
 type Draft = {
   planId?: string;
   revision?: number;
@@ -26,18 +29,58 @@ type Draft = {
   incomes: IncomeRow[];
   fixed_costs: FixedRow[];
   spending: string;
+  savings_funding: AllocationRow[];
+  saving_goals: AllocationRow[];
+  investments: AllocationRow[];
+  giving: AllocationRow[];
 };
 const blank = (): Draft => ({
   name: "",
   incomes: [{ key: crypto.randomUUID(), name: "", amount: "" }],
   fixed_costs: [],
   spending: "",
+  savings_funding: [],
+  saving_goals: [],
+  investments: [],
+  giving: [],
+});
+type AllocationKind = "savings_funding" | "saving_goals" | "investments" | "giving";
+const allocationRows = (revision: PlanRevision): Pick<Draft, AllocationKind> => ({
+  savings_funding: (revision.savings_funding ?? []).map((line) => ({
+    key: crypto.randomUUID(),
+    id: line.account_id,
+    amount: line.amount,
+  })),
+  saving_goals: (revision.saving_goals ?? []).map((line) => ({
+    key: crypto.randomUUID(),
+    id: line.goal_id,
+    amount: line.amount,
+  })),
+  investments: (revision.investments ?? []).map((line) => ({
+    key: crypto.randomUUID(),
+    id: line.destination_id,
+    amount: line.amount,
+  })),
+  giving: (revision.giving ?? []).map((line) => ({
+    key: crypto.randomUUID(),
+    id: line.destination_id,
+    amount: line.amount,
+  })),
 });
 export function Plans(p: ScreenProps) {
   const [copying, setCopying] = useState(false);
   const [reload, setReload] = useState(0);
   const state = useLoad(() => monthly.plans(p.entity.id), [p.entity.id, p.refresh, reload]);
   const loans = useLoad(() => balances.loans(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const accounts = useLoad(() => savings.list(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const investments = useLoad(
+    () => destinations.list(p.entity.id, "investment"),
+    [p.entity.id, p.refresh, reload],
+  );
+  const recipients = useLoad(
+    () => destinations.list(p.entity.id, "giving"),
+    [p.entity.id, p.refresh, reload],
+  );
   const [form, setForm] = useState<Draft | null>(null);
   const [snapshot, setSnapshot] = useState<PlanRevision | null>(null);
   const [changed, setChanged] = useState(false);
@@ -54,6 +97,7 @@ export function Plans(p: ScreenProps) {
       revision: revision.revision,
       name: revision.name,
       spending: revision.spending,
+      ...allocationRows(revision),
       incomes: revision.incomes.map((line) => ({
         ...line,
         key: line.source_id,
@@ -74,6 +118,7 @@ export function Plans(p: ScreenProps) {
       revision: revision.revision,
       name: revision.name,
       spending: revision.spending,
+      ...allocationRows(revision),
       incomes: revision.incomes.map((line) => ({
         ...line,
         key: line.source_id,
@@ -88,6 +133,130 @@ export function Plans(p: ScreenProps) {
     p.dirty(false);
   }
   if (p.concealed) return null;
+  const choices: Record<AllocationKind, Array<{ id: string; label: string; active: boolean }>> = {
+    savings_funding:
+      accounts.kind === "ready"
+        ? accounts.data.map((account) => ({
+            id: account.uuid,
+            label: account.name,
+            active: account.active,
+          }))
+        : [],
+    saving_goals:
+      accounts.kind === "ready"
+        ? accounts.data.flatMap((account) =>
+            (account.goals ?? []).map((goal) => ({
+              id: goal.uuid,
+              label: `${account.name} · ${goal.name}`,
+              active: account.active && goal.active,
+            })),
+          )
+        : [],
+    investments:
+      investments.kind === "ready"
+        ? investments.data.map((item) => ({ id: item.uuid, label: item.name, active: item.active }))
+        : [],
+    giving:
+      recipients.kind === "ready"
+        ? recipients.data.map((item) => ({ id: item.uuid, label: item.name, active: item.active }))
+        : [],
+  };
+  const catalogState = {
+    savings_funding: accounts,
+    saving_goals: accounts,
+    investments,
+    giving: recipients,
+  };
+  const catalogs = [
+    { name: "Savings accounts and goals", state: accounts },
+    { name: "Investments", state: investments },
+    { name: "Giving recipients", state: recipients },
+    { name: "Loan accounts", state: loans },
+  ];
+  const allocationEditor = (kind: AllocationKind, title: string) =>
+    form && (
+      <section aria-label={title}>
+        <h3>{title}</h3>
+        {form[kind].map((line, index) => {
+          const selected = choices[kind].find((choice) => choice.id === line.id);
+          return (
+            <div className="income-row" key={line.key}>
+              <label>
+                {title}{" "}
+                {kind === "savings_funding"
+                  ? "account"
+                  : kind === "saving_goals"
+                    ? "goal"
+                    : "destination"}{" "}
+                {index + 1}
+                <select
+                  required
+                  value={line.id}
+                  onChange={(event) =>
+                    update({
+                      ...form,
+                      [kind]: form[kind].map((row) =>
+                        row.key === line.key ? { ...row, id: event.target.value } : row,
+                      ),
+                    })
+                  }
+                >
+                  <option value="">Choose a destination</option>
+                  {choices[kind].map((choice) => (
+                    <option key={choice.id} value={choice.id}>
+                      {choice.label}
+                      {choice.active ? "" : " (inactive: revise allocation)"}
+                    </option>
+                  ))}
+                  {line.id && !selected && (
+                    <option value={line.id}>Historical reference (revise allocation)</option>
+                  )}
+                </select>
+              </label>
+              {line.id && (!selected || !selected.active) && (
+                <p className="warning">
+                  {catalogState[kind].kind === "ready" || catalogState[kind].kind === "empty"
+                    ? "This reference is inactive or unavailable. Review this draft allocation explicitly."
+                    : "Current reference status could not be checked. Retry loading before revising this allocation."}
+                </p>
+              )}
+              <MoneyInput
+                label={`${title} amount ${index + 1} (USD)`}
+                value={line.amount}
+                onChange={(amount) =>
+                  update({
+                    ...form,
+                    [kind]: form[kind].map((row) =>
+                      row.key === line.key ? { ...row, amount } : row,
+                    ),
+                  })
+                }
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  update({ ...form, [kind]: form[kind].filter((row) => row.key !== line.key) })
+                }
+              >
+                Remove {title.toLowerCase()} line {index + 1}
+              </button>
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          disabled={form[kind].length >= 100 || choices[kind].length === 0}
+          onClick={() =>
+            update({
+              ...form,
+              [kind]: [...form[kind], { key: crypto.randomUUID(), id: "", amount: "" }],
+            })
+          }
+        >
+          Add {title.toLowerCase()} line
+        </button>
+      </section>
+    );
   return (
     <section aria-labelledby="plans-title">
       <div className="section-heading">
@@ -127,6 +296,15 @@ export function Plans(p: ScreenProps) {
         </button>
       </div>
       <LoadMessage state={state} retry={() => setReload((x) => x + 1)} />
+      {form &&
+        catalogs.map(({ name, state: catalog }) =>
+          catalog.kind === "ready" || catalog.kind === "empty" ? null : (
+            <div key={name}>
+              <p>{name} catalog</p>
+              <LoadMessage state={catalog} retry={() => setReload((x) => x + 1)} />
+            </div>
+          ),
+        )}
       <div className="workspace-columns">
         <aside className="record-list" aria-label="Your Plans">
           {state.kind === "empty" && <p>No Plans yet. Create one to start planning.</p>}
@@ -198,6 +376,19 @@ export function Plans(p: ScreenProps) {
                       frequency,
                     }),
                   ),
+                  savings_funding: form.savings_funding.map(({ id, amount }) => ({
+                    account_id: id,
+                    amount,
+                  })),
+                  saving_goals: form.saving_goals.map(({ id, amount }) => ({
+                    goal_id: id,
+                    amount,
+                  })),
+                  investments: form.investments.map(({ id, amount }) => ({
+                    destination_id: id,
+                    amount,
+                  })),
+                  giving: form.giving.map(({ id, amount }) => ({ destination_id: id, amount })),
                   ...(form.planId ? { expected_revision: form.revision } : {}),
                 };
                 p.save(
@@ -284,6 +475,11 @@ export function Plans(p: ScreenProps) {
                   value={form.spending}
                   onChange={(spending) => update({ ...form, spending })}
                 />
+                <p>
+                  Planned use of savings is funding from named accounts. Planning does not move or
+                  reserve money.
+                </p>
+                {allocationEditor("savings_funding", "Planned use of savings")}
                 <h3>Fixed costs</h3>
                 {form.fixed_costs.map((line, index) => (
                   <div className="income-row" key={line.key}>
@@ -400,6 +596,9 @@ export function Plans(p: ScreenProps) {
                 >
                   Add fixed cost
                 </button>
+                {allocationEditor("saving_goals", "Saving allocations")}
+                {allocationEditor("investments", "Investing allocations")}
+                {allocationEditor("giving", "Giving allocations")}
                 <button className="primary" type="submit">
                   Save draft
                 </button>
@@ -435,12 +634,26 @@ export function Plans(p: ScreenProps) {
               <dl>
                 <dt>Planned net income</dt>
                 <dd>{dollars(snapshot.income)}</dd>
+                <dt>Planned use of savings</dt>
+                <dd>{dollars(snapshot.savings_funding_total ?? null)}</dd>
+                <dt>Total planned funding</dt>
+                <dd>{dollars(snapshot.funding_total ?? null)}</dd>
                 <dt>Guilt-free spending</dt>
                 <dd>{dollars(snapshot.spending)}</dd>
                 <dt>Fixed costs (monthly)</dt>
                 <dd>{dollars(snapshot.fixed_cost_total)}</dd>
+                <dt>Saving allocations</dt>
+                <dd>{dollars(snapshot.saving_total ?? null)}</dd>
+                <dt>Investing allocations</dt>
+                <dd>{dollars(snapshot.investing_total ?? null)}</dd>
+                <dt>Giving allocations</dt>
+                <dd>{dollars(snapshot.giving_total ?? null)}</dd>
                 <dt>Tithe target (10% of net income)</dt>
                 <dd>{dollars(snapshot.tithe_target)}</dd>
+                <dt>Giving allocated less tithe target</dt>
+                <dd>{dollars(snapshot.giving_difference ?? null)}</dd>
+                <dt>Total allocated</dt>
+                <dd>{dollars(snapshot.allocation_total ?? null)}</dd>
                 <dt>Unassigned</dt>
                 <dd>{dollars(snapshot.unassigned)}</dd>
               </dl>
@@ -465,6 +678,41 @@ export function Plans(p: ScreenProps) {
                       <li key={line.fixed_cost_id}>
                         {line.name}: {dollars(line.amount)} {line.frequency} →{" "}
                         {dollars(line.monthly_amount)} monthly
+                        {line.debt_account_id
+                          ? ` · loan: ${line.debt_account_name ?? "historical loan"}`
+                          : ""}
+                      </li>
+                    ))}
+                  </ul>
+                  <h4>Planned use of savings by account</h4>
+                  <ul>
+                    {(snapshot.savings_funding ?? []).map((line) => (
+                      <li key={line.account_id}>
+                        {line.account_name}: {dollars(line.amount)}
+                      </li>
+                    ))}
+                  </ul>
+                  <h4>Saving allocations by goal</h4>
+                  <ul>
+                    {(snapshot.saving_goals ?? []).map((line) => (
+                      <li key={line.goal_id}>
+                        {line.goal_name}: {dollars(line.amount)}
+                      </li>
+                    ))}
+                  </ul>
+                  <h4>Investing allocations</h4>
+                  <ul>
+                    {(snapshot.investments ?? []).map((line) => (
+                      <li key={line.destination_id}>
+                        {line.destination_name}: {dollars(line.amount)}
+                      </li>
+                    ))}
+                  </ul>
+                  <h4>Giving allocations</h4>
+                  <ul>
+                    {(snapshot.giving ?? []).map((line) => (
+                      <li key={line.destination_id}>
+                        {line.destination_name}: {dollars(line.amount)}
                       </li>
                     ))}
                   </ul>
