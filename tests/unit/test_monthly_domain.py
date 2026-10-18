@@ -19,9 +19,37 @@ def test_exact_money_and_overallocated_plan():
         "income": "5000.00",
         "spending": "5300.00",
         "fixed_cost_total": "0.00",
+        "savings_funding_total": "0.00",
+        "funding_total": "5000.00",
+        "saving_total": "0.00",
+        "investing_total": "0.00",
+        "giving_total": "0.00",
+        "allocation_total": "5300.00",
         "tithe_target": "500.00",
+        "giving_difference": "-500.00",
         "unassigned": "-300.00",
     }
+
+
+def test_synthetic_savings_funding_tithe_and_shortfall_do_not_roll_forward():
+    allocations = plan_results(
+        [money("4000")],
+        money("3500"),
+        [money("500")],
+        [money("1000")],
+        [money("300")],
+        [money("400")],
+        [money("600")],
+    )
+    assert allocations["income"] == "4000.00"
+    assert allocations["funding_total"] == "5000.00"
+    assert allocations["tithe_target"] == "400.00"
+    assert allocations["giving_difference"] == "200.00"
+    assert allocations["allocation_total"] == "5300.00"
+    assert allocations["unassigned"] == "-300.00"
+    next_plan = plan_results([money("4000")], money("4050"))
+    assert next_plan["unassigned"] == "-50.00"
+    assert next_plan["funding_total"] == "4000.00"
 
 
 def test_annual_fixed_costs_round_per_line_and_preserve_unknowns():

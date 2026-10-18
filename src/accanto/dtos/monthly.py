@@ -39,10 +39,46 @@ class FixedCostLine(Input):
         return str(money(value))
 
 
+class SavingsFundingLine(Input):
+    account_id: UUID
+    amount: str
+
+    @field_validator("amount")
+    @classmethod
+    def valid_amount(cls, value: str) -> str:
+        return str(money(value))
+
+
+class SavingGoalLine(Input):
+    goal_id: UUID
+    amount: str
+
+    @field_validator("amount")
+    @classmethod
+    def valid_amount(cls, value: str) -> str:
+        return str(money(value))
+
+
+class DestinationLine(Input):
+    destination_id: UUID
+    amount: str
+
+    @field_validator("amount")
+    @classmethod
+    def valid_amount(cls, value: str) -> str:
+        return str(money(value))
+
+
 class PlanInput(Input):
     name: Name
     incomes: list[IncomeLine] = Field(min_length=1, max_length=100)
     fixed_costs: list[FixedCostLine] = Field(default_factory=list, max_length=100)
+    savings_funding: list[SavingsFundingLine] = Field(
+        default_factory=list, max_length=100
+    )
+    saving_goals: list[SavingGoalLine] = Field(default_factory=list, max_length=100)
+    investments: list[DestinationLine] = Field(default_factory=list, max_length=100)
+    giving: list[DestinationLine] = Field(default_factory=list, max_length=100)
     spending: str
     expected_revision: int | None = Field(default=None, ge=1)
 

@@ -1,6 +1,6 @@
 # API reference
 
-The production API supports direct net-income Plans, named fixed costs and guilt-free spending,
+The production API supports direct net-income Plans, named fixed costs, planned savings funding, destination allocations and guilt-free spending,
 dated income/fixed-cost/spending/saving entries, monthly Reviews against saved versions,
 independent income estimates, savings account openings/goals, and investment/giving
 destinations with recorded contributions, plus savings movements and goal-level
@@ -258,6 +258,34 @@ monthly results. Three annual inputs of `100.00` therefore produce three
 `8.33` monthly lines and a `24.99` monthly total while retaining all three
 `100.00` inputs. The total reduces the Plan's unassigned amount.
 
+### Plan funding and destination allocations
+
+Plan create and draft replacement also accept `savings_funding` lines with
+`account_id` and `amount`, `saving_goals` lines with `goal_id` and `amount`, and
+`investments` and `giving` lines with `destination_id` and `amount`. IDs are
+Entity-scoped UUIDs from the savings and destination APIs. Each reference may
+appear once per category; amounts are nonnegative USD decimal strings. Existing
+fixed-cost lines may include `debt_account_id` for a loan payment.
+
+Drafts, copies and saved versions return those lines with stored labels
+(`account_name`, `goal_name`, or `destination_name`). They also return
+`savings_funding_total`, `funding_total`, `saving_total`, `investing_total`,
+`giving_total`, `allocation_total`, `giving_difference`, and `unassigned` as
+decimal strings. Total funding is planned net income plus planned use of
+savings. Allocations sum spending, fixed costs, saving, investing and giving.
+Tithe remains 10% of planned net income; giving allocations may differ from
+that target. A negative `unassigned` flags overallocation but does not block
+saving. Plan commands neither reserve nor move money. Inactive or completed
+references remain readable in saved lines and may be explicitly retained or
+removed when revising a draft.
+New or revised drafts use `rule_version: "monthly-allocation-2"`; existing
+saved versions retain their earlier rule labels and stored results.
+
+For example, `4000.00` planned income and `1000.00` savings funding produce
+`5000.00` total funding and a `400.00` tithe target. Allocations totaling
+`5300.00` produce `unassigned: "-300.00"`. A shortfall in one Plan never
+carries into another Plan automatically.
+
 `/activity` accepts `category: "fixed_cost"`, an optional `fixed_cost_id`,
 and `funding_origin: "income"`. An omitted ID is Unassigned fixed-cost activity.
 Ordinary payments are nonnegative, including explicit zero. Signed corrections
@@ -290,7 +318,7 @@ omitting one creates a new source identity. Save with
 `version.uuid`; its inputs, results and rule version will not change. The new
 draft starts at revision 1. An overallocated Plan can be saved; negative unassigned
 money is a visible result. The provisional tithe target is 10% of net income,
-half-even rounded; it is guidance, not an additional allocation in this slice.
+half-even rounded; it is guidance, not an additional allocation.
 
 Record income (`POST /activity`), substituting the returned source UUID:
 
@@ -347,6 +375,20 @@ and spending difference is `-725.00`. Missing expected income sources make the
 income difference `null`; no spending entries makes spending actual/difference
 `null`. Explicit zero entries are known zero. This partial slice does not claim a
 complete cashflow or savings result.
+
+Review response `version` contains the saved destination and funding lines.
+`expected` exposes saving, investing, giving, savings funding, funding and
+allocation totals from the selected version. `differences` exposes saving,
+investing and giving actual minus expected totals when both are known.
+`destination_comparisons` contains `saving_goals`, `investments`, and `giving`
+arrays. Each saved line carries its reference UUID, saved name, `planned`,
+`recorded`, and `difference`. Missing destination entries leave `recorded` and
+`difference` as `null`; a surplus at one destination cannot hide another's
+shortfall. A later Review using the same saved version starts with the same
+planned lines and has its own monthly actuals.
+Legacy versions that predate those Plan fields return `null` expectations,
+and `destination_comparisons: null`, not invented zero allocations. An actual category with no entries also stays
+unknown (`null`).
 
 Edit a Review with `PUT /reviews/2026-10-01`, for example
 `{"expected_revision":1,"version_id":"SAVED_VERSION_UUID","note":"Synthetic takeaway","reviewed":true}`.
@@ -461,11 +503,15 @@ Choose the exact stored draft or saved version from `GET .../plans`; supply that
 revision's concurrency revision. A stale selection is rejected. The command uses
 the normal authentication, CSRF (browser), and `Idempotency-Key` requirements.
 It returns `{plan_id, draft}` with fresh Plan and Income source identities
-and shared Fixed cost identities.
+and shared Fixed cost, savings account, goal, investment and giving identities.
+Copied historical lines retain their saved labels even if a reference has
+since been renamed or inactivated. Archived Debt account links and inactive
+destinations may be retained explicitly in a copied or edited draft; selecting
+one anew is rejected.
 The new draft calculates current rules from the selected inputs. The source,
 its immutable versions, receipts, and Review targets remain unchanged.
 
-Saved scenario comparisons use the stored `incomes`, `fixed_costs`, result fields, and
+Saved scenario comparisons use the stored lines, result fields, and
 `rule_version` returned by `GET .../plans`. Do not recalculate historical versions
 using current rules. Copies do not infer cross-Plan receipt matching.
 

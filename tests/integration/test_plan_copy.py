@@ -141,7 +141,7 @@ async def copy_scenario():
             ("Other income", "0.00"),
         ]
         assert copied["draft"]["spending"] == "800.00"
-        assert copied["draft"]["rule_version"] == "monthly-net-1"
+        assert copied["draft"]["rule_version"] == "monthly-allocation-2"
         assert copied["draft"]["tithe_target"] == "400.00"
         assert (
             await post(copy_path, {**body, "name": "Changed"}, key)

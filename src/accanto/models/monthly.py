@@ -114,6 +114,13 @@ revisions = table(
     Column("income", Numeric(14, 2), nullable=False),
     Column("tithe_target", Numeric(14, 2), nullable=False),
     Column("unassigned", Numeric(14, 2), nullable=False),
+    Column("savings_funding_total", Numeric(14, 2)),
+    Column("funding_total", Numeric(14, 2)),
+    Column("saving_total", Numeric(14, 2)),
+    Column("investing_total", Numeric(14, 2)),
+    Column("giving_total", Numeric(14, 2)),
+    Column("allocation_total", Numeric(14, 2)),
+    Column("giving_difference", Numeric(14, 2)),
     Column("rule_version", String, nullable=False, server_default="monthly-net-1"),
     Column("saved_at", DateTime(timezone=True)),
     ForeignKeyConstraint(["plan_id", "entity_id"], ["plan.id", "plan.entity_id"]),
@@ -151,6 +158,7 @@ fixed_cost_lines = table(
     Column("entity_id", BigInteger, nullable=False),
     Column("fixed_cost_id", BigInteger, nullable=False),
     Column("debt_account_id", BigInteger),
+    Column("debt_account_name", String(120)),
     Column("name", String(120), nullable=False),
     Column("amount", Numeric(14, 2), nullable=False),
     Column("frequency", String, nullable=False),
@@ -167,6 +175,75 @@ fixed_cost_lines = table(
     ),
     UniqueConstraint("plan_revision_id", "fixed_cost_id"),
     CheckConstraint("frequency IN ('monthly', 'annual')"),
+    CheckConstraint("amount BETWEEN 0 AND 999999999.99"),
+)
+savings_funding_lines = table(
+    "plan_savings_funding_line",
+    Column("plan_revision_id", BigInteger, nullable=False),
+    Column("entity_id", BigInteger, nullable=False),
+    Column("account_id", BigInteger, nullable=False),
+    Column("account_name", String(120), nullable=False),
+    Column("amount", Numeric(14, 2), nullable=False),
+    ForeignKeyConstraint(
+        ["plan_revision_id", "entity_id"],
+        ["plan_revision.id", "plan_revision.entity_id"],
+    ),
+    ForeignKeyConstraint(
+        ["account_id", "entity_id"], ["saving_account.id", "saving_account.entity_id"]
+    ),
+    UniqueConstraint("plan_revision_id", "account_id"),
+    CheckConstraint("amount BETWEEN 0 AND 999999999.99"),
+)
+saving_goal_lines = table(
+    "plan_saving_goal_line",
+    Column("plan_revision_id", BigInteger, nullable=False),
+    Column("entity_id", BigInteger, nullable=False),
+    Column("goal_id", BigInteger, nullable=False),
+    Column("goal_name", String(120), nullable=False),
+    Column("amount", Numeric(14, 2), nullable=False),
+    ForeignKeyConstraint(
+        ["plan_revision_id", "entity_id"],
+        ["plan_revision.id", "plan_revision.entity_id"],
+    ),
+    ForeignKeyConstraint(
+        ["goal_id", "entity_id"], ["saving_goal.id", "saving_goal.entity_id"]
+    ),
+    UniqueConstraint("plan_revision_id", "goal_id"),
+    CheckConstraint("amount BETWEEN 0 AND 999999999.99"),
+)
+investment_lines = table(
+    "plan_investment_line",
+    Column("plan_revision_id", BigInteger, nullable=False),
+    Column("entity_id", BigInteger, nullable=False),
+    Column("destination_id", BigInteger, nullable=False),
+    Column("destination_name", String(120), nullable=False),
+    Column("amount", Numeric(14, 2), nullable=False),
+    ForeignKeyConstraint(
+        ["plan_revision_id", "entity_id"],
+        ["plan_revision.id", "plan_revision.entity_id"],
+    ),
+    ForeignKeyConstraint(
+        ["destination_id", "entity_id"], ["investment.id", "investment.entity_id"]
+    ),
+    UniqueConstraint("plan_revision_id", "destination_id"),
+    CheckConstraint("amount BETWEEN 0 AND 999999999.99"),
+)
+giving_lines = table(
+    "plan_giving_line",
+    Column("plan_revision_id", BigInteger, nullable=False),
+    Column("entity_id", BigInteger, nullable=False),
+    Column("destination_id", BigInteger, nullable=False),
+    Column("destination_name", String(120), nullable=False),
+    Column("amount", Numeric(14, 2), nullable=False),
+    ForeignKeyConstraint(
+        ["plan_revision_id", "entity_id"],
+        ["plan_revision.id", "plan_revision.entity_id"],
+    ),
+    ForeignKeyConstraint(
+        ["destination_id", "entity_id"],
+        ["giving_recipient.id", "giving_recipient.entity_id"],
+    ),
+    UniqueConstraint("plan_revision_id", "destination_id"),
     CheckConstraint("amount BETWEEN 0 AND 999999999.99"),
 )
 entries = table(

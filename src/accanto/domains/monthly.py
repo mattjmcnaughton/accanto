@@ -35,21 +35,47 @@ def fixed_cost_monthly(amount: str, frequency: str) -> Decimal:
 
 
 def plan_results(
-    incomes: list[Decimal], spending: Decimal, fixed_costs: list[Decimal] | None = None
+    incomes: list[Decimal],
+    spending: Decimal,
+    fixed_costs: list[Decimal] | None = None,
+    savings_funding: list[Decimal] | None = None,
+    saving_goals: list[Decimal] | None = None,
+    investments: list[Decimal] | None = None,
+    giving: list[Decimal] | None = None,
 ) -> dict[str, str]:
     """Overallocation is a result to display, not a rejection."""
     incomes = [money(str(value)) for value in incomes]
     spending = money(str(spending))
-    fixed_cost_total = sum((fixed_costs or []), Decimal("0.00"))
+
+    def total(values: list[Decimal] | None) -> Decimal:
+        return sum((money(str(value)) for value in values or []), Decimal("0.00"))
+
+    fixed_cost_total = total(fixed_costs)
+    savings_funding_total = total(savings_funding)
+    saving_total = total(saving_goals)
+    investing_total = total(investments)
+    giving_total = total(giving)
     with localcontext() as ctx:
         ctx.prec = 28
         income = sum(incomes, Decimal("0.00"))
+        funding_total = income + savings_funding_total
+        allocation_total = (
+            spending + fixed_cost_total + saving_total + investing_total + giving_total
+        )
+        tithe_target = (income / 10).quantize(CENT, rounding=ROUND_HALF_EVEN)
         return {
             "income": str(income),
             "spending": str(spending),
             "fixed_cost_total": str(fixed_cost_total),
-            "tithe_target": str((income / 10).quantize(CENT, rounding=ROUND_HALF_EVEN)),
-            "unassigned": str(income - spending - fixed_cost_total),
+            "savings_funding_total": str(savings_funding_total),
+            "funding_total": str(funding_total),
+            "saving_total": str(saving_total),
+            "investing_total": str(investing_total),
+            "giving_total": str(giving_total),
+            "allocation_total": str(allocation_total),
+            "tithe_target": str(tithe_target),
+            "giving_difference": str(giving_total - tithe_target),
+            "unassigned": str(funding_total - allocation_total),
         }
 
 
