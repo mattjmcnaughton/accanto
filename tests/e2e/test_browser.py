@@ -234,6 +234,13 @@ def test_signed_in_workspace(tmp_path):
             "find", "role", "button", "click", "--name", "Record activity", "--exact"
         )
         browser("select", "form.editor select", "fixed_cost")
+        browser(
+            "wait",
+            "--fn",
+            "Array.from(document.querySelector("
+            "'select[name=\"fixed-cost\"]')?.options ?? [])"
+            ".some(option => option.textContent.includes('Synthetic annual service'))",
+        )
         fixed_option = (
             browser(
                 "eval",
@@ -527,6 +534,13 @@ def test_signed_in_workspace(tmp_path):
             "find", "role", "button", "click", "--name", "Record activity", "--exact"
         )
         browser("select", "form.editor select", "fixed_cost")
+        browser(
+            "wait",
+            "--fn",
+            "Array.from(document.querySelector("
+            "'select[name=\"loan-account\"]')?.options ?? [])"
+            ".some(option => option.textContent === 'Synthetic loan')",
+        )
         loan_option = (
             browser(
                 "eval",
