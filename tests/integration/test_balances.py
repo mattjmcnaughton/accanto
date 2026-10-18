@@ -7,6 +7,7 @@ from uuid import uuid4
 import httpx
 import pytest
 from sqlalchemy import func, insert, select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from accanto.app import create_app
@@ -26,7 +27,10 @@ def test_loan_payoff_and_observation_guards():
 
 
 async def scenario():
-    assert URL and URL.rsplit("/", 1)[-1] == "accanto_mvp016_20261017_test"
+    assert URL
+    parsed = make_url(URL)
+    assert parsed.database and parsed.database.endswith("_test")
+    assert parsed.host in {"127.0.0.1", "localhost"}
     engine = create_async_engine(URL)
     sessions = async_sessionmaker(engine)
     async with sessions() as session, session.begin():
