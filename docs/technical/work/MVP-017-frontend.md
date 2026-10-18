@@ -10,3 +10,7 @@
 - Tooling note: `just fmt-fix` triggered pnpm store access outside the writable sandbox and failed before running. Existing dependency binaries were used through a temporary worktree symlink, removed before commit. No external service writes were made.
 - Review/proof: independent review and capture are owned by the wave coordinator after local integration. No raw browser artifacts in this branch.
 - Next action: integrate this commit with backend, verify field contract, run combined checks, independent review, resolution, and frozen local proof capture.
+
+## Final local wave status
+
+Independent review resolved the destination-level comparison, catalog error, loan label, and legacy-null display findings. Frontend commits `103a8d7` and `efcafa5` integrated locally as `b3ada11` and `2869bab`. On the integrated tree, Biome format/lint, Vite production build, TypeScript, and all 57 Vitest tests passed. The frozen existing browser E2E journey passed against a separate synthetic database and fresh loopback browser session; it did not exercise the new Plan allocation controls in a browser. See [the wave handoff](mvp-017-wave-20261018.md) for proof and exact limits. No remote action occurred.

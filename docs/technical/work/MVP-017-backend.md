@@ -34,3 +34,7 @@ Self-review found an additional legacy case: a pre-017 saved fixed-cost line has
 ## Next action
 
 Review the checkpoint, resolve any findings, freeze candidate and proof harness, capture approved local proof, then integrate accepted commits locally. No push, PR, merge, issue change, deployment, or worktree cleanup is authorized.
+
+## Final local wave status
+
+Independent review resolved the parent-account eligibility gap in `f69f31e` and the legacy archived-loan copy gap in `3db3576`; no actionable finding remained. The wave integrated this ticket as `575b6c8`, `cffa1ed`, and `2324616`. The final legacy-copy fix passed its focused synthetic API test, Ruff format/lint, and Ty; the full backend integration suite passed 16 tests after the preceding fix. Combined integrated checks and counterfactual evidence are recorded in [the wave handoff](mvp-017-wave-20261018.md). Existing pre-017 loan links lack a saved loan-name snapshot, so a copy retains the loan ID and uses its current name; its original old label cannot be reconstructed. No remote action occurred.
