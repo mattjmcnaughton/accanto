@@ -38,8 +38,8 @@ export function CopyPlan({
         <legend>Copy a Plan</legend>
         <p>
           Choose the stored draft or saved version to copy. The copy has independent Income sources
-          and shared Fixed cost identities. Existing Reviews, receipts, and fixed-cost payments stay
-          unchanged.
+          and shared Fixed cost and destination references. Existing Reviews, receipts, and payments
+          stay unchanged. Copying does not move or reserve savings.
         </p>
         <label>
           Copy from
@@ -134,12 +134,26 @@ export function ComparePlans({ plans }: { plans: PlanGroup[] }) {
                     <dd>{version.rule_version}</dd>
                     <dt>Planned net income</dt>
                     <dd>{dollars(version.income)}</dd>
+                    <dt>Planned use of savings</dt>
+                    <dd>{dollars(version.savings_funding_total ?? null)}</dd>
+                    <dt>Total planned funding</dt>
+                    <dd>{dollars(version.funding_total ?? null)}</dd>
                     <dt>Guilt-free spending</dt>
                     <dd>{dollars(version.spending)}</dd>
                     <dt>Tithe target</dt>
                     <dd>{dollars(version.tithe_target)}</dd>
                     <dt>Fixed costs (monthly)</dt>
                     <dd>{dollars(version.fixed_cost_total)}</dd>
+                    <dt>Saving allocations</dt>
+                    <dd>{dollars(version.saving_total ?? null)}</dd>
+                    <dt>Investing allocations</dt>
+                    <dd>{dollars(version.investing_total ?? null)}</dd>
+                    <dt>Giving allocations</dt>
+                    <dd>{dollars(version.giving_total ?? null)}</dd>
+                    <dt>Giving allocated less tithe target</dt>
+                    <dd>{dollars(version.giving_difference ?? null)}</dd>
+                    <dt>Total allocated</dt>
+                    <dd>{dollars(version.allocation_total ?? null)}</dd>
                     <dt>Unassigned</dt>
                     <dd>{dollars(version.unassigned)}</dd>
                   </dl>
@@ -155,6 +169,41 @@ export function ComparePlans({ plans }: { plans: PlanGroup[] }) {
                       <li key={line.fixed_cost_id}>
                         {line.name}: {dollars(line.amount)} {line.frequency} →{" "}
                         {dollars(line.monthly_amount)} monthly
+                        {line.debt_account_id
+                          ? ` · loan: ${line.debt_account_name ?? "historical loan"}`
+                          : ""}
+                      </li>
+                    ))}
+                  </ul>
+                  <h5>Planned use of savings by account</h5>
+                  <ul>
+                    {(version.savings_funding ?? []).map((line) => (
+                      <li key={line.account_id}>
+                        {line.account_name}: {dollars(line.amount)}
+                      </li>
+                    ))}
+                  </ul>
+                  <h5>Saving allocations by goal</h5>
+                  <ul>
+                    {(version.saving_goals ?? []).map((line) => (
+                      <li key={line.goal_id}>
+                        {line.goal_name}: {dollars(line.amount)}
+                      </li>
+                    ))}
+                  </ul>
+                  <h5>Investing allocations</h5>
+                  <ul>
+                    {(version.investments ?? []).map((line) => (
+                      <li key={line.destination_id}>
+                        {line.destination_name}: {dollars(line.amount)}
+                      </li>
+                    ))}
+                  </ul>
+                  <h5>Giving allocations</h5>
+                  <ul>
+                    {(version.giving ?? []).map((line) => (
+                      <li key={line.destination_id}>
+                        {line.destination_name}: {dollars(line.amount)}
                       </li>
                     ))}
                   </ul>
