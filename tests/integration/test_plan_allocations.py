@@ -367,6 +367,41 @@ async def scenario():
         assert all(value is None for value in legacy_review["differences"].values())
         assert legacy_review["destination_comparisons"] is None
 
+        # An archived parent savings account makes even an active goal unavailable
+        # for a new Plan line; historical draft/copy references remain revisable.
+        async with sessions() as session, session.begin():
+            from accanto.models import savings as s
+
+            await session.execute(
+                update(s.accounts)
+                .where(s.accounts.c.uuid == UUID(account["uuid"]))
+                .values(active=False)
+            )
+        fresh = await client.post(
+            prefix + "/plans",
+            json={
+                "name": "Invalid archived account selection",
+                "incomes": [{"name": "Income", "amount": "100.00"}],
+                "saving_goals": [{"goal_id": goals["Emergency"], "amount": "10.00"}],
+                "spending": "0.00",
+            },
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert fresh.status_code == 422
+        assert fresh.json()["detail"]["code"] == "inactive_plan_reference"
+        archived_account_copy = await command(
+            "POST",
+            f"/plans/{plan['plan_id']}/copies",
+            {
+                "name": "Archived account copy",
+                "source_revision_id": version["uuid"],
+                "expected_revision": version["revision"],
+            },
+        )
+        assert (
+            archived_account_copy["draft"]["saving_goals"][0]["goal_name"] == "Laptop"
+        )
+
         # Database protection covers every saved line table, including old types.
         async with sessions() as session:
             revision_id = await session.scalar(

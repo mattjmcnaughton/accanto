@@ -510,7 +510,18 @@ async def write(
                         ),
                         None,
                     )
-                    if not target_row["active"] and not (
+                    reference_available = target_row["active"]
+                    if key == "saving_goals":
+                        parent_active = await session.scalar(
+                            select(s.accounts.c.active).where(
+                                s.accounts.c.id == target_row["account_id"],
+                                s.accounts.c.entity_id == entity["id"],
+                            )
+                        )
+                        reference_available = reference_available and bool(
+                            parent_active
+                        )
+                    if not reference_available and not (
                         prior_label or line.get("_snapshot_name")
                     ):
                         raise RejectionError(

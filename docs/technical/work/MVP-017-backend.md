@@ -27,7 +27,7 @@
 
 ## Review and proof
 
-Independent review, resolution, and counterfactual proof are coordinated by the wave orchestrator after this checkpoint. This handoff records implementation state; it does not claim those stages are complete.
+Independent review found that new saving-goal Plan lines could select a goal whose owning savings account was inactive. The service now checks both the goal and account, while permitting explicit retention or copy of an existing line. A synthetic direct API test covers the rejection and retained copy; the focused integration test, Ruff, and Ty passed after the fix. Counterfactual proof is coordinated by the wave orchestrator. This handoff does not claim proof is complete.
 
 ## Next action
 
