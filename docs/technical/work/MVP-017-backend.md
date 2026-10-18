@@ -29,6 +29,8 @@
 
 Independent review found that new saving-goal Plan lines could select a goal whose owning savings account was inactive. The service now checks both the goal and account, while permitting explicit retention or copy of an existing line. A synthetic direct API test covers the rejection and retained copy; the focused integration test, Ruff, and Ty passed after the fix. Counterfactual proof is coordinated by the wave orchestrator. This handoff does not claim proof is complete.
 
+Self-review found an additional legacy case: a pre-017 saved fixed-cost line has no Debt account name snapshot. Copying its archived loan link is now allowed from the selected saved version; the new copy labels the link with the current account name because the original historical name was never stored. A synthetic legacy-shaped API test covers this path.
+
 ## Next action
 
 Review the checkpoint, resolve any findings, freeze candidate and proof harness, capture approved local proof, then integrate accepted commits locally. No push, PR, merge, issue change, deployment, or worktree cleanup is authorized.

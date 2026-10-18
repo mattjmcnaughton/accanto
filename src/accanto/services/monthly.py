@@ -412,12 +412,17 @@ async def write(
                         session, b.debts, entity["id"], line["debt_account_id"]
                     )
                     if not debt_line["active"]:
-                        retained = bool(line.get("_debt_account_name")) or bool(
-                            before
-                            and any(
-                                prior["fixed_cost_id"] == str(fixed["uuid"])
-                                and prior["debt_account_id"] == str(debt_line["uuid"])
-                                for prior in before["fixed_costs"]
+                        retained = (
+                            operation == "copy_plan"
+                            or bool(line.get("_debt_account_name"))
+                            or bool(
+                                before
+                                and any(
+                                    prior["fixed_cost_id"] == str(fixed["uuid"])
+                                    and prior["debt_account_id"]
+                                    == str(debt_line["uuid"])
+                                    for prior in before["fixed_costs"]
+                                )
                             )
                         )
                         if not retained:

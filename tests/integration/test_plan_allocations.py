@@ -402,6 +402,70 @@ async def scenario():
             archived_account_copy["draft"]["saving_goals"][0]["goal_name"] == "Laptop"
         )
 
+        legacy_debt = await command(
+            "POST",
+            "/debts",
+            {
+                "name": "Earlier loan",
+                "opening": {"date": "2026-01-01", "amount": "0.00"},
+            },
+        )
+        legacy_loan_plan = await command(
+            "POST",
+            "/plans",
+            {
+                "name": "Earlier loan Plan",
+                "incomes": [{"name": "Income", "amount": "100.00"}],
+                "fixed_costs": [
+                    {
+                        "name": "Loan payment",
+                        "amount": "10.00",
+                        "frequency": "monthly",
+                        "debt_account_id": legacy_debt["uuid"],
+                    }
+                ],
+                "spending": "0.00",
+            },
+        )
+        async with sessions() as session, session.begin():
+            old_revision_id = await session.scalar(
+                select(m.revisions.c.id).where(
+                    m.revisions.c.uuid == UUID(legacy_loan_plan["draft"]["uuid"])
+                )
+            )
+            await session.execute(
+                update(m.fixed_cost_lines)
+                .where(m.fixed_cost_lines.c.plan_revision_id == old_revision_id)
+                .values(debt_account_name=None)
+            )
+        old_loan_saved = await command(
+            "POST",
+            f"/plans/{legacy_loan_plan['plan_id']}/versions",
+            {"expected_revision": 1},
+        )
+        await command(
+            "PUT",
+            f"/debts/{legacy_debt['uuid']}",
+            {
+                "name": "Later loan name",
+                "active": False,
+                "expected_revision": legacy_debt["revision"],
+            },
+        )
+        copied_old_loan = await command(
+            "POST",
+            f"/plans/{legacy_loan_plan['plan_id']}/copies",
+            {
+                "name": "Copy of earlier loan Plan",
+                "source_revision_id": old_loan_saved["version"]["uuid"],
+                "expected_revision": old_loan_saved["version"]["revision"],
+            },
+        )
+        assert (
+            copied_old_loan["draft"]["fixed_costs"][0]["debt_account_id"]
+            == legacy_debt["uuid"]
+        )
+
         # Database protection covers every saved line table, including old types.
         async with sessions() as session:
             revision_id = await session.scalar(
