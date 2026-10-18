@@ -504,8 +504,9 @@ revision's concurrency revision. A stale selection is rejected. The command uses
 the normal authentication, CSRF (browser), and `Idempotency-Key` requirements.
 It returns `{plan_id, draft}` with fresh Plan and Income source identities
 and shared Fixed cost, savings account, goal, investment and giving identities.
-Copied historical lines retain their saved labels even if a reference has
-since been renamed or inactivated. Archived Debt account links and inactive
+Copied historical lines retain saved labels where available, even if a reference has
+since been renamed or inactivated. Older Debt lines without a stored account
+label use the current account name in the new copy. Archived Debt account links and inactive
 destinations may be retained explicitly in a copied or edited draft; selecting
 one anew is rejected.
 The new draft calculates current rules from the selected inputs. The source,
