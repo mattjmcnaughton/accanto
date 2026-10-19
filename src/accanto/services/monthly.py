@@ -698,6 +698,21 @@ async def write(
             from accanto.services.savings import attach_entry, current_link
 
             previous_link = await current_link(session, old["id"]) if old else None
+            if old:
+                from accanto.models import refunds as r
+                from accanto.services.refunds import validate_purchase_edit
+
+                if await session.scalar(
+                    select(r.refunds.c.id).where(
+                        r.refunds.c.refund_entry_id == old["id"]
+                    )
+                ):
+                    raise RejectionError(
+                        "linked_refund", "Use the linked refund workflow.", 422
+                    )
+                await validate_purchase_edit(
+                    session, old, before, payload, deleting=operation == "delete_entry"
+                )
             source = None
             fixed_cost = None
             debt_account = None
@@ -1046,6 +1061,16 @@ async def write(
                 session, entity, operation, payload, target, audit
             )
         elif operation in {
+            "create_refund",
+            "edit_refund",
+            "delete_refund",
+        }:
+            from accanto.services.refunds import write_refund
+
+            response = await write_refund(
+                session, entity, operation, payload, target, audit
+            )
+        elif operation in {
             "create_saving_account",
             "edit_saving_account",
             "create_saving_goal",
@@ -1151,6 +1176,7 @@ async def entry_snapshot(session, record):
         .first()
     )
     from accanto.models import debts as b
+    from accanto.models import refunds as r
     from accanto.models import savings as s
 
     debt_uuid = await session.scalar(
@@ -1181,6 +1207,11 @@ async def entry_snapshot(session, record):
         if link
         else None
     )
+    original_uuid = await session.scalar(
+        select(m.entries.c.uuid)
+        .join(r.refunds, r.refunds.c.original_entry_id == m.entries.c.id)
+        .where(r.refunds.c.refund_entry_id == record["id"])
+    )
     destination_uuid = None
     if record["category"] in {"investing", "giving"}:
         from accanto.services.destinations import entry_snapshot as destination_snapshot
@@ -1203,8 +1234,10 @@ async def entry_snapshot(session, record):
             "saving_goal_id": goal_uuid,
             "destination_id": destination_uuid,
             "funding_origin": "savings"
-            if record["category"] == "spending" and link
+            if record["category"] in {"spending", "fixed_cost", "giving", "investing"}
+            and link
             else "income",
+            "refund_of": original_uuid,
         }
     )
 
@@ -1410,7 +1443,9 @@ async def read_review(session, token, entity_uuid, month: date):
             )
             .where(
                 m.entries.c.entity_id == entity["id"],
-                m.entries.c.category == "spending",
+                m.entries.c.category.in_(
+                    ("spending", "fixed_cost", "giving", "investing")
+                ),
                 m.entries.c.deleted_at.is_(None),
                 m.entries.c.financial_date >= month,
                 m.entries.c.financial_date < next_month,

@@ -124,8 +124,6 @@ class ActivityInput(Input):
             if self.funding_origin != "income":
                 raise ValueError("New saving must come from current income.")
         elif self.category in {"spending", "fixed_cost"}:
-            if self.category == "fixed_cost" and self.funding_origin != "income":
-                raise ValueError("Fixed costs must be funded from current income.")
             if (self.funding_origin == "savings") != (self.saving_goal_id is not None):
                 raise ValueError("Savings funding requires exactly one saving goal.")
             if self.funding_origin == "savings" and self.amount.startswith("-"):
@@ -139,6 +137,21 @@ class ActivityInput(Input):
         if self.fixed_cost_id is not None and self.category != "fixed_cost":
             raise ValueError("Only fixed-cost payments select a Fixed cost.")
         return self
+
+
+class RefundInput(Input):
+    date: date
+    amount: str
+    note: str = Field(default="", max_length=2000)
+    expected_revision: int | None = Field(default=None, ge=1)
+
+    @field_validator("amount")
+    @classmethod
+    def valid_amount(cls, value: str) -> str:
+        amount = money(value)
+        if amount <= 0:
+            raise ValueError("Refund amount must be positive.")
+        return str(amount)
 
 
 class EntryFingerprint(Input):

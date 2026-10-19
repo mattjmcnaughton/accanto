@@ -12,6 +12,7 @@ from accanto.dtos.monthly import (
     KnownTotalInput,
     PlanCopyInput,
     PlanInput,
+    RefundInput,
     ReviewEditInput,
     ReviewInput,
     RevisionInput,
@@ -143,6 +144,48 @@ async def create_known_total(
     request_key: RequestKey,
 ):
     return await command(session, token, entity_id, "known_total", request_key, body)
+
+
+@router.post("/activity/{entry_id}/refunds")
+async def create_refund(
+    entity_id: UUID,
+    entry_id: UUID,
+    body: RefundInput,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await command(
+        session, token, entity_id, "create_refund", request_key, body, entry_id
+    )
+
+
+@router.put("/activity/refunds/{entry_id}")
+async def edit_refund(
+    entity_id: UUID,
+    entry_id: UUID,
+    body: RefundInput,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await command(
+        session, token, entity_id, "edit_refund", request_key, body, entry_id
+    )
+
+
+@router.delete("/activity/refunds/{entry_id}")
+async def delete_refund(
+    entity_id: UUID,
+    entry_id: UUID,
+    body: RevisionInput,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await command(
+        session, token, entity_id, "delete_refund", request_key, body, entry_id
+    )
 
 
 @router.put("/activity/{entry_id}")

@@ -76,6 +76,8 @@ class ContributionInput(Input):
     note: str = Field(default="", max_length=2000)
     is_adjustment: bool = False
     expected_revision: int | None = Field(default=None, ge=1)
+    funding_origin: str = "income"
+    saving_goal_id: UUID | None = None
 
     @field_validator("amount")
     @classmethod
@@ -86,6 +88,14 @@ class ContributionInput(Input):
     def ordinary_amount(self):
         if not self.is_adjustment:
             money(self.amount)
+        if self.funding_origin not in {"income", "savings"}:
+            raise ValueError("Choose current income or savings as funding origin.")
+        if (self.funding_origin == "savings") != (self.saving_goal_id is not None):
+            raise ValueError("Savings funding requires exactly one saving goal.")
+        if self.funding_origin == "savings" and self.amount.startswith("-"):
+            raise ValueError(
+                "Use a linked refund for returned savings-funded payments."
+            )
         return self
 
 
@@ -98,3 +108,5 @@ class ContributionResult(BaseModel):
     is_adjustment: bool
     revision: int
     destination_id: UUID | None
+    funding_origin: str = "income"
+    saving_goal_id: UUID | None = None
