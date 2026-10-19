@@ -6,9 +6,10 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import ToolError, ValidationError
 from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.middleware import Middleware
 from pydantic import AfterValidator, AnyHttpUrl, Field
 from sqlalchemy.exc import IntegrityError
 
@@ -55,6 +56,17 @@ async def _safe(operation: Callable[[], Awaitable[Any]]) -> Any:
         ) from None
 
 
+class _SanitizeArguments(Middleware):
+    async def on_call_tool(self, context, call_next):
+        try:
+            return await call_next(context)
+        except ValidationError:
+            # Framework validation errors can include the supplied input value.
+            raise ToolError(
+                "invalid_arguments: Supply arguments matching the tool schema."
+            ) from None
+
+
 def create_mcp_server(
     config: Settings, sessions=async_session, verifier=None
 ) -> FastMCP:
@@ -76,6 +88,7 @@ def create_mcp_server(
         auth=auth,
         mask_error_details=True,
         strict_input_validation=True,
+        middleware=[_SanitizeArguments()],
         instructions=(
             "Use only the requested Entity. Unknown amounts are null, never zero. "
             "Starting a monthly Review selects an immutable saved Plan version; "
