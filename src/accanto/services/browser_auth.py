@@ -111,6 +111,9 @@ async def account_metadata(session, actor):
             .mappings()
             .all()
         )
+        if current.credential_kind == "oauth":
+            # Discovery may have waited for the same Entity locks as financial tools.
+            current = await revalidate_actor(session, current, lock=True)
         now = datetime.now(UTC)
         return {
             "user": {"id": str(user)},
