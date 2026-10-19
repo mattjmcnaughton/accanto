@@ -1,6 +1,7 @@
 # MVP-022 local MCP contract
 
-Status: D1 and D2 accepted by the user on 2026-10-19; implementation in progress.
+Status: D1 and D2 accepted by the user on 2026-10-19; local scope implemented,
+reviewed and verified. See work/MVP-022.md for exact evidence and limits.
 This contract does not establish hosted compatibility. Current issue #22 governs scope. No provider configuration,
 external resource, cost, publication or deployment is authorized.
 
