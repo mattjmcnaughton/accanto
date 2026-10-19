@@ -20,11 +20,12 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_linked_refunds_and_racing_writes():
-    asyncio.run(scenario())
+@pytest.mark.parametrize("race_case", ["refunds", "purchase_edit"])
+def test_linked_refunds_and_racing_writes(race_case):
+    asyncio.run(scenario(race_case))
 
 
-async def scenario():
+async def scenario(race_case):
     assert URL and URL.rsplit("/", 1)[-1].endswith("_test")
     engine = create_async_engine(URL)
     sessions = async_sessionmaker(engine)
@@ -40,6 +41,9 @@ async def scenario():
             .returning(m.entities.c.uuid)
         )
         key = await issue_key(session, user, "Synthetic refund test")
+        competing_key = await issue_key(
+            session, user, "Synthetic competing refund test"
+        )
     app = create_app()
 
     async def dependency():
@@ -54,12 +58,15 @@ async def scenario():
         headers={"Authorization": f"Bearer {key['key']}"},
     ) as client:
 
-        async def command(method, suffix, body):
+        async def command(method, suffix, body, *, credential=None):
             return await client.request(
                 method,
                 prefix + suffix,
                 json=body,
-                headers={"Idempotency-Key": str(uuid4())},
+                headers={
+                    "Idempotency-Key": str(uuid4()),
+                    "Authorization": f"Bearer {credential or key['key']}",
+                },
             )
 
         account = await command(
@@ -226,15 +233,25 @@ async def scenario():
             )
         assert (await client.get(prefix + "/activity")).json() == rows
         # Two writers see the same remaining amount; the Entity lock permits one.
-        winners = await asyncio.gather(
-            *[
-                command("POST", refund_path, {"date": "2026-11-05", "amount": "700.00"})
-                for _ in range(2)
-            ]
+        first_competitor = command(
+            "POST", refund_path, {"date": "2026-11-05", "amount": "700.00"}
         )
-        assert sorted(result.status_code for result in winners) == [200, 422], [
-            r.text for r in winners
-        ]
+        if race_case == "refunds":
+            winners = await asyncio.gather(
+                first_competitor,
+                command(
+                    "POST",
+                    refund_path,
+                    {"date": "2026-11-05", "amount": "700.00"},
+                    credential=competing_key["key"],
+                ),
+            )
+            assert sorted(result.status_code for result in winners) == [200, 422], [
+                r.text for r in winners
+            ]
+        else:
+            winners = [await first_competitor]
+            assert winners[0].status_code == 200, winners[0].text
         second = next(result.json() for result in winners if result.status_code == 200)
         assert second["remaining_refundable"] == "0.00"
         # Editing a refund replaces its old amount and preserves the original link.
@@ -280,25 +297,34 @@ async def scenario():
         )
         assert second_purchase_result.status_code == 200, second_purchase_result.text
         second_purchase = second_purchase_result.json()
-        competing = await asyncio.gather(
-            command(
-                "PUT",
-                f"/activity/{second_purchase['uuid']}",
-                {
-                    **second_purchase_body,
-                    "amount": "500.00",
-                    "expected_revision": 1,
-                },
-            ),
-            command(
+        edit_competitor = command(
+            "PUT",
+            f"/activity/{second_purchase['uuid']}",
+            {
+                **second_purchase_body,
+                "amount": "500.00",
+                "expected_revision": 1,
+            },
+        )
+        if race_case == "purchase_edit":
+            competing = await asyncio.gather(
+                edit_competitor,
+                command(
+                    "POST",
+                    f"/activity/{second_purchase['uuid']}/refunds",
+                    {"date": "2026-11-05", "amount": "700.00"},
+                    credential=competing_key["key"],
+                ),
+            )
+        else:
+            edited_purchase = await edit_competitor
+            rejected_refund = await command(
                 "POST",
                 f"/activity/{second_purchase['uuid']}/refunds",
-                {
-                    "date": "2026-11-05",
-                    "amount": "700.00",
-                },
-            ),
-        )
+                {"date": "2026-11-05", "amount": "700.00"},
+                credential=competing_key["key"],
+            )
+            competing = [edited_purchase, rejected_refund]
         assert sorted(result.status_code for result in competing) == [200, 422], [
             r.text for r in competing
         ]
