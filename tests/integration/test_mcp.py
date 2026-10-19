@@ -11,13 +11,13 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from accanto.mcp_auth import MCPTokenVerifier
-from accanto.mcp_server import create_mcp_app
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from accanto.app import create_app
 from accanto.db import get_session
+from accanto.mcp_auth import MCPTokenVerifier
+from accanto.mcp_server import create_mcp_app
 from accanto.models import monthly as m
 from accanto.services.api_keys import issue_key
 from tests.mcp_fixture import SyntheticMCPProvider
@@ -222,7 +222,11 @@ async def parity_scenario():
         foreign_prefix = f"/api/entities/{foreign}"
         foreign_plan = await api.post(
             foreign_prefix + "/plans",
-            json={"name": "Synthetic foreign Plan", "incomes": [], "spending": "0"},
+            json={
+                "name": "Synthetic foreign Plan",
+                "incomes": [{"name": "Synthetic foreign income", "amount": "0.00"}],
+                "spending": "0",
+            },
             headers={**foreign_headers, "Idempotency-Key": str(uuid4())},
         )
         assert foreign_plan.status_code == 200, foreign_plan.text

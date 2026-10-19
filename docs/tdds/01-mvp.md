@@ -1011,3 +1011,31 @@ components and suppress unknown/zero bases. Defaults remain provisional. Existin
 checkpoint canonical IDs/revisions already include all categories and are retained
 for compatibility: no upgrade invalidates old annotations, and another month's
 refund cannot mark this month changed merely by reducing remaining refundable.
+
+### MVP-022 local MCP resource contract
+
+The user accepted a bounded four-tool scope and JWT plus uncached introspection;
+[the explicit contract](../technical/mcp-contract-proposal.md) owns the fields.
+Standalone FastMCP4.1.0 supplies Streamable HTTP/resource metadata. A separate ASGI
+factory calls the same monthly/account services; no API-wide export or auth server.
+The only write starts a monthly Review using a saved version and request identity.
+It retains existing Entity locking, scoped saved-version validation, audit and
+retry outcome transaction. Planning and Review selection do not move money.
+Financial meanings/rules are unchanged; no cross-Plan matching is inferred.
+
+OAuth actors use a narrow verification callback at the existing access boundary.
+The service revalidates signed identity/current active status and resolves the
+provisioned exact issuer/subject, then checks current Entity ownership, including
+before replay. Another check follows Entity lock acquisition so wait-time
+revocation denies the operation. Existing actor/interface audit fields suffice:
+MCP writes retain User and `interface=mcp`, with API/session UUIDs null. No tokens
+persist, historical audit remains append-only and no migration/reset is needed.
+
+Verification adds signed local provider cases, metadata/challenge protocol checks,
+API/MCP projection parity, unknown actuals, explicit data exclusions, retry conflict,
+foreign Entity/version atomic rejection, access loss, provider revocation and a
+sampled revocation-during-lock-wait schedule. Existing financial/browser suites
+remain regression evidence. External revocation cannot be made atomic with the
+local DB commit; a change after the last successful introspection can race an
+in-flight operation. Current provider availability is required; calls fail closed.
+No local result establishes real-provider admission or ChatGPT/Claude hosted support.
