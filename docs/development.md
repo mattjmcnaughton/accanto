@@ -6,6 +6,36 @@ for admitted-user bootstrap, runtime database permissions and the monthly workfl
 The frontend lives in `src/accanto/web/frontend`. Vite proxies `/api`,
 `/healthz`, and `/readyz` to the backend on port 8000. Postgres runs on 5433.
 
+## Amp orb toolchain
+
+Like Aleph, `.agents/setup` prepares the development toolchain without starting
+the application. It installs Node 22.23.2 from `.nvmrc`, pnpm from the frontend's
+`packageManager` pin (11.21.0), just 1.58.0, Python 3.12, and backend/frontend
+dependencies from frozen lockfiles. Node and just downloads are checksum-verified.
+The orb supplies `curl`, `tar`, `xz`, and `uv`; no Docker daemon is assumed.
+
+Run `.agents/setup` to repeat installation safely. A repository-scoped login-shell
+hook makes the tools available to subsequent Amp commands and supervised services.
+Setup leaves `.env` untouched and does not configure Postgres, run migrations,
+seed identities, supply provider credentials, or install E2E browser tooling.
+`just gate` works without those services; integration and browser tests require
+the separate setup documented below. There is no domain behavior change.
+
+Amp runs setup when preparing an orb without an exact cached project snapshot;
+installed tools need no `.agents/resume` hook. These files must reach the default
+branch before new project orbs pick them up automatically.
+
+To run the app in an orb, first configure a disposable database and authentication
+as described below. Start servers through `amp orb service start`, not the local
+`just dev` background-process recipe. For example, the backend can be supervised
+with `amp orb service start accanto-backend --command 'just dev-be'`. Register
+public previews with `amp orb portal` and share its returned portal URL, not a
+loopback address. Browser sign-in requires the exact public HTTPS origin and a
+registered provider callback; never expose the auto-approving test OIDC fixture
+as a public provider. This bootstrap alone does not provide a signed-in preview.
+
+## Development checks and workspace
+
 Run `just gate` before committing. Backend unit tests need no database.
 The frontend typecheck target builds the app first to generate its route tree.
 Frontend unit tests run with `just test-unit-fe`. The production workspace requires
