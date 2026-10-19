@@ -53,6 +53,7 @@ playwright-report/
 
 # Local agent plans and working notes
 /.agentic/
+/.amp/portals/
 
 # Private financial exports and recovery data must never enter version control.
 accanto-prototype-*.json
