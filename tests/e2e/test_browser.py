@@ -316,6 +316,12 @@ def test_signed_in_workspace(tmp_path):
         )
         browser("find", "label", "Amount (USD)", "fill", "1200.00")
         browser("select", "select[name='funding-origin']", "savings")
+        browser(
+            "wait",
+            "--fn",
+            "Array.from(document.querySelector('select[name=\"saving-goal\"]').options)"
+            ".some(option => option.textContent.includes('Laptop'))",
+        )
         goal_option = (
             browser(
                 "eval",
