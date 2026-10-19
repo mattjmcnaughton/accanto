@@ -25,6 +25,7 @@ placing secrets, admitted private email addresses or private financial data in G
 | Neon persistence | Selected project/region/tier; encrypted connection/TLS settings and pooling compatibility for asyncpg; migration-owner versus restricted runtime credentials; configured retention and earliest/latest recoverable points, recovery granularity, restore procedure/target and limitations from actual account configuration | Awaiting provider evidence; no windows invented |
 | Recovery expectation | Explicitly accepted data-loss/recovery-time expectations derived from the configured provider capabilities, owner and escalation path; how to obtain the last confirmed recovery point and preserve the old database during restore | Awaiting provider evidence; no promised RPO/RTO |
 | Fly.io runtime | Selected app/region, image digest, private secret injection, database connectivity, HTTPS origin, health-check mapping/timeouts, logging redaction and release/migration orchestration | Awaiting configuration; no app/resources created |
+| Database diagnostics | Provider settings/log destinations excluding SQL statements, parameters and financial failing-row details; verify synthetic rejection evidence before release | Default local PostgreSQL diagnostics exposed synthetic rows; supplied Compose suppresses ordinary SQL-error payload logs. Hosted evidence pending |
 | Browser OIDC | Exact issuer/client/callback and verified-email admission; operator-bound issuer/subject; actual discovery/signature/nonce/S256 PKCE/code flow, redirect and cookie behavior, key rotation, denial and sign-out/session expiry/recovery evidence with synthetic identity | Local signed fixtures only; real compatibility unverified |
 | Hosted MCP | Separately authorized listener/public `/mcp` resource; exact audience/issuer/JWKS, uncached RFC7662 active introspection and confidential credentials; required scopes/claims; metadata/challenge/registration/consent/PKCE plus synthetic ChatGPT/Claude connection, revocation and outage checks | MVP-022 local scope merged; hosted gate outstanding |
 | Credential recovery | Protected post-recovery-point revocation/access-change reconciliation source and responsible operator; ability to deny access while reconciling restored state | Required procedure/evidence pending; never retain raw tokens in a ledger |
@@ -64,6 +65,13 @@ configuration is implicitly authorized by the local implementation.
    Do not enable HTTP-client/SQL debug logging, request tracing/analytics or MCP
    argument/error capture. Secret-manager/audit operational records must exclude
    secret values; financial audit snapshots belong only in the protected database.
+   Apply privacy controls to database diagnostics too: PostgreSQL defaults can
+   retain statements and failing-row details even when application logs are safe.
+   The local Compose command suppresses ordinary SQL error messages, statements,
+   duration and parameter logging; safe application error codes remain. This
+   intentionally sacrifices raw database-error diagnostics. Confirm actual provider
+   controls/log sinks with synthetic failures; application redaction alone is
+   insufficient. Do not assume a hosted tier supports these settings unchanged.
 6. Probe `/healthz` (process liveness) and `/readyz` (DB reachable with exactly the
    supported Alembic revision). A503 must stop admission; liveness does not establish
    readiness. These probes do not verify runtime grants, OIDC/MCP availability or

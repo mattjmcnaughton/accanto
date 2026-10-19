@@ -41,3 +41,11 @@ See [deployment and recovery](deployment.md) for the agreed Fly.io/Neon directio
 pending provider evidence and compatible rollback requirements. Custom recovery
 drills and prototype import/export/reset are excluded. Financial examples used in
 this wave are deliberately invented fixtures; no personal database/browser is used.
+
+Telemetry boundary: real-server tests cover application validation/storage errors
+and callback-query redaction. Default local PostgreSQL diagnostics separately
+exposed synthetic failing-row details/statements. The supplied Compose command now
+suppresses these ordinary SQL-error payload logs; the opt-in
+`tests/postgres_telemetry_probe.py` exercises a real constraint rejection in a new
+synthetic container without attaching existing databases or exporting logs. Actual
+provider database/proxy logging controls and log destinations remain release gates.
