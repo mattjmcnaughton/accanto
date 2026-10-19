@@ -602,6 +602,20 @@ def test_signed_in_workspace(tmp_path):
         browser("wait", "--text", "Latest observed amount owed: $0.00 on 2026-10-01")
         browser("find", "role", "button", "click", "--name", "Archive loan", "--exact")
         browser("wait", "--text", "Synthetic loan (archived)")
+        # The archived label alone does not establish that the next control is
+        # enabled and unobstructed after the asynchronous view update.
+        browser(
+            "wait",
+            "--fn",
+            "(() => { const button = Array.from(document.querySelectorAll('button'))"
+            ".find(b => b.textContent.trim() === 'Reopen loan'); "
+            "if (!button || button.disabled) return false; "
+            "button.scrollIntoView({block: 'center', inline: 'nearest'}); "
+            "const r = button.getBoundingClientRect(); "
+            "const hit = document.elementFromPoint(r.x + r.width / 2, "
+            "r.y + r.height / 2); "
+            "return hit === button || button.contains(hit); })()",
+        )
         browser("find", "role", "button", "click", "--name", "Reopen loan", "--exact")
         browser("wait", "--text", "Archive loan")
         # MVP-019: one isolated synthetic lifecycle journey through production UI.
