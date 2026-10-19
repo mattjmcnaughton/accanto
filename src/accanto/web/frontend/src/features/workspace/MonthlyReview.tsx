@@ -322,9 +322,9 @@ export function MonthlyReview(p: ScreenProps) {
           </section>
           {"savings_used" in state.data.actual && (
             <p>
-              Spending funded from previously saved money:{" "}
-              {dollars(state.data.actual.savings_used ?? null)}. This is included in spending and
-              does not add income.
+              Recorded outflows funded from savings:{" "}
+              {dollars(state.data.actual.savings_used ?? null)}. These are counted once in their
+              categories and do not add income.
             </p>
           )}
           {state.data.actual.missing_sources.length > 0 && (

@@ -121,6 +121,7 @@ async def scenario():
             "POST", "/reviews", {"month": "2026-10-01", "version_id": version["uuid"]}
         )
         empty = await read()
+        assert "comparison" in empty
         assert all(
             c["recorded"] is None and c["difference"] is None
             for c in empty["comparison"].values()
