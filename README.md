@@ -4,12 +4,14 @@ A financial companion for planning a rich life: conscious spending, giving,
 experiences, consumption, saving, and financial independence.
 
 The production frontend uses browser sign-in and the authenticated API for
-income/spending Plans, dated activity, monthly Reviews, and independent income
-estimates with Postgres persistence.
+Plans with all delivered allocations, dated activity and funding origins, monthly
+Reviews, independent income estimates, savings lifecycle, refunds, destinations
+and loan observations with Postgres persistence.
 Plans have editable drafts and immutable saved versions; Reviews retain their chosen
 comparison. Failed writes preserve attempted input for explicit recovery in the same
 tab. Estimate results are entered into Plans manually; there is no live link.
-Remaining financial categories are tracked in the [MVP tickets](docs/technical/tickets/01-mvp.md).
+Coverage and outstanding release gates are recorded in the
+[readiness matrix](docs/technical/release-readiness.md).
 See [API usage](docs/api.md) and [browser configuration](docs/development.md#browser-identity-setup-manual-provider-configuration).
 
 ## Run the production workspace
@@ -49,7 +51,7 @@ just dev
 
 - Frontend: http://localhost:5173
 - Backend and API docs: http://localhost:8000/docs
-- Liveness: `/healthz`; database readiness: `/readyz`
+- Liveness: `/healthz`; database/schema readiness: `/readyz`
 - Postgres: localhost:5433 (kept separate from the usual 5432 port)
 
 `just dev-be` and `just dev-fe` start either server individually. Ctrl-C stops
@@ -69,7 +71,9 @@ Local agent-browser acceptance covers the real API/Postgres monthly journey usin
 synthetic data; the prototype browser suite is retired. Hosted provider compatibility
 remains a manual release check.
 Backend integration tests exercise the monthly API against an explicitly configured local
-test database; see [development](docs/development.md). Backend E2E remains pending.
+test database; see [development](docs/development.md). The real browser journey
+uses that API and a local signed OIDC fixture; it does not establish hosted identity
+compatibility.
 
 The backend tests cover liveness, frontend deep-link serving, and preserving
 404 responses for missing APIs and assets, plus pure Decimal domain rules. The
@@ -91,6 +95,8 @@ development guide. Run migrations using
 `alembic upgrade head` inside the image against the same database before startup.
 No deployment, browser identity provider, hosted MCP, or AI provider is configured.
 Use a separate restricted database runtime role as described in the API guide.
+[Deployment and recovery](docs/technical/deployment.md) records compatible rollback
+and provider evidence requirements; it does not authorize deployment.
 
 ## Product and architecture
 

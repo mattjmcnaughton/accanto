@@ -1,10 +1,22 @@
 # Git
 .git/
 .gitignore
+.agentic/
+.agents/
+.claude/
+.codex/
+private-data/
+accanto-prototype-*.json
+accanto-recovery.json
+**/test-results/
+**/playwright-report/
+**/coverage/
 
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
+**/*.py[cod]
 *$py.class
 *.egg-info/
 dist/
@@ -38,11 +50,23 @@ Thumbs.db
 # Environment
 .env
 .env.*
+**/.env
+**/.env.*
 !.env.example
 
 # SQLite
 *.db
 *.sqlite3
+*.sql
+*.dump
+*.backup
+**/*.db
+**/*.sqlite3
+**/*.sql
+**/*.dump
+**/*.backup
+**/accanto-prototype-*.json
+**/accanto-recovery.json
 
 # Docker
 Dockerfile

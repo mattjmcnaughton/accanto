@@ -1,0 +1,126 @@
+# Deployment, compatible rollback and recovery
+
+Preparation only: no deployment or provider configuration has been executed.
+Fly.io plus Neon is the agreed hosting direction in the [MVP TDD](../tdds/01-mvp.md).
+These instructions require a separate authorized release action. Local readiness
+results are in [MVP-023](work/MVP-023.md), with the [PRD matrix](release-readiness.md).
+No provider tier, backup window, recovery objective or hosted compatibility is
+asserted here. Custom backup/recovery drills remain deferred.
+
+## Release prerequisites and evidence
+
+Before exposing a release, record the exact immutable candidate/image digest,
+previous compatible image digest, schema revision and the required CI results for
+that candidate (`gate`, `integration`, `e2e`). Local passes do not satisfy hosted CI.
+Inspect code/assets inventories, synthetic-data provenance and the final build
+context; never build from a checkout containing personal financial working data.
+Images must contain no browser storage, financial exports, fixtures, databases,
+task worktrees, credentials, frontend test sources or runtime dependency caches.
+
+The operator must collect these concrete provider/configuration facts without
+placing secrets, admitted private email addresses or private financial data in Git:
+
+| Gate | Required evidence/configuration | Current status |
+| --- | --- | --- |
+| Neon persistence | Selected project/region/tier; encrypted connection/TLS settings and pooling compatibility for asyncpg; migration-owner versus restricted runtime credentials; configured retention and earliest/latest recoverable points, recovery granularity, restore procedure/target and limitations from actual account configuration | Awaiting provider evidence; no windows invented |
+| Recovery expectation | Explicitly accepted data-loss/recovery-time expectations derived from the configured provider capabilities, owner and escalation path; how to obtain the last confirmed recovery point and preserve the old database during restore | Awaiting provider evidence; no promised RPO/RTO |
+| Fly.io runtime | Selected app/region, image digest, private secret injection, database connectivity, HTTPS origin, health-check mapping/timeouts, logging redaction and release/migration orchestration | Awaiting configuration; no app/resources created |
+| Browser OIDC | Exact issuer/client/callback and verified-email admission; operator-bound issuer/subject; actual discovery/signature/nonce/S256 PKCE/code flow, redirect and cookie behavior, key rotation, denial and sign-out/session expiry/recovery evidence with synthetic identity | Local signed fixtures only; real compatibility unverified |
+| Hosted MCP | Separately authorized listener/public `/mcp` resource; exact audience/issuer/JWKS, uncached RFC7662 active introspection and confidential credentials; required scopes/claims; metadata/challenge/registration/consent/PKCE plus synthetic ChatGPT/Claude connection, revocation and outage checks | MVP-022 local scope merged; hosted gate outstanding |
+| Credential recovery | Protected post-recovery-point revocation/access-change reconciliation source and responsible operator; ability to deny access while reconciling restored state | Required procedure/evidence pending; never retain raw tokens in a ledger |
+
+Use the concrete [browser settings](../development.md#browser-identity-setup-manual-provider-configuration)
+and [MCP contract](mcp-contract-proposal.md). Do not substitute local auto-approving
+fixtures for real registration, change cookie protections, infer account access
+from email or expose fixture providers. The existing tailnet demo route is outside
+this work and must remain unchanged. MCP is a separate listener; no proxy/resource
+configuration is implicitly authorized by the local implementation.
+
+## Install and start after authorization
+
+1. Build from the reviewed revision using the locked dependencies and Dockerfile:
+   `docker build -t accanto:<reviewed-revision> .`. Record image digest and inventory.
+   Do not bake runtime credentials into image layers, arguments or build context.
+2. Connect a migration job using the database owner credential supplied by private
+   secret management. Record current Alembic revision, candidate target and provider
+   recovery-point/retention evidence. For a new empty database, use `alembic upgrade
+   head`; for an existing database, use the same additive upgrade path. Do not
+   reset, recreate, truncate or downgrade a populated database to repair startup.
+   Serialize migrations and hold traffic if compatibility is uncertain. This wave
+   adds no migration; current supported revision is `5k019`.
+3. Create/configure a distinct runtime login through the provider's approved secret
+   path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
+   and have no inherited privileged roles or ability to disable triggers. Apply the
+   [runtime grant recipe](../api.md#local-setup-and-credentials), including audit
+   SELECT/INSERT only, no TRUNCATE, and revocation of public schema CREATE. Review
+   effective role memberships and reapply narrowly after additive migrations.
+4. Inject runtime `DATABASE_URL` with verified provider TLS configuration, browser
+   settings and CSRF secret. Never run the web/MCP process with migration ownership.
+   Provision an already verified issuer/subject using the trusted bootstrap terminal;
+   its one-time API-key output is a secret and must not enter release logs.
+5. Start the image's supplied non-root Uvicorn command with access logging disabled.
+   It serves the built SPA and authenticated API on8000. Configure trusted HTTPS
+   routing without logging bodies, query strings, cookies or Authorization headers.
+   Do not enable HTTP-client/SQL debug logging, request tracing/analytics or MCP
+   argument/error capture. Secret-manager/audit operational records must exclude
+   secret values; financial audit snapshots belong only in the protected database.
+6. Probe `/healthz` (process liveness) and `/readyz` (DB reachable with exactly the
+   supported Alembic revision). A503 must stop admission; liveness does not establish
+   readiness. These probes do not verify runtime grants, OIDC/MCP availability or
+   assets. Separately verify a deep link serves the SPA, missing assets/API remain404,
+   private responses are no-store, and a synthetic sign-in/financial loop succeeds.
+   No production financial fixture should populate an ordinary user's workspace.
+7. Start/expose the separate MCP listener only after its separately approved provider
+   configuration and interoperability gates pass. Keep financial tools bounded to
+   the accepted four-tool contract. Plan/Review operations never move money.
+
+## Compatible application rollback
+
+Stop admission/writes first if data integrity is uncertain. Retain current image,
+schema revision and diagnostic operation/error identifiers without payloads.
+Select the recorded previous image only when its code can read the current schema
+and safely preserve all newer rows, flags, categories, saved snapshots, nullable
+session/MCP audit attribution, retry outcomes and revocation state. Demonstrate
+compatibility against synthetic populated current-schema data before switching.
+This wave introduces no schema change; its source base and candidate share5k019.
+That is a compatibility prerequisite, not proof every older app is safe.
+
+Do not run `alembic downgrade` for an application rollback. The initial downgrade
+drops tables, and older session/audit or lifecycle implementations can destroy or
+misinterpret history. If compatibility is unverified, keep writes stopped and use
+a reviewed forward repair. A previous image's permissive `/readyz` must not be
+used as the compatibility decision. Preserve request identities during uncertain
+responses; do not tell clients to resubmit with new identities.
+
+## Provider restoration and access reconciliation
+
+When separately authorized, follow the configured provider's documented restore
+procedure and actual available recovery points; preserve the original database
+and point-in-time evidence. Do not invent provider windows or perform a custom
+recovery drill under this local wave. Keep application/public access disabled
+while validating the restored target. Confirm schema, immutable versions/lines,
+stable UUIDs, audit, activity/deletion/funding relationships and retry outcomes
+before selecting a compatible application revision. Restoration can lose changes
+after its recovery point; a replay outcome lost with that data cannot safely be
+assumed to have survived. Reconcile uncertain operations explicitly before retry.
+
+A restored DB may resurrect revoked API keys, browser sessions or old ownership.
+Reconcile post-point revocations/access changes from the protected operator source
+before reopening access. If reliable reconciliation is unavailable, invalidate all
+restored API keys and browser sessions using separately authorized operator actions,
+reissue keys deliberately and require fresh sign-in; invalidate restored pending
+OIDC login transactions too. Rotating only the CSRF secret does not revoke sessions
+or API keys. Credential invalidation cannot repair restored ownership: independently
+reconstruct and explicitly reauthorize current User-to-Entity access before allowing
+any fresh sign-in/API/MCP use. If that authorization state cannot be established,
+keep access closed even after invalidating credentials. Do not rewrite append-only
+financial audit to simulate revocations.
+Preserve and audit/document the authorized credential actions without raw secrets.
+
+For MCP, verify current provider revocation/introspection and exact restored
+issuer/subject/Entity ownership independently; uncached introspection cannot repair
+restored local ownership changes. Provider outages fail closed, and revocation
+after the last successful check can still race an in-flight commit. Reopen traffic
+only after the operator accepts the restored recovery point, data reconciliation,
+effective runtime grants and access checks. These are requirements awaiting provider
+evidence, not an executed recovery claim.
