@@ -102,3 +102,42 @@ def test_incomplete_expected_outflows_withhold_net_saving_but_keep_subtotal():
         summary(comparisons, [{"category": "spending", "amount": "0.00"}])["net_saving"]
         == "500.00"
     )
+
+
+def test_unknown_spending_withholds_net_saving_even_when_other_outflows_known():
+    comparisons = {
+        "saving": {"recorded": "500.00", "incomplete": False},
+        "investing": {
+            "recorded": "1000.00",
+            "incomplete": False,
+            "items": [{"recorded": "1000.00"}],
+        },
+        "fixed_cost": {"recorded": "0.00", "incomplete": False, "items": []},
+        "giving": {"recorded": "0.00", "incomplete": False, "items": []},
+        "spending": {"recorded": None, "incomplete": True},
+    }
+    entries = [
+        {"category": "investing", "amount": "1000.00", "funding_origin": "savings"}
+    ]
+    unknown = summary(comparisons, entries)
+    assert unknown["savings_used"] == "1000.00"
+    assert unknown["savings_used_incomplete"]
+    assert unknown["net_saving"] is None
+    assert (
+        ratio("actual", "Net saving", unknown["net_saving"], "net income", "4000.00")[
+            "percentage"
+        ]
+        is None
+    )
+    comparisons["spending"] = {"recorded": "0.00", "incomplete": False}
+    complete = summary(
+        comparisons, [*entries, {"category": "spending", "amount": "0.00"}]
+    )
+    assert not complete["savings_used_incomplete"]
+    assert complete["net_saving"] == "-500.00"
+    assert (
+        ratio("actual", "Net saving", complete["net_saving"], "net income", "4000.00")[
+            "percentage"
+        ]
+        == "-12.50"
+    )

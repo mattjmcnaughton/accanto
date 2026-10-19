@@ -203,6 +203,32 @@ async def scenario():
                 "saving_goal_id": goal,
             },
         )
+        zero_outflows = []
+        for path, identity in (
+            ("/investment-activity", investment["uuid"]),
+            ("/giving-activity", recipient["uuid"]),
+        ):
+            zero = await command(
+                "POST",
+                path,
+                {"date": "2026-10-07", "amount": "0.00", "destination_id": identity},
+            )
+            zero_outflows.append((path, zero))
+        missing_spending = await read()
+        assert missing_spending["comparison"]["spending"]["recorded"] is None
+        assert all(
+            not missing_spending["comparison"][category]["incomplete"]
+            for category in ("fixed_cost", "investing", "giving", "saving")
+        )
+        assert missing_spending["summary"]["savings_used"] == "0.00"
+        assert missing_spending["summary"]["savings_used_incomplete"]
+        assert missing_spending["summary"]["net_saving"] is None
+        for path, zero in zero_outflows:
+            await command(
+                "DELETE",
+                f"{path}/{zero['uuid']}",
+                {"expected_revision": zero["revision"]},
+            )
         purchase = await command(
             "POST",
             "/activity",

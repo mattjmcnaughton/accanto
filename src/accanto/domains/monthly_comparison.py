@@ -58,7 +58,7 @@ def summary(comparisons, entries):
         if outflows
         else None
     )
-    missing_outflows = any(
+    missing_outflows = comparisons.get("spending", {}).get("incomplete", False) or any(
         item["recorded"] is None
         for category in ("fixed_cost", "investing", "giving")
         for item in comparisons.get(category, {}).get("items", [])
