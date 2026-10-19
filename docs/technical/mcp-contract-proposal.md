@@ -1,4 +1,4 @@
-# MVP-022 proposed local MCP contract
+# MVP-022 local MCP contract
 
 Status: D1 and D2 accepted by the user on 2026-10-19; implementation in progress.
 This contract does not establish hosted compatibility. Current issue #22 governs scope. No provider configuration,
@@ -14,7 +14,7 @@ external resource, cost, publication or deployment is authorized.
    signature-only JWT validation cannot detect provider revocation immediately.
    No generic provider framework or authorization/token-issuance endpoint.
 
-## Proposed tools and released data
+## Agreed tools and released data
 
 All identifiers are public UUIDs, never relational integers. All money and ratios
 are decimal strings or null. Date-only month arguments must be the first day of
@@ -54,7 +54,7 @@ invalid authentication must fail at the protocol boundary. Do not echo arbitrary
 exceptions, SQL parameters, request payloads or token claims. Responses use no-store;
 server/proxy telemetry excludes financial values/notes and all credentials.
 
-## Proposed identity and transport contract
+## Agreed identity and transport contract
 
 Run a separately configured FastMCP Streamable HTTP resource application, disabled
 unless all required configuration validates. Keep browser/API routes unchanged;
@@ -83,18 +83,18 @@ MCP writes retain actor/interface attribution without pretending to be API keys
 or browser sessions. Existing audit rows remain unchanged. Inspect whether an
 additive migration is actually needed for attribution before reserving one.
 
-## Concrete future configuration instructions
+## Configuration instructions
 
-These are proposed variable names, not implemented settings yet:
+Set these implemented settings through environment/secret management:
 
-- MCP_RESOURCE_URL: exact HTTPS resource URL (including /mcp when applicable).
+- MCP_RESOURCE_URL: exact HTTPS resource URL, with path exactly /mcp (no prefix/query).
 - MCP_ISSUER: exact external issuer, including required path/trailing slash.
 - MCP_JWKS_URI: trusted HTTPS JWKS endpoint; never read a URL from token headers.
 - MCP_INTROSPECTION_URL: trusted HTTPS RFC 7662 endpoint.
 - MCP_INTROSPECTION_CLIENT_ID / MCP_INTROSPECTION_CLIENT_SECRET: resource-server
   confidential introspection credential, supplied only through secret management.
 - MCP_ALLOWED_EMAILS: JSON array of admitted verified email addresses.
-- Proposed scopes: accanto:read for reads, accanto:review for starting a Review.
+- Scopes: accanto:read for reads, accanto:review for starting a Review.
 
 Only loopback fixture URLs may use HTTP. Pin standalone fastmcp==4.1.0 and use the
 project lockfile. Provision the exact existing User issuer/subject independently;
@@ -118,7 +118,7 @@ read projection, Review write/retry, denial after access loss and provider
 revocation. No such hosted checks have run. Record client/provider versions and
 limits; local signed fixtures never establish hosted support.
 
-## Verification planned after agreement
+## Verification boundary
 
 Use a synthetic local signed issuer and introspection fixture with generated keys,
 no provider accounts. Test discovery metadata and challenge; signature/issuer/

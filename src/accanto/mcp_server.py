@@ -10,7 +10,7 @@ from fastmcp.exceptions import ToolError, ValidationError
 from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import Middleware
-from pydantic import AfterValidator, AnyHttpUrl, Field
+from pydantic import AfterValidator, AnyHttpUrl, Field, TypeAdapter, UrlConstraints
 from sqlalchemy.exc import IntegrityError
 
 from accanto.config import Settings
@@ -77,7 +77,11 @@ def create_mcp_server(
         raise ValueError("MCP_RESOURCE_URL must end with /mcp.")
     auth = RemoteAuthProvider(
         token_verifier=verifier,
-        authorization_servers=[AnyHttpUrl(config.mcp_issuer)],
+        authorization_servers=[
+            TypeAdapter(
+                Annotated[AnyHttpUrl, UrlConstraints(preserve_empty_path=True)]
+            ).validate_python(config.mcp_issuer)
+        ],
         base_url=resource.removesuffix("/mcp"),
         scopes_supported=["accanto:read", "accanto:review"],
         challenge_scopes=["accanto:read"],
