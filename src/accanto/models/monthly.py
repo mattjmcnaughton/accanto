@@ -255,6 +255,7 @@ entries = table(
     Column("amount", Numeric(14, 2), nullable=False),
     Column("note", String(2000), nullable=False),
     Column("is_adjustment", Boolean, nullable=False, server_default="false"),
+    Column("is_refund", Boolean, nullable=False, server_default="false"),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("deleted_at", DateTime(timezone=True)),
     CheckConstraint(
@@ -262,7 +263,7 @@ entries = table(
         "'investing', 'giving', 'fixed_cost')"
     ),
     CheckConstraint("amount BETWEEN -999999999.99 AND 999999999.99"),
-    CheckConstraint("is_adjustment OR amount >= 0"),
+    CheckConstraint("is_adjustment OR is_refund OR amount >= 0"),
     UniqueConstraint("id", "entity_id"),
     UniqueConstraint("recording_order"),
 )

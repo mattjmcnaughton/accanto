@@ -195,6 +195,17 @@ async def entry_snapshot(session, kind, entry):
         if destination_id is not None
         else None
     )
+    from accanto.models import savings as s
+    from accanto.services.savings import current_link
+
+    link = await current_link(session, entry["id"])
+    goal_uuid = (
+        await session.scalar(
+            select(s.goals.c.uuid).where(s.goals.c.id == link["goal_id"])
+        )
+        if link
+        else None
+    )
     return {
         "uuid": str(entry["uuid"]),
         "financial_date": entry["financial_date"].isoformat(),
@@ -204,6 +215,8 @@ async def entry_snapshot(session, kind, entry):
         "is_adjustment": entry["is_adjustment"],
         "revision": entry["revision"],
         "destination_id": str(destination_uuid) if destination_uuid else None,
+        "funding_origin": "savings" if link else "income",
+        "saving_goal_id": str(goal_uuid) if goal_uuid else None,
     }
 
 
@@ -245,6 +258,19 @@ async def write_contribution(session, entity, operation, payload, target, audit)
         if old["deleted_at"] is not None:
             raise RejectionError("deleted_entry", "Entry has already been deleted.")
         before = await entry_snapshot(session, kind, old)
+        from accanto.models import refunds as r
+        from accanto.services.refunds import validate_purchase_edit
+
+        if await session.scalar(
+            select(r.refunds.c.id).where(r.refunds.c.refund_entry_id == old["id"])
+        ):
+            raise RejectionError(
+                "linked_refund", "Use the linked refund workflow.", 422
+            )
+        if category == "giving":
+            await validate_purchase_edit(
+                session, old, before, payload, deleting=action == "delete"
+            )
         previous_id = await session.scalar(
             select(assignment.c[foreign_key]).where(
                 assignment.c.actual_entry_id == old["id"]
@@ -263,6 +289,12 @@ async def write_contribution(session, entity, operation, payload, target, audit)
             )
             .mappings()
             .one()
+        )
+        from accanto.services.savings import attach_entry, current_link
+
+        previous_link = await current_link(session, old["id"])
+        await attach_entry(
+            session, entity, updated, previous_link, None, audit, category
         )
         response = await entry_snapshot(session, kind, updated)
         await audit(m.entries, updated["uuid"], before, response)
@@ -308,6 +340,20 @@ async def write_contribution(session, entity, operation, payload, target, audit)
         (await session.execute(statement.values(**values).returning(m.entries)))
         .mappings()
         .one()
+    )
+    from accanto.services.savings import attach_entry, current_link
+
+    previous_link = await current_link(session, old["id"]) if old else None
+    await attach_entry(
+        session,
+        entity,
+        updated,
+        previous_link,
+        payload.get("saving_goal_id")
+        if payload.get("funding_origin") == "savings"
+        else None,
+        audit,
+        category if old else None,
     )
     if destination and destination["id"] != previous_id:
         if previous_id is not None:
