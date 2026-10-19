@@ -141,19 +141,20 @@ async def scenario(race_case=None):
         }
         purchase = await accepted("POST", "/activity", purchase_body)
         if race_case:
-            # A scoped delay enlarges overlap after each writer's validation. It
-            # does not supply synchronization: independent credentials must rely
-            # on the production Entity lock. Clean up only this test's trigger.
+            # Delay at the final retry-outcome insert, after every financial read
+            # including response snapshots. An earlier audit delay could let a
+            # repeated balance read mask a missing Entity lock. Independent keys
+            # ensure the production Entity lock supplies serialization.
             trigger = "lifecycle_overlap_" + uuid4().hex
             async with engine.begin() as connection:
                 await connection.execute(
                     text(f"""CREATE FUNCTION {trigger}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
-                    IF NEW.action IN ('archive_saving_account', 'create_entry', 'complete_saving_goal', 'edit_refund')
+                    IF split_part(NEW.operation, ':', 1) IN ('archive_saving_account', 'create_entry', 'complete_saving_goal', 'edit_refund')
                     THEN PERFORM pg_sleep(0.25); END IF; RETURN NEW; END $$""")
                 )
                 await connection.execute(
                     text(
-                        f"CREATE TRIGGER {trigger} BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION {trigger}()"
+                        f"CREATE TRIGGER {trigger} BEFORE INSERT ON idempotency_outcome FOR EACH ROW EXECUTE FUNCTION {trigger}()"
                     )
                 )
             try:
@@ -222,7 +223,7 @@ async def scenario(race_case=None):
             finally:
                 async with engine.begin() as connection:
                     await connection.execute(
-                        text(f"DROP TRIGGER {trigger} ON audit_log")
+                        text(f"DROP TRIGGER {trigger} ON idempotency_outcome")
                     )
                     await connection.execute(text(f"DROP FUNCTION {trigger}()"))
             return
