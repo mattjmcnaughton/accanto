@@ -31,7 +31,22 @@ export function Metrics({ metrics, title }: { metrics: Metric[]; title: string }
     </section>
   );
 }
-function Contributors({ entries }: { entries: Activity[] }) {
+function Contributors({
+  entries,
+}: {
+  entries: Array<
+    Pick<
+      Activity,
+      | "uuid"
+      | "financial_date"
+      | "amount"
+      | "funding_origin"
+      | "is_adjustment"
+      | "is_refund"
+      | "note"
+    >
+  >;
+}) {
   return entries.length ? (
     <ul>
       {entries.map((entry) => (
@@ -58,7 +73,10 @@ const labels = {
 };
 export function ReviewDetails({
   review,
-}: { review: Pick<ReviewResult, "comparison" | "summary" | "metrics"> }) {
+}: {
+  review: Pick<ReviewResult, "comparison" | "summary" | "metrics"> &
+    Partial<Pick<ReviewResult, "entries">>;
+}) {
   return (
     <>
       {review.comparison && (
@@ -87,6 +105,14 @@ export function ReviewDetails({
                   <Contributors entries={item.entries} />
                 </details>
               ))}
+              {category === "spending" && review.entries && (
+                <details>
+                  <summary>Contributing spending entries</summary>
+                  <Contributors
+                    entries={review.entries.filter((entry) => entry.category === "spending")}
+                  />
+                </details>
+              )}
               {group.unplanned.length > 0 && (
                 <details>
                   <summary>Unplanned {labels[category as keyof typeof labels]} activity</summary>
@@ -108,8 +134,9 @@ export function ReviewDetails({
           <h3>Same-month saving and funding</h3>
           <p>
             New saving {dollars(review.summary.new_saving)} − savings used{" "}
-            {dollars(review.summary.savings_used)} = net saving {dollars(review.summary.net_saving)}
-            .
+            {dollars(review.summary.savings_used)}
+            {review.summary.savings_used_incomplete && " (incomplete)"} = net saving{" "}
+            {dollars(review.summary.net_saving)}.
           </p>
           <p>
             Total investment contributions: {dollars(review.summary.total_investing)}. Income-funded
