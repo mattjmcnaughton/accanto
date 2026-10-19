@@ -1075,6 +1075,9 @@ async def write(
             "edit_saving_account",
             "create_saving_goal",
             "edit_saving_goal",
+            "complete_saving_goal",
+            "archive_saving_account",
+            "reopen_saving_account",
         }:
             from accanto.services.savings import write_savings
 
