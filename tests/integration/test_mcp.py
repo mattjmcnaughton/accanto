@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from accanto.app import create_app
@@ -387,3 +387,115 @@ async def parity_scenario():
         )
         assert (await protocol.call("list_entities"))["entities"] == []
         assert await counts() == baseline
+
+
+def test_mcp_revalidates_after_entity_lock_and_never_links_email():
+    asyncio.run(lock_and_admission_scenario())
+
+
+async def lock_and_admission_scenario():
+    async with environment() as (provider, protocol, api, sessions, entity, _, _):
+        # Same verified email is deliberately insufficient for User admission.
+        async with sessions() as session:
+            before_users = await session.scalar(
+                select(func.count()).select_from(m.users)
+            )
+        unprovisioned = await protocol.request(
+            "tools/call",
+            {"name": "list_entities", "arguments": {}},
+            token=provider.token(sub=f"synthetic-unprovisioned-{uuid4()}"),
+        )
+        assert unprovisioned.status_code == 200, unprovisioned.text
+        assert unprovisioned.json()["result"]["isError"] is True
+        async with sessions() as session:
+            assert (
+                await session.scalar(select(func.count()).select_from(m.users))
+                == before_users
+            )
+        invalid = await protocol.call(
+            "get_monthly_review",
+            {
+                "entity_id": "synthetic-invalid-input-must-not-be-echoed",
+                "month": "2026-10-01",
+            },
+            error=True,
+        )
+        assert "synthetic-invalid-input-must-not-be-echoed" not in str(invalid)
+        prefix = f"/api/entities/{entity['uuid']}"
+        plan = await api.post(
+            prefix + "/plans",
+            json={
+                "name": "Synthetic lock-wait plan",
+                "spending": "0.00",
+                "incomes": [{"name": "Synthetic income", "amount": "100.00"}],
+            },
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert plan.status_code == 200, plan.text
+        version = await api.post(
+            prefix + f"/plans/{plan.json()['plan_id']}/versions",
+            json={"expected_revision": 1},
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        assert version.status_code == 200, version.text
+        args = {
+            "entity_id": str(entity["uuid"]),
+            "month": "2026-10-01",
+            "version_id": version.json()["version"]["uuid"],
+            "idempotency_key": str(uuid4()),
+        }
+        accepted = await protocol.call("start_monthly_review", args)
+        async with sessions() as session:
+            before_audit = await session.scalar(
+                select(func.count())
+                .select_from(m.audit)
+                .where(m.audit.c.entity_id == entity["id"])
+            )
+        # Hold the actual database serialization lock, then observe the MCP
+        # request waiting there. Revocation must prevent even a recorded retry.
+        async with sessions() as blocker, blocker.begin():
+            await blocker.execute(
+                select(m.entities)
+                .where(m.entities.c.id == entity["id"])
+                .with_for_update()
+            )
+            pending = asyncio.create_task(
+                protocol.call("start_monthly_review", args, error=True)
+            )
+            try:
+                async with asyncio.timeout(5):
+                    while True:
+                        async with sessions() as observer:
+                            waiting = await observer.scalar(
+                                text(
+                                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
+                                    "WHERE datname=current_database() "
+                                    "AND pid <> pg_backend_pid() "
+                                    "AND wait_event_type='Lock' "
+                                    "AND query ILIKE '%FROM entity%' "
+                                    "AND query ILIKE '%FOR UPDATE%')"
+                                )
+                            )
+                        if waiting:
+                            break
+                        await asyncio.sleep(0.01)
+                assert not pending.done()
+                provider.active = False
+            except BaseException:
+                pending.cancel()
+                await asyncio.gather(pending, return_exceptions=True)
+                raise
+        try:
+            await asyncio.wait_for(pending, timeout=5)
+        finally:
+            provider.active = True
+        assert await protocol.call("start_monthly_review", args) == accepted
+        async with sessions() as session:
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(m.audit)
+                    .where(m.audit.c.entity_id == entity["id"])
+                )
+                == before_audit
+            )
