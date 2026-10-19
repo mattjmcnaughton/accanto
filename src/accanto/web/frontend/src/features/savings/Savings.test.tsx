@@ -130,7 +130,7 @@ it("previews completion return and submits the displayed revision and amount", a
   );
   const p = props();
   render(<Savings {...p} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Complete First", exact: true }));
+  fireEvent.click(await screen.findByRole("button", { name: "Complete First" }));
   expect(screen.getByText(/Return \$50.00 to Unallocated savings/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Confirm complete" }));
   expect(p.save).toHaveBeenCalledWith(
