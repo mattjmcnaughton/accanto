@@ -53,7 +53,10 @@ Estimates save per-payment assumptions and show server-calculated monthly line a
 combined results; manually copy a result into a Plan. Save a draft before saving an
 immutable version. Activity is independent of Reviews; starting a Review visibly
 preselects the immediately previous month's comparison or requires an explicit
-choice. Income and guilt-free spending are the only supported activity categories.
+choice. The delivered activity categories include income, fixed costs, guilt-free spending,
+saving, investing and giving, with loan associations, goal funding and linked
+refunds. See the [readiness matrix](technical/release-readiness.md) for source/test
+mappings and release exclusions.
 Unsaved navigation prompts apply to screens, selected records and months. Conflicts
 retain attempted input while current records reload for explicit reconciliation.
 
@@ -216,9 +219,10 @@ has read-only repository permissions and performs no publishing or deployment.
 
 The E2E job builds the app on Node 22, then uses Node 24 for pinned agent-browser
 0.34.0 and its selected browser binary. It runs `just test-e2e` against the built
-frontend, real database and local signed OIDC provider. The initial smoke journey
-covers sign-in, Entity workspace loading, session persistence across reload and
-sign-out. It does not yet cover all financial workflows.
+frontend, real database and local signed OIDC provider. The browser journey covers the delivered Plan/activity/Review loop, savings
+funding/movements/lifecycle/refunds, destinations and separate loan observations,
+reload durability, narrow layouts and targeted keyboard failure/retry recovery.
+It is not a complete accessibility or real-provider compatibility audit.
 
 For local execution, install the approved agent-browser version and its browser
 (`agent-browser install`, without privileged system-dependency flags), build the
@@ -237,6 +241,15 @@ weakens browser process isolation and is only for these synthetic local services
 It inserts only synthetic fixtures and retains them in the disposable database; never run against
 user data or share the database between concurrent runs. No screenshots, browser
 storage, tokens or server logs are uploaded as CI artifacts.
+
+## Readiness and deployment preparation
+
+`/healthz` checks process liveness. `/readyz` checks database connectivity and exactly
+the supported Alembic revision (`5k019`); empty, old, unknown or unreadable migration
+metadata returns503. It does not probe providers or establish runtime grants.
+[Deployment and recovery](technical/deployment.md) separates locally verified
+behavior from pending Fly.io/Neon configuration, compatible rollback and credential
+revocation reconciliation. Never reset a populated database for readiness.
 
 ## MCP resource server (MVP-022; hosted completion gated)
 

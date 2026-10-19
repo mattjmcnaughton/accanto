@@ -54,6 +54,7 @@ markers = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/accanto"]
+exclude = ["src/accanto/web/frontend/**", "**/node_modules/**", "**/*.tsbuildinfo"]
 
 [tool.hatch.build]
 artifacts = ["src/accanto/web/frontend/dist/**"]

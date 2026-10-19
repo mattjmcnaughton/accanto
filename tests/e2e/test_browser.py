@@ -117,6 +117,19 @@ def test_signed_in_workspace(tmp_path):
             assert result.returncode == 0, f"Browser command failed: {args[0]}"
         return result.stdout
 
+    def tab_to_button(name):
+        # Verify reachability through native sequential keyboard navigation.
+        for _ in range(80):
+            active = browser(
+                "eval",
+                "document.activeElement.tagName === 'BUTTON' && "
+                "document.activeElement.textContent.trim() === " + repr(name),
+            ).strip()
+            if active == "true":
+                return
+            browser("press", "Tab")
+        raise AssertionError("Keyboard could not reach " + name)
+
     def set_date(selector, value):
         # Native setter triggers React's delegated handlers on date controls.
         expression = (
@@ -172,8 +185,43 @@ def test_signed_in_workspace(tmp_path):
             "find", "role", "button", "click", "--name", "Record activity", "--exact"
         )
         browser("find", "label", "Amount (USD)", "fill", "210")
-        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
+        # Mobile keyboard recovery uses the real UI/API, with a deliberate local
+        # network failure before the request can reach the service. No storage or
+        # response-body export is retained, and all preexisting waits stay intact.
+        browser("set", "viewport", "390", "760")
+        browser("network", "route", "**/api/entities/*/activity", "--abort")
+        tab_to_button("Save activity")
+        browser("press", "Enter")
+        browser("wait", "--text", "Save was not confirmed. Your input is still here.")
+        assert (
+            browser("get", "value", "input[inputmode='decimal']").strip().strip('"')
+            == "210"
+        )
+        assert (
+            browser(
+                "eval", "document.documentElement.scrollWidth <= innerWidth"
+            ).strip()
+            == "true"
+        )
+        browser("network", "unroute", "**/api/entities/*/activity")
+        tab_to_button("Retry save")
+        assert (
+            browser("eval", "document.activeElement.textContent").strip()
+            == '"Retry save"'
+        )
+        browser("press", "Enter")
         browser("wait", "--text", "$210.00")
+        # Failed reload must be explicit rather than an empty financial workspace.
+        browser("find", "role", "button", "click", "--name", "Plans", "--exact")
+        browser("network", "route", "**/api/entities/*/activity*", "--abort")
+        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        browser("wait", "--text", "Could not load this workspace.")
+        assert "No activity recorded yet." not in browser("get", "text", "body")
+        browser("network", "unroute", "**/api/entities/*/activity*")
+        tab_to_button("Try loading again")
+        browser("press", "Enter")
+        browser("wait", "--text", "$210.00")
+        browser("set", "viewport", "1280", "900")
         browser(
             "find", "role", "button", "click", "--name", "Enter known total", "--exact"
         )

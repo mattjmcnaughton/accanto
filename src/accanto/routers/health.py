@@ -5,6 +5,10 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(tags=["health"])
 
+# Bump deliberately when adopting a new schema; rollback compatibility must be
+# assessed before changing this contract. Connectivity alone cannot admit traffic.
+SCHEMA_REVISION = "5k019"
+
 
 @router.get("/healthz")
 async def healthz() -> dict:
@@ -14,14 +18,25 @@ async def healthz() -> dict:
 
 @router.get("/readyz")
 async def readyz() -> JSONResponse:
-    """Readiness probe."""
+    """Database connectivity and the application's supported migration revision.
+
+    Provider compatibility and browser/MCP configuration are separate release gates.
+    """
     from sqlalchemy import text
 
     from accanto.db import async_session
 
     try:
         async with async_session() as session:
-            await session.execute(text("SELECT 1"))
+            result = await session.execute(
+                text("SELECT version_num FROM alembic_version")
+            )
+            revision = result.scalar_one_or_none()
+            if revision != SCHEMA_REVISION:
+                return JSONResponse(
+                    {"status": "not ready", "database": "schema incompatible"},
+                    status_code=503,
+                )
     except Exception:
         return JSONResponse(
             {"status": "not ready", "database": "unreachable"}, status_code=503

@@ -878,16 +878,37 @@ async def scenario():
         )
         assert digest != key["key"] and len(digest) == 64
     # Real DB enforces immutability even if a service accidentally attempts a write.
-    for statement in [
-        "UPDATE audit_log SET action='changed'",
-        "DELETE FROM audit_log",
-        "TRUNCATE audit_log",
-        "UPDATE plan_revision SET name='changed' WHERE saved",
-        "UPDATE plan_income_line SET amount=0 WHERE plan_revision_id IN "
-        "(SELECT id FROM plan_revision WHERE saved)",
+    for statement, reason in [
+        ("UPDATE audit_log SET action='changed'", "permission denied"),
+        ("DELETE FROM audit_log", "permission denied"),
+        ("TRUNCATE audit_log", "permission denied"),
+        ("TRUNCATE plan_revision CASCADE", "permission denied"),
+        (
+            "UPDATE plan_revision SET name='changed' WHERE saved",
+            "saved Plan version is immutable",
+        ),
+        ("DELETE FROM plan_revision WHERE saved", "saved Plan version is immutable"),
+        (
+            "UPDATE plan_income_line SET amount=0 WHERE plan_revision_id IN "
+            "(SELECT id FROM plan_revision WHERE saved)",
+            "saved Plan line is immutable",
+        ),
+        (
+            "DELETE FROM plan_income_line WHERE plan_revision_id IN "
+            "(SELECT id FROM plan_revision WHERE saved)",
+            "saved Plan line is immutable",
+        ),
+        (
+            "INSERT INTO plan_income_line "
+            "(uuid, plan_revision_id, plan_id, income_source_id, name, amount) "
+            "SELECT gen_random_uuid(), plan_revision_id, plan_id, income_source_id, "
+            "'Injected', 1 FROM plan_income_line WHERE plan_revision_id IN "
+            "(SELECT id FROM plan_revision WHERE saved) LIMIT 1",
+            "saved Plan line is immutable",
+        ),
     ]:
         async with runtime.begin() as connection:
-            with pytest.raises(DBAPIError):
+            with pytest.raises(DBAPIError, match=reason):
                 await connection.execute(text(statement))
     await runtime.dispose()
     await admin.dispose()
