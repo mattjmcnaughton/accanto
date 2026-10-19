@@ -225,19 +225,21 @@ export function ActivityScreen(p: ScreenProps) {
                   {entry.is_refund ? " · Linked refund" : entry.is_adjustment && " · Adjustment"}
                 </p>
                 <strong>{dollars(entry.amount)}</strong>
-                <p>
-                  {entry.category === "fixed_cost"
-                    ? (entry.fixed_cost_name ?? "Unassigned fixed cost")
-                    : entry.category === "saving" && entry.saving_goal_id
-                      ? `To ${goalLabel(entry.saving_goal_id)}`
-                      : entry.destination_id &&
-                          (entry.category === "investing" || entry.category === "giving")
-                        ? destinationLabel(entry)
-                        : entry.source_id
-                          ? sources.find((s) => s.id === entry.source_id)?.label ||
-                            "Historical Income source"
-                          : "Unassigned"}
-                </p>
+                {entry.category !== "spending" && (
+                  <p>
+                    {entry.category === "fixed_cost"
+                      ? (entry.fixed_cost_name ?? "Unassigned fixed cost")
+                      : entry.category === "saving" && entry.saving_goal_id
+                        ? `To ${goalLabel(entry.saving_goal_id)}`
+                        : entry.destination_id &&
+                            (entry.category === "investing" || entry.category === "giving")
+                          ? destinationLabel(entry)
+                          : entry.source_id
+                            ? sources.find((s) => s.id === entry.source_id)?.label ||
+                              "Historical Income source"
+                            : "Unassigned"}
+                  </p>
+                )}
                 {(entry.category === "spending" ||
                   entry.category === "fixed_cost" ||
                   entry.category === "giving" ||
