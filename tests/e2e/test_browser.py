@@ -675,11 +675,15 @@ def test_signed_in_workspace(tmp_path):
             "!document.body.textContent.includes('Confirm complete')",
         )
         browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        browser("wait", "--text", "Synthetic lifecycle purchase")
         browser(
-            "click",
-            "article:has-text('Synthetic lifecycle purchase') "
-            "button:has-text('Record refund')",
+            "eval",
+            "Array.from(document.querySelectorAll('.record-list article'))"
+            ".find(article => article.textContent.includes("
+            "'Synthetic lifecycle purchase'))"
+            ".querySelector('button').click()",
         )
+        browser("wait", "--text", "Record refund from purchase")
         browser("find", "label", "Refund amount (USD)", "fill", "20.00")
         browser("find", "role", "button", "click", "--name", "Save refund", "--exact")
         browser("wait", "--text", "Remaining refundable: $70.00")
@@ -762,7 +766,10 @@ def test_signed_in_workspace(tmp_path):
             "'Synthetic lifecycle cash · Archived account')",
         )
         lifecycle_text = browser(
-            "get", "text", "article:has(h3:text-is('Synthetic lifecycle cash'))"
+            "eval",
+            "Array.from(document.querySelectorAll('article'))"
+            ".find(article => article.querySelector('h3')?.textContent === "
+            "'Synthetic lifecycle cash').textContent",
         )
         assert "Completed" in lifecycle_text and "Current saved $0.00" in lifecycle_text
         assert "Contribution progress $0.00" in lifecycle_text
