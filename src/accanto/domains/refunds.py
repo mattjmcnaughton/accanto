@@ -11,6 +11,10 @@ class Refund:
     financial_date: date
 
 
+class RefundCapError(ValueError):
+    """The proposed live refunds exceed their purchase."""
+
+
 def validate_refunds(
     purchase_amount: Decimal,
     purchase_date: date,
@@ -27,7 +31,7 @@ def validate_refunds(
         (refund.amount for refund in refunds), Decimal("0.00")
     )
     if remaining < 0:
-        raise ValueError(
+        raise RefundCapError(
             f"Refunds exceed the purchase by ${-remaining:.2f}; "
             "reduce or delete a linked refund first."
         )

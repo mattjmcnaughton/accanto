@@ -206,6 +206,7 @@ async def scenario():
             },
         )
         assert oversized.status_code == 422
+        assert "Remaining refundable: $700.00" in oversized.json()["detail"]["message"]
         async with sessions() as session:
             assert (
                 await session.scalar(
