@@ -569,3 +569,32 @@ the Entity's current time zone.
 All writes above require the normal authenticated `Idempotency-Key`, current
 Entity access, and expected revisions for corrections. Financial records, complete
 before/after audit snapshots, and retry outcomes commit together.
+
+### Savings lifecycle
+
+All lifecycle writes use the same authenticated Entity boundary and
+`Idempotency-Key` as activity. `POST /api/entities/{entity}/savings-accounts/{account}/archive`
+and `/reopen` take `{"expected_revision": 1}`. Archive requires zero recorded
+savings, archives goals together and moves no money. Reopen restores only goals
+archived by that account action; completed and independently inactive goals keep
+their state. Archived accounts must reopen before any financial correction,
+including moving an old entry to another account.
+
+`POST /api/entities/{entity}/savings-accounts/{account}/goals/{goal}/complete`
+takes `{"date":"2026-10-19","expected_revision":1,"expected_return":"100.00"}`
+(a deliberately synthetic example). It completes an active finite goal, returns
+its positive remainder to the same account's Unallocated goal, and audits both
+atomically. Zero creates no movement. A changed remainder produces
+`stale_completion`; reload and explicitly review the new return amount.
+Completion-generated reassignments are retained and cannot be independently
+edited/deleted: that would silently undo part of completion.
+
+Goal responses include `completed` and `archived_by_account`. Completed goals
+accept linked refunds to their original origin while staying completed. Use the
+ordinary reassignment endpoint to explicitly return that money from the completed
+goal to the same account's Unallocated goal. Other new contributions, outflows,
+transfers and reconciliations into completed goals remain unavailable. Normal
+refund caps, dates, original-origin checks and ordered nonnegative history apply;
+removing money already returned or used can reject with a historical shortfall.
+Saved Plans stay immutable, and draft allocations retain inactive references for
+explicit revision. Planning creates no savings movement.
