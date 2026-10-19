@@ -12,6 +12,8 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY src/ ./src/
+# The browser build is the runtime asset; source, tests and tooling stay in build stages.
+RUN rm -rf ./src/accanto/web/frontend
 COPY --from=frontend /frontend/dist ./src/accanto/web/frontend/dist
 RUN uv sync --frozen --no-dev
 

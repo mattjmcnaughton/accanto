@@ -5,8 +5,8 @@ dated income/fixed-cost/spending/saving entries, monthly Reviews against saved v
 independent income estimates, savings account openings/goals, and investment/giving
 destinations with recorded contributions, plus savings movements and goal-level
 reconciliation. The production browser uses these commands with cookie sessions;
-the preserved standalone prototype remains a separate reference. Refunds and
-observations are not yet production endpoints. Unsupported categories/fields
+the preserved standalone prototype remains a separate reference. Linked refunds, lifecycle and separate investment/debt observations
+are implemented by the routes below. Unsupported categories/fields
 reject rather than approximate.
 Income estimates do not calculate tax or populate Plans.
 
@@ -36,7 +36,8 @@ issues another key (plaintext returned once); `DELETE /api/keys/{key_id}` revoke
 one of the current User's keys. There is no expiry. Revocation and Entity access
 changes apply to subsequent requests, including retries. Browser sign-in uses OIDC
 and opaque server-side sessions; see the browser authentication endpoints below.
-Hosted MCP OAuth remains a separate increment.
+Hosted MCP OAuth uses a separate four-tool listener with local implementation
+merged; real-provider/hosted compatibility remains gated.
 
 For deployment, use a non-owner, non-superuser runtime login distinct from the
 migration owner. After creating that login securely, grant only required access
@@ -51,6 +52,8 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 ```
 
 Do not grant table ownership, role administration, trigger bypass or TRUNCATE.
+The [deployment runbook](technical/deployment.md) records migration, rollback and
+post-recovery revocation requirements.
 Reapply grants deliberately when migrations add tables. Database triggers also
 reject audit changes and mutation of saved versions/lines. The bootstrap requires
 operator database access. The local Compose superuser is for development only.
