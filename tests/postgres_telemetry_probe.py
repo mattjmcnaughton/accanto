@@ -45,7 +45,7 @@ def main(root: Path, name: str) -> None:
             "-e",
             "POSTGRES_PASSWORD",
             config["image"],
-            *config.get("command", []),
+            *(config.get("command") or []),
         ],
         env=env,
         capture_output=True,
