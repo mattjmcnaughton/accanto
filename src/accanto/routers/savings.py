@@ -5,7 +5,9 @@ from uuid import UUID
 from fastapi import APIRouter
 
 from accanto.dtos.savings import (
+    AccountLifecycle,
     AccountResult,
+    CompleteGoal,
     CreateAccount,
     CreateGoal,
     DeleteMovement,
@@ -173,6 +175,67 @@ async def edit_goal(
         token,
         entity_id,
         "edit_saving_goal",
+        request_key,
+        {**body.model_dump(mode="json"), "goal_id": goal_id},
+        account_id,
+    )
+
+
+@router.post("/{account_id}/archive", response_model=AccountResult)
+async def archive_account(
+    entity_id: UUID,
+    account_id: UUID,
+    body: AccountLifecycle,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await write(
+        session,
+        token,
+        entity_id,
+        "archive_saving_account",
+        request_key,
+        body.model_dump(mode="json"),
+        account_id,
+    )
+
+
+@router.post("/{account_id}/reopen", response_model=AccountResult)
+async def reopen_account(
+    entity_id: UUID,
+    account_id: UUID,
+    body: AccountLifecycle,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await write(
+        session,
+        token,
+        entity_id,
+        "reopen_saving_account",
+        request_key,
+        body.model_dump(mode="json"),
+        account_id,
+    )
+
+
+@router.post("/{account_id}/goals/{goal_id}/complete", response_model=AccountResult)
+async def complete_goal(
+    entity_id: UUID,
+    account_id: UUID,
+    goal_id: UUID,
+    body: CompleteGoal,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await write(
+        session,
+        token,
+        entity_id,
+        "complete_saving_goal",
         request_key,
         {**body.model_dump(mode="json"), "goal_id": goal_id},
         account_id,

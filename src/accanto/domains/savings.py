@@ -96,3 +96,31 @@ def movement_events(
 def reconciliation_delta(known: str, remaining: Decimal) -> Decimal:
     """Correct one recorded pot without changing its opening or contribution total."""
     return money(str(money(known) - remaining), signed=True)
+
+
+def completion_amount(
+    role: str, kind: str, active: bool, completed: bool, remaining: Decimal
+) -> Decimal:
+    """Explicit completion returns saved money, independently of target funding."""
+    if role != "ordinary" or kind != "finite" or not active or completed:
+        raise ValueError("Only an active finite goal can be completed.")
+    if remaining < 0:
+        raise ValueError("Remaining saved cannot be negative.")
+    return remaining
+
+
+def archive_allowed(active: bool, balance: Decimal) -> None:
+    if not active:
+        raise ValueError("The savings account is already archived.")
+    if balance != 0:
+        raise ValueError(
+            "Recorded savings must be zero before archival. "
+            "Transfer or use the money first."
+        )
+
+
+def restored_goal_active(
+    active: bool, archived_by_account: bool, completed: bool
+) -> bool:
+    """Only the account's own archival is reversed; completion stays explicit."""
+    return (active or archived_by_account) and not completed

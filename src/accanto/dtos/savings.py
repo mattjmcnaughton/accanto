@@ -89,6 +89,8 @@ class GoalResult(BaseModel):
     funded_status: str | None
     revision: int
     active: bool
+    completed: bool
+    archived_by_account: bool
 
 
 class AccountResult(BaseModel):
@@ -158,3 +160,18 @@ class MovementResult(BaseModel):
     from_goal_id: UUID | None = None
     to_goal_id: UUID | None = None
     goal_id: UUID | None = None
+
+
+class AccountLifecycle(Input):
+    expected_revision: int = Field(ge=1)
+
+
+class CompleteGoal(Input):
+    date: date
+    expected_revision: int = Field(ge=1)
+    expected_return: str
+
+    @field_validator("expected_return")
+    @classmethod
+    def amount(cls, value: str) -> str:
+        return str(money(value))

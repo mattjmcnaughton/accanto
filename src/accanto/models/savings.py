@@ -41,6 +41,8 @@ goals = table(
     Column("opening_amount", Numeric(14, 2), nullable=False),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("active", Boolean, nullable=False, server_default="true"),
+    Column("completed", Boolean, nullable=False, server_default="false"),
+    Column("archived_by_account", Boolean, nullable=False, server_default="false"),
     ForeignKeyConstraint(
         ["account_id", "entity_id"], ["saving_account.id", "saving_account.entity_id"]
     ),
@@ -50,10 +52,15 @@ goals = table(
     CheckConstraint("kind IN ('finite', 'ongoing')"),
     CheckConstraint("opening_amount BETWEEN 0 AND 999999999.99"),
     CheckConstraint(
-        "(role = 'unallocated' AND kind = 'ongoing' AND target IS NULL AND active) OR "
+        "(role = 'unallocated' AND kind = 'ongoing' AND target IS NULL "
+        "AND NOT completed AND (active OR archived_by_account)) OR "
         "(role = 'ordinary' AND (kind = 'ongoing' OR target > 0) "
         "AND (target IS NULL OR target > 0))"
     ),
+    CheckConstraint(
+        "NOT completed OR (kind = 'finite' AND role = 'ordinary' AND NOT active)"
+    ),
+    CheckConstraint("NOT archived_by_account OR NOT active"),
     CheckConstraint("revision >= 1"),
 )
 Index(
@@ -124,6 +131,9 @@ def movement_table(name):
 
 
 reassignments = movement_table("savings_reassignment")
+reassignments.append_column(
+    Column("completion_goal_id", BigInteger, ForeignKey("saving_goal.id"))
+)
 transfers = movement_table("savings_transfer")
 adjustments = table(
     "savings_balance_adjustment",
