@@ -215,6 +215,23 @@ async def parity_scenario():
         started = await protocol.call("start_monthly_review", arguments)
         assert started["version_id"] == version["uuid"] and started["revision"] == 1
         assert await protocol.call("start_monthly_review", arguments) == started
+        assert (await api.get(prefix + "/activity")).json() == []
+        async with sessions() as session, session.begin():
+            foreign_key = await issue_key(session, other, "Synthetic foreign fixture")
+        foreign_headers = {"Authorization": f"Bearer {foreign_key['key']}"}
+        foreign_prefix = f"/api/entities/{foreign}"
+        foreign_plan = await api.post(
+            foreign_prefix + "/plans",
+            json={"name": "Synthetic foreign Plan", "incomes": [], "spending": "0"},
+            headers={**foreign_headers, "Idempotency-Key": str(uuid4())},
+        )
+        assert foreign_plan.status_code == 200, foreign_plan.text
+        foreign_saved = await api.post(
+            foreign_prefix + f"/plans/{foreign_plan.json()['plan_id']}/versions",
+            json={"expected_revision": 1},
+            headers={**foreign_headers, "Idempotency-Key": str(uuid4())},
+        )
+        assert foreign_saved.status_code == 200, foreign_saved.text
         await command(
             "/activity",
             {
@@ -292,7 +309,11 @@ async def parity_scenario():
         )
         await protocol.call(
             "start_monthly_review",
-            {**arguments, "version_id": str(uuid4()), "idempotency_key": str(uuid4())},
+            {
+                **arguments,
+                "version_id": foreign_saved.json()["version"]["uuid"],
+                "idempotency_key": str(uuid4()),
+            },
             error=True,
         )
         await protocol.call(
