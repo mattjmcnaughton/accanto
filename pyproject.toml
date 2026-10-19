@@ -22,6 +22,7 @@ dependencies = [
     "asyncpg>=0.29",
     "authlib==1.7.2",
     "httpx==0.28.1",
+    "fastmcp==4.1.0",
 ]
 
 [project.urls]
