@@ -499,3 +499,55 @@ async def lock_and_admission_scenario():
                 )
                 == before_audit
             )
+
+
+def test_discovery_revocation_during_entity_lock_wait():
+    asyncio.run(discovery_lock_scenario())
+
+
+async def discovery_lock_scenario():
+    async with environment() as (
+        provider,
+        protocol,
+        _api,
+        sessions,
+        entity,
+        _foreign,
+        _other,
+    ):
+        async with sessions() as blocker, blocker.begin():
+            await blocker.execute(
+                select(m.entities)
+                .where(m.entities.c.id == entity["id"])
+                .with_for_update()
+            )
+            pending = asyncio.create_task(protocol.call("list_entities", error=True))
+            try:
+                async with asyncio.timeout(5):
+                    while True:
+                        async with sessions() as observer:
+                            waiting = await observer.scalar(
+                                text(
+                                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
+                                    "WHERE datname=current_database() "
+                                    "AND pid<>pg_backend_pid() "
+                                    "AND wait_event_type='Lock' "
+                                    "AND query ILIKE '%FROM entity%' "
+                                    "AND query ILIKE '%FOR UPDATE%')"
+                                )
+                            )
+                        if waiting:
+                            break
+                        await asyncio.sleep(0.01)
+                assert not pending.done()
+                provider.active = False
+            except BaseException:
+                pending.cancel()
+                await asyncio.gather(pending, return_exceptions=True)
+                raise
+        try:
+            await asyncio.wait_for(pending, timeout=5)
+        finally:
+            provider.active = True
+        result = await protocol.call("list_entities")
+        assert [item["id"] for item in result["entities"]] == [str(entity["uuid"])]

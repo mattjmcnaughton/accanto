@@ -66,7 +66,9 @@ def test_invalid_claims_fail_closed(overrides, caplog):
     assert "tomorrow" not in caplog.text
 
 
-@pytest.mark.parametrize("failure", ["signature", "algorithm", "id_token", "malformed"])
+@pytest.mark.parametrize(
+    "failure", ["signature", "algorithm", "algorithm_rs512", "id_token", "malformed"]
+)
 def test_invalid_signature_and_token_type(failure):
     async def scenario():
         fixture = SyntheticMCPProvider()
@@ -79,11 +81,19 @@ def test_invalid_signature_and_token_type(failure):
             "algorithm": lambda: jwt.encode(
                 {"alg": "HS256", "typ": "at+jwt"}, claims, OctKey.generate_key(256)
             ),
+            "algorithm_rs512": lambda: jwt.encode(
+                {"alg": "RS512", "typ": "at+jwt"},
+                claims,
+                fixture.key,
+                algorithms=["RS512"],
+            ),
             "id_token": lambda: jwt.encode(
                 {"alg": "RS256", "typ": "JWT"}, claims, fixture.key
             ),
             "malformed": lambda: "invalid-bearer",
         }[failure]()
+        # Even an active introspection response cannot bypass JWT verification.
+        fixture.tokens[token] = claims
         verifier = MCPTokenVerifier(
             fixture.config, transport=httpx.ASGITransport(app=fixture.app)
         )
