@@ -1,18 +1,16 @@
 # MVP-022 proposed local MCP contract
 
-Status: pending user agreement; this document does not expose tools or establish
-hosted compatibility. Current issue #22 governs scope. No provider configuration,
+Status: D1 and D2 accepted by the user on 2026-10-19; implementation in progress.
+This contract does not establish hosted compatibility. Current issue #22 governs scope. No provider configuration,
 external resource, cost, publication or deployment is authorized.
 
-## Pending decisions
+## Accepted decisions
 
-1. Approve the four tools/data projection below, choose read-only delivery, or
-   specify another surface. Recommendation: four tools, with only starting a
-   Review as a write. That tests service parity, retries and audit attribution
+1. Four tools/data projection below, with only starting a Review as a write. That tests service parity, retries and audit attribution
    without adding activity or moving money.
-2. Approve RS256 access-token validation plus uncached RFC 7662 introspection on
+2. RS256 access-token validation plus uncached RFC 7662 introspection on
    every execution, with real provider selection/configuration left gated.
-   Recommendation: require both signature/claims and current active status;
+   Require both signature/claims and current active status;
    signature-only JWT validation cannot detect provider revocation immediately.
    No generic provider framework or authorization/token-issuance endpoint.
 
@@ -29,11 +27,11 @@ cannot silently expand external disclosure. No catch-all operation or API import
 | list_entities | none | entities: id, name, time_zone, today | browser_auth.account_metadata |
 | list_plan_versions | entity_id | saved versions only: plan_id, version_id, name, number, revision | monthly.read_plans |
 | get_monthly_review | entity_id, month | month, selected version_id, categories, summary, metrics as specified below | monthly.read_review |
-| select_review_version | entity_id, month, version_id, idempotency_key (1–120 chars) | review_id, month, version_id, revision | monthly.write(create_review) |
+| start_monthly_review | entity_id, month, version_id, idempotency_key (1–120 chars) | review_id, month, version_id, revision | monthly.write(create_review) |
 
 The last tool starts a Review only. It cannot retarget an existing Review;
-conflicting existing selection returns the service's explicit rejection. A clearer
-implementation name, start_monthly_review, can preserve this exact bounded meaning.
+an existing Review returns the service's explicit rejection unless replaying the
+same successful request identity.
 It does not save a Plan, create activity, annotate a Review, or move funds.
 
 Each category output explicitly includes category (income, fixed_cost, spending,

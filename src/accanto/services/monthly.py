@@ -37,6 +37,9 @@ async def authorize(
     if lock:
         query = query.with_for_update()
     entity = (await session.execute(query)).mappings().first()
+    if actor.credential_kind == "oauth" and lock:
+        # A provider may revoke while this request waits for Entity serialization.
+        actor = await revalidate_actor(session, actor, lock=lock)
     if not entity or entity["owner_id"] != actor.user_id:
         raise RejectionError("entity_not_found", "Entity is unavailable.", 404)
     return actor, entity

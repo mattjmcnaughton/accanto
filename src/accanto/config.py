@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     oidc_client_secret: SecretStr = SecretStr("")
     oidc_allowed_emails: list[str] = []
 
+    mcp_resource_url: str = ""
+    mcp_issuer: str = ""
+    mcp_jwks_uri: str = ""
+    mcp_introspection_url: str = ""
+    mcp_introspection_client_id: str = ""
+    mcp_introspection_client_secret: SecretStr = SecretStr("")
+    mcp_allowed_emails: list[str] = []
+
     database_url: str = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/accanto"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

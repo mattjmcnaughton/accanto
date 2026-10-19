@@ -2,6 +2,7 @@
 
 import hashlib
 import secrets
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -21,13 +22,18 @@ class RejectionError(Exception):
 @dataclass(frozen=True)
 class AuthenticatedActor:
     user_id: int
-    credential_kind: Literal["api_key", "session"]
-    credential_uuid: UUID
+    credential_kind: Literal["api_key", "session", "oauth"]
+    credential_uuid: UUID | None
     credential_digest: str = field(repr=False)
+    verify_identity: Callable[[], Awaitable[tuple[str, str]]] | None = field(
+        default=None, repr=False, compare=False
+    )
 
     @property
     def interface(self):
-        return "browser" if self.credential_kind == "session" else "direct_api"
+        return {"session": "browser", "api_key": "direct_api", "oauth": "mcp"}[
+            self.credential_kind
+        ]
 
 
 def invalid_credential():
@@ -63,12 +69,38 @@ async def revalidate_actor(session, actor: str | AuthenticatedActor, *, lock):
     # Raw API keys remain supported for existing direct-API service callers.
     if isinstance(actor, str):
         return await resolve_actor(session, actor, lock=lock)
+    if actor.credential_kind == "oauth":
+        if actor.verify_identity is None:
+            raise invalid_credential()
+        current = await resolve_oauth_actor(session, actor.verify_identity)
+        if current.user_id != actor.user_id:
+            raise invalid_credential()
+        return current
     current = await _resolve(
         session, actor.credential_digest, actor.credential_kind, lock=lock
     )
     if current != actor:
         raise invalid_credential()
     return current
+
+
+async def resolve_oauth_actor(session, verify_identity):
+    """Revalidate the external token and resolve only a provisioned exact identity.
+
+    Caller owns the transaction. Never create a User or infer identity from email.
+    This callback is intentionally narrow and independent of MCP/HTTP libraries.
+    """
+    issuer, subject = await verify_identity()
+    user_id = await session.scalar(
+        select(m.users.c.id).where(
+            m.users.c.issuer == issuer, m.users.c.subject == subject
+        )
+    )
+    if user_id is None:
+        raise RejectionError(
+            "identity_setup_required", "An operator must provision this identity.", 403
+        )
+    return AuthenticatedActor(user_id, "oauth", None, "", verify_identity)
 
 
 async def issue_session(session, user_id: int):
