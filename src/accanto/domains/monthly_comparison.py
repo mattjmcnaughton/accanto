@@ -58,11 +58,16 @@ def summary(comparisons, entries):
         if outflows
         else None
     )
+    missing_outflows = any(
+        item["recorded"] is None
+        for category in ("fixed_cost", "investing", "giving")
+        for item in comparisons.get(category, {}).get("items", [])
+    )
     result = {
         "new_saving": saving,
         "savings_used": used,
         "net_saving": saving - used
-        if saving is not None and used is not None
+        if saving is not None and used is not None and not missing_outflows
         else None,
         "total_investing": known("investing"),
     }
@@ -80,7 +85,11 @@ def summary(comparisons, entries):
             else None
         )
     return {
-        key: str(value) if value is not None else None for key, value in result.items()
+        **{
+            key: str(value) if value is not None else None
+            for key, value in result.items()
+        },
+        "savings_used_incomplete": missing_outflows or not outflows,
     }
 
 

@@ -598,3 +598,21 @@ refund caps, dates, original-origin checks and ordered nonnegative history apply
 removing money already returned or used can reject with a historical shortfall.
 Saved Plans stay immutable, and draft allocations retain inactive references for
 explicit revision. Planning creates no savings movement.
+
+Monthly comparison reads also return `comparison` by income, fixed cost, spending,
+saving, investing and giving. Each category exposes planned amount, recorded
+subtotal, incompleteness and difference; `items` match immutable saved identities
+and labels, with contributing entries. `unplanned` entries count once in the
+subtotal and `adjustments` identify dated corrections without filling missing
+item identities. Unknown expected items withhold category differences.
+
+`summary` separates new saving, recorded savings used, net saving, total investing
+and income-funded investing/fixed costs. `savings_used_incomplete` marks missing
+expected outflows; net saving is unavailable until its required inputs are known.
+Transfers, reassignments, openings and balance observations are excluded.
+
+`metrics` exposes separate planned and actual formulas with numerator, denominator,
+component amounts, percentage and an unavailable reason. Actual income-based
+ratios use only same-month recorded amounts. `planned_metrics` on Plan snapshots
+is derived presentation; it does not rewrite immutable saved results or inputs.
+Selected planned savings funding includes its saved account labels and amounts.

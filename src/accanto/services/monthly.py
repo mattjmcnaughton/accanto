@@ -1268,28 +1268,20 @@ async def entry_snapshot(session, record):
 
 async def review_fingerprint(session, entity_id, month, version_uuid, note):
     next_month = date(month.year + (month.month == 12), month.month % 12 + 1, 1)
-    records = (
-        (
-            await session.execute(
-                select(m.entries)
-                .where(
-                    m.entries.c.entity_id == entity_id,
-                    m.entries.c.deleted_at.is_(None),
-                    m.entries.c.financial_date >= month,
-                    m.entries.c.financial_date < next_month,
-                )
-                .order_by(m.entries.c.uuid)
+    rows = (
+        await session.execute(
+            select(m.entries.c.uuid, m.entries.c.revision)
+            .where(
+                m.entries.c.entity_id == entity_id,
+                m.entries.c.deleted_at.is_(None),
+                m.entries.c.financial_date >= month,
+                m.entries.c.financial_date < next_month,
             )
+            .order_by(m.entries.c.uuid)
         )
-        .mappings()
-        .all()
-    )
-    # Include identity, funding and refund links as well as entry revisions.
-    # Movements/observations are not monthly financial activity.
-    facts = [await entry_snapshot(session, record) for record in records]
+    ).all()
     canonical = json.dumps(
-        json_values([str(version_uuid), note, facts]),
-        sort_keys=True,
+        [str(version_uuid), note, [(str(uuid), revision) for uuid, revision in rows]],
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode()).hexdigest()

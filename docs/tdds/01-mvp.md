@@ -992,3 +992,22 @@ only a valid serial outcome may commit. Fresh refund creation after completion
 remains allowed and is covered separately. A synthetic production browser journey
 records a purchase, completes its goal, records its refund, explicitly returns it,
 uses remaining Unallocated money, archives and reopens the same account.
+
+### MVP-020 monthly comparison implementation
+
+`domains/monthly_comparison.py` compares stable identities against the selected
+saved version, retaining unknown expected items and once-only unplanned subtotals.
+`services/monthly_comparison.py` adapts immutable Plan labels/results and current
+entry snapshots. `read_review` retains the Entity lock across all queries,
+including funding links and contributors, so competing writes cannot produce a
+mixed response. No schema change or financial write is introduced by these reads.
+Known totals retain the existing explicit saving-goal, stale-contributor and atomic
+write/audit rules. Saved monetary results are never recalculated for presentation.
+
+Net saving requires known new saving and no missing expected outflow identities;
+recorded savings-use subtotals remain disclosed separately with incompleteness.
+Planned income/total-funding formulas and actual same-month income formulas expose
+components and suppress unknown/zero bases. Defaults remain provisional. Existing
+checkpoint canonical IDs/revisions already include all categories and are retained
+for compatibility: no upgrade invalidates old annotations, and another month's
+refund cannot mark this month changed merely by reducing remaining refundable.

@@ -76,3 +76,29 @@ def test_ratio_discloses_distinct_bases_and_unavailable():
         ratio("actual", "Saving", None, "Net income", "4000.00")["percentage"] is None
     )
     assert ratio("actual", "Saving", "0.00", "Net income", "0.00")["percentage"] is None
+
+
+def test_incomplete_expected_outflows_withhold_net_saving_but_keep_subtotal():
+    comparisons = {
+        "saving": {"recorded": "500.00", "incomplete": False},
+        "investing": {
+            "recorded": None,
+            "incomplete": True,
+            "items": [{"recorded": None}],
+        },
+        "fixed_cost": {"recorded": "0.00", "incomplete": False, "items": []},
+        "giving": {"recorded": None, "incomplete": True, "items": []},
+    }
+    result = summary(
+        comparisons,
+        [{"category": "spending", "amount": "0.00", "funding_origin": "income"}],
+    )
+    assert result["new_saving"] == "500.00"
+    assert result["savings_used"] == "0.00"
+    assert result["savings_used_incomplete"]
+    assert result["net_saving"] is None
+    comparisons["investing"]["items"] = []
+    assert (
+        summary(comparisons, [{"category": "spending", "amount": "0.00"}])["net_saving"]
+        == "500.00"
+    )
