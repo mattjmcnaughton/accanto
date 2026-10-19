@@ -199,6 +199,19 @@ async def entry_snapshot(session, kind, entry):
     from accanto.services.savings import current_link
 
     link = await current_link(session, entry["id"])
+    if link is None and entry["deleted_at"] is not None:
+        link = (
+            (
+                await session.execute(
+                    select(s.linked_activity)
+                    .where(s.linked_activity.c.actual_entry_id == entry["id"])
+                    .order_by(s.linked_activity.c.id.desc())
+                    .limit(1)
+                )
+            )
+            .mappings()
+            .first()
+        )
     goal_uuid = (
         await session.scalar(
             select(s.goals.c.uuid).where(s.goals.c.id == link["goal_id"])
@@ -213,6 +226,7 @@ async def entry_snapshot(session, kind, entry):
         "amount": str(entry["amount"]),
         "note": entry["note"],
         "is_adjustment": entry["is_adjustment"],
+        "is_refund": entry["is_refund"],
         "revision": entry["revision"],
         "destination_id": str(destination_uuid) if destination_uuid else None,
         "funding_origin": "savings" if link else "income",

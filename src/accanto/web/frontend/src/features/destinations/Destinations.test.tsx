@@ -39,7 +39,11 @@ afterEach(() => {
 
 it("shows contribution progress apart from opening value and preserves correction identity", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
-    String(path).endsWith("/investment-activity") ? json([entry]) : json([destination]),
+    String(path).endsWith("/investment-activity")
+      ? json([entry])
+      : String(path).endsWith("/savings-accounts")
+        ? json([])
+        : json([destination]),
   );
   const p = props();
   render(<Destinations {...p} />);
@@ -74,6 +78,42 @@ it("permits a destination without a target or opening", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Save destination" }));
   expect(p.save).toHaveBeenCalledWith(
     expect.objectContaining({ body: { name: "Example fund", target: null, opening: null } }),
+    expect.any(Function),
+  );
+});
+
+it("records an investment contribution from one saving goal", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/investment-activity")
+      ? json([])
+      : String(path).endsWith("/savings-accounts")
+        ? json([
+            {
+              uuid: "account-1",
+              name: "Synthetic savings",
+              active: true,
+              opening_date: "2026-01-01",
+              goals: [{ uuid: "goal-1", name: "Reserve" }],
+            },
+          ])
+        : json([destination]),
+  );
+  const p = props();
+  render(<Destinations {...p} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Record contribution" }));
+  fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "100.00" } });
+  fireEvent.change(screen.getByLabelText("Funding origin"), { target: { value: "savings" } });
+  await screen.findByRole("option", { name: "Synthetic savings · Reserve" });
+  fireEvent.change(screen.getByLabelText("Saving goal"), { target: { value: "goal-1" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save contribution" }));
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      body: expect.objectContaining({
+        funding_origin: "savings",
+        saving_goal_id: "goal-1",
+        amount: "100.00",
+      }),
+    }),
     expect.any(Function),
   );
 });

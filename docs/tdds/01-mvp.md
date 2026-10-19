@@ -144,6 +144,28 @@ unassigned payments and category adjustments contribute once to totals but do
 not complete a missing expected cost. This slice does not add debt or
 savings-funded fixed-cost payments.
 
+MVP-018 extends the existing `saving_linked_activity` association from
+savings-funded spending to fixed-cost/debt payments, giving, and investing.
+That retained link already carries the entry identity, goal, date, and stable
+recording order; the single actual entry amount supplies both its category or
+destination progress and its savings effect. It does not create a second
+savings-use amount. The additive `5j018` migration widens the existing link
+trigger's eligible categories. Investing from savings counts as investment
+contribution progress and reduces remaining saved, without new saving from
+income.
+
+The additive `5i018` migration adds `entry_refund` and an `is_refund` entry
+marker, allowing negative real refunds without calling them adjustments. The
+relationship retains original/refund entry IDs within one Entity, with no
+duplicate amount or date. The refund command copies the original category,
+destination, debt, and savings origin into one new entry; edits only change its
+date, amount, or note. Purchase edits and all refund commands validate the pure
+current refund set under the Entity lock before commit. The shared savings
+history replay then checks later balances. The entry, retained links, audit
+snapshots, and retry outcome commit together. Tests cover date, cap, origin,
+deletion, competing refund creates, and competing purchase edit/refund create
+on PostgreSQL. The UI launches the refund from the original purchase.
+
 Activity input and DB checks currently reject all negative amounts; replacing a
 record is a correction, not the agreed signed delta-adjustment workflow. There is
 no funding-origin field: this slice cannot represent savings-funded spending.

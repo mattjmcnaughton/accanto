@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { savings } from "../../lib/savings";
 import {
   type Contribution,
   type ContributionInput,
@@ -34,12 +35,19 @@ export function Destinations(p: ScreenProps) {
     () => destinations.history(p.entity.id, kind),
     [p.entity.id, kind, p.refresh, reload],
   );
+  const accounts = useLoad(() => savings.list(p.entity.id), [p.entity.id, p.refresh, reload]);
   const [selected, setSelected] = useState<Destination | null>(null);
   const [destinationForm, setDestinationForm] = useState<DestinationForm | null>(null);
   const [entry, setEntry] = useState<Contribution | null>(null);
   const [entryForm, setEntryForm] = useState<ContributionInput | null>(null);
   const named = rows.kind === "ready" ? rows.data : [];
   const entries = history.kind === "ready" ? history.data : [];
+  const savingGoals =
+    accounts.kind === "ready"
+      ? accounts.data.flatMap((account) =>
+          account.goals.map((goal) => ({ account, goal, label: `${account.name} · ${goal.name}` })),
+        )
+      : [];
   function done() {
     setDestinationForm(null);
     setEntryForm(null);
@@ -78,6 +86,8 @@ export function Destinations(p: ScreenProps) {
             note: row.note,
             is_adjustment: row.is_adjustment,
             expected_revision: row.revision,
+            funding_origin: row.funding_origin ?? "income",
+            saving_goal_id: row.saving_goal_id ?? null,
           }
         : {
             date: p.entity.today,
@@ -85,6 +95,8 @@ export function Destinations(p: ScreenProps) {
             destination_id: null,
             note: "",
             is_adjustment: false,
+            funding_origin: "income",
+            saving_goal_id: null,
           },
     );
     p.dirty(false);
@@ -287,10 +299,21 @@ export function Destinations(p: ScreenProps) {
             </p>
             <strong>{dollars(row.amount)}</strong>
             <p>{named.find((item) => item.uuid === row.destination_id)?.name ?? "Unassigned"}</p>
+            {row.funding_origin === "savings" && (
+              <p>
+                Funded from{" "}
+                {savingGoals.find(({ goal }) => goal.uuid === row.saving_goal_id)?.label ??
+                  "historical saving goal"}
+              </p>
+            )}
             {row.note && <p>{row.note}</p>}
-            <button type="button" disabled={p.busy} onClick={() => editEntry(row)}>
-              Correct entry on {row.financial_date}
-            </button>
+            {row.is_refund ? (
+              <p>Correct this linked refund in Activity.</p>
+            ) : (
+              <button type="button" disabled={p.busy} onClick={() => editEntry(row)}>
+                Correct entry on {row.financial_date}
+              </button>
+            )}
           </article>
         ))}
       </div>
@@ -321,6 +344,47 @@ export function Destinations(p: ScreenProps) {
                 }}
               />
             </label>
+            <label>
+              Funding origin
+              <select
+                value={entryForm.funding_origin ?? "income"}
+                onChange={(event) => {
+                  setEntryForm({
+                    ...entryForm,
+                    funding_origin: event.target.value as "income" | "savings",
+                    saving_goal_id: null,
+                  });
+                  p.dirty(true);
+                }}
+              >
+                <option value="income">Current income</option>
+                <option value="savings">Previously saved money</option>
+              </select>
+            </label>
+            {entryForm.funding_origin === "savings" && (
+              <label>
+                Saving goal
+                <select
+                  required
+                  value={entryForm.saving_goal_id ?? ""}
+                  onChange={(event) => {
+                    setEntryForm({ ...entryForm, saving_goal_id: event.target.value || null });
+                    p.dirty(true);
+                  }}
+                >
+                  <option value="">Choose a goal</option>
+                  {savingGoals
+                    .filter(
+                      ({ account }) => account.active && account.opening_date <= entryForm.date,
+                    )
+                    .map(({ goal, label }) => (
+                      <option key={goal.uuid} value={goal.uuid}>
+                        {label}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            )}
             <MoneyInput
               label="Amount (USD)"
               signed={entryForm.is_adjustment}
@@ -347,6 +411,7 @@ export function Destinations(p: ScreenProps) {
             <label>
               Destination
               <select
+                name="contribution-destination"
                 value={entryForm.destination_id ?? ""}
                 onChange={(event) => {
                   setEntryForm({

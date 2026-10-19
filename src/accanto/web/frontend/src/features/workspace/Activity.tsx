@@ -5,6 +5,7 @@ import {
   type Activity,
   type ActivityInput,
   type KnownTotalInput,
+  type RefundInput,
   monthly,
 } from "../../lib/monthly";
 import { savings } from "../../lib/savings";
@@ -33,6 +34,9 @@ export function ActivityScreen(p: ScreenProps) {
   const [selected, setSelected] = useState<Activity | null>(null);
   const [form, setForm] = useState<ActivityInput | null>(null);
   const [known, setKnown] = useState<KnownTotalInput | null>(null);
+  const [refundTarget, setRefundTarget] = useState<Activity | null>(null);
+  const [refundEntry, setRefundEntry] = useState<Activity | null>(null);
+  const [refundForm, setRefundForm] = useState<RefundInput | null>(null);
   const sources = plans.kind === "ready" ? sourceChoices(plans.data) : [];
   const fixedCosts =
     plans.kind === "ready"
@@ -90,6 +94,10 @@ export function ActivityScreen(p: ScreenProps) {
     p.dirty(true);
   }
   function open(entry: Activity | null) {
+    if (entry?.refund_of) {
+      openRefund(entry);
+      return;
+    }
     if (entry && (entry.category === "investing" || entry.category === "giving")) return;
     if (!p.guard()) return;
     setSelected(entry);
@@ -123,6 +131,28 @@ export function ActivityScreen(p: ScreenProps) {
     );
     p.dirty(!entry);
   }
+  function openRefund(entry: Activity) {
+    if (!p.guard() || entries.kind !== "ready") return;
+    const original = entry.refund_of
+      ? entries.data.find((row) => row.uuid === entry.refund_of)
+      : entry;
+    if (!original) return;
+    setForm(null);
+    setKnown(null);
+    setRefundTarget(original);
+    setRefundEntry(entry.refund_of ? entry : null);
+    setRefundForm({
+      date: entry.refund_of
+        ? entry.financial_date
+        : p.entity.today < original.financial_date
+          ? original.financial_date
+          : p.entity.today,
+      amount: entry.refund_of ? entry.amount.replace(/^-/, "") : "",
+      note: entry.refund_of ? entry.note : "",
+      expected_revision: entry.refund_of ? entry.revision : undefined,
+    });
+    p.dirty(!entry.refund_of);
+  }
   function openKnown() {
     if ((entries.kind !== "ready" && entries.kind !== "empty") || !p.guard()) return;
     setSelected(null);
@@ -143,6 +173,9 @@ export function ActivityScreen(p: ScreenProps) {
     setForm(null);
     setKnown(null);
     setSelected(null);
+    setRefundForm(null);
+    setRefundTarget(null);
+    setRefundEntry(null);
     p.dirty(false);
   }
   if (p.concealed) return null;
@@ -189,7 +222,7 @@ export function ActivityScreen(p: ScreenProps) {
                           : entry.category === "giving"
                             ? "Giving"
                             : "Guilt-free spending"}
-                  {entry.is_adjustment && " · Adjustment"}
+                  {entry.is_refund ? " · Linked refund" : entry.is_adjustment && " · Adjustment"}
                 </p>
                 <strong>{dollars(entry.amount)}</strong>
                 <p>
@@ -217,7 +250,25 @@ export function ActivityScreen(p: ScreenProps) {
                   </p>
                 )}
                 {entry.note && <p>{entry.note}</p>}
-                {entry.category === "investing" || entry.category === "giving" ? (
+                {entry.refund_of && (
+                  <p>
+                    Refund of purchase on{" "}
+                    {entries.data.find((row) => row.uuid === entry.refund_of)?.financial_date ??
+                      "an earlier date"}
+                  </p>
+                )}
+                {!entry.refund_of && entry.remaining_refundable != null && (
+                  <p>Remaining refundable: {dollars(entry.remaining_refundable)}</p>
+                )}
+                {!entry.refund_of &&
+                  entry.remaining_refundable != null &&
+                  Number(entry.remaining_refundable) > 0 && (
+                    <button type="button" disabled={p.busy} onClick={() => openRefund(entry)}>
+                      Record refund from this purchase
+                    </button>
+                  )}
+                {entry.category === "investing" ||
+                (entry.category === "giving" && !entry.refund_of) ? (
                   <p>Correct this entry in Investments and giving.</p>
                 ) : (
                   <button type="button" disabled={p.busy} onClick={() => open(entry)}>
@@ -345,7 +396,7 @@ export function ActivityScreen(p: ScreenProps) {
                   </select>
                 </label>
               )}
-              {form.category === "spending" && (
+              {(form.category === "spending" || form.category === "fixed_cost") && (
                 <label>
                   Funding origin
                   <select
@@ -427,6 +478,85 @@ export function ActivityScreen(p: ScreenProps) {
                   Delete activity
                 </button>
               )}
+            </fieldset>
+          </form>
+        )}
+        {refundForm && refundTarget && (
+          <form
+            className="editor"
+            onSubmit={(event) => {
+              event.preventDefault();
+              p.save(
+                refundEntry
+                  ? monthly.editRefund(p.entity.id, refundEntry.uuid, refundForm)
+                  : monthly.createRefund(p.entity.id, refundTarget.uuid, refundForm),
+                done,
+              );
+            }}
+          >
+            <fieldset disabled={p.busy}>
+              <legend>
+                {refundEntry ? "Correct linked refund" : "Record refund from purchase"}
+              </legend>
+              <p>
+                Original {refundTarget.category} payment: {dollars(refundTarget.amount)} on{" "}
+                {refundTarget.financial_date}.
+              </p>
+              <p>Remaining refundable: {dollars(refundTarget.remaining_refundable ?? "0.00")}.</p>
+              <label>
+                Refund date
+                <input
+                  type="date"
+                  required
+                  min={refundTarget.financial_date}
+                  value={refundForm.date}
+                  onChange={(event) => {
+                    setRefundForm({ ...refundForm, date: event.target.value });
+                    p.dirty(true);
+                  }}
+                />
+              </label>
+              <MoneyInput
+                label="Refund amount (USD)"
+                value={refundForm.amount}
+                onChange={(amount) => {
+                  setRefundForm({ ...refundForm, amount });
+                  p.dirty(true);
+                }}
+              />
+              <label>
+                Note
+                <textarea
+                  maxLength={2000}
+                  value={refundForm.note ?? ""}
+                  onChange={(event) => {
+                    setRefundForm({ ...refundForm, note: event.target.value });
+                    p.dirty(true);
+                  }}
+                />
+              </label>
+              <button className="primary" type="submit">
+                Save refund
+              </button>
+              {refundEntry && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm("Delete this linked refund? Its history will be retained."))
+                      p.save(
+                        monthly.deleteRefund(p.entity.id, refundEntry.uuid, {
+                          expected_revision: refundEntry.revision,
+                        }),
+                        done,
+                      );
+                  }}
+                >
+                  Delete refund
+                </button>
+              )}
+              <button type="button" onClick={done}>
+                Cancel
+              </button>
             </fieldset>
           </form>
         )}
