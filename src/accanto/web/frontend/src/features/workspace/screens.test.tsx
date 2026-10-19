@@ -226,6 +226,16 @@ it("shows both the destination and savings origin for funded outflows", async ()
       revision: 1,
       is_adjustment: false,
     },
+    {
+      uuid: "spending-entry",
+      financial_date: "2026-11-05",
+      category: "spending",
+      amount: "25.00",
+      funding_origin: "income",
+      note: "",
+      revision: 1,
+      is_adjustment: false,
+    },
   ];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
     const url = String(path);
@@ -245,6 +255,9 @@ it("shows both the destination and savings origin for funded outflows", async ()
   expect(fixed?.textContent).toContain("Funded from Synthetic cash · Reserve");
   const giving = (await screen.findByText("Example recipient")).closest("article");
   expect(giving?.textContent).toContain("Funded from Synthetic cash · Reserve");
+  const spending = (await screen.findByText("$25.00")).closest("article");
+  expect(spending?.textContent).toContain("Funded from current income");
+  expect(spending?.textContent).not.toContain("Unassigned");
 });
 it("keeps the viewed contributing-entry fingerprint through a background refresh", async () => {
   let refreshed = false;
