@@ -168,6 +168,7 @@ export interface ReviewResult {
   summary?: {
     new_saving: DecimalString | null;
     savings_used: DecimalString | null;
+    savings_used_incomplete?: boolean;
     net_saving: DecimalString | null;
     total_investing: DecimalString | null;
     income_funded_investing: DecimalString | null;

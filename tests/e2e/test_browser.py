@@ -776,6 +776,52 @@ def test_signed_in_workspace(tmp_path):
         )
         assert "Completed" in lifecycle_text and "Current saved $0.00" in lifecycle_text
         assert "Contribution progress $0.00" in lifecycle_text
+        # The same month's Review explains all delivered activity without
+        # promoting observations, transfers or an unassigned income into receipts.
+        browser(
+            "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
+        )
+        browser("wait", "--text", "Comparison by saved identity")
+        browser("wait", "--text", "Planned and actual metrics")
+        review_text = browser("get", "text", "body")
+        assert "Synthetic month · v1" in review_text
+        assert "Changed since review. Your annotation remains set." in review_text
+        assert "Synthetic takeaway" in browser("get", "value", "textarea")
+        assert "Net income details" in browser("snapshot")
+        assert "Unplanned Investing activity" in review_text
+        assert "Unplanned Giving activity" in review_text
+        assert "Income-funded investment contributions:" in review_text
+        assert "Observations and transfers do not enter activity totals." in review_text
+        browser(
+            "click",
+            "section[aria-label='Planned and actual metrics'] "
+            "details:first-of-type summary",
+        )
+        assert "All fixed costs ÷ net income × 100" in browser("get", "text", "body")
+        assert "$8.33 ÷ $4000.00 × 100" in browser("get", "text", "body")
+        browser(
+            "click",
+            "section[aria-label='Planned and actual metrics'] "
+            "details:nth-of-type(7) summary",
+        )
+        assert "Required amount is unknown or incomplete." in browser(
+            "get", "text", "body"
+        )
+        browser(
+            "click",
+            "section[aria-label='Guilt-free spending details'] "
+            "details:last-of-type summary",
+        )
+        assert "Contributing adjustments (already included)" in browser(
+            "get", "text", "body"
+        )
+        browser("reload")
+        browser("wait", "--text", "Synthetic E2E Entity")
+        browser(
+            "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
+        )
+        browser("wait", "--text", "Comparison by saved identity")
+        assert "Synthetic month · v1" in browser("get", "text", "body")
         browser("set", "viewport", "320", "760")
         assert (
             browser(
