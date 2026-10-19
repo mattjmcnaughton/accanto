@@ -651,6 +651,7 @@ def test_signed_in_workspace(tmp_path):
         browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
         browser("wait", "--text", "Synthetic lifecycle purchase")
         browser("find", "role", "button", "click", "--name", "Savings", "--exact")
+        browser("wait", "--text", "Complete Lifecycle purpose")
         browser(
             "find",
             "role",
@@ -688,6 +689,7 @@ def test_signed_in_workspace(tmp_path):
         browser("find", "role", "button", "click", "--name", "Save refund", "--exact")
         browser("wait", "--text", "Remaining refundable: $70.00")
         browser("find", "role", "button", "click", "--name", "Savings", "--exact")
+        browser("wait", "--text", "Return Lifecycle purpose to Unallocated")
         browser(
             "find",
             "role",
@@ -734,6 +736,7 @@ def test_signed_in_workspace(tmp_path):
         browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
         browser("wait", "--text", "Synthetic final use")
         browser("find", "role", "button", "click", "--name", "Savings", "--exact")
+        browser("wait", "--text", "Archive Synthetic lifecycle cash")
         browser(
             "find",
             "role",
