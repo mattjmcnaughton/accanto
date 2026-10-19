@@ -14,7 +14,6 @@ from accanto.domains.monthly import (
     fixed_cost_monthly,
     known_total_delta,
     money,
-    monthly_actuals,
     plan_results,
 )
 from accanto.models import monthly as m
@@ -1390,7 +1389,6 @@ async def read_review(session, token, entity_uuid, month: date):
             .mappings()
             .one()
         )
-        lines = await plan_lines(session, version["id"])
         next_month = date(month.year + (month.month == 12), month.month % 12 + 1, 1)
         entries = (
             (
@@ -1427,36 +1425,6 @@ async def read_review(session, token, entity_uuid, month: date):
             .mappings()
             .all()
         )
-        actual = monthly_actuals(
-            [str(line["source_id"]) for line in lines],
-            [
-                (str(e["source_uuid"]) if e["source_uuid"] else None, e["amount"])
-                for e in entries
-                if e["category"] == "income"
-            ],
-            [e["amount"] for e in entries if e["category"] == "spending"],
-            [
-                str(line["fixed_cost_id"])
-                for line in await plan_fixed_costs(session, version["id"])
-            ],
-            [
-                (
-                    str(e["fixed_cost_uuid"]) if e["fixed_cost_uuid"] else None,
-                    e["amount"],
-                )
-                for e in entries
-                if e["category"] == "fixed_cost"
-            ],
-        )
-        saving_entries = [e["amount"] for e in entries if e["category"] == "saving"]
-        actual["saving_recorded"] = (
-            str(sum(saving_entries, Decimal("0.00"))) if saving_entries else None
-        )
-        for category in ("investing", "giving"):
-            values = [e["amount"] for e in entries if e["category"] == category]
-            actual[f"{category}_recorded"] = (
-                str(sum(values, Decimal("0.00"))) if values else None
-            )
         from accanto.models import savings as s
 
         savings_used = await session.scalar(
@@ -1476,15 +1444,24 @@ async def read_review(session, token, entity_uuid, month: date):
                 s.linked_activity.c.deleted_at.is_(None),
             )
         )
-        actual["savings_used"] = str(savings_used)
         from accanto.services.monthly_comparison import explain_review
 
         version_view = await plan_snapshot(session, version)
         entry_views = [await entry_snapshot(session, entry) for entry in entries]
         explanation = explain_review(version_view, entry_views)
+        actual: dict = {"savings_used": str(savings_used)}
         for category, comparison in explanation["comparison"].items():
             actual[f"{category}_recorded"] = comparison["recorded"]
             actual[f"{category}_incomplete"] = comparison["incomplete"]
+        for category, missing_key in (
+            ("income", "missing_sources"),
+            ("fixed_cost", "missing_fixed_costs"),
+        ):
+            actual[missing_key] = [
+                item["id"]
+                for item in explanation["comparison"][category]["items"]
+                if item["recorded"] is None
+            ]
         return json_values(
             {
                 "review": dict(review),
