@@ -380,7 +380,7 @@ def test_signed_in_workspace(tmp_path):
         browser(
             "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
         )
-        browser("wait", "--text", "Spending funded from previously saved money")
+        browser("wait", "--text", "Recorded outflows funded from savings")
         review_text = browser("get", "text", "body")
         assert "New saving" in review_text and "$200.00" in review_text
         assert "$1200.00" in review_text
