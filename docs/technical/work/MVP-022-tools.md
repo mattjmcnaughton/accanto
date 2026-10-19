@@ -25,3 +25,8 @@ created from scratch. Reviewed the four new task files in full, including task
 notes; no external data, secrets, media or browser state were used or included.
 No migration, provider configuration, external resource, push, issue mutation,
 application frontend change or tailnet-route change occurred here.
+
+Follow-up: framework input-validation exceptions are converted to a stable
+`invalid_arguments` tool error by narrow middleware, because the upstream
+validation exception text includes supplied values despite mask_error_details.
+Combined protocol tests must assert invalid argument values are not echoed.
