@@ -961,3 +961,34 @@ columns are added with the corresponding command slice. Dedicated restoration an
 opening-history reconstruction remain out of v1 scope. Provider compatibility
 blocks release of browser/MCP access, not implementation of pure domain rules.
 The browser increment has no unresolved financial-policy blocker.
+
+### MVP-019 lifecycle implementation
+
+Additive migration `5k019` (parent `5j018`) adds separate `completed` and
+`archived_by_account` goal flags. The latter records an active goal's prior state
+when its account retires; previously inactive/completed goals do not acquire it.
+Reopen clears the provenance and reactivates only those goals. Unallocated's
+protected definition permits inactivity only while archived with its account.
+Existing identities, openings, activity, audits and saved versions are preserved;
+a populated-base migration fixture compares all old fields before/after upgrade.
+
+Completion, account archive/reopen, activity and corrections share the existing
+Entity row lock and transaction with audit and retry outcomes. Pure completion,
+zero-archive and restoration rules live in `domains/savings.py`. Completion uses
+an explicit financial date and displayed expected remainder; a changed remainder
+rejects before writing. A positive return creates one existing reassignment row,
+marked with `completion_goal_id`; its independent edit/delete is blocked in service
+and database to preserve the atomic completion result. Full ordered history replay
+validates proposed completion and later refund/return corrections. Zero completion
+writes lifecycle/audit only. Later linked refunds restore money to the completed
+goal without reactivation or automatic transfer. Only explicit same-account return
+to Unallocated is permitted as a new movement from that completed goal.
+
+PostgreSQL checks cover zero/positive completion, audit-failure rollback, retry,
+retirement/reopen provenance, original archived origin correction, saved Plan
+preservation, and independent-key archive/activity and completion/refund-edit
+races. The latter reduces an existing refund while completion returns its money;
+only a valid serial outcome may commit. Fresh refund creation after completion
+remains allowed and is covered separately. A synthetic production browser journey
+records a purchase, completes its goal, records its refund, explicitly returns it,
+uses remaining Unallocated money, archives and reopens the same account.

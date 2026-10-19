@@ -604,6 +604,175 @@ def test_signed_in_workspace(tmp_path):
         browser("wait", "--text", "Synthetic loan (archived)")
         browser("find", "role", "button", "click", "--name", "Reopen loan", "--exact")
         browser("wait", "--text", "Archive loan")
+        # MVP-019: one isolated synthetic lifecycle journey through production UI.
+        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "New savings account",
+            "--exact",
+        )
+        browser("find", "label", "Name", "fill", "Synthetic lifecycle cash")
+        browser("find", "label", "Opening amount", "fill", "100.00")
+        browser(
+            "find", "role", "button", "click", "--name", "Add opening goal", "--exact"
+        )
+        browser("find", "label", "Goal name", "fill", "Lifecycle purpose")
+        browser("find", "label", "Target (required)", "fill", "100.00")
+        browser("find", "label", "Opening designation", "fill", "100.00")
+        browser("find", "role", "button", "click", "--name", "Save", "--exact")
+        browser("wait", "--text", "Synthetic lifecycle cash")
+        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        browser(
+            "find", "role", "button", "click", "--name", "Record activity", "--exact"
+        )
+        browser("select", "select[name='funding-origin']", "savings")
+        browser(
+            "wait",
+            "--fn",
+            "Array.from(document.querySelector('select[name=\"saving-goal\"]').options)"
+            ".some(o => o.textContent.includes('Lifecycle purpose'))",
+        )
+        lifecycle_goal = (
+            browser(
+                "eval",
+                "Array.from(document.querySelector('select[name=\"saving-goal\"]').options)"
+                ".find(o => o.textContent.includes('Lifecycle purpose')).value",
+            )
+            .strip()
+            .strip('"')
+        )
+        browser("select", "select[name='saving-goal']", lifecycle_goal)
+        browser("find", "label", "Amount (USD)", "fill", "90.00")
+        browser("find", "label", "Note", "fill", "Synthetic lifecycle purchase")
+        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
+        browser("wait", "--text", "Synthetic lifecycle purchase")
+        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "Complete Lifecycle purpose",
+            "--exact",
+        )
+        browser(
+            "wait",
+            "--text",
+            "Return $10.00 to Unallocated savings in Synthetic lifecycle cash.",
+        )
+        browser(
+            "find", "role", "button", "click", "--name", "Confirm complete", "--exact"
+        )
+        browser(
+            "wait",
+            "--fn",
+            "document.body.textContent.includes('Completed') && "
+            "!document.body.textContent.includes('Confirm complete')",
+        )
+        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        browser(
+            "click",
+            "article:has-text('Synthetic lifecycle purchase') "
+            "button:has-text('Record refund')",
+        )
+        browser("find", "label", "Refund amount (USD)", "fill", "20.00")
+        browser("find", "role", "button", "click", "--name", "Save refund", "--exact")
+        browser("wait", "--text", "Remaining refundable: $70.00")
+        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "Return Lifecycle purpose to Unallocated",
+            "--exact",
+        )
+        browser(
+            "wait",
+            "--text",
+            "Return $20.00 to Unallocated savings in Synthetic lifecycle cash.",
+        )
+        browser(
+            "find", "role", "button", "click", "--name", "Confirm return", "--exact"
+        )
+        browser("wait", "--fn", "!document.body.textContent.includes('Confirm return')")
+        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        browser(
+            "find", "role", "button", "click", "--name", "Record activity", "--exact"
+        )
+        browser("select", "select[name='funding-origin']", "savings")
+        browser(
+            "wait",
+            "--fn",
+            "Array.from(document.querySelector('select[name=\"saving-goal\"]').options)"
+            ".some(o => o.textContent.includes('Synthetic lifecycle cash') "
+            "&& o.textContent.includes('Unallocated'))",
+        )
+        lifecycle_unallocated = (
+            browser(
+                "eval",
+                "Array.from(document.querySelector('select[name=\"saving-goal\"]').options)"
+                ".find(o => o.textContent.includes('Synthetic lifecycle cash') "
+                "&& o.textContent.includes('Unallocated')).value",
+            )
+            .strip()
+            .strip('"')
+        )
+        browser("select", "select[name='saving-goal']", lifecycle_unallocated)
+        browser("find", "label", "Amount (USD)", "fill", "30.00")
+        browser("find", "label", "Note", "fill", "Synthetic final use")
+        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
+        browser("wait", "--text", "Synthetic final use")
+        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "Archive Synthetic lifecycle cash",
+            "--exact",
+        )
+        browser(
+            "find", "role", "button", "click", "--name", "Confirm archive", "--exact"
+        )
+        browser("wait", "--text", "Synthetic lifecycle cash · Archived account")
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "Reopen Synthetic lifecycle cash",
+            "--exact",
+        )
+        browser(
+            "find", "role", "button", "click", "--name", "Confirm reopen", "--exact"
+        )
+        browser(
+            "wait",
+            "--fn",
+            "!document.body.textContent.includes("
+            "'Synthetic lifecycle cash · Archived account')",
+        )
+        lifecycle_text = browser(
+            "get", "text", "article:has(h3:text-is('Synthetic lifecycle cash'))"
+        )
+        assert "Completed" in lifecycle_text and "Current saved $0.00" in lifecycle_text
+        assert "Contribution progress $0.00" in lifecycle_text
+        browser("set", "viewport", "320", "760")
+        assert (
+            browser(
+                "eval", "document.documentElement.scrollWidth <= innerWidth"
+            ).strip()
+            == "true"
+        )
         browser("find", "role", "button", "click", "--name", "Sign out", "--exact")
         browser("wait", "--text", "Sign in")
         assert "Synthetic E2E Entity" not in browser("get", "text", "body")

@@ -275,6 +275,17 @@ async def scenario(race_case=None):
             422,
         )
         await rejected("POST", "/activity", {**purchase_body, "amount": "0.00"})
+        movable_body = {
+            **purchase_body,
+            "saving_goal_id": unallocated["uuid"],
+            "amount": "0.00",
+        }
+        movable = await accepted("POST", "/activity", movable_body)
+        await rejected(
+            "PUT",
+            f"/activity/{movable['uuid']}",
+            {**movable_body, "saving_goal_id": goal["uuid"], "expected_revision": 1},
+        )
         await rejected(
             "PUT",
             path + f"/goals/{goal['uuid']}",
@@ -327,7 +338,7 @@ async def scenario(race_case=None):
         await rejected(
             "DELETE", f"/activity/refunds/{refund['uuid']}", {"expected_revision": 1}
         )
-        await accepted(
+        final_use = await accepted(
             "POST",
             "/activity",
             {
@@ -369,6 +380,22 @@ async def scenario(race_case=None):
                 "opening_amount": "1000.00",
             },
         )
+        before_correction = await counts()
+        correction = await command(
+            "PUT",
+            f"/activity/{final_use['uuid']}",
+            {
+                "date": "2026-11-03",
+                "category": "spending",
+                "amount": "200.00",
+                "funding_origin": "savings",
+                "saving_goal_id": other["goals"][0]["uuid"],
+                "expected_revision": 1,
+            },
+        )
+        assert correction.status_code == 409, correction.text
+        assert correction.json()["detail"]["code"] == "archived_account"
+        assert await counts() == before_correction
         await rejected(
             "PUT",
             f"/activity/{purchase['uuid']}",
@@ -463,6 +490,21 @@ async def scenario(race_case=None):
             {"date": "2026-10-03", "expected_revision": 1, "expected_return": "100.00"},
         )
         assert positive["balance"] == "1000.00"
+        completed_finite = next(
+            g for g in positive["goals"] if g["uuid"] == finite["uuid"]
+        )
+        assert (
+            completed_finite["remaining_saved"],
+            completed_finite["completed"],
+            completed_finite["active"],
+            completed_finite["contribution_progress"],
+        ) == ("0.00", True, False, "0.00")
+        assert (
+            next(g for g in positive["goals"] if g["role"] == "unallocated")[
+                "remaining_saved"
+            ]
+            == "1000.00"
+        )
         moves = (await client.get(prefix + "/savings-accounts/movements")).json()
         completion_movement = next(
             r for r in moves if r["note"] == "Goal completion return"

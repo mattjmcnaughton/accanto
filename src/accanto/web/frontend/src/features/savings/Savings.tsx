@@ -114,7 +114,10 @@ export function Savings(p: ScreenProps) {
       {state.kind === "empty" && <p>No savings accounts yet.</p>}
       {rows.map((account) => (
         <article key={account.uuid} className="workspace-card">
-          <h3>{account.name}</h3>
+          <h3>
+            {account.name}
+            {!account.active && " · Archived account"}
+          </h3>
           <p>
             Opening {dollars(account.opening_amount)} on {account.opening_date} · Current saved{" "}
             {dollars(account.balance)}
@@ -136,8 +139,9 @@ export function Savings(p: ScreenProps) {
                   {dollars(item.remaining_saved)} · Contribution progress{" "}
                   {dollars(item.contribution_progress)}
                   {item.funded_status && ` · ${item.funded_status}`}
+                  {item.completed ? " · Completed" : !item.active ? " · Inactive" : ""}
                 </span>
-                {item.role === "ordinary" && (
+                {item.role === "ordinary" && account.active && !item.completed && (
                   <button
                     type="button"
                     disabled={p.busy}
@@ -156,12 +160,16 @@ export function Savings(p: ScreenProps) {
               </li>
             ))}
           </ul>
-          <button type="button" disabled={p.busy} onClick={() => show(account, "correct")}>
+          <button
+            type="button"
+            disabled={p.busy || !account.active}
+            onClick={() => show(account, "correct")}
+          >
             Correct setup
           </button>
           <button
             type="button"
-            disabled={p.busy}
+            disabled={p.busy || !account.active}
             onClick={() => {
               show(account, "new-goal");
               setName("");
@@ -172,6 +180,11 @@ export function Savings(p: ScreenProps) {
           >
             New goal
           </button>
+          <SavingsLifecycle
+            {...p}
+            account={account}
+            onSaved={() => setReload((value) => value + 1)}
+          />
         </article>
       ))}
       <SavingsMovements {...p} accounts={rows} onSaved={() => setReload((value) => value + 1)} />
@@ -311,7 +324,10 @@ export function Savings(p: ScreenProps) {
                             setGoals(
                               goals.map((g, i) =>
                                 i === index
-                                  ? { ...g, kind: e.target.value as OpeningGoal["kind"] }
+                                  ? {
+                                      ...g,
+                                      kind: e.target.value as OpeningGoal["kind"],
+                                    }
                                   : g,
                               ),
                             );
@@ -556,7 +572,14 @@ function SavingsMovements(p: ScreenProps & { accounts: SavingsAccount[]; onSaved
             const body: MovementBody =
               kind === "reconciliation"
                 ? { kind, date, goal_id: goal, known_amount: amount, note }
-                : { kind, date, from_goal_id: from, to_goal_id: to, amount, note };
+                : {
+                    kind,
+                    date,
+                    from_goal_id: from,
+                    to_goal_id: to,
+                    amount,
+                    note,
+                  };
             if (editing)
               p.save(
                 savings.correctMovement(p.entity.id, editing.uuid, {
@@ -695,5 +718,152 @@ function SavingsMovements(p: ScreenProps & { accounts: SavingsAccount[]; onSaved
         </form>
       )}
     </section>
+  );
+}
+
+function SavingsLifecycle(p: ScreenProps & { account: SavingsAccount; onSaved: () => void }) {
+  const [action, setAction] = useState<"complete" | "return" | "archive" | "reopen" | null>(null);
+  const [goalId, setGoalId] = useState("");
+  const [date, setDate] = useState(p.entity.today);
+  const goal = p.account.goals.find((row) => row.uuid === goalId);
+  function start(next: typeof action, selected?: Goal) {
+    if (!p.guard()) return;
+    setAction(next);
+    setGoalId(selected?.uuid ?? "");
+    setDate(p.entity.today);
+    p.dirty(true);
+  }
+  function done() {
+    setAction(null);
+    p.dirty(false);
+    p.onSaved();
+  }
+  return (
+    <div className="savings-lifecycle">
+      <button
+        type="button"
+        disabled={p.busy}
+        onClick={() => start(p.account.active ? "archive" : "reopen")}
+      >
+        {p.account.active ? `Archive ${p.account.name}` : `Reopen ${p.account.name}`}
+      </button>
+      {p.account.active &&
+        p.account.goals.map((row) =>
+          row.completed ? (
+            Number(row.remaining_saved) > 0 && (
+              <button
+                key={row.uuid}
+                type="button"
+                disabled={p.busy}
+                onClick={() => start("return", row)}
+              >
+                Return {row.name} to Unallocated
+              </button>
+            )
+          ) : row.active && row.role === "ordinary" && row.kind === "finite" ? (
+            <button
+              key={row.uuid}
+              type="button"
+              disabled={p.busy}
+              onClick={() => start("complete", row)}
+            >
+              Complete {row.name}
+            </button>
+          ) : null,
+        )}
+      {action && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (p.busy) return;
+            if (action === "complete" && goal)
+              p.save(
+                savings.complete(p.entity.id, p.account.uuid, goal.uuid, {
+                  date,
+                  expected_revision: goal.revision,
+                  expected_return: goal.remaining_saved,
+                }),
+                done,
+              );
+            else if (action === "return" && goal) {
+              const unallocated = p.account.goals.find((row) => row.role === "unallocated");
+              if (unallocated)
+                p.save(
+                  savings.move(p.entity.id, {
+                    kind: "reassignment",
+                    date,
+                    from_goal_id: goal.uuid,
+                    to_goal_id: unallocated.uuid,
+                    amount: goal.remaining_saved,
+                    note: "Returned completed-goal refund",
+                  }),
+                  done,
+                );
+            } else if (action === "archive" || action === "reopen")
+              p.save(
+                savings.lifecycle(p.entity.id, p.account.uuid, action, p.account.revision),
+                done,
+              );
+          }}
+        >
+          <h4>
+            {action === "complete"
+              ? `Complete ${goal?.name}`
+              : action === "return"
+                ? `Return ${goal?.name} savings`
+                : `${action === "archive" ? "Archive" : "Reopen"} savings account`}
+          </h4>
+          {(action === "complete" || action === "return") && goal && (
+            <>
+              <p>
+                Return {dollars(goal.remaining_saved)} to Unallocated savings in {p.account.name}.
+                The account total stays unchanged.{" "}
+                {action === "complete"
+                  ? "The goal will be completed and unavailable for new contributions."
+                  : "The goal stays completed."}
+              </p>
+              <label>
+                Lifecycle financial date
+                <input
+                  required
+                  type="date"
+                  value={date}
+                  onChange={(event) => {
+                    setDate(event.target.value);
+                    p.dirty(true);
+                  }}
+                />
+              </label>
+            </>
+          )}
+          {action === "archive" && (
+            <p>
+              Recorded savings must be zero. Archive this account and its goals together; this moves
+              no money. Saved Plans stay unchanged and draft references require explicit revision.
+            </p>
+          )}
+          {action === "reopen" && (
+            <p>
+              Restore the account and the goals archived with it. Previously completed and
+              independently inactive goals keep their status. This creates no money movement.
+            </p>
+          )}
+          <button type="submit" disabled={p.busy}>
+            Confirm {action}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (p.guard()) {
+                setAction(null);
+                p.dirty(false);
+              }
+            }}
+          >
+            Cancel lifecycle action
+          </button>
+        </form>
+      )}
+    </div>
   );
 }

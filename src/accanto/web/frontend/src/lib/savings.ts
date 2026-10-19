@@ -13,6 +13,8 @@ export interface Goal {
   funded_status: "Funded" | "Not yet funded" | null;
   revision: number;
   active: boolean;
+  completed: boolean;
+  archived_by_account: boolean;
 }
 export interface SavingsAccount {
   uuid: string;
@@ -56,6 +58,26 @@ const movements = (entity: string) => `${root(entity)}/movements`;
 const record = (entity: string, account: string) =>
   `${root(entity)}/${encodeURIComponent(account)}`;
 export const savings = {
+  lifecycle: (
+    entity: string,
+    account: string,
+    action: "archive" | "reopen",
+    expected_revision: number,
+  ): WriteSpec<SavingsAccount> => ({
+    method: "POST",
+    path: `${record(entity, account)}/${action}`,
+    body: { expected_revision },
+  }),
+  complete: (
+    entity: string,
+    account: string,
+    goal: string,
+    body: { date: string; expected_revision: number; expected_return: string },
+  ): WriteSpec<SavingsAccount> => ({
+    method: "POST",
+    path: `${record(entity, account)}/goals/${encodeURIComponent(goal)}/complete`,
+    body,
+  }),
   movements: (entity: string): Promise<LoadState<SavingsMovement[]>> =>
     loadResource(movements(entity), (rows: SavingsMovement[]) => rows.length === 0),
   move: (entity: string, body: MovementBody): WriteSpec<SavingsMovement> => ({
@@ -87,7 +109,11 @@ export const savings = {
       opening_amount: string;
       goals: OpeningGoal[];
     },
-  ): WriteSpec<SavingsAccount> => ({ method: "POST", path: root(entity), body }),
+  ): WriteSpec<SavingsAccount> => ({
+    method: "POST",
+    path: root(entity),
+    body,
+  }),
   edit: (
     entity: string,
     account: string,
@@ -98,7 +124,11 @@ export const savings = {
       designations: Array<{ goal_id: string; opening_amount: string }>;
       expected_revision: number;
     },
-  ): WriteSpec<SavingsAccount> => ({ method: "PUT", path: record(entity, account), body }),
+  ): WriteSpec<SavingsAccount> => ({
+    method: "PUT",
+    path: record(entity, account),
+    body,
+  }),
   addGoal: (
     entity: string,
     account: string,
