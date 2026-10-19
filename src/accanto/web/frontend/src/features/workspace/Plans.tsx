@@ -1,3 +1,4 @@
+import { Metrics } from "./ReviewDetails";
 import { useState } from "react";
 import { balances } from "../../lib/balances";
 import { destinations } from "../../lib/destinations";
@@ -662,6 +663,9 @@ export function Plans(p: ScreenProps) {
                   Overallocated by {dollars(snapshot.unassigned.slice(1))}. You can still save this
                   Plan.
                 </output>
+              )}
+              {snapshot.planned_metrics && (
+                <Metrics title="Planned metrics" metrics={snapshot.planned_metrics} />
               )}
               {snapshot.saved && (
                 <>
