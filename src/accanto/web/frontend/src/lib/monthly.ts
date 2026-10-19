@@ -97,6 +97,7 @@ export interface PlanRevision {
   allocation_total?: DecimalString | null;
   giving_difference?: DecimalString | null;
   unassigned: DecimalString;
+  planned_metrics?: Metric[];
 }
 export interface PlanGroup {
   plan_id: UUID;
@@ -131,7 +132,48 @@ export type ReviewEntry = Omit<Activity, "source_id"> & {
   source_uuid: UUID | null;
   fixed_cost_uuid: UUID | null;
 };
+export interface Metric {
+  key: string;
+  basis: "planned" | "actual";
+  label: string;
+  numerator_label: string;
+  denominator_label: string;
+  numerator: DecimalString | null;
+  denominator: DecimalString | null;
+  percentage: DecimalString | null;
+  unavailable_reason: string | null;
+  components: Array<{ name: string; amount: DecimalString | null }>;
+}
+export interface ComparisonGroup {
+  planned: DecimalString | null;
+  recorded: DecimalString | null;
+  incomplete: boolean;
+  difference: DecimalString | null;
+  items: Array<{
+    id: UUID | null;
+    name: string;
+    planned: DecimalString | null;
+    recorded: DecimalString | null;
+    difference: DecimalString | null;
+    entries: Activity[];
+  }>;
+  unplanned: Activity[];
+  adjustments: Activity[];
+}
 export interface ReviewResult {
+  comparison?: Record<
+    "income" | "fixed_cost" | "spending" | "saving" | "investing" | "giving",
+    ComparisonGroup
+  >;
+  summary?: {
+    new_saving: DecimalString | null;
+    savings_used: DecimalString | null;
+    net_saving: DecimalString | null;
+    total_investing: DecimalString | null;
+    income_funded_investing: DecimalString | null;
+    income_funded_fixed_cost: DecimalString | null;
+  };
+  metrics?: Metric[];
   review: {
     uuid: UUID;
     month: IsoDate;

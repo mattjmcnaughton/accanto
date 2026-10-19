@@ -1,3 +1,4 @@
+import { ReviewDetails } from "./ReviewDetails";
 import { useEffect, useState } from "react";
 import { monthly } from "../../lib/monthly";
 import { LoadMessage, type ScreenProps, dollars, previousMonth, useLoad } from "./shared";
@@ -357,6 +358,7 @@ export function MonthlyReview(p: ScreenProps) {
               </p>
             </div>
           )}
+          <ReviewDetails review={state.data} />
           <h3>Activity in this month</h3>
           {state.data.entries.length === 0 ? (
             <p>No activity recorded. Unknown amounts are not zero.</p>
