@@ -199,6 +199,53 @@ it("shows named investment and giving destinations in shared Activity", async ()
   expect(await screen.findByText("Example recipient")).toBeDefined();
   expect(screen.getAllByText("Correct this entry in Investments and giving.")).toHaveLength(2);
 });
+it("shows both the destination and savings origin for funded outflows", async () => {
+  const entries = [
+    {
+      uuid: "fixed-entry",
+      financial_date: "2026-11-03",
+      category: "fixed_cost",
+      amount: "100.00",
+      fixed_cost_name: "Synthetic service",
+      debt_account_id: "loan-1",
+      saving_goal_id: "goal-1",
+      funding_origin: "savings",
+      note: "",
+      revision: 1,
+      is_adjustment: false,
+    },
+    {
+      uuid: "giving-entry",
+      financial_date: "2026-11-04",
+      category: "giving",
+      amount: "50.00",
+      destination_id: "recipient-1",
+      saving_goal_id: "goal-1",
+      funding_origin: "savings",
+      note: "",
+      revision: 1,
+      is_adjustment: false,
+    },
+  ];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    if (url.endsWith("/activity")) return json(entries);
+    if (url.endsWith("/savings-accounts"))
+      return json([
+        { uuid: "account-1", name: "Synthetic cash", goals: [{ uuid: "goal-1", name: "Reserve" }] },
+      ]);
+    if (url.endsWith("/giving-recipients"))
+      return json([{ uuid: "recipient-1", name: "Example recipient" }]);
+    if (url.endsWith("/debts")) return json([{ uuid: "loan-1", name: "Synthetic loan" }]);
+    return json([]);
+  });
+  render(<ActivityScreen {...props()} />);
+  const fixed = (await screen.findByText("Synthetic service")).closest("article");
+  expect(fixed?.textContent).toContain("Loan: Synthetic loan");
+  expect(fixed?.textContent).toContain("Funded from Synthetic cash · Reserve");
+  const giving = (await screen.findByText("Example recipient")).closest("article");
+  expect(giving?.textContent).toContain("Funded from Synthetic cash · Reserve");
+});
 it("keeps the viewed contributing-entry fingerprint through a background refresh", async () => {
   let refreshed = false;
   const first = {

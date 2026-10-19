@@ -166,9 +166,9 @@ snapshots, and retry outcome commit together. Tests cover date, cap, origin,
 deletion, competing refund creates, and competing purchase edit/refund create
 on PostgreSQL. The UI launches the refund from the original purchase.
 
-Activity input and DB checks currently reject all negative amounts; replacing a
-record is a correction, not the agreed signed delta-adjustment workflow. There is
-no funding-origin field: this slice cannot represent savings-funded spending.
+Activity commands now distinguish signed corrections from linked real refunds.
+Outflows carry one funding origin; ordinary receipts and contributions retain
+their category-specific sign rules.
 Plan inputs require 1–100 income lines. Reviews require an explicit version UUID;
 there is no automatic previous-month default in the service. Source assignments
 may refer to any source in the Entity, but comparison matches only identical

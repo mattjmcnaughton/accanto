@@ -228,18 +228,27 @@ export function ActivityScreen(p: ScreenProps) {
                 <p>
                   {entry.category === "fixed_cost"
                     ? (entry.fixed_cost_name ?? "Unassigned fixed cost")
-                    : entry.saving_goal_id
-                      ? `${entry.category === "saving" ? "To" : "Funded from"} ${goalLabel(entry.saving_goal_id)}`
+                    : entry.category === "saving" && entry.saving_goal_id
+                      ? `To ${goalLabel(entry.saving_goal_id)}`
                       : entry.destination_id &&
                           (entry.category === "investing" || entry.category === "giving")
                         ? destinationLabel(entry)
                         : entry.source_id
                           ? sources.find((s) => s.id === entry.source_id)?.label ||
                             "Historical Income source"
-                          : entry.category === "spending"
-                            ? "Funded from current income"
-                            : "Unassigned"}
+                          : "Unassigned"}
                 </p>
+                {(entry.category === "spending" ||
+                  entry.category === "fixed_cost" ||
+                  entry.category === "giving" ||
+                  entry.category === "investing") && (
+                  <p>
+                    Funded from{" "}
+                    {entry.funding_origin === "savings" && entry.saving_goal_id
+                      ? goalLabel(entry.saving_goal_id)
+                      : "current income"}
+                  </p>
+                )}
                 {entry.category === "fixed_cost" && entry.debt_account_id && (
                   <p>
                     Loan:{" "}

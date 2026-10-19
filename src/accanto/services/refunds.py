@@ -1,12 +1,14 @@
 """Linked refund commands inside the shared Entity transaction."""
 
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 from sqlalchemy import insert, select, update
 
 from accanto.domains.monthly import money
 from accanto.domains.refunds import (
     Refund,
+    RefundCapError,
     require_purchase_change_allowed,
     validate_refunds,
 )
@@ -38,8 +40,11 @@ async def linked_refunds(session, purchase_id):
     return rows
 
 
-def reject(error: ValueError):
-    raise RejectionError("invalid_refund", str(error), 422) from None
+def reject(error: ValueError, *, remaining_refundable: Decimal | None = None):
+    message = str(error)
+    if remaining_refundable is not None and isinstance(error, RefundCapError):
+        message += f" Remaining refundable: ${remaining_refundable:.2f}."
+    raise RejectionError("invalid_refund", message, 422) from None
 
 
 async def validate_purchase_edit(session, old, before, payload, *, deleting=False):
@@ -84,7 +89,11 @@ async def validate_purchase_edit(session, old, before, payload, *, deleting=Fals
                 [Refund(-row["amount"], row["financial_date"]) for row in current],
             )
     except ValueError as error:
-        reject(error)
+        reject(
+            error,
+            remaining_refundable=old["amount"]
+            - sum((-row["amount"] for row in current), Decimal("0.00")),
+        )
 
 
 async def write_refund(session, entity, operation, payload, target, audit):
@@ -143,7 +152,11 @@ async def write_refund(session, entity, operation, payload, target, audit):
             ),
         )
     except ValueError as error:
-        reject(error)
+        reject(
+            error,
+            remaining_refundable=purchase["amount"]
+            - sum((-row["amount"] for row in current), Decimal("0.00")),
+        )
     before = await entry_snapshot(session, old) if old else None
     if action == "delete":
         assert old is not None
