@@ -47,9 +47,13 @@ async def validate_purchase_edit(session, old, before, payload, *, deleting=Fals
     current = await linked_refunds(session, old["id"])
     if not current:
         return
+
+    def public_id(value):
+        return str(value) if value is not None else None
+
     new_origin = (
         payload.get("funding_origin", "income"),
-        payload.get("saving_goal_id"),
+        public_id(payload.get("saving_goal_id")),
     )
     old_origin = (before["funding_origin"], before["saving_goal_id"])
     try:
@@ -59,12 +63,16 @@ async def validate_purchase_edit(session, old, before, payload, *, deleting=Fals
             origin_changed=not deleting and new_origin != old_origin,
         )
         if not deleting:
-            if payload["category"] != old["category"]:
+            if payload.get("category", old["category"]) != old["category"]:
                 raise ValueError(
                     "Delete linked refunds before changing purchase category."
                 )
+            if payload.get("is_adjustment", False):
+                raise ValueError(
+                    "Delete linked refunds before changing purchase into an adjustment."
+                )
             for key in ("fixed_cost_id", "debt_account_id", "destination_id"):
-                if payload.get(key) != before.get(key):
+                if public_id(payload.get(key)) != public_id(before.get(key)):
                     raise ValueError(
                         "Delete linked refunds before changing destination or debt."
                     )

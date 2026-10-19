@@ -25,6 +25,9 @@ export interface Contribution {
   is_adjustment: boolean;
   revision: number;
   destination_id: string | null;
+  funding_origin?: "income" | "savings";
+  saving_goal_id?: string | null;
+  is_refund?: boolean;
 }
 export interface ContributionInput {
   date: string;
@@ -33,6 +36,8 @@ export interface ContributionInput {
   note: string;
   is_adjustment: boolean;
   expected_revision?: number;
+  funding_origin?: "income" | "savings";
+  saving_goal_id?: string | null;
 }
 const root = (entity: string, kind: DestinationKind) =>
   `/api/entities/${encodeURIComponent(entity)}/${kind === "investment" ? "investments" : "giving-recipients"}`;

@@ -93,19 +93,23 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | PUT | `/investments/{destination_id}`, `/giving-recipients/{destination_id}` | Name, target, active state and `expected_revision` |
 | GET/POST | `/investment-activity`, `/giving-activity` | Current history or create contribution/adjustment with optional `destination_id` |
 | PUT/DELETE | `/investment-activity/{entry_id}`, `/giving-activity/{entry_id}` | Correct entry or soft delete with `expected_revision` |
+| POST | `/activity/{purchase_id}/refunds` | Record a linked refund using positive `amount`, `date`, and optional `note` |
+| PUT/DELETE | `/activity/refunds/{refund_id}` | Correct a linked refund's date, amount or note, or soft delete it; both require `expected_revision` |
 
 Amounts are USD decimal **strings**, exact cents, maximum absolute value
 `999999999.99` per entered amount. Ordinary entries and known totals are
-nonnegative. Only entries explicitly marked `is_adjustment: true` accept signed
-amounts. Fractional cents and numeric JSON values reject.
+nonnegative. Signed adjustments and linked refund entries may have negative
+amounts. Refund commands take a positive amount. Fractional cents and numeric
+JSON values reject.
 Zero is explicit, absence is unknown. Dates are `YYYY-MM-DD`; there is no implicit
 today. Month selection uses dates, independently of UTC recording timestamps.
 
 Investment and giving contribution commands take `date`, `amount`, optional
-`destination_id`, `note`, and `is_adjustment`; corrections also take
+`destination_id`, `note`, `is_adjustment`, `funding_origin`, and
+`saving_goal_id` when savings funded; corrections also take
 `expected_revision`. An omitted destination is Unassigned. Ordinary investment
 contributions are nonnegative; signed adjustments can correct recorded totals.
-Giving refunds are deferred. Inactive destinations reject new assigned entries
+Giving refunds use the linked purchase refund command. Inactive destinations reject new assigned entries
 but permit correction of their existing assigned entries. Soft deletion removes
 progress while retaining entry and assignment history. Optional investment
 `opening: {"date":"2026-01-01","amount":"25000.00"}` is an observed starting
@@ -160,10 +164,11 @@ independent edit or lifecycle command. All writes require the shared
 reusing the key with different input conflicts. Financial change, complete audit
 snapshot and retry outcome commit together under the Entity lock.
 
-Saving contributions and savings-funded spending use `/activity`. Each saving
-entry, including a zero or signed adjustment, supplies `saving_goal_id`. A
-spending entry uses `funding_origin: "income"` by default. To spend previously
-saved money, send `funding_origin: "savings"` and the one `saving_goal_id`; the
+Saving contributions and savings-funded outflows use `/activity`. Each saving
+entry, including a zero or signed adjustment, supplies `saving_goal_id`. An
+outflow uses `funding_origin: "income"` by default. Spending, fixed costs,
+debt payments, giving, and investing can use previously saved money by sending
+`funding_origin: "savings"` and one `saving_goal_id`; the
 goal determines its account. For example, with a synthetic Laptop goal holding
 `800.00`, a `1000.00` savings-funded purchase rejects. Record a `200.00` saving
 contribution on the same date first, then the purchase succeeds. The month has
@@ -286,10 +291,11 @@ For example, `4000.00` planned income and `1000.00` savings funding produce
 `5300.00` produce `unassigned: "-300.00"`. A shortfall in one Plan never
 carries into another Plan automatically.
 
-`/activity` accepts `category: "fixed_cost"`, an optional `fixed_cost_id`,
-and `funding_origin: "income"`. An omitted ID is Unassigned fixed-cost activity.
+`/activity` accepts `category: "fixed_cost"`, optional `fixed_cost_id` and
+`debt_account_id`, and either funding origin. An omitted cost ID is Unassigned
+fixed-cost activity.
 Ordinary payments are nonnegative, including explicit zero. Signed corrections
-require `is_adjustment: true`; refunds are outside this workflow. Current
+require `is_adjustment: true`; refunds use the linked command. Current
 activity and Review detail retain an assigned cost's original canonical name
 even if a Plan line is later renamed or removed. Plan lines also retain their
 own saved labels. In a Review, an
@@ -367,6 +373,19 @@ with `is_adjustment: true`, an explicit date/category, and a signed amount such
 as `"-5.00"`. A negative ordinary receipt/payment still rejects. Adjustments
 are corrections to recorded totals; refunds and withdrawals have separate
 workflows and are not represented by this flag.
+
+To refund a purchase, `POST /activity/{purchase_id}/refunds` with
+`{"date":"2026-11-04","amount":"300.00"}`. This creates a separate negative
+entry with `refund_of` and `remaining_refundable`; the purchase stays in its
+original month. The refund inherits category, destination or debt, and funding
+origin. For a synthetic `1000.00` October purchase, this November refund leaves
+October `1000.00` and November `-300.00`. A further `700.00` succeeds;
+`701.00` rejects. Refund dates cannot precede the purchase. Editing a refund
+replaces its old amount for cap checks. A purchase with current refunds cannot
+be deleted or change origin, category, destination, or debt; amount and date
+edits must still satisfy the cap and date rules. Delete current refunds
+explicitly first. Rejected writes leave activity, savings, audit, and retry
+outcomes unchanged.
 
 Create the Review with `POST /reviews`, body
 `{"month":"2026-10-01","version_id":"SAVED_VERSION_UUID"}`, then retrieve it using

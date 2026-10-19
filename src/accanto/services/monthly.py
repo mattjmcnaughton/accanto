@@ -1212,6 +1212,21 @@ async def entry_snapshot(session, record):
         .join(r.refunds, r.refunds.c.original_entry_id == m.entries.c.id)
         .where(r.refunds.c.refund_entry_id == record["id"])
     )
+    remaining_refundable = None
+    if (
+        record["category"] in {"spending", "fixed_cost", "giving"}
+        and record["amount"] > 0
+        and not record["is_adjustment"]
+    ):
+        linked_total = await session.scalar(
+            select(func.coalesce(func.sum(-m.entries.c.amount), 0))
+            .join(r.refunds, r.refunds.c.refund_entry_id == m.entries.c.id)
+            .where(
+                r.refunds.c.original_entry_id == record["id"],
+                m.entries.c.deleted_at.is_(None),
+            )
+        )
+        remaining_refundable = record["amount"] - linked_total
     destination_uuid = None
     if record["category"] in {"investing", "giving"}:
         from accanto.services.destinations import entry_snapshot as destination_snapshot
@@ -1238,6 +1253,7 @@ async def entry_snapshot(session, record):
             and link
             else "income",
             "refund_of": original_uuid,
+            "remaining_refundable": remaining_refundable,
         }
     )
 

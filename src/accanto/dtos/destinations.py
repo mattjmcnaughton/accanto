@@ -106,6 +106,7 @@ class ContributionResult(BaseModel):
     amount: str
     note: str
     is_adjustment: bool
+    is_refund: bool = False
     revision: int
     destination_id: UUID | None
     funding_origin: str = "income"

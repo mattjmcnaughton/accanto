@@ -117,6 +117,15 @@ export interface Activity {
   funding_origin: "income" | "savings";
   saving_goal_id: UUID | null;
   destination_id?: UUID | null;
+  is_refund?: boolean;
+  refund_of?: UUID | null;
+  remaining_refundable?: DecimalString | null;
+}
+export interface RefundInput {
+  date: IsoDate;
+  amount: DecimalString;
+  note?: string;
+  expected_revision?: number;
 }
 export type ReviewEntry = Omit<Activity, "source_id"> & {
   source_uuid: UUID | null;
@@ -256,6 +265,21 @@ export const monthly = {
   deleteActivity: (entityId: UUID, activityId: UUID, body: RevisionInput): WriteSpec<Activity> => ({
     method: "DELETE",
     path: `${root(entityId)}/activity/${target(activityId)}`,
+    body,
+  }),
+  createRefund: (entityId: UUID, purchaseId: UUID, body: RefundInput): WriteSpec<Activity> => ({
+    method: "POST",
+    path: `${root(entityId)}/activity/${target(purchaseId)}/refunds`,
+    body,
+  }),
+  editRefund: (entityId: UUID, refundId: UUID, body: RefundInput): WriteSpec<Activity> => ({
+    method: "PUT",
+    path: `${root(entityId)}/activity/refunds/${target(refundId)}`,
+    body,
+  }),
+  deleteRefund: (entityId: UUID, refundId: UUID, body: RevisionInput): WriteSpec<Activity> => ({
+    method: "DELETE",
+    path: `${root(entityId)}/activity/refunds/${target(refundId)}`,
     body,
   }),
   createReview: (entityId: UUID, body: ReviewInput): WriteSpec<{ uuid: UUID; month: IsoDate }> => ({

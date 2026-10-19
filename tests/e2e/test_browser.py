@@ -361,6 +361,20 @@ def test_signed_in_workspace(tmp_path):
         browser("select", "select[name='saving-goal']", goal_option)
         browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
         browser("wait", "--text", "$1200.00")
+        # The refund starts from its purchase and retains that purchase's origin.
+        browser(
+            "eval",
+            "Array.from(document.querySelectorAll('.record-list article'))"
+            ".find(article => article.textContent.includes('$1200.00'))"
+            ".querySelector('button').click()",
+        )
+        browser("wait", "--text", "Record refund from purchase")
+        set_date("form.editor input[type='date']", "2026-11-04")
+        browser("find", "label", "Refund amount (USD)", "fill", "300.00")
+        browser("find", "role", "button", "click", "--name", "Save refund", "--exact")
+        browser("wait", "--text", "$-300.00")
+        assert "Linked refund" in browser("get", "text", "body")
+        assert "Remaining refundable: $900.00" in browser("get", "text", "body")
         browser("find", "role", "button", "click", "--name", "Savings", "--exact")
         browser("wait", "--text", "Contribution progress $200.00")
         browser(
@@ -416,13 +430,17 @@ def test_signed_in_workspace(tmp_path):
         investment_option = (
             browser(
                 "eval",
-                "Array.from(document.querySelector('form.editor select').options)"
-                ".find(option => option.textContent === 'Example fund').value",
+                "document.querySelector('select[name=contribution-destination]')"
+                ".options[1].value",
             )
             .strip()
             .strip('"')
         )
-        browser("select", "form.editor select", investment_option)
+        browser(
+            "select",
+            "form.editor select[name='contribution-destination']",
+            investment_option,
+        )
         browser(
             "find", "role", "button", "click", "--name", "Save contribution", "--exact"
         )
@@ -478,13 +496,17 @@ def test_signed_in_workspace(tmp_path):
         giving_option = (
             browser(
                 "eval",
-                "Array.from(document.querySelector('form.editor select').options)"
-                ".find(option => option.textContent === 'Example recipient').value",
+                "document.querySelector('select[name=contribution-destination]')"
+                ".options[1].value",
             )
             .strip()
             .strip('"')
         )
-        browser("select", "form.editor select", giving_option)
+        browser(
+            "select",
+            "form.editor select[name='contribution-destination']",
+            giving_option,
+        )
         browser(
             "find", "role", "button", "click", "--name", "Save contribution", "--exact"
         )
@@ -500,7 +522,11 @@ def test_signed_in_workspace(tmp_path):
         )
         browser("find", "label", "Adjustment to recorded total", "check")
         browser("find", "label", "Amount (USD)", "fill", "-25.00")
-        browser("select", "form.editor select", giving_option)
+        browser(
+            "select",
+            "form.editor select[name='contribution-destination']",
+            giving_option,
+        )
         browser(
             "find", "role", "button", "click", "--name", "Save contribution", "--exact"
         )
