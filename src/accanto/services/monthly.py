@@ -70,7 +70,9 @@ def check_revision(record, expected):
 
 
 async def plan_snapshot(session, record):
-    return json_values(
+    from accanto.domains.monthly_comparison import planned_metrics
+
+    snapshot = json_values(
         {
             **dict(record),
             "incomes": await plan_lines(session, record["id"]),
@@ -78,6 +80,9 @@ async def plan_snapshot(session, record):
             **(await plan_allocations(session, record["id"])),
         }
     )
+    # Presentation only: saved monetary inputs/results are never recalculated.
+    snapshot["planned_metrics"] = planned_metrics(snapshot)
+    return snapshot
 
 
 async def write(
@@ -1263,20 +1268,28 @@ async def entry_snapshot(session, record):
 
 async def review_fingerprint(session, entity_id, month, version_uuid, note):
     next_month = date(month.year + (month.month == 12), month.month % 12 + 1, 1)
-    rows = (
-        await session.execute(
-            select(m.entries.c.uuid, m.entries.c.revision)
-            .where(
-                m.entries.c.entity_id == entity_id,
-                m.entries.c.deleted_at.is_(None),
-                m.entries.c.financial_date >= month,
-                m.entries.c.financial_date < next_month,
+    records = (
+        (
+            await session.execute(
+                select(m.entries)
+                .where(
+                    m.entries.c.entity_id == entity_id,
+                    m.entries.c.deleted_at.is_(None),
+                    m.entries.c.financial_date >= month,
+                    m.entries.c.financial_date < next_month,
+                )
+                .order_by(m.entries.c.uuid)
             )
-            .order_by(m.entries.c.uuid)
         )
-    ).all()
+        .mappings()
+        .all()
+    )
+    # Include identity, funding and refund links as well as entry revisions.
+    # Movements/observations are not monthly financial activity.
+    facts = [await entry_snapshot(session, record) for record in records]
     canonical = json.dumps(
-        [str(version_uuid), note, [(str(uuid), revision) for uuid, revision in rows]],
+        json_values([str(version_uuid), note, facts]),
+        sort_keys=True,
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode()).hexdigest()
@@ -1472,6 +1485,14 @@ async def read_review(session, token, entity_uuid, month: date):
             )
         )
         actual["savings_used"] = str(savings_used)
+        from accanto.services.monthly_comparison import explain_review
+
+        version_view = await plan_snapshot(session, version)
+        entry_views = [await entry_snapshot(session, entry) for entry in entries]
+        explanation = explain_review(version_view, entry_views)
+        for category, comparison in explanation["comparison"].items():
+            actual[f"{category}_recorded"] = comparison["recorded"]
+            actual[f"{category}_incomplete"] = comparison["incomplete"]
         return json_values(
             {
                 "review": dict(review),
@@ -1482,7 +1503,8 @@ async def read_review(session, token, entity_uuid, month: date):
                         session, entity["id"], month, version["uuid"], review["note"]
                     )
                 ),
-                "version": await plan_snapshot(session, version),
+                "version": version_view,
+                **explanation,
                 "expected": {
                     "saving": version["saving_total"],
                     "investing": version["investing_total"],
@@ -1494,8 +1516,7 @@ async def read_review(session, token, entity_uuid, month: date):
                 "differences": {
                     category: (
                         None
-                        if actual[f"{category}_recorded"] is None
-                        or version[column] is None
+                        if actual[f"{category}_incomplete"] or version[column] is None
                         else str(
                             Decimal(actual[f"{category}_recorded"]) - version[column]
                         )
@@ -1512,7 +1533,7 @@ async def read_review(session, token, entity_uuid, month: date):
                     else await destination_comparisons(session, version, entries)
                 ),
                 "actual": actual,
-                "entries": [dict(e) for e in entries],
+                "entries": entry_views,
                 "income_difference": None
                 if actual["income_incomplete"]
                 else str(Decimal(actual["income_recorded"]) - version["income"]),
