@@ -63,3 +63,12 @@ covered Reopen loan click remain unexplained; this test touches no browser waits
 MVP-022 merged local work does not establish hosted compatibility. MVP-021 remains
 policy-blocked/design-only. No matching, new tools, AI/provider framework, remote
 write, deployment, route modification or external resource change occurred.
+
+## Parent local acceptance
+
+Parent integrated7e5a721 asa937fba. Independent review accepted this test's bounded
+history comparisons. Frozen snapshot60db93b passed, recording-order semantic mutant
+failed0versus2 at direct assertion, restored passed; helper included fresh migration
+each time. Full parent29integration passed21.00s. This proves that named backfill
+necessity, not every possible historic dataset/provider recovery. See MVP-023.md
+and wave handoff for final accepted local scope and outstanding provider gates.
