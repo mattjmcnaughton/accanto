@@ -69,8 +69,9 @@ it("keeps the full allocation input and flags inactive draft references", async 
     save,
   };
   render(<Plans {...props} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Edit Synthetic Plan" }));
-  expect(screen.getByText("Overallocated by $300.00. You can still save this Plan.")).toBeDefined();
+  fireEvent.click(await screen.findByRole("button", { name: "Synthetic Plan" }));
+  expect(screen.getAllByText("-$300.00").length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Details for Laptop" }));
   expect(
     screen.getByText(
       "This reference is inactive or unavailable. Review this draft allocation explicitly.",
@@ -97,7 +98,39 @@ it("reports a failed reference catalog instead of silently offering an empty lis
           JSON.stringify({ detail: { code: "unavailable", message: "Catalog unavailable" } }),
           { status: 503 },
         )
-      : new Response(JSON.stringify([]), { status: 200 }),
+      : new Response(
+          JSON.stringify(
+            String(path).endsWith("/plans")
+              ? [
+                  {
+                    plan_id: "p",
+                    revisions: [
+                      {
+                        uuid: "d",
+                        name: "Catalog Plan",
+                        number: 1,
+                        revision: 1,
+                        saved: false,
+                        saved_at: null,
+                        rule_version: "2",
+                        incomes: [],
+                        fixed_costs: [],
+                        savings_funding: [
+                          { account_id: "account", account_name: "Savings", amount: "100.00" },
+                        ],
+                        spending: "0.00",
+                        income: "0.00",
+                        fixed_cost_total: "0.00",
+                        tithe_target: "0.00",
+                        unassigned: "0.00",
+                      },
+                    ],
+                  },
+                ]
+              : [],
+          ),
+          { status: 200 },
+        ),
   );
   const props: ScreenProps = {
     entity: { id: "entity", name: "Synthetic Entity", today: "2026-10-18", time_zone: "UTC" },
@@ -109,8 +142,15 @@ it("reports a failed reference catalog instead of silently offering an empty lis
     save: vi.fn(),
   };
   render(<Plans {...props} />);
-  fireEvent.click(screen.getByRole("button", { name: "New Plan" }));
-  expect(await screen.findByText("Savings accounts and goals catalog")).toBeDefined();
+  fireEvent.click(await screen.findByRole("button", { name: "Catalog Plan" }));
+  expect(await screen.findByText("Savings accounts and goals")).toBeDefined();
   expect(screen.getByText(/Catalog unavailable/)).toBeDefined();
   expect(screen.getByRole("button", { name: "Try loading again" })).toBeDefined();
+  // Unknown is not empty or inactive: the failed catalog must not flag lines or claim none exist.
+  expect(screen.queryByText("Review reference")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Details for Savings" }));
+  expect(screen.queryByText(/inactive or unavailable/)).toBeNull();
+  fireEvent.keyDown(screen.getByRole("cell", { name: "Savings, Item" }), { key: "a" });
+  expect(screen.getByText(/Destinations are not loaded/)).toBeDefined();
+  expect(screen.queryByText(/No available destinations/)).toBeNull();
 });

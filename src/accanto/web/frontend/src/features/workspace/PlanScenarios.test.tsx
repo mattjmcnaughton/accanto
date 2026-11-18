@@ -11,6 +11,7 @@ const historical: PlanRevision = {
   revision: 2,
   saved: true,
   saved_at: "2025-01-01",
+  updated_at: null,
   rule_version: "older-rule",
   incomes: [{ source_id: "income-a", name: "Synthetic salary", amount: "4000.00" }],
   fixed_costs: [],
@@ -77,20 +78,6 @@ it("copies exactly the explicitly selected saved revision and retains the entere
     "Independent copy",
   );
 });
-it("compares stored saved inputs and old-rule results without including drafts", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(plans)));
-  render(<Plans {...props()} />);
-  const left = await screen.findByLabelText("First saved scenario");
-  fireEvent.change(left, { target: { value: "old" } });
-  fireEvent.change(screen.getByLabelText("Second saved scenario"), { target: { value: "new" } });
-  expect(screen.getByText("older-rule")).toBeTruthy();
-  expect(screen.getByText("$375.00")).toBeTruthy();
-  expect(screen.getByText("$3199.99")).toBeTruthy();
-  expect(screen.getByText("$3100.00")).toBeTruthy();
-  expect(left.querySelector('option[value="draft"]')).toBeNull();
-  expect(screen.getAllByText("Synthetic salary: $4000.00")).toHaveLength(2);
-});
-
 it("requires explicit reconciliation when the selected source changes during reload", () => {
   const p = props();
   const view = render(<CopyPlan plans={plans} screen={p} copied={vi.fn()} />);

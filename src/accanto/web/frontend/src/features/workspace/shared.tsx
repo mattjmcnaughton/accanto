@@ -32,6 +32,10 @@ export function sourceChoices(plans: PlanGroup[]) {
 }
 export const dollars = (value: string | null) => (value === null ? "Unknown" : `$${value}`);
 
+/** Enter or Escape that confirms an input-method candidate must not commit or leave the field. */
+export const composing = (event: { nativeEvent: KeyboardEvent }) =>
+  event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229;
+
 /** Disposed reads cannot populate a new screen, User or month. */
 export function useLoad<T>(load: () => Promise<LoadState<T>>, dependencies: unknown[]) {
   const [state, setState] = useState<LoadState<T>>({ kind: "loading" });
@@ -79,7 +83,7 @@ export function MoneyInput({
       <input
         required={required}
         inputMode="decimal"
-        pattern={signed ? "-?[0-9]+([.][0-9]{1,2})?" : "[0-9]+([.][0-9]{1,2})?"}
+        pattern={signed ? "-?[0-9]{1,9}([.][0-9]{1,2})?" : "[0-9]{1,9}([.][0-9]{1,2})?"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />

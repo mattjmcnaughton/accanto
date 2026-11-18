@@ -69,6 +69,7 @@ export interface PlanRevision {
   revision: number;
   saved: boolean;
   saved_at: string | null;
+  updated_at: string | null;
   rule_version: string;
   incomes: Array<{ source_id: UUID; name: string; amount: DecimalString }>;
   fixed_costs: Array<{

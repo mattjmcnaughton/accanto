@@ -30,7 +30,7 @@ export function ProductionHome() {
     };
   }, [attempt]);
   return (
-    <div className="app-shell">
+    <div className="app-shell app-shell-dark">
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
@@ -55,11 +55,8 @@ export function ProductionHome() {
             }}
           />
         ) : (
-          <div className="welcome-card">
-            <h1>Your financial workspace</h1>
-            <p className="lead">
-              Bring your Plans, recorded activity, and Reviews together in one place.
-            </p>
+          <div className="session-gate data-workspace">
+            <h1>Sign in to Accanto</h1>
             {state === "loading" && <output>Checking sign-in…</output>}
             {state === "signedout" && (
               <a className="button primary" href="/api/auth/login">

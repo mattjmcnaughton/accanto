@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ActivityScreen } from "../workspace/Activity";
 import type { ScreenProps } from "../workspace/shared";
@@ -101,11 +101,11 @@ const entries = [
   },
 ];
 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 });
-const mock = () =>
+const mock = (debts = loans) =>
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
     const url = String(path);
-    if (url.endsWith("/debts")) return json(loans);
-    if (url.endsWith("/debt-observations")) return json([loans[0].latest, loans[1].latest]);
+    if (url.endsWith("/debts")) return json(debts);
+    if (url.endsWith("/debt-observations")) return json(debts.map((loan) => loan.latest));
     if (url.endsWith("/activity")) return json(entries);
     return json([]);
   });
@@ -117,14 +117,44 @@ afterEach(() => {
 it("shows each loan's payment history apart from dated observations", async () => {
   mock();
   render(<Balances {...props} />);
-  const loanA = (await screen.findByRole("heading", { name: /Example loan A/ })).closest("article");
-  const loanB = (await screen.findByRole("heading", { name: /Example loan B/ })).closest("article");
-  expect(loanA).not.toBeNull();
-  expect(loanB).not.toBeNull();
-  expect(within(loanA as HTMLElement).getByText(/\$300.00 payment/)).toBeDefined();
-  expect(within(loanA as HTMLElement).queryByText(/\$20.00 payment/)).toBeNull();
-  expect(within(loanB as HTMLElement).getByText(/\$20.00 payment/)).toBeDefined();
-  expect(screen.getByRole("heading", { name: "Amount owed observations" })).toBeDefined();
+  const table = await screen.findByRole("grid", { name: "Loans" });
+  const loanB = within(table).getByText("Example loan B").closest("tr") as HTMLElement;
+  expect(within(loanB).getByText("Active")).toBeDefined();
+  expect(within(loanB).getAllByText("$500.00")).toHaveLength(2);
+  fireEvent.keyDown(within(table).getByText("Example loan A"), { key: "Enter" });
+  const payments = await screen.findByRole("table", { name: "Payments for Example loan A" });
+  expect(within(payments).getByText("$300.00")).toBeDefined();
+  expect(within(payments).queryByText("$20.00")).toBeNull();
+  expect(screen.getByRole("grid", { name: "Amount owed observations" })).toBeDefined();
+});
+
+it("archives only at zero owed and asks first", async () => {
+  mock();
+  render(<Balances {...props} />);
+  const table = await screen.findByRole("grid", { name: "Loans" });
+  fireEvent.click(within(table).getByRole("button", { name: "Details for Example loan B" }));
+  expect(screen.getByRole("button", { name: "Archive loan" })).toBeDisabled();
+  fireEvent.click(within(table).getByRole("button", { name: "Details for Example loan A" }));
+  expect(screen.getByRole("button", { name: "Reopen loan" })).toBeEnabled();
+
+  const zero = { ...loans[1], latest: { ...loans[1].latest, amount: "0.00", is_opening: false } };
+  cleanup();
+  mock([loans[0], zero]);
+  const save = vi.fn();
+  render(<Balances {...props} save={save} />);
+  const again = await screen.findByRole("grid", { name: "Loans" });
+  fireEvent.click(within(again).getByRole("button", { name: "Details for Example loan B" }));
+  fireEvent.click(screen.getByRole("button", { name: "Archive loan" }));
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Archive loan" }));
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "PUT",
+      path: "/api/entities/entity/debts/loan-b",
+      body: { name: "Example loan B", active: false, expected_revision: 1 },
+    }),
+    expect.any(Function),
+  );
 });
 
 it("names the debt account beside a fixed-cost payment in Activity", async () => {
@@ -133,4 +163,90 @@ it("names the debt account beside a fixed-cost payment in Activity", async () =>
   expect(await screen.findByText("Loan: Example loan A")).toBeDefined();
   expect(screen.getByText("Loan: Example loan B")).toBeDefined();
   expect(screen.queryByText("Loan: Ordinary cost")).toBeNull();
+});
+
+it("closes an untouched new record panel with Close and with Escape", async () => {
+  mock();
+  render(<Balances {...props} />);
+  await screen.findByRole("grid", { name: "Loans" });
+  fireEvent.click(screen.getByRole("button", { name: "Add loan" }));
+  const panel = await screen.findByRole("complementary", { name: "Record details" });
+  fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("complementary", { name: "Record details" })).toBeNull();
+  expect(screen.queryByText("Enter a name.")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Record observation" }));
+  fireEvent.keyDown(await screen.findByRole("complementary", { name: "Record details" }), {
+    key: "Escape",
+  });
+  expect(screen.queryByRole("complementary", { name: "Record details" })).toBeNull();
+  expect(screen.queryByText("Choose a loan.")).toBeNull();
+});
+
+it("keeps an invalid edited panel open on Escape and shows the problem", async () => {
+  mock();
+  render(<Balances {...props} />);
+  await screen.findByRole("grid", { name: "Loans" });
+  fireEvent.click(screen.getByRole("button", { name: "Add loan" }));
+  const panel = await screen.findByRole("complementary", { name: "Record details" });
+  fireEvent.change(within(panel).getByLabelText("Name"), { target: { value: "  " } });
+  fireEvent.keyDown(panel, { key: "Escape" });
+  expect(await within(panel).findByText("Enter a name.")).toBeDefined();
+});
+
+it("retains a valid observation edit on Escape and writes only on Ctrl+S, trimmed", async () => {
+  mock();
+  const save = vi.fn();
+  render(<Balances {...props} save={save} />);
+  await screen.findByRole("grid", { name: "Loans" });
+  fireEvent.click(screen.getByRole("button", { name: "Record observation" }));
+  const panel = await screen.findByRole("complementary", { name: "Record details" });
+  fireEvent.change(within(panel).getByLabelText("Loan"), { target: { value: "loan-b" } });
+  fireEvent.change(within(panel).getByLabelText("Observation date"), {
+    target: { value: "2026-10-03" },
+  });
+  fireEvent.change(within(panel).getByLabelText(/Amount owed \(USD\)/), {
+    target: { value: " 450.25 " },
+  });
+  fireEvent.keyDown(panel, { key: "Escape" });
+  expect(save).not.toHaveBeenCalled();
+  expect(screen.queryByRole("complementary", { name: "Record details" })).toBeNull();
+  expect(screen.getByText(/Unsaved edit/)).toBeDefined();
+  fireEvent.click(screen.getByRole("button", { name: "Review" }));
+  const reopened = await screen.findByRole("complementary", { name: "Record details" });
+  expect((within(reopened).getByLabelText(/Amount owed \(USD\)/) as HTMLInputElement).value).toBe(
+    " 450.25 ",
+  );
+  fireEvent.keyDown(reopened, { key: "s", ctrlKey: true });
+  expect(save).toHaveBeenCalledOnce();
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "POST",
+      path: "/api/entities/entity/debt-observations",
+      body: { date: "2026-10-03", amount: "450.25", account_id: "loan-b" },
+    }),
+    expect.any(Function),
+  );
+});
+
+it("corrects an observation against its loaded revision and refuses an invalid amount", async () => {
+  mock();
+  const save = vi.fn();
+  render(<Balances {...props} save={save} />);
+  const grid = await screen.findByRole("grid", { name: "Amount owed observations" });
+  fireEvent.keyDown(grid.querySelector('[data-cell="0-0"]') as HTMLElement, { key: "Enter" });
+  const panel = await screen.findByRole("complementary", { name: "Record details" });
+  const amount = within(panel).getByLabelText(/Amount owed \(USD\)/);
+  fireEvent.change(amount, { target: { value: "12.345" } });
+  fireEvent.click(within(panel).getByRole("button", { name: "Save observation" }));
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.change(amount, { target: { value: "12.30" } });
+  fireEvent.click(within(panel).getByRole("button", { name: "Save observation" }));
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "PUT",
+      path: "/api/entities/entity/debt-observations/obs-a",
+      body: { date: "2026-10-01", amount: "12.30", account_id: "loan-a", expected_revision: 1 },
+    }),
+    expect.any(Function),
+  );
 });

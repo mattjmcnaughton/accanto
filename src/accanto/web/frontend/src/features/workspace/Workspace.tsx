@@ -24,6 +24,7 @@ export function Workspace({
 }: { initial: BrowserSession; signedOut: (message?: string) => void }) {
   const [session, setSession] = useState(initial);
   const [screen, setScreen] = useState<
+    | "Home"
     | "Plans"
     | "Activity"
     | "Monthly Review"
@@ -32,7 +33,7 @@ export function Workspace({
     | "Investments and giving"
     | "Loans and balances"
     | "Settings"
-  >("Plans");
+  >("Home");
   const [refresh, setRefresh] = useState(0);
   const [metadataStale, setMetadataStale] = useState(false);
   const [metadataError, setMetadataError] = useState(false);
@@ -40,20 +41,50 @@ export function Workspace({
   const [status, setStatus] = useState<RecoveryStatus | null>(null);
   const [message, setMessage] = useState("");
   const dirty = useRef(false);
+  const planDirty = useRef(false);
   const live = useRef(true);
   const pending = useRef(new RecoverableWrite<unknown>());
   const afterSave = useRef<(data: unknown) => void>(() => {});
   const [concealed, setConcealed] = useState(false);
   const entity = session.entities[0];
   useEffect(() => {
+    const navigate = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        !/^[1-9]$/.test(event.key) ||
+        (event.target instanceof HTMLElement &&
+          event.target.closest("input,textarea,select,[contenteditable],[role=textbox]")) ||
+        document.querySelector("dialog[open]")
+      )
+        return;
+      const button = document.querySelectorAll<HTMLButtonElement>(
+        ".workspace-nav:not([hidden]) button",
+      )[Number(event.key) - 1];
+      if (button) {
+        event.preventDefault();
+        button.click();
+      }
+    };
+    document.addEventListener("keydown", navigate);
+    return () => document.removeEventListener("keydown", navigate);
+  }, []);
+  useEffect(() => {
     live.current = true;
-    const remove = guardUnsavedNavigation(() => dirty.current || pending.current.hasPending());
+    const remove = guardUnsavedNavigation(
+      () => dirty.current || planDirty.current || pending.current.hasPending(),
+    );
     return () => {
       live.current = false;
       pending.current.clear();
       remove();
     };
   }, []);
+  // Retained Plan edits live in tab memory across screens, so only the navigated-to screen's own
+  // draft and pending write can block its actions. Closing the tab still warns about Plans.
   const guard = () =>
     !busy &&
     !metadataStale &&
@@ -107,6 +138,7 @@ export function Workspace({
     await logout(session, () => {
       pending.current.clear();
       dirty.current = false;
+      planDirty.current = false;
       live.current = false;
       signedOut();
     }).catch(() =>
@@ -161,11 +193,10 @@ export function Workspace({
     save,
   };
   return (
-    <>
+    <div className="planning-workspace">
       <header className="workspace-heading">
         <div>
           <p className="entity-name">{concealed ? "Account changed" : entity?.name}</p>
-          <h1>Your financial workspace</h1>
         </div>
         <button type="button" onClick={() => void signOut()}>
           Sign out
@@ -188,21 +219,21 @@ export function Workspace({
       )}
       {message && !concealed && <output>{message}</output>}
       {metadataStale && !concealed && (
-        <div aria-live="polite">
+        <div className="recovery-notice recovery-bar" aria-live="polite">
           <p>
             {metadataError
               ? "Settings were saved, but current Entity date defaults could not be refreshed. Refresh before continuing."
               : "Refreshing Entity date defaults…"}
           </p>
           {metadataError && (
-            <>
+            <div className="recovery-actions">
               <button type="button" onClick={() => void refreshMetadata()}>
                 Refresh Entity defaults
               </button>
               <button type="button" onClick={() => void refreshMetadata(true)}>
                 Sign in and refresh defaults
               </button>
-            </>
+            </div>
           )}
         </div>
       )}
@@ -212,6 +243,7 @@ export function Workspace({
           <nav className="workspace-nav" aria-label="Workspace" hidden={concealed}>
             {(
               [
+                "Home",
                 "Plans",
                 "Activity",
                 "Monthly Review",
@@ -221,13 +253,20 @@ export function Workspace({
                 "Loans and balances",
                 "Settings",
               ] as const
-            ).map((item) => (
+            ).map((item, index) => (
               <button
                 type="button"
                 key={item}
+                aria-label={item}
+                aria-keyshortcuts={String(index + 1)}
                 aria-current={screen === item ? "page" : undefined}
                 onClick={() => {
-                  if (item !== screen && guard()) {
+                  // Plan edits remain mounted in tab memory across workspace navigation.
+                  if (
+                    item !== screen &&
+                    !props.busy &&
+                    confirmInAppNavigation(() => dirty.current)
+                  ) {
                     pending.current.clear();
                     dirty.current = false;
                     setStatus(null);
@@ -236,11 +275,21 @@ export function Workspace({
                   }
                 }}
               >
-                {item}
+                <kbd>{index + 1}</kbd> {item}
               </button>
             ))}
           </nav>
-          {screen === "Plans" && <Plans {...props} />}
+          <div hidden={screen !== "Home" && screen !== "Plans"}>
+            <Plans
+              {...props}
+              home={screen === "Home"}
+              visible={screen === "Home" || screen === "Plans"}
+              showPlans={() => setScreen("Plans")}
+              retainedDirty={(value) => {
+                planDirty.current = value;
+              }}
+            />
+          </div>
           {screen === "Activity" && <ActivityScreen {...props} />}
           {screen === "Monthly Review" && <MonthlyReview {...props} />}
           {screen === "Income estimates" && <IncomeEstimates {...props} />}
@@ -252,6 +301,6 @@ export function Workspace({
           )}
         </>
       )}
-    </>
+    </div>
   );
 }
