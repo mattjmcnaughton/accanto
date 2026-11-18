@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { Destinations } from "./Destinations";
 import type { ScreenProps } from "../workspace/shared";
+import { Balances } from "../balances/Balances";
+import { Destinations } from "./Destinations";
 
 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 });
 const destination = {
@@ -12,6 +13,7 @@ const destination = {
   revision: 1,
   contribution_progress: "1000.00",
   opening: { date: "2026-01-01", amount: "25000.00" },
+  latest: { date: "2026-03-01", amount: "26100.00" },
 };
 const entry = {
   uuid: "entry-1",
@@ -20,9 +22,22 @@ const entry = {
   amount: "1000.00",
   note: "",
   is_adjustment: false,
-  revision: 1,
+  revision: 3,
   destination_id: destination.uuid,
 };
+const observation = (uuid: string, date: string, amount: string, is_opening: boolean) => ({
+  uuid,
+  financial_date: date,
+  amount,
+  account_id: destination.uuid,
+  is_opening,
+  revision: 2,
+  deleted: false,
+});
+const observations = [
+  observation("opening-1", "2026-01-01", "25000.00", true),
+  observation("observed-1", "2026-03-01", "26100.00", false),
+];
 const props = (): ScreenProps => ({
   entity: { id: "entity", name: "Synthetic Entity", today: "2026-11-10", time_zone: "UTC" },
   concealed: false,
@@ -32,49 +47,107 @@ const props = (): ScreenProps => ({
   dirty: vi.fn(),
   save: vi.fn(),
 });
+const mock = (routes: Record<string, unknown> = {}) =>
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    for (const [suffix, value] of Object.entries(routes))
+      if (url.endsWith(suffix)) return json(value);
+    if (url.endsWith("/investment-activity")) return json([entry]);
+    if (url.endsWith("/investment-observations")) return json(observations);
+    if (url.endsWith("/investments")) return json([destination]);
+    return json([]);
+  });
+const grid = (name: string) => screen.findByRole("grid", { name });
+const cell = (table: HTMLElement, text: string) =>
+  within(table).getByText(text).closest("td") as HTMLElement;
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
 
-it("shows contribution progress apart from opening value and preserves correction identity", async () => {
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
-    String(path).endsWith("/investment-activity")
-      ? json([entry])
-      : String(path).endsWith("/savings-accounts")
-        ? json([])
-        : json([destination]),
-  );
+it("keeps contribution progress apart from the observed value and corrects by revision", async () => {
+  mock();
   const p = props();
   render(<Destinations {...p} />);
-  expect(await screen.findByText("Active · Contributions $1000.00")).toBeDefined();
-  expect(screen.getByText(/Opening observed value \$25000.00/)).toBeDefined();
-  fireEvent.click(screen.getByRole("button", { name: "Correct entry on 2026-02-01" }));
+  const investments = await grid("Investments");
+  const fund = within(investments).getByText("Example fund").closest("tr") as HTMLElement;
+  expect(within(fund).getByText("$1000.00")).toBeDefined();
+  expect(within(fund).getByText("$26100.00")).toBeDefined();
+  expect(within(fund).queryByText("$25000.00")).toBeNull();
+
+  fireEvent.keyDown(cell(await grid("Investment contributions"), "2026-02-01"), { key: "Enter" });
   fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "900.00" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save contribution" }));
+  fireEvent.keyDown(screen.getByLabelText("Amount (USD)"), { key: "s", ctrlKey: true });
   expect(p.save).toHaveBeenCalledWith(
     expect.objectContaining({
       method: "PUT",
       path: "/api/entities/entity/investment-activity/entry-1",
-      body: expect.objectContaining({ amount: "900.00", expected_revision: 1 }),
+      body: expect.objectContaining({ amount: "900.00", expected_revision: 3 }),
+    }),
+    expect.any(Function),
+  );
+});
+
+it("keeps a valid edit on Escape without saving and holds an invalid edit open", async () => {
+  mock();
+  const p = props();
+  render(<Destinations {...p} />);
+  fireEvent.keyDown(cell(await grid("Investment contributions"), "2026-02-01"), { key: "i" });
+  const amount = screen.getByLabelText("Amount (USD)");
+  fireEvent.change(amount, { target: { value: "12.345" } });
+  fireEvent.keyDown(amount, { key: "Escape" });
+  expect(screen.getByRole("alert").textContent).toMatch(/up to two decimals/);
+  expect(screen.getByLabelText("Amount (USD)")).toHaveValue("12.345");
+
+  fireEvent.change(amount, { target: { value: "950.00" } });
+  fireEvent.keyDown(amount, { key: "Escape" });
+  expect(screen.queryByRole("complementary", { name: "Record details" })).toBeNull();
+  expect(p.save).not.toHaveBeenCalled();
+  expect(within(await grid("Investment contributions")).getByText("Unsaved")).toBeDefined();
+
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({ body: expect.objectContaining({ amount: "950.00" }) }),
+    expect.any(Function),
+  );
+});
+
+it("deletes a later observation after confirmation but never an opening value", async () => {
+  mock();
+  const p = props();
+  render(<Destinations {...p} />);
+  const table = await grid("Investment value observations");
+  const opening = cell(table, "2026-01-01");
+  fireEvent.keyDown(opening, { key: "d" });
+  fireEvent.keyDown(opening, { key: "d" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByText("Opening values cannot be deleted.")).toBeDefined();
+
+  const later = cell(table, "2026-03-01");
+  fireEvent.keyDown(later, { key: "d" });
+  fireEvent.keyDown(later, { key: "d" });
+  expect(p.save).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "Delete observation" }),
+  );
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "DELETE",
+      path: "/api/entities/entity/investment-observations/observed-1",
+      body: { expected_revision: 2 },
     }),
     expect.any(Function),
   );
 });
 
 it("permits a destination without a target or opening", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(json([]));
+  mock({ "/investments": [], "/investment-activity": [], "/investment-observations": [] });
   const p = props();
   render(<Destinations {...p} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Add investment" }));
+  const investments = await grid("Investments");
+  fireEvent.keyDown(within(investments).getByText(/No investments yet/), { key: "a" });
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Example fund" } });
-  expect(
-    (screen.getByLabelText("Cumulative contribution target (USD, optional)") as HTMLInputElement)
-      .required,
-  ).toBe(false);
-  expect(
-    (screen.getByLabelText("Opening observed value (USD, optional)") as HTMLInputElement).required,
-  ).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Save destination" }));
   expect(p.save).toHaveBeenCalledWith(
     expect.objectContaining({ body: { name: "Example fund", target: null, opening: null } }),
@@ -83,31 +156,31 @@ it("permits a destination without a target or opening", async () => {
 });
 
 it("records an investment contribution from one saving goal", async () => {
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
-    String(path).endsWith("/investment-activity")
-      ? json([])
-      : String(path).endsWith("/savings-accounts")
-        ? json([
-            {
-              uuid: "account-1",
-              name: "Synthetic savings",
-              active: true,
-              opening_date: "2026-01-01",
-              goals: [{ uuid: "goal-1", name: "Reserve" }],
-            },
-          ])
-        : json([destination]),
-  );
+  mock({
+    "/savings-accounts": [
+      {
+        uuid: "account-1",
+        name: "Synthetic savings",
+        active: true,
+        opening_date: "2026-01-01",
+        goals: [{ uuid: "goal-1", name: "Reserve" }],
+      },
+    ],
+  });
   const p = props();
   render(<Destinations {...p} />);
   fireEvent.click(await screen.findByRole("button", { name: "Record contribution" }));
   fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "100.00" } });
   fireEvent.change(screen.getByLabelText("Funding origin"), { target: { value: "savings" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save contribution" }));
+  expect(p.save).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert").textContent).toBe("Choose a saving goal.");
   await screen.findByRole("option", { name: "Synthetic savings · Reserve" });
   fireEvent.change(screen.getByLabelText("Saving goal"), { target: { value: "goal-1" } });
   fireEvent.click(screen.getByRole("button", { name: "Save contribution" }));
   expect(p.save).toHaveBeenCalledWith(
     expect.objectContaining({
+      method: "POST",
       body: expect.objectContaining({
         funding_origin: "savings",
         saving_goal_id: "goal-1",
@@ -115,5 +188,182 @@ it("records an investment contribution from one saving goal", async () => {
       }),
     }),
     expect.any(Function),
+  );
+});
+
+it("shows net donations and leaves linked refunds to Activity", async () => {
+  mock({
+    "/giving-recipients": [
+      {
+        ...destination,
+        uuid: "recipient-1",
+        name: "Example charity",
+        contribution_progress: "450.00",
+        target: null,
+        latest: null,
+      },
+    ],
+    "/giving-activity": [
+      {
+        ...entry,
+        uuid: "gift",
+        category: "giving",
+        amount: "500.00",
+        destination_id: "recipient-1",
+      },
+      {
+        ...entry,
+        uuid: "refund",
+        category: "giving",
+        financial_date: "2026-02-09",
+        amount: "-50.00",
+        destination_id: "recipient-1",
+        is_refund: true,
+      },
+    ],
+  });
+  const p = props();
+  render(<Destinations {...p} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Giving recipients" }));
+  const recipients = await grid("Giving recipients");
+  expect(within(recipients).getByRole("columnheader", { name: "Net donations" })).toBeDefined();
+  const charity = within(recipients).getByText("Example charity").closest("tr") as HTMLElement;
+  expect(within(charity).getByText("$450.00")).toBeDefined();
+  expect(within(charity).getByText("—")).toBeDefined();
+
+  const donations = await grid("Donations");
+  const refund = cell(donations, "2026-02-09");
+  expect(
+    within(refund.closest("tr") as HTMLElement).getByText("Correct in Activity"),
+  ).toBeDefined();
+  fireEvent.keyDown(refund, { key: "Enter" });
+  fireEvent.keyDown(refund, { key: "d" });
+  fireEvent.keyDown(refund, { key: "d" });
+  expect(screen.queryByRole("complementary", { name: "Record details" })).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByText("Correct this linked refund in Activity.")).toBeDefined();
+});
+
+it("names each dialog by its own title", async () => {
+  mock();
+  render(<Destinations {...props()} />);
+  const later = cell(await grid("Investment value observations"), "2026-03-01");
+  fireEvent.keyDown(later, { key: "d" });
+  fireEvent.keyDown(later, { key: "d" });
+  expect(screen.getByRole("dialog", { name: "Delete observation?" })).toBeDefined();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.keyDown(later, { key: "?" });
+  expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeDefined();
+});
+
+it("keeps attempted values while a write is pending", async () => {
+  mock();
+  const p = props();
+  const { rerender } = render(<Destinations {...p} />);
+  const contributions = await grid("Investment contributions");
+  fireEvent.keyDown(cell(contributions, "2026-02-01"), { key: "Enter" });
+  fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "975.00" } });
+  fireEvent.keyDown(screen.getByLabelText("Amount (USD)"), { key: "Escape" });
+  rerender(<Destinations {...p} busy />);
+  expect(screen.getByRole("button", { name: "Discard" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Giving recipients" })).toBeDisabled();
+  fireEvent.keyDown(cell(await grid("Investments"), "Example fund"), { key: "Enter" });
+  fireEvent.keyDown(cell(contributions, "2026-02-01"), { key: "a" });
+  expect(screen.queryByLabelText("Name")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Review" }));
+  expect(screen.getByLabelText("Amount (USD)")).toHaveValue("975.00");
+});
+
+it("keeps keyboard focus in the grid after a confirmed delete reloads the list", async () => {
+  let rows = [...observations, observation("observed-2", "2026-04-01", "26300.00", false)];
+  mock();
+  const fetch = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+  const base = fetch.getMockImplementation() as (path: unknown) => Promise<Response>;
+  fetch.mockImplementation(async (path: unknown) =>
+    String(path).endsWith("/investment-observations") ? json(rows) : base(path),
+  );
+  const p = props();
+  p.save = vi.fn((spec, confirmed) => {
+    rows = rows.filter((row) => !spec.path.endsWith(row.uuid));
+    confirmed(undefined as never);
+  });
+  render(<Destinations {...p} />);
+  const table = await grid("Investment value observations");
+  const doomed = cell(table, "2026-03-01");
+  doomed.focus();
+  fireEvent.keyDown(doomed, { key: "d" });
+  fireEvent.keyDown(doomed, { key: "d" });
+  fireEvent.click(screen.getByRole("button", { name: "Delete observation" }));
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole("grid", { name: "Investment value observations" })).queryByText(
+        "2026-03-01",
+      ),
+    ).toBeNull(),
+  );
+  await waitFor(() => {
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.tagName).toBe("TD");
+    expect(focused.closest("table")).toBe(
+      screen.getByRole("grid", { name: "Investment value observations" }),
+    );
+  });
+});
+
+it("returns Escape focus to the grid when the opening click did not focus its trigger", async () => {
+  mock();
+  const p = props();
+  render(<Destinations {...p} />);
+  await grid("Investment value observations");
+  // fireEvent.click, like WebKit, does not focus the clicked button.
+  fireEvent.click(screen.getByRole("button", { name: "Correct observation on 2026-03-01" }));
+  const amount = screen.getByLabelText("Observed value (USD)");
+  amount.focus();
+  fireEvent.change(amount, { target: { value: "31025.50" } });
+  fireEvent.keyDown(amount, { key: "Escape" });
+  await waitFor(() =>
+    expect((document.activeElement as HTMLElement).closest("[role=grid]")).not.toBeNull(),
+  );
+  fireEvent.keyDown(document.activeElement as HTMLElement, { key: "s", ctrlKey: true });
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "PUT",
+      path: "/api/entities/entity/investment-observations/observed-1",
+      body: expect.objectContaining({ amount: "31025.50", expected_revision: 2 }),
+    }),
+    expect.any(Function),
+  );
+});
+
+it("keeps the Escape fallback inside this screen, past hidden grids and another screen's cell", async () => {
+  mock({ "/debts": [] });
+  const loans = render(<Balances {...props()} />);
+  (await screen.findByRole("grid", { name: "Loans" })).querySelector<HTMLElement>("td")?.focus();
+  loans.unmount();
+  mock();
+  render(
+    <>
+      <div hidden>
+        {/* biome-ignore lint/a11y/useSemanticElements: Stands in for the hidden Plans worksheet grid. */}
+        <table role="grid" aria-label="Hidden worksheet">
+          <tbody>
+            <tr>
+              {/* biome-ignore lint/a11y/noNoninteractiveTabindex: Mirrors a roving-focus grid cell. */}
+              <td tabIndex={0}>hidden</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <Destinations {...props()} />
+    </>,
+  );
+  await grid("Investment value observations");
+  fireEvent.click(screen.getByRole("button", { name: "Correct observation on 2026-03-01" }));
+  const amount = screen.getByLabelText("Observed value (USD)");
+  amount.focus();
+  fireEvent.keyDown(amount, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByLabelText("Observed value (USD)")).toBeNull());
+  await waitFor(() =>
+    expect((document.activeElement as HTMLElement).closest(".records [role=grid]")).not.toBeNull(),
   );
 });

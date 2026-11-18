@@ -1,3 +1,6 @@
+import "../workspace/worksheet-ui.css";
+import "./recovery.css";
+
 /** Status and actions for a pending in-memory write; form values remain with its owner. */
 export type RecoveryStatus =
   | "unavailable"
@@ -36,7 +39,11 @@ export function RecoveryNotice({
   onDiscard: () => void;
 }) {
   return (
-    <section className="recovery-notice" role="alert" aria-label="Save needs attention">
+    <section
+      className="recovery-notice recovery-bar"
+      role="alert"
+      aria-label="Save needs attention"
+    >
       <p>{messages[status]}</p>
       <div className="recovery-actions">
         {status === "unavailable" && (

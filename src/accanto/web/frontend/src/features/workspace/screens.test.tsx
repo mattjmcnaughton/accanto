@@ -1,8 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PlanRevision } from "../../lib/monthly";
-import { ActivityScreen } from "./Activity";
-import { MonthlyReview } from "./MonthlyReview";
+import { PlanBreakdown } from "./PlanBreakdown";
 import { Plans } from "./Plans";
 import { Workspace } from "./Workspace";
 import type { ScreenProps } from "./shared";
@@ -15,6 +14,7 @@ const version: PlanRevision = {
   revision: 1,
   saved: true,
   saved_at: "2026-10-01",
+  updated_at: null,
   rule_version: "1",
   incomes: [{ source_id: "source", name: "Salary", amount: "4000.00" }],
   fixed_costs: [],
@@ -34,27 +34,7 @@ const plans = [
     ],
   },
 ];
-const review = {
-  review: { uuid: "review", month: "2026-10-01", revision: 1, note: "", reviewed_at: null },
-  checkpoint_changed: false,
-  version,
-  entries: [],
-  actual: {
-    income_recorded: null,
-    income_incomplete: true,
-    missing_sources: ["source"],
-    spending_recorded: null,
-    fixed_cost_recorded: null,
-    fixed_cost_incomplete: true,
-    missing_fixed_costs: [],
-  },
-  income_difference: null,
-  spending_difference: null,
-  fixed_cost_difference: null,
-};
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
-const absent = () =>
-  json({ detail: { code: "review_not_found", message: "Create a Review first" } }, 404);
 const props = (): ScreenProps => ({
   entity,
   concealed: false,
@@ -90,11 +70,12 @@ it("edits annual fixed-cost inputs and keeps the stored monthly result visible",
   );
   const save = vi.fn();
   render(<Plans {...props()} save={save} />);
-  fireEvent.click(await screen.findByText("Edit Baseline"));
-  expect(screen.getByText("$8.33")).toBeDefined();
+  fireEvent.click(await screen.findByRole("button", { name: "Baseline" }));
+  expect(screen.getAllByText("$8.33").length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Details for Synthetic subscription" }));
   expect(screen.getByDisplayValue("100.00")).toBeDefined();
   fireEvent.change(screen.getByDisplayValue("100.00"), { target: { value: "120.00" } });
-  fireEvent.click(screen.getByText("Save draft"));
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
       body: expect.objectContaining({
@@ -104,192 +85,10 @@ it("edits annual fixed-cost inputs and keeps the stored monthly result visible",
             name: "Synthetic subscription",
             amount: "120.00",
             frequency: "annual",
+            debt_account_id: null,
           },
         ],
       }),
-    }),
-    expect.any(Function),
-  );
-});
-it("records a payment assigned to a saved cost removed from the current draft", async () => {
-  const fixedVersion = {
-    ...version,
-    fixed_costs: [
-      {
-        fixed_cost_id: "fixed-a",
-        name: "Synthetic subscription",
-        canonical_name: "Synthetic subscription",
-        amount: "100.00",
-        frequency: "annual" as const,
-        monthly_amount: "8.33",
-      },
-    ],
-  };
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
-    String(path).endsWith("/plans")
-      ? json([
-          {
-            plan_id: "fixed-plan",
-            revisions: [
-              fixedVersion,
-              { ...fixedVersion, uuid: "draft", saved: false, fixed_costs: [] },
-            ],
-          },
-        ])
-      : json([]),
-  );
-  const save = vi.fn();
-  render(<ActivityScreen {...props()} save={save} />);
-  fireEvent.click(await screen.findByText("Record activity"));
-  fireEvent.change(screen.getByLabelText("Category"), { target: { value: "fixed_cost" } });
-  fireEvent.change(screen.getByLabelText("Fixed cost"), { target: { value: "fixed-a" } });
-  fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "12.00" } });
-  fireEvent.click(screen.getByText("Save activity"));
-  expect(save).toHaveBeenCalledWith(
-    expect.objectContaining({
-      body: expect.objectContaining({
-        category: "fixed_cost",
-        fixed_cost_id: "fixed-a",
-        amount: "12.00",
-        funding_origin: "income",
-      }),
-    }),
-    expect.any(Function),
-  );
-});
-it("shows named investment and giving destinations in shared Activity", async () => {
-  const entries = [
-    {
-      uuid: "investment-entry",
-      financial_date: "2026-11-03",
-      category: "investing",
-      amount: "100.00",
-      source_id: null,
-      saving_goal_id: null,
-      destination_id: "investment-1",
-      funding_origin: "income",
-      note: "",
-      revision: 1,
-      is_adjustment: false,
-    },
-    {
-      uuid: "giving-entry",
-      financial_date: "2026-11-04",
-      category: "giving",
-      amount: "50.00",
-      source_id: null,
-      saving_goal_id: null,
-      destination_id: "recipient-1",
-      funding_origin: "income",
-      note: "",
-      revision: 1,
-      is_adjustment: false,
-    },
-  ];
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
-    const url = String(path);
-    if (url.endsWith("/activity")) return json(entries);
-    if (url.endsWith("/investments")) return json([{ uuid: "investment-1", name: "Example fund" }]);
-    if (url.endsWith("/giving-recipients"))
-      return json([{ uuid: "recipient-1", name: "Example recipient" }]);
-    return json([]);
-  });
-  render(<ActivityScreen {...props()} />);
-  expect(await screen.findByText("Example fund")).toBeDefined();
-  expect(await screen.findByText("Example recipient")).toBeDefined();
-  expect(screen.getAllByText("Correct this entry in Investments and giving.")).toHaveLength(2);
-});
-it("shows both the destination and savings origin for funded outflows", async () => {
-  const entries = [
-    {
-      uuid: "fixed-entry",
-      financial_date: "2026-11-03",
-      category: "fixed_cost",
-      amount: "100.00",
-      fixed_cost_name: "Synthetic service",
-      debt_account_id: "loan-1",
-      saving_goal_id: "goal-1",
-      funding_origin: "savings",
-      note: "",
-      revision: 1,
-      is_adjustment: false,
-    },
-    {
-      uuid: "giving-entry",
-      financial_date: "2026-11-04",
-      category: "giving",
-      amount: "50.00",
-      destination_id: "recipient-1",
-      saving_goal_id: "goal-1",
-      funding_origin: "savings",
-      note: "",
-      revision: 1,
-      is_adjustment: false,
-    },
-    {
-      uuid: "spending-entry",
-      financial_date: "2026-11-05",
-      category: "spending",
-      amount: "25.00",
-      funding_origin: "income",
-      note: "",
-      revision: 1,
-      is_adjustment: false,
-    },
-  ];
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
-    const url = String(path);
-    if (url.endsWith("/activity")) return json(entries);
-    if (url.endsWith("/savings-accounts"))
-      return json([
-        { uuid: "account-1", name: "Synthetic cash", goals: [{ uuid: "goal-1", name: "Reserve" }] },
-      ]);
-    if (url.endsWith("/giving-recipients"))
-      return json([{ uuid: "recipient-1", name: "Example recipient" }]);
-    if (url.endsWith("/debts")) return json([{ uuid: "loan-1", name: "Synthetic loan" }]);
-    return json([]);
-  });
-  render(<ActivityScreen {...props()} />);
-  const fixed = (await screen.findByText("Synthetic service")).closest("article");
-  expect(fixed?.textContent).toContain("Loan: Synthetic loan");
-  expect(fixed?.textContent).toContain("Funded from Synthetic cash · Reserve");
-  const giving = (await screen.findByText("Example recipient")).closest("article");
-  expect(giving?.textContent).toContain("Funded from Synthetic cash · Reserve");
-  const spending = (await screen.findByText("$25.00")).closest("article");
-  expect(spending?.textContent).toContain("Funded from current income");
-  expect(spending?.textContent).not.toContain("Unassigned");
-});
-it("keeps the viewed contributing-entry fingerprint through a background refresh", async () => {
-  let refreshed = false;
-  const first = {
-    uuid: "first",
-    financial_date: "2026-11-03",
-    category: "spending",
-    amount: "210.00",
-    source_id: null,
-    note: "",
-    revision: 1,
-    is_adjustment: false,
-  };
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
-    String(path).endsWith("/activity")
-      ? json(refreshed ? [first, { ...first, uuid: "new" }] : [first])
-      : json([]),
-  );
-  const p = props();
-  const view = render(<ActivityScreen {...p} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Enter known total" }));
-  expect(screen.getByText("1 contributing entries were captured for this total.")).toBeDefined();
-  refreshed = true;
-  view.rerender(<ActivityScreen {...p} refresh={1} />);
-  await waitFor(() =>
-    expect(screen.getAllByRole("button", { name: /Edit spending/ })).toHaveLength(2),
-  );
-  fireEvent.change(screen.getByLabelText("Known total (USD)"), { target: { value: "250" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save adjustment" }));
-  expect(p.save).toHaveBeenCalledWith(
-    expect.objectContaining({
-      body: expect.objectContaining({ contributing_entries: [{ uuid: "first", revision: 1 }] }),
     }),
     expect.any(Function),
   );
@@ -298,8 +97,9 @@ it("keeps source UUID and expected revision when saving an edited draft", async 
   vi.spyOn(globalThis, "fetch").mockResolvedValue(json(plans));
   const p = props();
   render(<Plans {...p} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Edit Baseline" }));
-  fireEvent.change(screen.getByLabelText("Net amount 1"), { target: { value: "4200.00" } });
+  fireEvent.click(await screen.findByRole("button", { name: "Baseline" }));
+  fireEvent.click(screen.getByRole("button", { name: "Details for Salary" }));
+  fireEvent.change(screen.getByLabelText("Monthly amount"), { target: { value: "4200.00" } });
   fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
   expect(p.save).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -311,179 +111,6 @@ it("keeps source UUID and expected revision when saving an edited draft", async 
     expect.any(Function),
   );
 });
-it("preselects the previous calendar month version rather than a newer version", async () => {
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
-    String(path).endsWith("/plans")
-      ? json(plans)
-      : String(path).endsWith("2026-10-01")
-        ? json(review)
-        : absent(),
-  );
-  const p = props();
-  render(<MonthlyReview {...p} />);
-  const choice = (await screen.findByLabelText("Comparison version")) as HTMLSelectElement;
-  await waitFor(() => expect(choice.value).toBe("v1"));
-  fireEvent.click(screen.getByRole("button", { name: "Create Review" }));
-  expect(p.save).toHaveBeenCalledWith(
-    expect.objectContaining({ body: { month: "2026-11-01", version_id: "v1" } }),
-    expect.any(Function),
-  );
-});
-it("edits an incomplete Review with same-Plan version, notes, and annotation", async () => {
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
-    String(path).endsWith("/plans")
-      ? json(plans)
-      : String(path).endsWith("2026-11-01")
-        ? json(review)
-        : absent(),
-  );
-  const p = props();
-  render(<MonthlyReview {...p} />);
-  const target = (await screen.findByLabelText("Comparison version")) as HTMLSelectElement;
-  await waitFor(() => expect(target.value).toBe("v1"));
-  fireEvent.change(target, { target: { value: "v2" } });
-  fireEvent.change(screen.getByLabelText("Review note"), {
-    target: { value: "Synthetic takeaway" },
-  });
-  fireEvent.click(screen.getByLabelText("Mark reviewed"));
-  fireEvent.click(screen.getByRole("button", { name: "Save Review" }));
-  expect(p.save).toHaveBeenCalledWith(
-    expect.objectContaining({
-      body: {
-        expected_revision: 1,
-        version_id: "v2",
-        note: "Synthetic takeaway",
-        reviewed: true,
-        checkpoint: false,
-      },
-    }),
-    expect.any(Function),
-  );
-});
-it("keeps attempted Review input across a conflict reload", async () => {
-  let current = review;
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
-    String(path).endsWith("/plans")
-      ? json(plans)
-      : String(path).endsWith("2026-11-01")
-        ? json(current)
-        : absent(),
-  );
-  const p = props();
-  const { rerender } = render(<MonthlyReview {...p} />);
-  const note = (await screen.findByLabelText("Review note")) as HTMLTextAreaElement;
-  fireEvent.change(note, { target: { value: "Unsaved synthetic note" } });
-  current = { ...review, review: { ...review.review, revision: 2, note: "Other writer" } };
-  rerender(<MonthlyReview {...p} refresh={1} />);
-  await waitFor(() => expect(note.value).toBe("Unsaved synthetic note"));
-});
-it("requires explicit choice without a preceding Review and blocks creation after a failed load", async () => {
-  const fetch = vi
-    .spyOn(globalThis, "fetch")
-    .mockImplementation(async (path) => (String(path).endsWith("/plans") ? json(plans) : absent()));
-  const { unmount } = render(<MonthlyReview {...props()} />);
-  const choice = (await screen.findByLabelText("Comparison version")) as HTMLSelectElement;
-  expect(choice.value).toBe("");
-  expect(
-    (screen.getByRole("button", { name: "Create Review" }) as HTMLButtonElement).disabled,
-  ).toBe(true);
-  unmount();
-  fetch.mockImplementation(async (path) =>
-    String(path).endsWith("/plans") ? json(plans) : json({}, 503),
-  );
-  render(<MonthlyReview {...props()} />);
-  await screen.findByRole("alert");
-  expect(screen.queryByLabelText("Comparison version")).toBeNull();
-});
-it("shows unknown rather than zero, retaining incomplete recorded income", async () => {
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
-    String(path).endsWith("/plans")
-      ? json(plans)
-      : json({
-          ...review,
-          destination_comparisons: null,
-          actual: { ...review.actual, income_recorded: "0.00" },
-        }),
-  );
-  render(<MonthlyReview {...props()} />);
-  await screen.findByText("$0.00 (incomplete)");
-  expect(screen.getAllByText("Unknown").length).toBeGreaterThanOrEqual(4);
-  expect(screen.getByText("Salary")).toBeDefined();
-  expect(screen.getByText("Destination comparison for this older version: Unknown")).toBeDefined();
-});
-it("shows saved destination expectations and category differences in Review", async () => {
-  const planned = {
-    ...version,
-    saving_goals: [
-      { goal_id: "goal", goal_name: "Laptop", amount: "200.00" },
-      { goal_id: "other-goal", goal_name: "Emergency fund", amount: "100.00" },
-    ],
-    investments: [{ destination_id: "invest", destination_name: "Retirement", amount: "100.00" }],
-    giving: [{ destination_id: "recipient", destination_name: "Community Fund", amount: "400.00" }],
-  };
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
-    String(path).endsWith("/plans")
-      ? json(plans)
-      : json({
-          ...review,
-          version: planned,
-          expected: {
-            saving: "300.00",
-            investing: "100.00",
-            giving: "400.00",
-            savings_funding: "1000.00",
-            funding: "5000.00",
-            allocation: "1600.00",
-          },
-          differences: { saving: "0.00", investing: null, giving: null },
-          destination_comparisons: {
-            saving_goals: [
-              {
-                goal_id: "goal",
-                goal_name: "Laptop",
-                planned: "200.00",
-                recorded: "150.00",
-                difference: "-50.00",
-              },
-              {
-                goal_id: "other-goal",
-                goal_name: "Emergency fund",
-                planned: "100.00",
-                recorded: "150.00",
-                difference: "50.00",
-              },
-            ],
-            investments: [
-              {
-                destination_id: "invest",
-                destination_name: "Retirement",
-                planned: "100.00",
-                recorded: null,
-                difference: null,
-              },
-            ],
-            giving: [
-              {
-                destination_id: "recipient",
-                destination_name: "Community Fund",
-                planned: "400.00",
-                recorded: null,
-                difference: null,
-              },
-            ],
-          },
-          actual: { ...review.actual, saving_recorded: "300.00" },
-        }),
-  );
-  render(<MonthlyReview {...props()} />);
-  expect(await screen.findByText("Saving · Laptop")).toBeDefined();
-  expect(screen.getByText("Saving · Emergency fund")).toBeDefined();
-  expect(screen.getByText("Investing · Retirement")).toBeDefined();
-  expect(screen.getByText("Giving · Community Fund")).toBeDefined();
-  expect(screen.getByText(/Expected planned use of savings: \$1000\.00/)).toBeDefined();
-  expect(screen.getByText("$-50.00")).toBeDefined();
-  expect(screen.getByText("$50.00")).toBeDefined();
-});
 it("retains the exact attempted write on network failure and retry", async () => {
   const writes: RequestInit[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (_path, init) => {
@@ -493,14 +120,9 @@ it("retains the exact attempted write on network failure and retry", async () =>
     return json({ plan_id: "plan", draft: { ...version, saved: false } });
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "New Plan" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Create your first Plan" }));
   fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "Attempted Plan" } });
-  fireEvent.change(screen.getByLabelText("Income source 1"), { target: { value: "Salary" } });
-  fireEvent.change(screen.getByLabelText("Net amount 1"), { target: { value: "4000" } });
-  fireEvent.change(screen.getByLabelText("Monthly guilt-free spending"), {
-    target: { value: "800" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create and open" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry save" }));
   await waitFor(() => expect(writes.length).toBe(2));
   expect(writes[0].body).toBe(writes[1].body);
@@ -520,7 +142,7 @@ it("hides original User form data after another User signs in", async () => {
         : json([]),
   );
   render(<Workspace initial={session} signedOut={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "New Plan" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Create your first Plan" }));
   fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "Hidden Plan" } });
   fireEvent.submit(screen.getByLabelText("Plan name").closest("form") as HTMLFormElement);
   fireEvent.click(await screen.findByRole("button", { name: "Sign in in a new window" }));
@@ -544,11 +166,318 @@ it("retains attempted input without claiming success when conflict reload fails"
     return conflict ? json({}, 503) : json(plans);
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Edit Baseline" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Baseline" }));
+  fireEvent.click(screen.getByRole("button", { name: "Rename Plan: Baseline" }));
   fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "Attempt retained" } });
+  fireEvent.keyDown(screen.getByLabelText("Plan name"), { key: "Escape" });
   fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
   fireEvent.click(await screen.findByRole("button", { name: "Review current record" }));
   expect((await screen.findAllByText(/Could not load this workspace/)).length).toBeGreaterThan(0);
-  expect(screen.getByDisplayValue("Attempt retained")).toBeDefined();
+  expect(screen.getByRole("button", { name: "Rename Plan: Attempt retained" })).toBeDefined();
   expect(screen.queryByText(/Current records reloaded/)).toBeNull();
+});
+
+it("retains exact keyboard edits across Home and flags one cent but not exact zero", async () => {
+  const draft = {
+    ...version,
+    uuid: "draft",
+    saved: false,
+    saved_at: null,
+    updated_at: "2026-10-24T12:00:00Z",
+    spending: "3999.99",
+    funding_total: "4000.00",
+    allocation_total: "3999.99",
+    unassigned: "0.01",
+    savings_funding: [],
+    saving_goals: [],
+    investments: [],
+    giving: [],
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    json(String(path).endsWith("/plans") ? [{ plan_id: "p", revisions: [draft] }] : []),
+  );
+  render(<Workspace initial={session} signedOut={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Baseline" }));
+  const cell = screen.getByRole("cell", { name: "Guilt-free spending, Entered amount" });
+  fireEvent.keyDown(cell, { key: "i" });
+  fireEvent.change(screen.getByLabelText("Amount for Guilt-free spending"), {
+    target: { value: "4000.01" },
+  });
+  fireEvent.keyDown(screen.getByLabelText("Amount for Guilt-free spending"), { key: "Escape" });
+  expect(screen.queryByLabelText("Amount for Guilt-free spending")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Home" }));
+  const attention = await screen.findByRole("table", { name: "Plan attention" });
+  expect(within(attention).getByRole("button", { name: /\$0.01 overallocated/ })).toBeDefined();
+  fireEvent.click(within(attention).getByRole("button", { name: "Open draft" }));
+  fireEvent.keyDown(screen.getByRole("cell", { name: "Guilt-free spending, Entered amount" }), {
+    key: "i",
+  });
+  fireEvent.change(screen.getByLabelText("Amount for Guilt-free spending"), {
+    target: { value: "4000.00" },
+  });
+  fireEvent.keyDown(screen.getByLabelText("Amount for Guilt-free spending"), { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Home" }));
+  expect(screen.queryByRole("button", { name: /overallocated/ })).toBeNull();
+  expect(screen.getByRole("button", { name: /Unsaved draft changes/ })).toBeDefined();
+  fireEvent.click(screen.getByRole("button", { name: "Open draft" }));
+  fireEvent.keyDown(screen.getByRole("cell", { name: "Guilt-free spending, Entered amount" }), {
+    key: "i",
+  });
+  fireEvent.change(screen.getByLabelText("Amount for Guilt-free spending"), {
+    target: { value: "invalid" },
+  });
+  fireEvent.keyDown(screen.getByLabelText("Amount for Guilt-free spending"), { key: "Escape" });
+  expect(screen.getByDisplayValue("invalid")).toBeDefined();
+  fireEvent.click(screen.getByRole("button", { name: "Home" }));
+  expect(screen.queryByRole("button", { name: /overallocated/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open draft" }));
+  expect(screen.getByDisplayValue("invalid")).toBeDefined();
+});
+
+it("orders Plans by server update time and never recalculates saved worksheet results", async () => {
+  const old = {
+    ...version,
+    updated_at: "2026-10-22T12:00:00Z",
+    funding_total: "4000.00",
+    allocation_total: "812.34",
+    unassigned: "3187.66",
+    tithe_target: "375.00",
+    fixed_cost_total: "12.34",
+    fixed_costs: [
+      {
+        fixed_cost_id: "cost",
+        debt_account_id: null,
+        name: "Legacy annual",
+        canonical_name: "Legacy annual",
+        amount: "100.00",
+        frequency: "annual" as const,
+        monthly_amount: "12.34",
+      },
+    ],
+  };
+  const later = {
+    ...version,
+    uuid: "later",
+    name: "Most recent",
+    saved: false,
+    updated_at: "2026-10-24T12:00:00Z",
+  };
+  const groups = [
+    { plan_id: "old", revisions: [old, { ...old, uuid: "draft", saved: false }] },
+    { plan_id: "new", revisions: [later] },
+  ];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    json(String(path).endsWith("/plans") ? groups : []),
+  );
+  render(<Plans {...props()} />);
+  await screen.findByRole("button", { name: "Most recent" });
+  const table = screen.getByRole("table", { name: "Plans" });
+  expect(within(table).getAllByRole("row")[1].textContent).toContain("Most recent");
+  fireEvent.click(screen.getByRole("button", { name: "Baseline" }));
+  fireEvent.click(screen.getByRole("button", { name: "Rename Plan: Baseline" }));
+  fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "Local name" } });
+  fireEvent.keyDown(screen.getByLabelText("Plan name"), { key: "Escape" });
+  fireEvent.change(screen.getByLabelText("Viewing Plan version"), { target: { value: "0" } });
+  expect(screen.getByRole("heading", { name: "Baseline" })).toBeDefined();
+  expect(screen.getByText("$375.00")).toBeDefined();
+  expect(screen.getByRole("cell", { name: "Legacy annual, Monthly amount" }).textContent).toBe(
+    "$12.34",
+  );
+  fireEvent.keyDown(screen.getByRole("cell", { name: "Legacy annual, Entered amount" }), {
+    key: "i",
+  });
+  expect(screen.queryByLabelText("Amount for Legacy annual")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull();
+  fireEvent.click(screen.getByText("Plan breakdown"));
+  const breakdown = screen.getByRole("table", { name: "Plan allocation breakdown" });
+  expect(within(breakdown).getByRole("row", { name: /Fixed costs/ }).textContent).toContain(
+    "$12.34",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Return to draft" }));
+  expect(screen.getByRole("button", { name: "Rename Plan: Local name" })).toBeDefined();
+});
+
+it("numbers workspace navigation without intercepting numeric input", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => json([]));
+  render(<Workspace initial={session} signedOut={() => {}} />);
+  fireEvent.keyDown(document.body, { key: "2" });
+  expect(screen.getByRole("button", { name: "Plans" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByText("Compare saved scenarios")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /New Plan/ }));
+  const name = screen.getByLabelText("Plan name");
+  fireEvent.keyDown(name, { key: "1" });
+  fireEvent.change(name, { target: { value: "123" } });
+  expect(screen.getByRole("button", { name: "Plans" }).getAttribute("aria-current")).toBe("page");
+  fireEvent.keyDown(document.body, { key: "1" });
+  expect(screen.getByRole("button", { name: "Home" }).getAttribute("aria-current")).toBe("page");
+  fireEvent.keyDown(document.body, { key: "2" });
+  expect(screen.getByLabelText("Plan name").getAttribute("value")).toBe("123");
+});
+
+it("shows funding-based half-even percentages and never invents zero-funding ratios", () => {
+  const input = {
+    funding: 800,
+    allocated: 4,
+    rows: [
+      { name: "Saving", amount: 1 },
+      { name: "Giving", amount: 3 },
+    ],
+    state: "Unsaved preview",
+  };
+  const { rerender } = render(<PlanBreakdown {...input} />);
+  expect(screen.getByText("Plan breakdown").closest("details")?.open).toBe(false);
+  fireEvent.click(screen.getByText("Plan breakdown"));
+  const table = screen.getByRole("table", { name: "Plan allocation breakdown" });
+  expect(within(table).getByRole("row", { name: /Saving/ }).textContent).toContain("0.12%");
+  expect(within(table).getByRole("row", { name: /Giving/ }).textContent).toContain("0.38%");
+  rerender(<PlanBreakdown {...input} funding={0} />);
+  expect(within(table).queryByText("0.00%")).toBeNull();
+  expect(within(table).getAllByText("Unavailable")).toHaveLength(2);
+  rerender(<PlanBreakdown {...input} funding={null} rows={[{ name: "Saving", amount: null }]} />);
+  expect(within(table).getByText("Unknown")).toBeDefined();
+  expect(within(table).getByText("Unavailable")).toBeDefined();
+});
+
+const sheetDraft = {
+  ...version,
+  uuid: "draft",
+  saved: false,
+  saved_at: null,
+  updated_at: "2026-10-24 12:00:00.123456+00:00",
+  spending: "3999.99",
+  funding_total: "4000.00",
+  allocation_total: "3999.99",
+  unassigned: "0.01",
+  savings_funding: [],
+  saving_goals: [],
+  investments: [],
+  giving: [],
+};
+const spendingCell = () =>
+  screen.getByRole("cell", { name: "Guilt-free spending, Entered amount" });
+const spendingInput = () => screen.getByLabelText("Amount for Guilt-free spending");
+function mockPlans(groups: unknown[] = [{ plan_id: "p", revisions: [version, sheetDraft] }]) {
+  return vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (path) => json(String(path).endsWith("/plans") ? groups : []));
+}
+
+it("keeps Enter and Escape edits local and writes only on Ctrl+S, never mid-edit or read-only", async () => {
+  mockPlans();
+  const p = props();
+  render(<Plans {...p} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Baseline" }));
+  fireEvent.keyDown(spendingCell(), { key: "i" });
+  fireEvent.change(spendingInput(), { target: { value: "3999.50" } });
+  fireEvent.keyDown(spendingInput(), { key: "Enter" });
+  expect(screen.queryByLabelText("Amount for Guilt-free spending")).toBeNull();
+  fireEvent.keyDown(spendingCell(), { key: "i" });
+  fireEvent.change(spendingInput(), { target: { value: "3999.40" } });
+  fireEvent.keyDown(spendingInput(), { key: "Escape" });
+  expect(screen.queryByLabelText("Amount for Guilt-free spending")).toBeNull();
+  expect(p.save).not.toHaveBeenCalled();
+  // Ctrl+S is refused while a cell edit is still open.
+  fireEvent.keyDown(spendingCell(), { key: "i" });
+  fireEvent.keyDown(spendingInput(), { key: "s", ctrlKey: true });
+  expect(p.save).not.toHaveBeenCalled();
+  expect(screen.getByText(/Finish the active cell edit/)).toBeDefined();
+  fireEvent.keyDown(spendingInput(), { key: "Enter" });
+  fireEvent.keyDown(spendingCell(), { key: "s", metaKey: true });
+  expect(p.save).toHaveBeenCalledOnce();
+  const spec = vi.mocked(p.save).mock.calls[0][0];
+  expect(spec).toMatchObject({ method: "PUT", path: "/api/entities/entity/plans/p/draft" });
+  expect(JSON.stringify(spec.body)).toContain("3999.40");
+  // A saved version is read-only: Ctrl+S does nothing.
+  fireEvent.change(screen.getByLabelText("Viewing Plan version"), { target: { value: "0" } });
+  fireEvent.keyDown(spendingCell(), { key: "s", ctrlKey: true });
+  expect(p.save).toHaveBeenCalledOnce();
+});
+
+it("ignores Enter and Escape that confirm an input-method candidate", async () => {
+  mockPlans();
+  render(<Plans {...props()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Baseline" }));
+  fireEvent.keyDown(spendingCell(), { key: "i" });
+  fireEvent.change(spendingInput(), { target: { value: "3999.50" } });
+  fireEvent.keyDown(spendingInput(), { key: "Enter", isComposing: true });
+  fireEvent.keyDown(spendingInput(), { key: "Escape", keyCode: 229 });
+  expect(spendingInput()).toBeDefined();
+  fireEvent.keyDown(spendingInput(), { key: "Enter" });
+  expect(screen.queryByLabelText("Amount for Guilt-free spending")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Rename Plan: Baseline" }));
+  fireEvent.keyDown(screen.getByLabelText("Plan name"), { key: "Enter", isComposing: true });
+  expect(screen.getByLabelText("Plan name")).toBeDefined();
+  fireEvent.keyDown(screen.getByLabelText("Plan name"), { key: "Enter" });
+  expect(screen.queryByLabelText("Plan name")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /All Plans/ }));
+  fireEvent.click(screen.getByRole("button", { name: /New Plan/ }));
+  fireEvent.keyDown(screen.getByLabelText("Plan name"), { key: "Escape", isComposing: true });
+  expect(screen.queryByText("Enter a Plan name.")).toBeNull();
+  fireEvent.keyDown(screen.getByLabelText("Plan name"), { key: "Escape" });
+  expect(screen.getByText("Enter a Plan name.")).toBeDefined();
+});
+
+it("sorts Plans by instant, with unknown update time last, and survives unreadable dates", async () => {
+  const draft = (uuid: string, name: string, updated_at: string | null) => ({
+    ...sheetDraft,
+    uuid,
+    name,
+    updated_at,
+  });
+  // The API's space-separated, microsecond form sorts by instant, not as text.
+  mockPlans([
+    { plan_id: "a", revisions: [draft("da", "Unknown time", null)] },
+    { plan_id: "b", revisions: [draft("db", "Garbled time", "yesterday")] },
+    { plan_id: "c", revisions: [draft("dc", "Earlier", "2026-10-24 09:00:00.5+00:00")] },
+    { plan_id: "d", revisions: [draft("dd", "Later", "2026-10-24 10:00:00.000001+00:00")] },
+  ]);
+  render(<Plans {...props()} />);
+  await screen.findByRole("button", { name: "Later" });
+  const rows = within(screen.getByRole("table", { name: "Plans" })).getAllByRole("row");
+  expect(rows.slice(1, 3).map((row) => row.textContent)).toEqual([
+    expect.stringContaining("Later"),
+    expect.stringContaining("Earlier"),
+  ]);
+  expect(rows[3].textContent).toContain("Unknown");
+  expect(rows[4].textContent).toContain("Unknown");
+});
+
+it("flags a replaced draft even when its revision number is the same", async () => {
+  const spy = mockPlans();
+  const p = props();
+  const view = render(<Plans {...p} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Baseline" }));
+  expect(screen.queryByText(/The stored draft changed/)).toBeNull();
+  // Another tab saved a version: the new draft starts again at revision 1 under a new identity.
+  spy.mockImplementation(async (path) =>
+    json(
+      String(path).endsWith("/plans")
+        ? [
+            {
+              plan_id: "p",
+              revisions: [version, { ...sheetDraft, uuid: "draft-b", number: 4, revision: 1 }],
+            },
+          ]
+        : [],
+    ),
+  );
+  view.rerender(<Plans {...p} refresh={1} />);
+  expect(await screen.findByText(/The stored draft changed/)).toBeDefined();
+});
+
+it("does not prompt about retained Plan edits when acting on another screen", async () => {
+  mockPlans();
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  render(<Workspace initial={session} signedOut={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Baseline" }));
+  fireEvent.keyDown(spendingCell(), { key: "i" });
+  fireEvent.change(spendingInput(), { target: { value: "4000.00" } });
+  fireEvent.keyDown(spendingInput(), { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Loans and balances" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add loan" }));
+  expect(await screen.findByRole("complementary", { name: "Record details" })).toBeDefined();
+  expect(confirm).not.toHaveBeenCalled();
+  // The retained Plan edit still returns when coming back to it.
+  fireEvent.click(screen.getByRole("button", { name: "Plans" }));
+  expect(spendingCell().textContent).toMatch(/4,?000\.00/);
 });

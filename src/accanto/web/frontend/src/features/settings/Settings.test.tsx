@@ -48,12 +48,75 @@ it("clears a one-time secret on dismiss and navigation", async () => {
   const view = render(<Settings {...props()} />);
   fireEvent.change(await screen.findByLabelText("Key name"), { target: { value: "Script" } });
   fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
-  expect(await screen.findByLabelText("New API key (shown once)")).toBeInTheDocument();
+  const secret = await screen.findByLabelText("New API key (shown once)");
+  expect(secret).toHaveAttribute("type", "password");
+  fireEvent.click(screen.getByRole("button", { name: "Show key" }));
+  expect(secret).toHaveAttribute("type", "text");
   fireEvent.click(screen.getByRole("button", { name: "Dismiss secret" }));
   expect(screen.queryByLabelText("New API key (shown once)")).not.toBeInTheDocument();
   view.unmount();
   render(<Settings {...props()} />);
   expect(screen.queryByLabelText("New API key (shown once)")).not.toBeInTheDocument();
+});
+it("saves settings with Ctrl+S only from the Entity form", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    json(String(path).endsWith("/keys") ? [] : { ...entity, revision: 2 }),
+  );
+  const p = props();
+  render(<Settings {...p} />);
+  fireEvent.keyDown(await screen.findByLabelText("Key name"), { key: "s", ctrlKey: true });
+  expect(p.save).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByLabelText("Time zone"), { key: "s", metaKey: true });
+  expect(p.save).toHaveBeenCalledOnce();
+});
+it("revokes a key only after confirmation; Escape cancels and restores focus", async () => {
+  const deletes: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    if (init?.method === "DELETE") {
+      deletes.push(String(path));
+      return json({});
+    }
+    return json(
+      String(path).endsWith("/keys")
+        ? [
+            { id: "k1", name: "Nightly", created_at: "2026-10-01T12:00:00Z", revoked_at: null },
+            { id: "k2", name: "Backup", created_at: "2026-10-02T12:00:00Z", revoked_at: null },
+          ]
+        : { ...entity, revision: 1 },
+    );
+  });
+  render(<Settings {...props()} />);
+  const revoke = await screen.findByRole("button", { name: "Revoke Backup" });
+  fireEvent.click(revoke);
+  const cancel = screen.getByRole("button", { name: "Cancel" });
+  await waitFor(() => expect(cancel).toHaveFocus());
+  fireEvent.keyDown(cancel, { key: "Escape" });
+  expect(screen.queryByRole("button", { name: "Revoke key" })).toBeNull();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Revoke Backup" })).toHaveFocus());
+  expect(deletes).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: "Revoke Backup" }));
+  fireEvent.click(screen.getByRole("button", { name: "Revoke key" }));
+  await screen.findByText("API key revoked.");
+  expect(deletes).toEqual(["/api/keys/k2"]);
+});
+it("keeps a new shown-once secret when a revoke is started and cancelled", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) =>
+    json(
+      init?.method === "POST"
+        ? { id: "key", name: "Script", key: "deliberately-synthetic-secret" }
+        : String(path).endsWith("/keys")
+          ? [{ id: "k1", name: "Nightly", created_at: "2026-10-01T12:00:00Z", revoked_at: null }]
+          : { ...entity, revision: 1 },
+    ),
+  );
+  render(<Settings {...props()} />);
+  fireEvent.change(await screen.findByLabelText("Key name"), { target: { value: "Script" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+  await screen.findByLabelText("New API key (shown once)");
+  fireEvent.click(await screen.findByRole("button", { name: "Revoke Nightly" }));
+  expect(screen.getByLabelText("New API key (shown once)")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByLabelText("New API key (shown once)")).toBeInTheDocument();
 });
 it("does not automatically retry uncertain issuance", async () => {
   let creates = 0;

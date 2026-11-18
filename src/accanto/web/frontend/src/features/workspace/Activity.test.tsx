@@ -1,0 +1,317 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import type { PlanRevision } from "../../lib/monthly";
+import { ActivityScreen } from "./Activity";
+import type { ScreenProps } from "./shared";
+const entity = { id: "entity", name: "Synthetic Entity", today: "2026-11-10", time_zone: "UTC" };
+const version: PlanRevision = {
+  uuid: "v1",
+  name: "Baseline",
+  number: 1,
+  revision: 1,
+  saved: true,
+  saved_at: "2026-10-01",
+  updated_at: null,
+  rule_version: "1",
+  incomes: [{ source_id: "source", name: "Salary", amount: "4000.00" }],
+  fixed_costs: [],
+  fixed_cost_total: "0.00",
+  income: "4000.00",
+  spending: "800.00",
+  tithe_target: "400.00",
+  unassigned: "3200.00",
+};
+const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
+const props = (): ScreenProps => ({
+  entity,
+  concealed: false,
+  busy: false,
+  refresh: 0,
+  guard: () => true,
+  dirty: vi.fn(),
+  save: vi.fn(),
+});
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+it("records a payment assigned to a saved cost removed from the current draft", async () => {
+  const fixedVersion = {
+    ...version,
+    fixed_costs: [
+      {
+        fixed_cost_id: "fixed-a",
+        name: "Synthetic subscription",
+        canonical_name: "Synthetic subscription",
+        amount: "100.00",
+        frequency: "annual" as const,
+        monthly_amount: "8.33",
+      },
+    ],
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/plans")
+      ? json([
+          {
+            plan_id: "fixed-plan",
+            revisions: [
+              fixedVersion,
+              { ...fixedVersion, uuid: "draft", saved: false, fixed_costs: [] },
+            ],
+          },
+        ])
+      : json([]),
+  );
+  const save = vi.fn();
+  render(<ActivityScreen {...props()} save={save} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Record activity" }));
+  fireEvent.change(screen.getByLabelText("Category"), { target: { value: "fixed_cost" } });
+  fireEvent.change(screen.getByLabelText("Fixed cost"), { target: { value: "fixed-a" } });
+  fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "12.00" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save activity" }));
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      body: expect.objectContaining({
+        category: "fixed_cost",
+        fixed_cost_id: "fixed-a",
+        amount: "12.00",
+        funding_origin: "income",
+      }),
+    }),
+    expect.any(Function),
+  );
+});
+it("shows named investment and giving destinations in shared Activity", async () => {
+  const entries = [
+    {
+      uuid: "investment-entry",
+      financial_date: "2026-11-03",
+      category: "investing",
+      amount: "100.00",
+      source_id: null,
+      saving_goal_id: null,
+      destination_id: "investment-1",
+      funding_origin: "income",
+      note: "",
+      revision: 1,
+      is_adjustment: false,
+    },
+    {
+      uuid: "giving-entry",
+      financial_date: "2026-11-04",
+      category: "giving",
+      amount: "50.00",
+      source_id: null,
+      saving_goal_id: null,
+      destination_id: "recipient-1",
+      funding_origin: "income",
+      note: "",
+      revision: 1,
+      is_adjustment: false,
+    },
+  ];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    if (url.endsWith("/activity")) return json(entries);
+    if (url.endsWith("/investments")) return json([{ uuid: "investment-1", name: "Example fund" }]);
+    if (url.endsWith("/giving-recipients"))
+      return json([{ uuid: "recipient-1", name: "Example recipient" }]);
+    return json([]);
+  });
+  render(<ActivityScreen {...props()} />);
+  expect(await screen.findByText("Example fund")).toBeDefined();
+  expect(await screen.findByText("Example recipient")).toBeDefined();
+  expect(screen.getAllByText("Read only")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Details for Giving on 2026-11-04" }));
+  expect(screen.getByText("Correct this entry in Investments and giving.")).toBeDefined();
+  expect(screen.queryByRole("button", { name: /Save/ })).toBeNull();
+});
+it("shows both the destination and savings origin for funded outflows", async () => {
+  const entries = [
+    {
+      uuid: "fixed-entry",
+      financial_date: "2026-11-03",
+      category: "fixed_cost",
+      amount: "100.00",
+      fixed_cost_name: "Synthetic service",
+      debt_account_id: "loan-1",
+      saving_goal_id: "goal-1",
+      funding_origin: "savings",
+      note: "",
+      revision: 1,
+      is_adjustment: false,
+    },
+    {
+      uuid: "giving-entry",
+      financial_date: "2026-11-04",
+      category: "giving",
+      amount: "50.00",
+      destination_id: "recipient-1",
+      saving_goal_id: "goal-1",
+      funding_origin: "savings",
+      note: "",
+      revision: 1,
+      is_adjustment: false,
+    },
+    {
+      uuid: "spending-entry",
+      financial_date: "2026-11-05",
+      category: "spending",
+      amount: "25.00",
+      funding_origin: "income",
+      note: "",
+      revision: 1,
+      is_adjustment: false,
+    },
+  ];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    if (url.endsWith("/activity")) return json(entries);
+    if (url.endsWith("/savings-accounts"))
+      return json([
+        { uuid: "account-1", name: "Synthetic cash", goals: [{ uuid: "goal-1", name: "Reserve" }] },
+      ]);
+    if (url.endsWith("/giving-recipients"))
+      return json([{ uuid: "recipient-1", name: "Example recipient" }]);
+    if (url.endsWith("/debts")) return json([{ uuid: "loan-1", name: "Synthetic loan" }]);
+    return json([]);
+  });
+  render(<ActivityScreen {...props()} />);
+  const fixed = (await screen.findByText("Synthetic service")).closest("tr");
+  expect(fixed?.textContent).toContain("Loan: Synthetic loan");
+  expect(fixed?.textContent).toContain("Synthetic cash · Reserve");
+  const giving = (await screen.findByText("Example recipient")).closest("tr");
+  expect(giving?.textContent).toContain("Synthetic cash · Reserve");
+  const spending = (await screen.findByText("$25.00")).closest("tr");
+  expect(spending?.textContent).toContain("Current income");
+  expect(spending?.textContent).not.toContain("Unassigned");
+});
+it("keeps the viewed contributing-entry fingerprint through a background refresh", async () => {
+  let refreshed = false;
+  const first = {
+    uuid: "first",
+    financial_date: "2026-11-03",
+    category: "spending",
+    amount: "210.00",
+    source_id: null,
+    note: "",
+    revision: 1,
+    is_adjustment: false,
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/activity")
+      ? json(refreshed ? [first, { ...first, uuid: "new" }] : [first])
+      : json([]),
+  );
+  const p = props();
+  const view = render(<ActivityScreen {...p} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Enter known total" }));
+  expect(screen.getByText("1 contributing entries were captured for this total.")).toBeDefined();
+  refreshed = true;
+  view.rerender(<ActivityScreen {...p} refresh={1} />);
+  await waitFor(() =>
+    expect(screen.getAllByRole("button", { name: /Details for Guilt-free spending/ })).toHaveLength(
+      2,
+    ),
+  );
+  fireEvent.change(screen.getByLabelText("Known total (USD)"), { target: { value: "250" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save adjustment" }));
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      body: expect.objectContaining({ contributing_entries: [{ uuid: "first", revision: 1 }] }),
+    }),
+    expect.any(Function),
+  );
+});
+it("keeps valid cell edits local on Escape, holds invalid input, and saves one record on Ctrl+S", async () => {
+  const entry = {
+    uuid: "lunch",
+    financial_date: "2026-11-03",
+    category: "spending",
+    amount: "12.00",
+    source_id: null,
+    fixed_cost_id: null,
+    fixed_cost_name: null,
+    debt_account_id: null,
+    saving_goal_id: null,
+    funding_origin: "income",
+    note: "Synthetic lunch",
+    revision: 4,
+    is_adjustment: false,
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/activity") ? json([entry]) : json([]),
+  );
+  const p = props();
+  render(<ActivityScreen {...p} />);
+  await screen.findByText("Synthetic lunch");
+  const amount = screen.getByText("$12.00").closest("td") as HTMLElement;
+  fireEvent.keyDown(amount, { key: "i" });
+  const input = screen.getByLabelText("Amount for Guilt-free spending on 2026-11-03");
+  fireEvent.change(input, { target: { value: "12.345" } });
+  fireEvent.keyDown(input, { key: "Escape" });
+  // Invalid input stays in insert mode with an error; nothing is sent.
+  expect(screen.getByRole("alert").textContent).toContain("two decimal places");
+  expect((input as HTMLInputElement).value).toBe("12.345");
+  fireEvent.change(input, { target: { value: "13.50" } });
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(screen.queryByLabelText("Amount for Guilt-free spending on 2026-11-03")).toBeNull();
+  expect(screen.getByText("$13.50")).toBeDefined();
+  expect(screen.getByText("Unsaved")).toBeDefined();
+  expect(p.save).not.toHaveBeenCalled();
+  expect(p.dirty).toHaveBeenLastCalledWith(true);
+  fireEvent.keyDown(screen.getByText("$13.50"), { key: "s", ctrlKey: true });
+  await waitFor(() => expect(p.save).toHaveBeenCalledTimes(1));
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "PUT",
+      body: expect.objectContaining({
+        amount: "13.50",
+        expected_revision: 4,
+        note: "Synthetic lunch",
+        date: "2026-11-03",
+      }),
+    }),
+    expect.any(Function),
+  );
+});
+it("keeps the attempted record while a write is pending instead of opening or discarding another", async () => {
+  const entry = {
+    uuid: "lunch",
+    financial_date: "2026-11-03",
+    category: "spending",
+    amount: "12.00",
+    source_id: null,
+    fixed_cost_id: null,
+    fixed_cost_name: null,
+    debt_account_id: null,
+    saving_goal_id: null,
+    funding_origin: "income",
+    note: "Synthetic lunch",
+    revision: 4,
+    is_adjustment: false,
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/activity")
+      ? json([entry, { ...entry, uuid: "snack", note: "Synthetic snack", amount: "3.00" }])
+      : json([]),
+  );
+  const p = props();
+  const view = render(<ActivityScreen {...p} />);
+  const amount = (await screen.findByText("$12.00")).closest("td") as HTMLElement;
+  fireEvent.keyDown(amount, { key: "i" });
+  const input = screen.getByLabelText("Amount for Guilt-free spending on 2026-11-03");
+  fireEvent.change(input, { target: { value: "13.50" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  // A failed save leaves the write pending; the shell reports that as busy.
+  view.rerender(<ActivityScreen {...p} busy />);
+  const other = screen.getByText("$3.00").closest("td") as HTMLElement;
+  fireEvent.keyDown(other, { key: "i" });
+  fireEvent.keyDown(other, { key: "a" });
+  fireEvent.keyDown(other, { key: "Escape" });
+  expect(screen.queryByLabelText(/Amount for Guilt-free spending/)).toBeNull();
+  expect(screen.getByText("$13.50")).toBeDefined();
+  expect((screen.getByLabelText("Amount (USD)") as HTMLInputElement).value).toBe("13.50");
+  expect(screen.getByRole("button", { name: "Discard changes" }).matches(":disabled")).toBe(true);
+  expect(screen.getByText("Correct activity")).toBeDefined();
+});
