@@ -74,9 +74,14 @@ def check_revision(record, expected):
 async def plan_snapshot(session, record):
     from accanto.domains.monthly_comparison import planned_metrics
 
+    # Line triggers may have advanced metadata since the parent RETURNING row.
+    updated_at = await session.scalar(
+        select(m.revisions.c.updated_at).where(m.revisions.c.id == record["id"])
+    )
     snapshot = json_values(
         {
             **dict(record),
+            "updated_at": updated_at,
             "incomes": await plan_lines(session, record["id"]),
             "fixed_costs": await plan_fixed_costs(session, record["id"]),
             **(await plan_allocations(session, record["id"])),

@@ -142,7 +142,15 @@ an unknown identity to an existing User or Entity. No public registration exists
 
 Apply migrations before starting the application. Do not roll back session audit
 history to a schema that requires an API key; use a compatible application rollback
-or forward repair. Browser login transaction records contain short-lived PKCE
+or forward repair.
+
+Migration `5l020` adds nullable `plan_revision.updated_at` and the triggers that
+maintain it. Apply it before starting an application version that reads the column:
+until then every Plan and Review endpoint fails with an undefined-column error, and
+nothing gates startup on the schema revision. Record `alembic_version` first. An
+older application ignores the column, so an application rollback does not need the
+downgrade. If a readiness check or test pins an expected Alembic revision, move that
+pin to `5l020` together with this migration. Browser login transaction records contain short-lived PKCE
 material; expired records are removed when a later login starts.
 
 Production reverse proxies must suppress callback query strings, cookies and

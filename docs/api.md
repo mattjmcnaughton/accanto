@@ -250,6 +250,13 @@ Plan; there is no `Use in Plan` command, link, or automatic synchronization.
 
 ## Plan → activity → Review
 
+Plan revisions include a nullable UTC `updated_at` (serialized like `saved_at`, as
+`YYYY-MM-DD HH:MM:SS[.ffffff]+00:00`). Database triggers maintain it
+when the revision or any of its financial lines changes. Pre-migration revisions
+remain unknown (`null`) until edited; migration time is not an edit time. Saved
+versions retain their timestamp under the existing immutability rules. Clients
+must continue using `revision`, not `updated_at`, for optimistic concurrency.
+
 ### Fixed costs
 
 `POST /plans` and `PUT /plans/{plan_id}/draft` accept `fixed_costs`, an array
