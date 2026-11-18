@@ -144,8 +144,38 @@ async def scenario():
         assert created.status_code == 200, created.text
         plan = created.json()
         assert plan["draft"]["unassigned"] == "-500.00"
+        assert plan["draft"]["updated_at"] is not None
+        assert (await client.get(prefix + "/plans")).json()[0]["revisions"][0][
+            "updated_at"
+        ] == plan["draft"]["updated_at"]
         assert "id" not in plan["draft"]
         assert (await post("/plans", plan_body, identity)).json() == plan
+        # Line-only changes also advance parent metadata; rollback restores it.
+        async with admin.connect() as connection:
+            transaction = await connection.begin()
+            draft_id = await connection.scalar(
+                select(m.revisions.c.id).where(
+                    m.revisions.c.uuid == UUID(plan["draft"]["uuid"])
+                )
+            )
+            stamp = await connection.scalar(
+                select(m.revisions.c.updated_at).where(m.revisions.c.id == draft_id)
+            )
+            await connection.execute(
+                update(m.income_lines)
+                .where(m.income_lines.c.plan_revision_id == draft_id)
+                .values(amount="1.00")
+            )
+            assert (
+                await connection.scalar(
+                    select(m.revisions.c.updated_at).where(m.revisions.c.id == draft_id)
+                )
+                > stamp
+            )
+            await transaction.rollback()
+        assert (await client.get(prefix + "/plans")).json()[0]["revisions"][0] == plan[
+            "draft"
+        ]
         assert (
             await post("/plans", {**plan_body, "spending": "1"}, identity)
         ).status_code == 409
@@ -154,6 +184,8 @@ async def scenario():
         )
         assert version_result.status_code == 200, version_result.text
         version = version_result.json()["version"]
+        assert version["updated_at"] > plan["draft"]["updated_at"]
+        assert version_result.json()["draft"]["updated_at"] > version["updated_at"]
         salary, bonus = [line["source_id"] for line in version["incomes"]]
         review = await post(
             "/reviews", {"month": "2026-10-01", "version_id": version["uuid"]}
@@ -421,6 +453,8 @@ async def scenario():
             ]
         )
         assert sorted(r.status_code for r in raced) == [200, 409]
+        accepted = next(r.json()["draft"] for r in raced if r.status_code == 200)
+        assert accepted["updated_at"] > version_result.json()["draft"]["updated_at"]
         assert (await client.get(prefix + "/reviews/2026-10-01")).json()[
             "version"
         ] == version

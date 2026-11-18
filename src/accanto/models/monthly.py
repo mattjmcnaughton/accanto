@@ -123,6 +123,7 @@ revisions = table(
     Column("giving_difference", Numeric(14, 2)),
     Column("rule_version", String, nullable=False, server_default="monthly-net-1"),
     Column("saved_at", DateTime(timezone=True)),
+    Column("updated_at", DateTime(timezone=True)),
     ForeignKeyConstraint(["plan_id", "entity_id"], ["plan.id", "plan.entity_id"]),
     UniqueConstraint("plan_id", "number"),
     UniqueConstraint("id", "entity_id"),
