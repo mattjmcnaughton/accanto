@@ -94,6 +94,29 @@ def test_signed_in_workspace(tmp_path):
     }
     browser_env["AGENT_BROWSER_DEFAULT_TIMEOUT"] = "15000"
 
+    def settle(target):
+        # agent-browser clicks at coordinates it measured a moment earlier. A
+        # load or a post-save reload that lands in between moves the target (a
+        # subtitle or a card's actions render), and the press hits the space
+        # beside it. Click only once no API request is in flight and the target
+        # has held its position for 150 ms.
+        browser(
+            "wait",
+            "--fn",
+            "(() => {"
+            " if (!window.__e2eFetches) {"
+            "  window.__e2eFetches = {n: 0}; const f = window.fetch.bind(window);"
+            "  window.fetch = (...a) => { window.__e2eFetches.n++;"
+            "   return f(...a).finally(() => { window.__e2eFetches.n--; }); }; }"
+            f" const el = {target}; if (!el) return false;"
+            " const r = el.getBoundingClientRect();"
+            " const at = [r.x, r.y, r.width, r.height].join();"
+            " const now = performance.now(); const s = window.__e2eSettle;"
+            " if (window.__e2eFetches.n || !s || s.at !== at || s.el !== el) {"
+            "  window.__e2eSettle = {at, el, since: now}; return false; }"
+            " return now - s.since >= 150; })()",
+        )
+
     def browser(*args, check=True):
         if args[0] == "click":
             # A control inside a dialog or form is rendered before a pending save
@@ -104,6 +127,7 @@ def test_signed_in_workspace(tmp_path):
                 "document.querySelector(" + repr(args[1]) + ")"
                 "?.matches(':not(:disabled)')",
             )
+            settle("document.querySelector(" + repr(args[1]) + ")")
             # Center targets inside scrolling dialogs and the worksheet before
             # native pointer input; a sticky header or footer can cover an edge.
             browser(
@@ -151,6 +175,10 @@ def test_signed_in_workspace(tmp_path):
         # their reads, and a pending save disables them.
         until(
             "Array.from(document.querySelectorAll('button')).some(b => !b.disabled"
+            f" && (b.getAttribute('aria-label') ?? b.textContent.trim()) === {name!r})"
+        )
+        settle(
+            "Array.from(document.querySelectorAll('button')).find(b => !b.disabled"
             f" && (b.getAttribute('aria-label') ?? b.textContent.trim()) === {name!r})"
         )
         browser("find", "role", "button", "click", "--name", name, "--exact")
@@ -563,8 +591,11 @@ def test_signed_in_workspace(tmp_path):
         go("Activity")
         until(
             "Array.from(document.querySelectorAll('#main [role=row]'))"
-            ".some(row => row.textContent.includes('Investing'))"
+            ".some(row => row.textContent.includes('Investing')"
+            " && row.textContent.includes('Example fund'))"
         )
+        # The fund's name renders once destinations load; before that the row
+        # reads "Historical investment".
         investment_activity = value(
             "Array.from(document.querySelectorAll('#main [role=row]'))"
             ".find(row => row.textContent.includes('Investing')).textContent"
