@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { type BrowserSession, loadResource } from "../../lib/api";
-import { LoadMessage, type ScreenProps, useLoad } from "../workspace/shared";
-import "../workspace/worksheet-ui.css";
+import { Head } from "../../ui";
+import { type ScreenProps, useLoad } from "../workspace/shared";
 import "./settings.css";
 import { ApiKeys } from "./ApiKeys";
-import { Help } from "./Help";
+
 interface EntitySettings {
   id: string;
   name: string;
@@ -19,6 +19,7 @@ export interface SettingsProps extends ScreenProps {
 // Suggestions only; the server remains the time zone validator.
 const zones =
   (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
+
 export function Settings(p: SettingsProps) {
   const [attempt, setAttempt] = useState(0);
   const [form, setForm] = useState<EntitySettings | null>(null);
@@ -30,16 +31,29 @@ export function Settings(p: SettingsProps) {
   const current = form || (state.kind === "ready" ? state.data : null);
   if (p.concealed) return null;
   return (
-    <section className="data-workspace settings-screen">
-      <header className="data-toolbar">
-        <h2>Settings</h2>
-      </header>
-      <div className="settings-body">
-        <LoadMessage state={state} retry={() => setAttempt((x) => x + 1)} />
-        {current && (
+    <section className="screen set-screen" aria-label="Settings">
+      <Head title="Settings" />
+      {state.kind === "loading" && !current && (
+        <output className="card pad sk-card" aria-label="Loading settings">
+          <div className="sk set-sk" />
+          <div className="sk set-sk" />
+        </output>
+      )}
+      {"error" in state && (
+        <div className="banner bad" role="alert">
+          <span>Could not load settings. {state.error.message}</span>
+          <button type="button" className="btn sm" onClick={() => setAttempt((x) => x + 1)}>
+            Try loading again
+          </button>
+        </div>
+      )}
+      {current && (
+        <section aria-labelledby="entity-settings-heading">
+          <h2 className="h2" id="entity-settings-heading">
+            Workspace
+          </h2>
           <form
-            className="settings-section"
-            aria-labelledby="entity-settings-heading"
+            className="card"
             onKeyDown={(event) => {
               // Ctrl/⌘+S is the same explicit save, scoped to this form only.
               if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
@@ -66,72 +80,89 @@ export function Settings(p: SettingsProps) {
               );
             }}
           >
-            <fieldset disabled={p.busy}>
-              <legend id="entity-settings-heading">Entity</legend>
-              <div className="settings-grid">
-                <label htmlFor="entity-name">Entity name</label>
+            <fieldset className="set-fields" disabled={p.busy}>
+              <div className="setting">
+                <div>
+                  <label htmlFor="entity-name">Workspace name</label>
+                  <small id="entity-name-help">
+                    The finances tracked here are kept separate from any other workspace.
+                  </small>
+                </div>
                 <input
                   id="entity-name"
+                  className="input"
                   required
                   maxLength={120}
+                  aria-describedby="entity-name-help"
                   value={current.name}
                   onChange={(event) => {
                     setForm({ ...current, name: event.target.value });
                     p.dirty(true);
                   }}
                 />
-                <label htmlFor="entity-time-zone">Time zone</label>
-                <div className="settings-field">
-                  <input
-                    id="entity-time-zone"
-                    required
-                    list="time-zone-options"
-                    spellCheck={false}
-                    autoComplete="off"
-                    value={current.time_zone}
-                    onChange={(event) => {
-                      setForm({ ...current, time_zone: event.target.value });
-                      p.dirty(true);
-                    }}
-                    placeholder="America/Los_Angeles"
-                    aria-describedby="time-zone-help"
-                  />
-                  <datalist id="time-zone-options">
-                    {zones.map((zone) => (
-                      <option key={zone} value={zone} />
-                    ))}
-                  </datalist>
-                  <Help label="About time zone" id="time-zone-help">
-                    IANA zone, such as America/Los_Angeles or UTC. Sets today and this month for new
-                    entries. Existing financial dates and Reviews do not move.
-                  </Help>
-                </div>
               </div>
-              <div className="settings-actions">
-                <button type="submit" className="primary" aria-keyshortcuts="Control+S Meta+S">
-                  Save settings
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (p.guard()) {
-                      setForm(null);
-                      p.dirty(false);
-                      setAttempt((x) => x + 1);
-                    }
+              <div className="setting">
+                <div>
+                  <label htmlFor="entity-time-zone">Time zone</label>
+                  <small id="time-zone-help">
+                    An IANA zone, such as America/Los_Angeles or UTC. It decides what “today” means
+                    for new entries. Changing it never moves existing entries between dates or
+                    months.
+                  </small>
+                </div>
+                <input
+                  id="entity-time-zone"
+                  className="input"
+                  required
+                  list="time-zone-options"
+                  spellCheck={false}
+                  autoComplete="off"
+                  value={current.time_zone}
+                  onChange={(event) => {
+                    setForm({ ...current, time_zone: event.target.value });
+                    p.dirty(true);
                   }}
-                >
-                  Reload current settings
-                </button>
-                <span className="muted settings-hint" aria-hidden="true">
-                  <kbd>Ctrl</kbd>+<kbd>S</kbd> saves
-                </span>
+                  placeholder="America/Los_Angeles"
+                  aria-describedby="time-zone-help"
+                />
+                <datalist id="time-zone-options">
+                  {zones.map((zone) => (
+                    <option key={zone} value={zone} />
+                  ))}
+                </datalist>
+              </div>
+              <div className="setting">
+                <div aria-hidden="true">
+                  <small>
+                    Changes apply when you save. <kbd className="kbd">Ctrl</kbd>
+                    {" + "}
+                    <kbd className="kbd">S</kbd> saves too.
+                  </small>
+                </div>
+                <div className="set-actions">
+                  <button
+                    type="button"
+                    className="btn quiet"
+                    onClick={() => {
+                      if (p.guard()) {
+                        setForm(null);
+                        p.dirty(false);
+                        setAttempt((x) => x + 1);
+                      }
+                    }}
+                  >
+                    Reload current settings
+                  </button>
+                  <button type="submit" className="btn pri" aria-keyshortcuts="Control+S Meta+S">
+                    Save settings
+                  </button>
+                </div>
               </div>
             </fieldset>
           </form>
-        )}
-        <ApiKeys credentials={p.credentials} disabled={p.busy} />
-      </div>
+        </section>
+      )}
+      <ApiKeys credentials={p.credentials} disabled={p.busy} />
     </section>
   );
 }

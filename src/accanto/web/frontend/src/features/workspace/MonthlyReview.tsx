@@ -1,14 +1,19 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { monthly } from "../../lib/monthly";
-import { ReviewDetails } from "./ReviewDetails";
-import { LoadMessage, type ScreenProps, previousMonth, useLoad } from "./shared";
-import "./worksheet-ui.css";
+import { useEffect, useRef, useState } from "react";
+import { fmtMonth, fmtShort, monthName, plural } from "../../lib/format";
+import { type PlanRevision, monthly } from "../../lib/monthly";
+import { Dialog, Empty, Head, Icon } from "../../ui";
+import { LoadProblem, LoadingCard, defaultDate } from "./Activity";
+import { type Resolution, ReviewDetails, complete, reviewSections } from "./ReviewDetails";
+import { type ScreenProps, previousMonth, useLoad } from "./shared";
 import "./activity-review.css";
 
 const nextMonth = (month: string) => {
   const [year, number] = month.split("-").map(Number);
   return `${number === 12 ? year + 1 : year}-${String(number === 12 ? 1 : number + 1).padStart(2, "0")}`;
 };
+const versionLabel = (r: PlanRevision) =>
+  `${r.name} v${r.number}${r.saved_at ? `, saved ${fmtShort(r.saved_at.slice(0, 10))}` : ""}`;
+
 export function MonthlyReview(p: ScreenProps) {
   const [month, setMonth] = useState(p.entity.today.slice(0, 7));
   const [reload, setReload] = useState(0);
@@ -26,11 +31,9 @@ export function MonthlyReview(p: ScreenProps) {
   const [note, setNote] = useState("");
   const [reviewed, setReviewed] = useState(false);
   const [edited, setEdited] = useState(false);
-  const [area, setArea] = useState<"page" | "table" | "details">("page");
   const [help, setHelp] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null);
-  const helpTitle = useId();
-  const priorFocus = useRef<HTMLElement | null>(null);
+  const editedRef = useRef(false);
+  editedRef.current = edited;
   useEffect(() => {
     setChoice(previous.kind === "ready" ? previous.data.version.uuid : "");
   }, [previous]);
@@ -41,15 +44,6 @@ export function MonthlyReview(p: ScreenProps) {
       setReviewed(Boolean(state.data.review.reviewed_at));
     }
   }, [state, edited]);
-  useEffect(() => {
-    if (help) {
-      priorFocus.current = document.activeElement as HTMLElement | null;
-      dialog.current?.showModal?.();
-    } else if (dialog.current?.open) {
-      dialog.current.close();
-      priorFocus.current?.focus();
-    }
-  }, [help]);
   if (p.concealed) return null;
   const versions =
     plans.kind === "ready"
@@ -64,15 +58,15 @@ export function MonthlyReview(p: ScreenProps) {
     setEdited(true);
     p.dirty(true);
   };
-  const saveReview = (checkpoint = false) => {
+  const saveReview = (changes: { reviewed?: boolean; checkpoint?: boolean } = {}) => {
     if (state.kind !== "ready" || !target) return;
     p.save(
       monthly.editReview(p.entity.id, `${month}-01`, {
         expected_revision: state.data.review.revision,
         version_id: target,
         note,
-        reviewed,
-        checkpoint,
+        reviewed: changes.reviewed ?? reviewed,
+        checkpoint: changes.checkpoint ?? false,
       }),
       () => {
         setEdited(false);
@@ -84,6 +78,25 @@ export function MonthlyReview(p: ScreenProps) {
     if (!choice) return;
     p.save(monthly.createReview(p.entity.id, { month: `${month}-01`, version_id: choice }), () =>
       p.dirty(false),
+    );
+  };
+  /** An answered unknown is an ordinary entry, recorded through the same write as Activity. */
+  const resolve = ({ category, id, amount }: Resolution) => {
+    if (p.busy || category === "investing" || category === "giving") return;
+    p.save(
+      monthly.createActivity(p.entity.id, {
+        date: defaultDate(month, p.entity.today),
+        category,
+        amount,
+        source_id: category === "income" ? id : null,
+        fixed_cost_id: category === "fixed_cost" ? id : null,
+        debt_account_id: null,
+        note: amount === "0.00" ? "Nothing this month" : "",
+        funding_origin: "income",
+        saving_goal_id: category === "saving" ? id : null,
+      }),
+      // The shell clears the unsaved flag on any confirmed write; an unsaved note keeps it.
+      () => p.dirty(editedRef.current),
     );
   };
   const go = (value: string) => {
@@ -98,6 +111,11 @@ export function MonthlyReview(p: ScreenProps) {
     state.kind === "empty" &&
     (previous.kind === "ready" || previous.kind === "empty") &&
     (plans.kind === "ready" || plans.kind === "empty");
+  const name = monthName(`${month}-01`);
+  const previousName = monthName(previousMonth(month));
+  const sections = state.kind === "ready" ? reviewSections(state.data) : [];
+  const unknown = sections.reduce((n, s) => n + s.unknown.length, 0);
+  const done = sections.filter(complete).length;
   const status =
     state.kind !== "ready"
       ? null
@@ -107,236 +125,261 @@ export function MonthlyReview(p: ScreenProps) {
           ? "Changed since review"
           : "Reviewed";
   return (
-    <section
-      className="data-workspace review-screen"
-      aria-labelledby="review-title"
+    <div
+      className="screen ar review-screen"
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
           e.preventDefault();
           if (p.busy) return;
           if (state.kind === "ready") saveReview();
           else if (canChoose) createReview();
+        } else if (
+          e.key === "?" &&
+          !(e.target instanceof HTMLElement && e.target.closest("input,textarea,select"))
+        ) {
+          e.preventDefault();
+          setHelp(true);
         }
       }}
     >
-      <div className="data-toolbar">
-        <h2 id="review-title">Monthly Review</h2>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Previous month"
-          disabled={p.busy}
-          onClick={() => go(previousMonth(month).slice(0, 7))}
+      <div>
+        <Head
+          title={
+            state.kind === "ready"
+              ? `Review ${fmtMonth(month)}`
+              : state.kind === "empty"
+                ? `Start ${name}'s Review`
+                : "Monthly Review"
+          }
+          sub={
+            state.kind === "ready"
+              ? `${done} of 6 sections are complete${unknown ? `, with ${plural(unknown, "unknown amount")}` : ""}.`
+              : state.kind === "empty"
+                ? "Choose the saved Plan version to compare this month against. Starting a Review creates no activity, and you can change the version later."
+                : undefined
+          }
         >
-          ‹
-        </button>
-        <label>
-          <span className="sr-only">Review month</span>
-          <input
-            type="month"
-            aria-label="Review month"
-            required
-            value={month}
-            disabled={p.busy}
-            onChange={(e) => go(e.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Next month"
-          disabled={p.busy}
-          onClick={() => go(nextMonth(month))}
-        >
-          ›
-        </button>
-        {state.kind === "ready" && (
-          <>
-            <span className="badge">
-              {state.data.version.name} · v{state.data.version.number}
-            </span>
-            <span className={`badge${status === "Changed since review" ? " pending" : ""}`}>
+          <div className="ar-monthnav">
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Previous month"
+              disabled={p.busy}
+              onClick={() => go(previousMonth(month).slice(0, 7))}
+            >
+              <Icon name="left" />
+            </button>
+            <input
+              type="month"
+              className="input"
+              aria-label="Review month"
+              required
+              value={month}
+              disabled={p.busy}
+              onChange={(e) => go(e.target.value)}
+            />
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Next month"
+              disabled={p.busy}
+              onClick={() => go(nextMonth(month))}
+            >
+              <Icon name="right" />
+            </button>
+          </div>
+          {status && (
+            <span
+              className={`chip${status === "Reviewed" ? " good" : status === "Changed since review" ? " warn" : ""}`}
+            >
               {status}
             </span>
+          )}
+        </Head>
+        {state.kind === "ready" && (
+          <>
+            <div className="ar-compare">
+              <label className="field">
+                <span>Compared with</span>
+                <select
+                  className="input"
+                  value={target}
+                  required
+                  disabled={p.busy}
+                  onChange={(e) => {
+                    setTarget(e.target.value);
+                    touch();
+                  }}
+                >
+                  {(currentPlan?.revisions.filter((r) => r.saved) || [state.data.version]).map(
+                    (r) => (
+                      <option key={r.uuid} value={r.uuid}>
+                        {versionLabel(r)}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+            </div>
+            <div className="pace ar-pace" role="img" aria-label={`${done} of 6 sections complete`}>
+              <i style={{ width: `${(done / 6) * 100}%` }} />
+            </div>
           </>
         )}
       </div>
-      <LoadMessage state={state} retry={retry} />
-      {state.kind === "empty" && (
-        <>
-          <LoadMessage state={previous} retry={retry} />
-          <LoadMessage state={plans} retry={retry} />
-        </>
+      <LoadProblem
+        states={state.kind === "empty" ? [state, previous, plans] : [state]}
+        retry={retry}
+      />
+      {(state.kind === "loading" ||
+        (state.kind === "empty" && (previous.kind === "loading" || plans.kind === "loading"))) && (
+        <LoadingCard label="Loading the Review" />
       )}
-      <div className={`data-layout${state.kind === "ready" || canChoose ? " with-sidebar" : ""}`}>
-        <div
-          className="review-main"
-          onFocus={() => setArea("table")}
-          onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget)) setArea("page");
-          }}
-        >
-          {state.kind === "ready" && (
-            <ReviewDetails review={state.data} onHelp={() => setHelp(true)} />
-          )}
-          {state.kind === "empty" && (
-            <p className="empty-state">
-              No Review for {month}. Existing activity is included when you create one; creating a
-              Review adds no activity.
-            </p>
-          )}
-        </div>
-        {(state.kind === "ready" || canChoose) && (
-          <aside
-            className="data-sidebar"
-            aria-label="Review details"
-            onFocus={() => setArea("details")}
-            onBlur={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget)) setArea("page");
+      {state.kind === "empty" &&
+        canChoose &&
+        (versions.length === 0 ? (
+          <Empty title="A Review needs a saved Plan version">
+            A Review compares what you recorded in {name} against one saved version of a Plan. Open
+            a Plan in Plans and choose Save version, then come back.
+          </Empty>
+        ) : (
+          <form
+            className="card pad stack ar-start"
+            onSubmit={(e) => {
+              e.preventDefault();
+              createReview();
             }}
           >
-            {canChoose && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  createReview();
-                }}
-              >
-                <fieldset disabled={p.busy}>
-                  <legend>Start this month's Review</legend>
-                  <p className="muted">
-                    {previous.kind === "ready"
-                      ? "Previous month's comparison preselected."
-                      : "No previous Review. Choose a saved version."}
-                  </p>
-                  <label>
-                    Comparison version
-                    <select
-                      required
-                      value={choice}
-                      onChange={(e) => {
-                        setChoice(e.target.value);
-                        p.dirty(true);
-                      }}
-                    >
-                      <option value="">Choose a saved version</option>
-                      {versions.map((version) => (
-                        <option key={version.uuid} value={version.uuid}>
-                          {version.name} · v{version.number}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {versions.length === 0 && (
-                    <p className="muted">Save a Plan version before starting a Review.</p>
-                  )}
-                  <div className="sidebar-actions">
-                    <button type="submit" className="primary" disabled={!choice}>
-                      Create Review
-                    </button>
-                  </div>
-                </fieldset>
-              </form>
-            )}
-            {state.kind === "ready" && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  saveReview();
-                }}
-              >
-                <fieldset disabled={p.busy}>
-                  <legend>Review</legend>
-                  <label>
-                    Comparison version
-                    <select
-                      value={target}
-                      required
-                      onChange={(e) => {
-                        setTarget(e.target.value);
-                        touch();
-                      }}
-                    >
-                      {(currentPlan?.revisions.filter((r) => r.saved) || [state.data.version]).map(
-                        (r) => (
-                          <option key={r.uuid} value={r.uuid}>
-                            {r.name} · v{r.number}
-                          </option>
-                        ),
-                      )}
-                    </select>
-                  </label>
-                  <label>
-                    Review note
-                    <textarea
-                      value={note}
-                      maxLength={4000}
-                      onChange={(e) => {
-                        setNote(e.target.value);
-                        touch();
-                      }}
-                    />
-                  </label>
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={reviewed}
-                      onChange={(e) => {
-                        setReviewed(e.target.checked);
-                        touch();
-                      }}
-                    />
-                    Mark reviewed
-                  </label>
-                  <p className="muted">Reviewed months stay editable, even with unknowns.</p>
-                  <div className="sidebar-actions">
-                    <button type="submit" className="primary" disabled={!target}>
-                      Save Review
-                    </button>
-                    {reviewed && state.data.review.reviewed_at && (
-                      <button type="button" onClick={() => saveReview(true)}>
-                        Update checkpoint
-                      </button>
-                    )}
-                  </div>
-                </fieldset>
-              </form>
-            )}
-          </aside>
-        )}
-      </div>
-      <footer id="review-status" className="data-status">
-        <span className="mode">
-          {area === "table" ? "READ ONLY" : area === "details" ? "DETAILS" : "READY"}
-        </span>
-        <span>
-          <kbd>h j k l</kbd> Move <kbd>Enter</kbd> Expand <kbd>Ctrl/⌘ S</kbd> Save Review{" "}
-          <kbd>?</kbd> Keys
-        </span>
-        {edited && <span className="pending">Unsaved Review changes</span>}
-      </footer>
-      <dialog ref={dialog} aria-labelledby={helpTitle} onClose={() => setHelp(false)}>
-        <h2 id={helpTitle}>Keyboard shortcuts</h2>
-        <dl className="shortcut-list">
-          {[
-            ["h j k l / arrows", "Move between cells"],
-            ["0 / $ · gg / G", "First or last cell, row"],
-            ["i / Enter / Space", "Expand or collapse a row"],
-            ["Tab", "Move to the Review note and actions"],
-            ["Ctrl / ⌘ + S", "Save Review (or create it)"],
-          ].map(([key, label]) => (
-            <div key={key}>
-              <dt>
-                <kbd>{key}</kbd>
-              </dt>
-              <dd>{label}</dd>
-            </div>
-          ))}
-        </dl>
-        <button type="button" onClick={() => setHelp(false)}>
-          Close
-        </button>
-      </dialog>
-    </section>
+            <fieldset disabled={p.busy} className="ar-fs stack">
+              <label className="field">
+                <span>Compare with</span>
+                <select
+                  required
+                  value={choice}
+                  aria-describedby="review-start-hint"
+                  onChange={(e) => {
+                    setChoice(e.target.value);
+                    p.dirty(true);
+                  }}
+                >
+                  <option value="" disabled>
+                    Choose a saved version
+                  </option>
+                  {versions.map((version) => (
+                    <option key={version.uuid} value={version.uuid}>
+                      {versionLabel(version)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <small id="review-start-hint" className="note">
+                {previous.kind === "ready"
+                  ? `Preselected from ${previousName}'s Review.`
+                  : `${previousName} has no Review, so nothing is preselected.`}{" "}
+                Activity already recorded in {name} is included.
+              </small>
+              <div>
+                <button type="submit" className="btn pri" disabled={!choice}>
+                  Start Review
+                </button>
+              </div>
+            </fieldset>
+          </form>
+        ))}
+      {state.kind === "ready" && (
+        <>
+          <ReviewDetails
+            review={state.data}
+            current={month === p.entity.today.slice(0, 7)}
+            busy={p.busy}
+            resolve={resolve}
+            onHelp={() => setHelp(true)}
+          />
+          <form
+            className="card pad stack"
+            aria-label="Close the month"
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveReview();
+            }}
+          >
+            <fieldset disabled={p.busy} className="ar-fs stack">
+              <label className="field">
+                <span>Review note</span>
+                <textarea
+                  value={note}
+                  maxLength={4000}
+                  placeholder={`Anything worth remembering about ${name}`}
+                  onChange={(e) => {
+                    setNote(e.target.value);
+                    touch();
+                  }}
+                />
+              </label>
+              {state.data.checkpoint_changed && state.data.review.reviewed_at && (
+                <p className="ar-banner">
+                  Activity changed after you marked {name} reviewed. Look over the sections, then
+                  update the checkpoint to accept the changes.
+                </p>
+              )}
+              <div className="actions ar-close">
+                <button
+                  type="button"
+                  className="btn pri"
+                  disabled={!target}
+                  onClick={() => saveReview({ reviewed: !reviewed })}
+                >
+                  {reviewed
+                    ? "Reviewed. Clear the mark"
+                    : unknown
+                      ? `Mark reviewed with ${plural(unknown, "unknown")}`
+                      : `Mark ${name} reviewed`}
+                </button>
+                {edited && (
+                  <button type="submit" className="btn" disabled={!target}>
+                    Save changes
+                  </button>
+                )}
+                {reviewed && state.data.review.reviewed_at && (
+                  <button
+                    type="button"
+                    className="btn quiet"
+                    onClick={() => saveReview({ checkpoint: true })}
+                  >
+                    Update checkpoint
+                  </button>
+                )}
+                {edited && <span className="chip warn">Unsaved Review changes</span>}
+                <span className="note">
+                  A reviewed month stays editable, and unknown amounts stay unknown.
+                </span>
+              </div>
+            </fieldset>
+          </form>
+        </>
+      )}
+      {help && (
+        <Dialog title="Keyboard shortcuts" onClose={() => setHelp(false)} className="ar">
+          <div className="dlg-b">
+            <dl className="ar-keylist">
+              {[
+                ["j k / arrows", "Move between sections"],
+                ["gg / G", "First or last section"],
+                ["Enter / i / Space", "Show or hide a section's lines"],
+                ["Tab", "Move to a section's questions, the note and actions"],
+                ["Ctrl / ⌘ + S", "Save the Review (or start it)"],
+              ].map(([key, label]) => (
+                <div key={key}>
+                  <dt>
+                    <kbd className="kbd">{key}</kbd>
+                  </dt>
+                  <dd>{label}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </Dialog>
+      )}
+    </div>
   );
 }

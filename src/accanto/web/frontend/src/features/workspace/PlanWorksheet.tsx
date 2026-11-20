@@ -1,39 +1,42 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlanRevision } from "../../lib/monthly";
-import { PlanBreakdown } from "./PlanBreakdown";
-import { composing } from "./shared";
+import { Band, Dialog, Icon, tint } from "../../ui";
+import { PlanBreakdown, share } from "./PlanBreakdown";
 import {
-  type Group,
-  type Line,
   type Catalog,
   type Choice,
+  type Group,
+  type Line,
   type WorksheetDraft,
+  allocationBand,
+  allocations,
+  balance,
   cents,
   even,
-  monthlyAmount as monthly,
+  kinds,
+  lineGroups,
   money,
-  sum,
-  totals,
-  storedTotals,
-  storedCents,
+  monthlyAmount as monthly,
   revisionLines,
-  versionLabel,
+  savedLabel,
+  storedCents,
+  storedGroups,
+  storedTotals,
+  titles,
+  totals,
 } from "./planWorksheetModel";
+import { composing } from "./shared";
 
 type DisplayRow = { id: string; group: Group } & (
   | { heading: true }
   | { heading: false; line: Line }
 );
 const groups: Group[] = ["income", "funding", "fixed", "spending", "saving", "investing", "giving"];
-const titles: Record<Group, string> = {
-  income: "Net income",
-  funding: "Planned use of savings",
-  fixed: "Fixed costs",
-  spending: "Guilt-free spending",
-  saving: "Saving",
-  investing: "Investing",
-  giving: "Giving",
+/** Section captions shown above the first group of each half of the worksheet. */
+const sections: Partial<Record<Group, [string, string?]>> = {
+  income: ["Where the money comes from"],
+  fixed: ["Where it goes", "Totals and the band follow as you type"],
 };
 
 export function PlanWorksheet({
@@ -49,6 +52,7 @@ export function PlanWorksheet({
   onSave,
   onVersion,
   onBack,
+  onCopy,
 }: {
   revision: PlanRevision;
   retained?: WorksheetDraft;
@@ -63,6 +67,8 @@ export function PlanWorksheet({
   onSave: (name: string, lines: Line[]) => void;
   onVersion: () => void;
   onBack: () => void;
+  /** Copy this Plan; omitted while copying is unavailable. */
+  onCopy?: () => void;
 }) {
   const initialLines = useMemo(() => revisionLines(revision), [revision]);
   const [draftLines, setLines] = useState<Line[]>(retained?.lines ?? initialLines);
@@ -80,9 +86,6 @@ export function PlanWorksheet({
   const [notice, setNotice] = useState("");
   const [modal, setModal] = useState<"help" | null>(null);
   const [versionIndex, setVersionIndex] = useState<number | null>(null);
-  const [focusArea, setFocusArea] = useState("page");
-  const dialog = useRef<HTMLDialogElement>(null);
-  const priorFocus = useRef<HTMLElement | null>(null);
   const gTime = useRef(0);
   const pendingDelete = useRef<{ id: string; time: number } | null>(null);
   const readOnly = versionIndex !== null;
@@ -94,31 +97,34 @@ export function PlanWorksheet({
   const planName = snapshot ? snapshot.name : draftName;
   const validName = draftName.trim().length > 0 && draftName.trim().length <= 120;
   const dirty = JSON.stringify({ name: draftName, lines: draftLines }) !== saved;
+  // An open amount or frequency edit previews in the totals and band; an invalid amount is unknown.
+  const preview = useMemo(() => {
+    if (!edit || readOnly) return lines;
+    if (edit.col === 1 && cents(edit.value) === null) return null;
+    return lines.map((line) =>
+      line.id !== edit.id
+        ? line
+        : edit.col === 1
+          ? { ...line, amount: edit.value.trim() }
+          : edit.col === 2
+            ? { ...line, frequency: edit.value as Line["frequency"] }
+            : line,
+    );
+  }, [edit, lines, readOnly]);
   const stats = snapshot
     ? storedTotals(snapshot)
-    : edit
+    : preview === null
       ? { funding: null, allocated: null, unassigned: null }
-      : dirty
-        ? totals(lines)
+      : dirty || edit
+        ? totals(preview)
         : storedTotals(revision);
   const selectedLine = lines.find((l) => l.id === sidebar);
   const valid = validName && lines.every((l) => cents(l.amount) !== null && l.name.trim());
-  const income = sum(lines.filter((line) => line.group === "income"));
   const stored = snapshot ?? (!dirty && !edit ? revision : null);
-  const groupTotal = (group: Group) =>
-    stored
-      ? storedCents(
-          {
-            income: stored.income,
-            funding: stored.savings_funding_total,
-            fixed: stored.fixed_cost_total,
-            spending: stored.spending,
-            saving: stored.saving_total,
-            investing: stored.investing_total,
-            giving: stored.giving_total,
-          }[group],
-        )
-      : sum(lines.filter((line) => line.group === group));
+  const amounts = stored ? storedGroups(stored) : lineGroups(preview);
+  const groupTotal = (group: Group) => amounts[group];
+  const band = allocationBand(amounts, stats.unassigned);
+  const state = balance(stats);
   const needsRevision = (line: Line) =>
     !readOnly &&
     ((catalog[line.group] &&
@@ -169,15 +175,6 @@ export function PlanWorksheet({
     window.addEventListener("beforeunload", guard);
     return () => window.removeEventListener("beforeunload", guard);
   }, [dirty, edit]);
-  useEffect(() => {
-    if (modal) {
-      priorFocus.current = document.activeElement as HTMLElement;
-      dialog.current?.showModal();
-    } else if (dialog.current?.open) {
-      dialog.current.close();
-      priorFocus.current?.focus();
-    }
-  }, [modal]);
   useEffect(() => {
     if (editingName) document.getElementById("plan-name")?.focus();
   }, [editingName]);
@@ -451,8 +448,24 @@ export function PlanWorksheet({
       />
     );
   }
+  // A line's monthly amount follows an open edit, as the totals do.
+  const previewMonthly = (line: Line) => {
+    if (preview === null) return edit?.id === line.id ? null : monthly(line);
+    const shown = preview.find((item) => item.id === line.id);
+    return shown ? monthly(shown) : null;
+  };
+  const loanName = (id?: string) => loans.find((loan) => loan.id === id)?.name;
+  const savedState = readOnly
+    ? dirty || edit
+      ? "Unsaved draft retained"
+      : "Saved snapshot"
+    : dirty || edit
+      ? "Unsaved changes"
+      : "Draft saved";
+  const overallocated = stats.unassigned !== null && stats.unassigned < 0;
   return (
     <div
+      className="plan-sheet screen"
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
           e.preventDefault();
@@ -460,188 +473,251 @@ export function PlanWorksheet({
         }
       }}
     >
-      <button type="button" className="text-button" onClick={onBack}>
-        ‹ All Plans
-      </button>
-      <fieldset disabled={busy}>
-        <div id="plan-toolbar" className="flex items-center flex-wrap gap-3">
-          <div id="plan-name-control">
-            {editingName && !readOnly ? (
-              <>
-                <label className="sr-only" htmlFor="plan-name">
-                  Plan name
-                </label>
-                <input
-                  id="plan-name"
-                  maxLength={120}
-                  value={draftName}
-                  aria-invalid={!validName}
-                  aria-describedby={!validName ? "plan-name-error" : undefined}
-                  onFocus={(e) => e.target.select()}
-                  onChange={(e) => {
-                    setDraftName(e.target.value);
-                    setNotice("");
-                  }}
-                  onBlur={() => finishName()}
-                  onKeyDown={(e) => {
-                    if (!composing(e) && (e.key === "Enter" || e.key === "Escape")) {
-                      e.preventDefault();
-                      if (finishName())
-                        requestAnimationFrame(() =>
-                          document.getElementById("rename-plan")?.focus(),
-                        );
-                    }
-                  }}
-                />
-                {!validName && (
-                  <p id="plan-name-error" className="field-error" role="alert">
-                    Enter a Plan name (1–120 characters).
-                  </p>
-                )}
-              </>
-            ) : (
-              <h1>
-                {readOnly ? (
-                  planName
-                ) : (
+      <div>
+        <button type="button" className="btn sm quiet plan-back" onClick={onBack}>
+          <Icon name="left" />
+          All Plans
+        </button>
+      </div>
+      <fieldset disabled={busy} className="plan-fieldset">
+        <div className="stack">
+          <div className="head">
+            <div className="plan-title">
+              {editingName && !readOnly ? (
+                <>
+                  <label className="sr-only" htmlFor="plan-name">
+                    Plan name
+                  </label>
+                  <input
+                    id="plan-name"
+                    className="title-in"
+                    maxLength={120}
+                    value={draftName}
+                    aria-invalid={!validName}
+                    aria-describedby={!validName ? "plan-name-error" : undefined}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      setDraftName(e.target.value);
+                      setNotice("");
+                    }}
+                    onBlur={() => finishName()}
+                    onKeyDown={(e) => {
+                      if (!composing(e) && (e.key === "Enter" || e.key === "Escape")) {
+                        e.preventDefault();
+                        if (finishName())
+                          requestAnimationFrame(() =>
+                            document.getElementById("rename-plan")?.focus(),
+                          );
+                      }
+                    }}
+                  />
+                  {!validName && (
+                    <p id="plan-name-error" className="err" role="alert">
+                      Enter a Plan name (1–120 characters).
+                    </p>
+                  )}
+                </>
+              ) : (
+                <h1 className="h1">
+                  {readOnly ? (
+                    planName
+                  ) : (
+                    <button
+                      type="button"
+                      id="rename-plan"
+                      className="title-btn"
+                      aria-label={`Rename Plan: ${planName}`}
+                      title="Rename Plan"
+                      onClick={() => {
+                        if (commit()) setEditingName(true);
+                      }}
+                    >
+                      {planName}
+                    </button>
+                  )}
+                </h1>
+              )}
+              <span className={`chip ${state.tone}`}>{state.text}</span>
+            </div>
+            <div className="head-actions">
+              <select
+                id="plan-version"
+                className="input plan-version"
+                aria-label="Viewing Plan version"
+                value={versionIndex ?? "draft"}
+                onChange={(e) => switchVersion(e.target.value)}
+              >
+                <option value="draft">Current draft</option>
+                {versions.map((v, i) => (
+                  <option value={i} key={v.uuid}>
+                    {savedLabel(v, timeZone)}
+                  </option>
+                ))}
+              </select>
+              {onCopy && (
+                <button type="button" className="btn" onClick={onCopy}>
+                  <Icon name="copy" />
+                  Copy
+                </button>
+              )}
+              {readOnly ? (
+                <button
+                  type="button"
+                  id="return-draft"
+                  className="btn"
+                  onClick={() => switchVersion("draft")}
+                >
+                  Return to draft
+                </button>
+              ) : (
+                <>
                   <button
                     type="button"
-                    id="rename-plan"
-                    aria-label={`Rename Plan: ${planName}`}
-                    title="Rename Plan"
-                    onClick={() => {
-                      if (commit()) setEditingName(true);
-                    }}
+                    id="save-draft"
+                    className="btn"
+                    title="Save editable work without creating an immutable version"
+                    onClick={saveDraft}
                   >
-                    {planName}
-                    <span aria-hidden="true">✎</span>
+                    Save draft
                   </button>
-                )}
-              </h1>
-            )}
+                  <button
+                    type="button"
+                    id="save-version"
+                    className="btn pri"
+                    disabled={dirty || !!edit || !valid}
+                    title={
+                      dirty || edit ? "Save the draft first; a version is a copy of it" : undefined
+                    }
+                    onClick={saveVersion}
+                  >
+                    Save version
+                  </button>
+                </>
+              )}
+            </div>
           </div>
-          <span className="badge">{readOnly ? "Read only" : "Draft"}</span>
-          <span id="save-state">
-            {readOnly
-              ? dirty || edit
-                ? "Unsaved draft retained"
-                : "Saved snapshot"
-              : dirty || edit
-                ? "Unsaved changes"
-                : "Draft saved"}
-          </span>
-          <div className="toolbar-actions">
-            <select
-              id="plan-version"
-              aria-label="Viewing Plan version"
-              value={versionIndex ?? "draft"}
-              onChange={(e) => switchVersion(e.target.value)}
-            >
-              <option value="draft">Current draft</option>
-              {versions.map((v, i) => (
-                <option value={i} key={v.uuid}>
-                  {versionLabel(v, versions, timeZone)}
-                </option>
-              ))}
-            </select>
-            {readOnly ? (
-              <button type="button" id="return-draft" onClick={() => switchVersion("draft")}>
-                Return to draft
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  id="save-draft"
-                  title="Save editable work without creating an immutable version"
-                  onClick={saveDraft}
-                >
-                  Save draft
-                </button>
-                <button
-                  type="button"
-                  id="save-version"
-                  className="primary"
-                  disabled={dirty || !!edit || !valid}
-                  onClick={saveVersion}
-                >
-                  Save version
-                </button>
-              </>
-            )}
+          {snapshot ? (
+            <p className="banner">
+              <span>
+                You are viewing {savedLabel(snapshot, timeZone).replace("Version", "version")}.
+                Saved versions cannot be changed.
+                {dirty || edit ? " Your unsaved draft is retained." : ""}
+              </span>
+            </p>
+          ) : (
+            <p className="note" id="save-state">
+              <span className={dirty || edit ? "warn" : ""}>{savedState}.</span>{" "}
+              {dirty || edit
+                ? "Save the draft (Ctrl+S) to keep these changes."
+                : versions.length
+                  ? `${versions.length === 1 ? "One saved version" : `${versions.length} saved versions`}; a saved version never changes.`
+                  : "No saved versions yet. Save a version to compare a month against it."}
+            </p>
+          )}
+          <div className="tot">
+            {(
+              [
+                ["Monthly funding", stats.funding],
+                ["Net income", groupTotal("income")],
+                ["From savings", groupTotal("funding")],
+                ["Allocated", stats.allocated],
+                [overallocated ? "Overallocated" : "Unassigned", stats.unassigned],
+              ] as const
+            ).map(([name, value]) => (
+              <div key={name} className={name === "Overallocated" ? "bad" : ""}>
+                <small>{name}</small>
+                <b>{money(value)}</b>
+              </div>
+            ))}
           </div>
-        </div>
-        <div id="plan-totals">
-          <div>
-            Monthly funding <strong>{money(stats.funding)}</strong>
-          </div>
-          <div>
-            Allocated <strong>{money(stats.allocated)}</strong>
-          </div>
-          <div className={stats.unassigned !== null && stats.unassigned < 0 ? "negative" : ""}>
-            {stats.unassigned !== null && stats.unassigned < 0 ? "Overallocated" : "Unassigned"}{" "}
-            <strong>{money(stats.unassigned)}</strong>
-          </div>
-          <button type="button" className="text-button shortcuts" onClick={() => setModal("help")}>
-            Keyboard shortcuts <kbd>?</kbd>
-          </button>
+          {band ? (
+            <div className={overallocated ? "plan-band over" : "plan-band"}>
+              <Band
+                parts={band}
+                label={`Allocation of ${money(stats.funding)} monthly funding`}
+                limit={
+                  overallocated && stats.allocated && stats.funding !== null
+                    ? stats.funding / stats.allocated
+                    : undefined
+                }
+              />
+            </div>
+          ) : (
+            <p className="note">The allocation band returns once every amount is valid.</p>
+          )}
+          {overallocated && (
+            <p className="err">
+              Allocations exceed funding by {money(-(stats.unassigned ?? 0))}. You can still save
+              this version; the overage stays visible.
+            </p>
+          )}
         </div>
         {(notice || error) && (
-          <div id="feedback" role={error ? "alert" : "status"}>
-            {error || notice}
+          <div
+            id="feedback"
+            className={error ? "banner bad" : "banner"}
+            role={error ? "alert" : "status"}
+          >
+            <span>{error || notice}</span>
             <button
               type="button"
+              className="icon-btn"
               aria-label="Dismiss message"
               onClick={() => {
                 if (!error) setNotice("");
               }}
             >
-              ×
+              <Icon name="x" />
             </button>
           </div>
         )}
-        <div id="editor-layout" className={sidebar ? "with-sidebar" : ""}>
-          <section id="worksheet" aria-label="Plan worksheet">
-            <div className="table-scroll">
-              {/* biome-ignore lint/a11y/useSemanticElements: This is an interactive spreadsheet grid with roving cell focus. */}
-              <table
-                role="grid"
-                aria-readonly={readOnly}
-                aria-label="Monthly Plan worksheet"
-                aria-describedby="keyboard-status"
-                onFocus={() => setFocusArea("table")}
-                onBlur={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget)) setFocusArea("page");
-                }}
-              >
-                <colgroup>
-                  <col className="name-col" />
-                  <col className="amount-col" />
-                  <col className="freq-col" />
-                  <col className="month-col" />
-                  <col className="action-col" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th scope="col">Item / destination</th>
-                    <th scope="col" className="numeric">
-                      Entered amount
-                    </th>
-                    <th scope="col">Frequency</th>
-                    <th scope="col" className="numeric">
-                      Monthly amount
-                    </th>
-                    <th scope="col">
-                      <span className="sr-only">Row actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {display.map((row) => (
+        <div className={sidebar ? "plan-layout with-sidebar" : "plan-layout"}>
+          <section className="card plan-grid-card" aria-label="Plan worksheet">
+            {/* biome-ignore lint/a11y/useSemanticElements: This is an interactive spreadsheet grid with roving cell focus. */}
+            <table
+              role="grid"
+              className="plan-grid"
+              aria-readonly={readOnly}
+              aria-label="Monthly Plan worksheet"
+            >
+              <colgroup>
+                <col className="name-col" />
+                <col className="amount-col" />
+                <col className="freq-col" />
+                <col className="month-col" />
+                <col className="action-col" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col">Item</th>
+                  <th scope="col" className="num">
+                    Entered amount
+                  </th>
+                  <th scope="col">Frequency</th>
+                  <th scope="col" className="num">
+                    Monthly amount
+                  </th>
+                  <th scope="col">
+                    <span className="sr-only">Row actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {display.flatMap((row) => {
+                  const caption =
+                    row.heading || row.group === "spending" ? sections[row.group] : undefined;
+                  const total = groupTotal(row.group);
+                  const ratio =
+                    allocations.some((group) => group === row.group) && total !== null
+                      ? share(total, stats.funding)
+                      : null;
+                  const cells = (
                     <tr
                       id={`row-${row.id}`}
                       key={row.id}
-                      className={`${row.heading ? "group-row" : ""} ${selection.id === row.id ? "selected-row" : ""} ${row.group === "spending" ? "spending-row" : ""}`}
+                      style={tint(kinds[row.group])}
+                      data-group={row.group}
+                      className={`${row.heading || row.group === "spending" ? "group-row" : "line-row"} ${selection.id === row.id ? "selected-row" : ""}`}
                     >
                       {[0, 1, 2, 3, 4].map((col) => {
                         const active = selection.id === row.id && selection.col === col;
@@ -653,7 +729,7 @@ export function PlanWorksheet({
                             aria-label={`${row.heading ? titles[row.group] : row.line?.name}, ${["Item", "Entered amount", "Frequency", "Monthly amount", "Actions"][col]}`}
                             aria-selected={active}
                             tabIndex={active ? 0 : -1}
-                            className={`${col === 1 || col === 3 ? "numeric" : ""} ${col === 4 ? "action-cell" : ""} ${active ? "selected-cell" : ""}`}
+                            className={`c${col} ${col === 1 || col === 3 ? "num" : ""} ${active ? "selected-cell" : ""} ${editing ? "editing" : ""}`}
                             onKeyDown={(e) => onGridKey(e, row, col)}
                             onClick={(e) => {
                               if ((e.target as HTMLElement).closest("button,input,select")) return;
@@ -677,36 +753,55 @@ export function PlanWorksheet({
                                     toggle(row.group);
                                   }}
                                 >
-                                  <span>{collapsed.includes(row.group) ? "›" : "⌄"}</span>
+                                  <span className="dot" />
                                   {titles[row.group]}
-                                  <small>{lines.filter((l) => l.group === row.group).length}</small>
+                                  <small className="muted">
+                                    {lines.filter((l) => l.group === row.group).length}
+                                  </small>
+                                  {collapsed.includes(row.group) && <Icon name="right" />}
+                                  {ratio !== null && (
+                                    <span className="share">{ratio.toFixed(2)}% of funding</span>
+                                  )}
                                 </button>
                               ) : col === 3 ? (
-                                money(groupTotal(row.group))
+                                <b>{money(total)}</b>
                               ) : col === 4 && !readOnly ? (
                                 <button
                                   type="button"
                                   tabIndex={-1}
                                   aria-label={`Add ${titles[row.group]} line`}
-                                  className="icon-button add"
+                                  title={`Add ${titles[row.group]} line`}
+                                  className="icon-btn"
                                   onClick={() => add(row.group)}
                                 >
-                                  +
+                                  <Icon name="plus" />
                                 </button>
                               ) : null
                             ) : col === 0 ? (
-                              <span className="line-name">
-                                {row.line?.name}
-                                {row.line?.link && <span className="link-label">Loan</span>}
-                                {needsRevision(row.line) && (
-                                  <span className="link-label">Review reference</span>
-                                )}
-                              </span>
+                              row.group === "spending" ? (
+                                <span className="group-name">
+                                  <span className="dot" />
+                                  {row.line.name}
+                                  {ratio !== null && (
+                                    <span className="share">{ratio.toFixed(2)}% of funding</span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="line-name">
+                                  <span className="nm">{row.line?.name}</span>
+                                  {row.line?.link && (
+                                    <span className="chip">
+                                      Pays {loanName(row.line.link) ?? "a loan"}
+                                    </span>
+                                  )}
+                                  {needsRevision(row.line) && (
+                                    <span className="chip warn">Review reference</span>
+                                  )}
+                                </span>
+                              )
                             ) : col === 1 ? (
                               cents(row.line.amount) === null ? (
-                                <span className="field-error">
-                                  {row.line.amount || "Enter amount"}
-                                </span>
+                                <span className="err">{row.line.amount || "Enter amount"}</span>
                               ) : (
                                 money(cents(row.line.amount))
                               )
@@ -714,57 +809,76 @@ export function PlanWorksheet({
                               row.group === "fixed" ? (
                                 <span className="frequency">
                                   {row.line?.frequency}
-                                  {!readOnly && <span>⌄</span>}
+                                  {!readOnly && <Icon name="down" />}
                                 </span>
                               ) : (
-                                <span className="dash">—</span>
+                                <span className="muted">—</span>
                               )
                             ) : col === 3 ? (
-                              money(monthly(row.line))
+                              row.group === "spending" ? (
+                                <b>{money(previewMonthly(row.line))}</b>
+                              ) : (
+                                <span className="ink2">{money(previewMonthly(row.line))}</span>
+                              )
                             ) : (
                               <button
                                 type="button"
                                 tabIndex={-1}
                                 aria-label={`Details for ${row.line?.name}`}
-                                className="icon-button details"
+                                title="Details"
+                                className="icon-btn"
                                 onClick={() => {
                                   setSelection({ id: row.id, col: 4 });
                                   openDetails(row.id);
                                 }}
                               >
-                                ↗
+                                <Icon name="more" />
                               </button>
                             )}
                           </td>
                         );
                       })}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div id="worksheet-footnote">
-              <span>Monthly Plan · USD</span>
+                  );
+                  return caption
+                    ? [
+                        <tr key={`section-${row.group}`} className="section-row">
+                          <td colSpan={5}>
+                            <span className="h2">
+                              {caption[0]} {caption[1] && !readOnly && <span>{caption[1]}</span>}
+                            </span>
+                          </td>
+                        </tr>,
+                        cells,
+                      ]
+                    : [cells];
+                })}
+              </tbody>
+            </table>
+            <div className="plan-foot">
               <span>
                 Tithe target{" "}
                 <b>
                   {money(
                     stored
                       ? storedCents(stored.tithe_target)
-                      : income === null
+                      : amounts.income === null
                         ? null
-                        : even(income, 10),
+                        : even(amounts.income, 10),
                   )}
-                </b>
-                <span className="muted"> · 10% of net income</span>
+                </b>{" "}
+                <span className="muted">10% of net income</span>
               </span>
+              <button type="button" className="btn sm quiet" onClick={() => setModal("help")}>
+                Keyboard shortcuts <span className="kbd">?</span>
+              </button>
             </div>
           </section>
           {selectedLine && (
             <aside
-              id="row-details"
+              className="card pad plan-details"
               aria-label="Row details"
-              onFocus={() => setFocusArea("details")}
+              style={tint(kinds[selectedLine.group])}
               onKeyDown={(e) => {
                 if (e.key === "Escape" && !(e.target instanceof HTMLSelectElement)) {
                   e.stopPropagation();
@@ -773,71 +887,74 @@ export function PlanWorksheet({
               }}
             >
               <div className="detail-heading">
-                <span>{titles[selectedLine.group]}</span>
+                <span className="cap">
+                  <span className="dot" /> {titles[selectedLine.group]}
+                </span>
                 <button
                   type="button"
                   id="close-details"
-                  className="icon-button"
+                  className="icon-btn"
                   aria-label="Close row details"
                   onClick={closeDetails}
                 >
-                  ×
+                  <Icon name="x" />
                 </button>
               </div>
-              <h2>{selectedLine.name}</h2>
+              <h2 className="h2">{selectedLine.name}</h2>
               {needsRevision(selectedLine) && (
-                <p className="field-error">
+                <p className="banner">
                   This reference is inactive or unavailable. Review this draft allocation
                   explicitly.
                 </p>
               )}
-              <fieldset disabled={readOnly || busy}>
-                <label htmlFor="detail-name">
-                  {catalog[selectedLine.group] ? "Destination" : "Name"}
-                </label>
-                {catalog[selectedLine.group] ? (
-                  <select
-                    id="detail-name"
-                    value={selectedLine.reference ?? ""}
-                    onChange={(e) =>
-                      change(selectedLine.id, {
-                        reference: e.target.value,
-                        name: catalog[selectedLine.group]?.find(
-                          (choice) => choice.id === e.target.value,
-                        )?.name,
-                      })
-                    }
-                  >
-                    <option value={selectedLine.reference}>{selectedLine.name}</option>
-                    {catalog[selectedLine.group]
-                      ?.filter(
-                        (n) =>
-                          n.active &&
-                          !lines.some(
-                            (l) => l.group === selectedLine.group && l.reference === n.id,
-                          ),
-                      )
-                      .map((n) => (
-                        <option key={n.id} value={n.id}>
-                          {n.name}
-                        </option>
-                      ))}
-                  </select>
-                ) : (
-                  <input
-                    id="detail-name"
-                    value={selectedLine.name}
-                    readOnly={selectedLine.group === "spending"}
-                    aria-invalid={!selectedLine.name.trim()}
-                    onChange={(e) => change(selectedLine.id, { name: e.target.value })}
-                  />
-                )}
-                {!selectedLine.name.trim() && <p className="field-error">Enter a name.</p>}
-                <label htmlFor="detail-amount">
-                  {selectedLine.group === "fixed" ? "Entered amount" : "Monthly amount"}
-                </label>
-                <div className="currency-field">
-                  <span>$</span>
+              <fieldset disabled={readOnly || busy} className="detail-fields">
+                <div className="field">
+                  <label htmlFor="detail-name">
+                    {catalog[selectedLine.group] ? "Destination" : "Name"}
+                  </label>
+                  {catalog[selectedLine.group] ? (
+                    <select
+                      id="detail-name"
+                      value={selectedLine.reference ?? ""}
+                      onChange={(e) =>
+                        change(selectedLine.id, {
+                          reference: e.target.value,
+                          name: catalog[selectedLine.group]?.find(
+                            (choice) => choice.id === e.target.value,
+                          )?.name,
+                        })
+                      }
+                    >
+                      <option value={selectedLine.reference}>{selectedLine.name}</option>
+                      {catalog[selectedLine.group]
+                        ?.filter(
+                          (n) =>
+                            n.active &&
+                            !lines.some(
+                              (l) => l.group === selectedLine.group && l.reference === n.id,
+                            ),
+                        )
+                        .map((n) => (
+                          <option key={n.id} value={n.id}>
+                            {n.name}
+                          </option>
+                        ))}
+                    </select>
+                  ) : (
+                    <input
+                      id="detail-name"
+                      value={selectedLine.name}
+                      readOnly={selectedLine.group === "spending"}
+                      aria-invalid={!selectedLine.name.trim()}
+                      onChange={(e) => change(selectedLine.id, { name: e.target.value })}
+                    />
+                  )}
+                  {!selectedLine.name.trim() && <p className="err">Enter a name.</p>}
+                </div>
+                <div className="field">
+                  <label htmlFor="detail-amount">
+                    {selectedLine.group === "fixed" ? "Entered amount" : "Monthly amount"}
+                  </label>
                   <input
                     id="detail-amount"
                     inputMode="decimal"
@@ -845,69 +962,81 @@ export function PlanWorksheet({
                     value={selectedLine.amount}
                     onChange={(e) => change(selectedLine.id, { amount: e.target.value })}
                   />
+                  {cents(selectedLine.amount) === null && (
+                    <p className="err" role="alert">
+                      Enter a nonnegative USD amount, up to two decimals.
+                    </p>
+                  )}
                 </div>
-                {cents(selectedLine.amount) === null && (
-                  <p className="field-error" role="alert">
-                    Enter a nonnegative USD amount, up to two decimals.
-                  </p>
-                )}
                 {selectedLine.group === "fixed" && (
                   <>
-                    <label htmlFor="detail-frequency">Frequency</label>
-                    <select
-                      id="detail-frequency"
-                      value={selectedLine.frequency}
-                      onChange={(e) =>
-                        change(selectedLine.id, { frequency: e.target.value as Line["frequency"] })
-                      }
-                    >
-                      <option>Monthly</option>
-                      <option>Annual</option>
-                    </select>
-                    <label htmlFor="detail-loan">Linked loan</label>
-                    <select
-                      id="detail-loan"
-                      value={selectedLine.link || ""}
-                      onChange={(e) =>
-                        change(selectedLine.id, { link: e.target.value || undefined })
-                      }
-                    >
-                      <option value="">None</option>
-                      {selectedLine.link &&
-                        (readOnly || !loans.some((loan) => loan.id === selectedLine.link)) && (
-                          <option value={selectedLine.link}>
-                            {snapshot?.fixed_costs.find(
-                              (line) => line.fixed_cost_id === selectedLine.reference,
-                            )?.debt_account_name ?? "Unavailable loan"}
-                          </option>
-                        )}
-                      {loans
-                        .filter(
-                          (loan) => !readOnly && (loan.active || loan.id === selectedLine.link),
-                        )
-                        .map((loan) => (
-                          <option key={loan.id} value={loan.id}>
-                            {loan.name}
-                            {loan.active ? "" : " (inactive)"}
-                          </option>
-                        ))}
-                    </select>
+                    <div className="field">
+                      <label htmlFor="detail-frequency">Frequency</label>
+                      <select
+                        id="detail-frequency"
+                        value={selectedLine.frequency}
+                        onChange={(e) =>
+                          change(selectedLine.id, {
+                            frequency: e.target.value as Line["frequency"],
+                          })
+                        }
+                      >
+                        <option>Monthly</option>
+                        <option>Annual</option>
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="detail-loan">Linked loan</label>
+                      <select
+                        id="detail-loan"
+                        value={selectedLine.link || ""}
+                        onChange={(e) =>
+                          change(selectedLine.id, { link: e.target.value || undefined })
+                        }
+                      >
+                        <option value="">None</option>
+                        {selectedLine.link &&
+                          (readOnly || !loans.some((loan) => loan.id === selectedLine.link)) && (
+                            <option value={selectedLine.link}>
+                              {snapshot?.fixed_costs.find(
+                                (line) => line.fixed_cost_id === selectedLine.reference,
+                              )?.debt_account_name ?? "Unavailable loan"}
+                            </option>
+                          )}
+                        {loans
+                          .filter(
+                            (loan) => !readOnly && (loan.active || loan.id === selectedLine.link),
+                          )
+                          .map((loan) => (
+                            <option key={loan.id} value={loan.id}>
+                              {loan.name}
+                              {loan.active ? "" : " (inactive)"}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
                     <div className="detail-result">
-                      <span>Monthly amount</span>
-                      <strong>{money(monthly(selectedLine))}</strong>
+                      <span className="muted">Monthly amount</span>
+                      <b>{money(monthly(selectedLine))}</b>
                     </div>
                   </>
                 )}
               </fieldset>
-              {!readOnly && selectedLine.group !== "spending" && (
-                <button type="button" className="danger" id="remove-line" onClick={() => remove()}>
-                  Remove line
-                </button>
-              )}
-              <div className="detail-hint">
-                {readOnly ? "Read-only snapshot" : "Editing draft"}{" "}
-                <span>
-                  <kbd>Esc</kbd> Close
+              <div className="actions">
+                {!readOnly && selectedLine.group !== "spending" && (
+                  <button
+                    type="button"
+                    className="btn sm danger"
+                    id="remove-line"
+                    onClick={() => remove()}
+                  >
+                    <Icon name="trash" />
+                    Remove line
+                  </button>
+                )}
+                <span className="note">
+                  {readOnly ? "Read-only snapshot" : "Editing draft"}.{" "}
+                  <span className="kbd">Esc</span> closes.
                 </span>
               </div>
             </aside>
@@ -919,75 +1048,49 @@ export function PlanWorksheet({
         allocated={stats.allocated}
         state={snapshot ? "Saved version" : dirty || edit ? "Unsaved preview" : "Saved draft"}
         rows={[
-          ...groups
-            .filter((group) => group !== "income" && group !== "funding")
-            .map((group) => ({
-              name: titles[group],
-              amount: edit && !snapshot ? null : groupTotal(group),
-            })),
+          ...allocations.map((group) => ({
+            name: titles[group],
+            amount: groupTotal(group),
+            kind: kinds[group],
+          })),
           { name: "Unassigned", amount: stats.unassigned },
         ]}
         metrics={stored?.planned_metrics}
       />
-      <footer id="keyboard-status">
-        <span className="mode">
-          {readOnly
-            ? "READ ONLY"
-            : focusArea === "table"
-              ? edit
-                ? "INSERT"
-                : "NORMAL"
-              : focusArea === "details"
-                ? "DETAILS"
-                : "READY"}
-        </span>
-        <span className="key-hints">
-          <kbd>h j k l</kbd> Move{" "}
-          {!readOnly && (
-            <>
-              <kbd>i</kbd> Edit
-            </>
-          )}{" "}
-          <kbd>Enter</kbd> Open <kbd>Esc</kbd> Normal
-        </span>
-      </footer>
-      <dialog ref={dialog} id="plan-help-dialog" onCancel={() => setModal(null)}>
-        <div className="dialog-heading">
-          <h2>Keyboard shortcuts</h2>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="Close dialog"
-            onClick={() => setModal(null)}
-          >
-            ×
-          </button>
-        </div>
-        <p>Vim-style navigation applies while the table has focus. Saved versions are read-only.</p>
-        <dl className="shortcut-list">
-          {[
-            ["h j k l / arrows", "Move between cells"],
-            ["0 / $ · Home / End", "First / last cell in row"],
-            ["gg / G", "First / last visible row"],
-            ["i / Enter", "Edit a draft value or activate a control"],
-            ["a / A", "Add a line in the current category"],
-            ["dd", "Remove selected line, with confirmation"],
-            ["Escape / Enter", "Keep a valid cell edit; return to normal"],
-            ["↑ / ↓ in a selector", "Choose an option in insert mode"],
-            ["Tab / Shift+Tab", "Leave the table or move through form fields"],
-            ["Ctrl / ⌘ + S", "Save draft"],
-            ["?", "Open this reference"],
-          ].map(([key, label]) => (
-            <div key={key}>
-              <dt>
-                <kbd>{key}</kbd>
-              </dt>
-              <dd>{label}</dd>
-            </div>
-          ))}
-        </dl>
-        <p>Invalid input stays visible. Save version is always an explicit action.</p>
-      </dialog>
+      {modal === "help" && (
+        <Dialog title="Keyboard shortcuts" onClose={() => setModal(null)}>
+          <div className="dlg-b">
+            <p className="ink2">
+              These keys work while the worksheet has focus. Saved versions are read-only.
+            </p>
+            <dl className="shortcut-list">
+              {[
+                ["h j k l / arrows", "Move between cells"],
+                ["0 / $ · Home / End", "First / last cell in row"],
+                ["gg / G", "First / last visible row"],
+                ["i / Enter", "Edit a draft value or activate a control"],
+                ["a / A", "Add a line in the current category"],
+                ["dd", "Remove selected line, with confirmation"],
+                ["Escape / Enter", "Keep a valid cell edit; return to normal"],
+                ["↑ / ↓ in a selector", "Choose an option while editing"],
+                ["Tab / Shift+Tab", "Leave the table or move through form fields"],
+                ["Ctrl / ⌘ + S", "Save draft"],
+                ["?", "Open this reference"],
+              ].map(([key, label]) => (
+                <div key={key}>
+                  <dt>
+                    <span className="kbd">{key}</span>
+                  </dt>
+                  <dd>{label}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="note">
+              Invalid input stays visible. Save version is always an explicit action.
+            </p>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }

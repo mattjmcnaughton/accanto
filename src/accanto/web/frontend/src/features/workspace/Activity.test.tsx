@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PlanRevision } from "../../lib/monthly";
 import { ActivityScreen } from "./Activity";
@@ -68,7 +68,7 @@ it("records a payment assigned to a saved cost removed from the current draft", 
   fireEvent.change(screen.getByLabelText("Category"), { target: { value: "fixed_cost" } });
   fireEvent.change(screen.getByLabelText("Fixed cost"), { target: { value: "fixed-a" } });
   fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "12.00" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save activity" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Record" }));
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
       body: expect.objectContaining({
@@ -122,7 +122,7 @@ it("shows named investment and giving destinations in shared Activity", async ()
   expect(await screen.findByText("Example fund")).toBeDefined();
   expect(await screen.findByText("Example recipient")).toBeDefined();
   expect(screen.getAllByText("Read only")).toHaveLength(2);
-  fireEvent.click(screen.getByRole("button", { name: "Details for Giving on 2026-11-04" }));
+  fireEvent.click(screen.getByRole("gridcell", { name: /Example recipient/ }));
   expect(screen.getByText("Correct this entry in Investments and giving.")).toBeDefined();
   expect(screen.queryByRole("button", { name: /Save/ })).toBeNull();
 });
@@ -177,13 +177,15 @@ it("shows both the destination and savings origin for funded outflows", async ()
     return json([]);
   });
   render(<ActivityScreen {...props()} />);
-  const fixed = (await screen.findByText("Synthetic service")).closest("tr");
-  expect(fixed?.textContent).toContain("Loan: Synthetic loan");
-  expect(fixed?.textContent).toContain("Synthetic cash · Reserve");
-  const giving = (await screen.findByText("Example recipient")).closest("tr");
-  expect(giving?.textContent).toContain("Synthetic cash · Reserve");
-  const spending = (await screen.findByText("$25.00")).closest("tr");
-  expect(spending?.textContent).toContain("Current income");
+  const row = (text: string) => screen.getByText(text).closest('[role="row"]');
+  await screen.findByText("Synthetic service");
+  expect(row("Synthetic service")?.textContent).toContain("Loan: Synthetic loan");
+  expect(row("Synthetic service")?.textContent).toContain("from Synthetic cash · Reserve");
+  expect(row("Example recipient")?.textContent).toContain("from Synthetic cash · Reserve");
+  // Income-funded spending names no saving goal and is not an unassigned line.
+  const spending = row("$25.00");
+  expect(spending?.textContent).toContain("Guilt-free spending");
+  expect(spending?.textContent).not.toContain("from");
   expect(spending?.textContent).not.toContain("Unassigned");
 });
 it("keeps the viewed contributing-entry fingerprint through a background refresh", async () => {
@@ -206,14 +208,10 @@ it("keeps the viewed contributing-entry fingerprint through a background refresh
   const p = props();
   const view = render(<ActivityScreen {...p} />);
   fireEvent.click(await screen.findByRole("button", { name: "Enter known total" }));
-  expect(screen.getByText("1 contributing entries were captured for this total.")).toBeDefined();
+  expect(screen.getByText(/1 contributing entry was captured for this total\./)).toBeDefined();
   refreshed = true;
   view.rerender(<ActivityScreen {...p} refresh={1} />);
-  await waitFor(() =>
-    expect(screen.getAllByRole("button", { name: /Details for Guilt-free spending/ })).toHaveLength(
-      2,
-    ),
-  );
+  await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
   fireEvent.change(screen.getByLabelText("Known total (USD)"), { target: { value: "250" } });
   fireEvent.click(screen.getByRole("button", { name: "Save adjustment" }));
   expect(p.save).toHaveBeenCalledWith(
@@ -245,9 +243,9 @@ it("keeps valid cell edits local on Escape, holds invalid input, and saves one r
   const p = props();
   render(<ActivityScreen {...p} />);
   await screen.findByText("Synthetic lunch");
-  const amount = screen.getByText("$12.00").closest("td") as HTMLElement;
+  const amount = screen.getByText("$12.00");
   fireEvent.keyDown(amount, { key: "i" });
-  const input = screen.getByLabelText("Amount for Guilt-free spending on 2026-11-03");
+  const input = screen.getByLabelText("Amount for Synthetic lunch on Nov 3, 2026");
   fireEvent.change(input, { target: { value: "12.345" } });
   fireEvent.keyDown(input, { key: "Escape" });
   // Invalid input stays in insert mode with an error; nothing is sent.
@@ -255,7 +253,7 @@ it("keeps valid cell edits local on Escape, holds invalid input, and saves one r
   expect((input as HTMLInputElement).value).toBe("12.345");
   fireEvent.change(input, { target: { value: "13.50" } });
   fireEvent.keyDown(input, { key: "Escape" });
-  expect(screen.queryByLabelText("Amount for Guilt-free spending on 2026-11-03")).toBeNull();
+  expect(screen.queryByLabelText("Amount for Synthetic lunch on Nov 3, 2026")).toBeNull();
   expect(screen.getByText("$13.50")).toBeDefined();
   expect(screen.getByText("Unsaved")).toBeDefined();
   expect(p.save).not.toHaveBeenCalled();
@@ -298,20 +296,49 @@ it("keeps the attempted record while a write is pending instead of opening or di
   );
   const p = props();
   const view = render(<ActivityScreen {...p} />);
-  const amount = (await screen.findByText("$12.00")).closest("td") as HTMLElement;
+  const amount = await screen.findByText("$12.00");
   fireEvent.keyDown(amount, { key: "i" });
-  const input = screen.getByLabelText("Amount for Guilt-free spending on 2026-11-03");
+  const input = screen.getByLabelText("Amount for Synthetic lunch on Nov 3, 2026");
   fireEvent.change(input, { target: { value: "13.50" } });
   fireEvent.keyDown(input, { key: "Enter" });
   // A failed save leaves the write pending; the shell reports that as busy.
   view.rerender(<ActivityScreen {...p} busy />);
-  const other = screen.getByText("$3.00").closest("td") as HTMLElement;
+  const other = screen.getByText("$3.00");
   fireEvent.keyDown(other, { key: "i" });
   fireEvent.keyDown(other, { key: "a" });
   fireEvent.keyDown(other, { key: "Escape" });
-  expect(screen.queryByLabelText(/Amount for Guilt-free spending/)).toBeNull();
+  expect(screen.queryByLabelText(/Amount for Synthetic/)).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByText("$13.50")).toBeDefined();
-  expect((screen.getByLabelText("Amount (USD)") as HTMLInputElement).value).toBe("13.50");
-  expect(screen.getByRole("button", { name: "Discard changes" }).matches(":disabled")).toBe(true);
-  expect(screen.getByText("Correct activity")).toBeDefined();
+  // The attempted record stays on its row and opens read-only for review while the write is pending.
+  fireEvent.click(screen.getByRole("button", { name: "Review attempted entry" }));
+  const dialog = within(screen.getByRole("dialog", { name: "Edit activity" }));
+  expect((dialog.getByLabelText("Amount (USD)") as HTMLInputElement).value).toBe("13.50");
+  expect(dialog.getByRole("button", { name: "Discard changes" }).matches(":disabled")).toBe(true);
+});
+it("records guilt-free spending from one line and keeps the text until the save is confirmed", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => json([]));
+  const p = props();
+  render(<ActivityScreen {...p} />);
+  const line = await screen.findByLabelText(/Record guilt-free spending/);
+  fireEvent.change(line, { target: { value: "groceries 42" } });
+  fireEvent.submit(line);
+  expect(screen.getByRole("alert").textContent).toContain("Start with an amount");
+  expect(p.save).not.toHaveBeenCalled();
+  fireEvent.change(line, { target: { value: "$1,042.5 weekly groceries" } });
+  fireEvent.submit(line);
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "POST",
+      body: expect.objectContaining({
+        date: "2026-11-10",
+        category: "spending",
+        amount: "1042.50",
+        note: "Weekly groceries",
+        funding_origin: "income",
+      }),
+    }),
+    expect.any(Function),
+  );
+  expect((line as HTMLInputElement).value).toBe("$1,042.5 weekly groceries");
 });

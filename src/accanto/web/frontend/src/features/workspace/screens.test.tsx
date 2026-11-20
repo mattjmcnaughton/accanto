@@ -34,6 +34,7 @@ const plans = [
     ],
   },
 ];
+const nav = () => within(screen.getByRole("navigation", { name: "Workspace" }));
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
 const props = (): ScreenProps => ({
   entity,
@@ -205,10 +206,11 @@ it("retains exact keyboard edits across Home and flags one cent but not exact ze
   });
   fireEvent.keyDown(screen.getByLabelText("Amount for Guilt-free spending"), { key: "Escape" });
   expect(screen.queryByLabelText("Amount for Guilt-free spending")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Home" }));
-  const attention = await screen.findByRole("table", { name: "Plan attention" });
-  expect(within(attention).getByRole("button", { name: /\$0.01 overallocated/ })).toBeDefined();
-  fireEvent.click(within(attention).getByRole("button", { name: "Open draft" }));
+  fireEvent.click(nav().getByRole("link", { name: "Home" }));
+  const attention = await screen.findByRole("list", { name: "Needs you" });
+  fireEvent.click(
+    within(attention).getByRole("button", { name: /\$0.01 overallocated.*Open draft/ }),
+  );
   fireEvent.keyDown(screen.getByRole("cell", { name: "Guilt-free spending, Entered amount" }), {
     key: "i",
   });
@@ -216,10 +218,9 @@ it("retains exact keyboard edits across Home and flags one cent but not exact ze
     target: { value: "4000.00" },
   });
   fireEvent.keyDown(screen.getByLabelText("Amount for Guilt-free spending"), { key: "Escape" });
-  fireEvent.click(screen.getByRole("button", { name: "Home" }));
+  fireEvent.click(nav().getByRole("link", { name: "Home" }));
   expect(screen.queryByRole("button", { name: /overallocated/ })).toBeNull();
-  expect(screen.getByRole("button", { name: /Unsaved draft changes/ })).toBeDefined();
-  fireEvent.click(screen.getByRole("button", { name: "Open draft" }));
+  fireEvent.click(screen.getByRole("button", { name: /has unsaved changes.*Open draft/ }));
   fireEvent.keyDown(screen.getByRole("cell", { name: "Guilt-free spending, Entered amount" }), {
     key: "i",
   });
@@ -228,9 +229,9 @@ it("retains exact keyboard edits across Home and flags one cent but not exact ze
   });
   fireEvent.keyDown(screen.getByLabelText("Amount for Guilt-free spending"), { key: "Escape" });
   expect(screen.getByDisplayValue("invalid")).toBeDefined();
-  fireEvent.click(screen.getByRole("button", { name: "Home" }));
+  fireEvent.click(nav().getByRole("link", { name: "Home" }));
   expect(screen.queryByRole("button", { name: /overallocated/ })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Open draft" }));
+  fireEvent.click(screen.getByRole("button", { name: /has unsaved changes.*Open draft/ }));
   expect(screen.getByDisplayValue("invalid")).toBeDefined();
 });
 
@@ -271,8 +272,8 @@ it("orders Plans by server update time and never recalculates saved worksheet re
   );
   render(<Plans {...props()} />);
   await screen.findByRole("button", { name: "Most recent" });
-  const table = screen.getByRole("table", { name: "Plans" });
-  expect(within(table).getAllByRole("row")[1].textContent).toContain("Most recent");
+  const list = screen.getByRole("list", { name: "Plans" });
+  expect(within(list).getAllByRole("listitem")[0].textContent).toContain("Most recent");
   fireEvent.click(screen.getByRole("button", { name: "Baseline" }));
   fireEvent.click(screen.getByRole("button", { name: "Rename Plan: Baseline" }));
   fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "Local name" } });
@@ -300,17 +301,17 @@ it("orders Plans by server update time and never recalculates saved worksheet re
 it("numbers workspace navigation without intercepting numeric input", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async () => json([]));
   render(<Workspace initial={session} signedOut={() => {}} />);
-  fireEvent.keyDown(document.body, { key: "2" });
-  expect(screen.getByRole("button", { name: "Plans" }).getAttribute("aria-current")).toBe("page");
+  fireEvent.keyDown(document.body, { key: "4" });
+  expect(nav().getByRole("link", { name: "Plans" }).getAttribute("aria-current")).toBe("page");
   expect(screen.queryByText("Compare saved scenarios")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /New Plan/ }));
   const name = screen.getByLabelText("Plan name");
   fireEvent.keyDown(name, { key: "1" });
   fireEvent.change(name, { target: { value: "123" } });
-  expect(screen.getByRole("button", { name: "Plans" }).getAttribute("aria-current")).toBe("page");
+  expect(nav().getByRole("link", { name: "Plans" }).getAttribute("aria-current")).toBe("page");
   fireEvent.keyDown(document.body, { key: "1" });
-  expect(screen.getByRole("button", { name: "Home" }).getAttribute("aria-current")).toBe("page");
-  fireEvent.keyDown(document.body, { key: "2" });
+  expect(nav().getByRole("link", { name: "Home" }).getAttribute("aria-current")).toBe("page");
+  fireEvent.keyDown(document.body, { key: "4" });
   expect(screen.getByLabelText("Plan name").getAttribute("value")).toBe("123");
 });
 
@@ -433,13 +434,13 @@ it("sorts Plans by instant, with unknown update time last, and survives unreadab
   ]);
   render(<Plans {...props()} />);
   await screen.findByRole("button", { name: "Later" });
-  const rows = within(screen.getByRole("table", { name: "Plans" })).getAllByRole("row");
-  expect(rows.slice(1, 3).map((row) => row.textContent)).toEqual([
+  const rows = within(screen.getByRole("list", { name: "Plans" })).getAllByRole("listitem");
+  expect(rows.slice(0, 2).map((row) => row.textContent)).toEqual([
     expect.stringContaining("Later"),
     expect.stringContaining("Earlier"),
   ]);
-  expect(rows[3].textContent).toContain("Unknown");
-  expect(rows[4].textContent).toContain("Unknown");
+  expect(rows[2].textContent).toContain("Updated Unknown");
+  expect(rows[3].textContent).toContain("Updated Unknown");
 });
 
 it("flags a replaced draft even when its revision number is the same", async () => {
@@ -473,11 +474,11 @@ it("does not prompt about retained Plan edits when acting on another screen", as
   fireEvent.keyDown(spendingCell(), { key: "i" });
   fireEvent.change(spendingInput(), { target: { value: "4000.00" } });
   fireEvent.keyDown(spendingInput(), { key: "Escape" });
-  fireEvent.click(screen.getByRole("button", { name: "Loans and balances" }));
+  fireEvent.click(nav().getByRole("link", { name: "Loans" }));
   fireEvent.click(await screen.findByRole("button", { name: "Add loan" }));
-  expect(await screen.findByRole("complementary", { name: "Record details" })).toBeDefined();
+  expect(await screen.findByRole("dialog", { name: "Add loan" })).toBeDefined();
   expect(confirm).not.toHaveBeenCalled();
   // The retained Plan edit still returns when coming back to it.
-  fireEvent.click(screen.getByRole("button", { name: "Plans" }));
+  fireEvent.click(nav().getByRole("link", { name: "Plans" }));
   expect(spendingCell().textContent).toMatch(/4,?000\.00/);
 });

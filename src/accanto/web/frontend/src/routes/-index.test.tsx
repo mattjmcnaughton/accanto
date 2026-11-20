@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import { ProductionHome } from "./index";
+import { ProductionHome } from "./__root";
 
 afterEach(() => vi.restoreAllMocks());
 

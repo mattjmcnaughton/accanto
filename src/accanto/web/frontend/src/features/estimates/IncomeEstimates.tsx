@@ -1,15 +1,16 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useState } from "react";
+import { formatMoney, plural } from "../../lib/format";
 import {
-  incomeEstimates,
   type EstimateInput,
   type EstimateLine,
   type EstimateResult,
   type Frequency,
+  incomeEstimates,
 } from "../../lib/incomeEstimates";
 import { USD_AMOUNT } from "../../lib/money";
-import { LoadMessage, type ScreenProps, useLoad } from "../workspace/shared";
+import { Dialog, Empty, Head, Icon } from "../../ui";
+import { type ScreenProps, useLoad } from "../workspace/shared";
 import { useGridKeys } from "../workspace/useGridKeys";
-import "../workspace/worksheet-ui.css";
 import "./estimates.css";
 
 type LineForm = {
@@ -33,19 +34,19 @@ const ASSUMED_PAYS: Record<Exclude<Frequency, "daily">, number> = {
   weekly: 52,
 };
 const FREQUENCIES: [Frequency, string][] = [
-  ["annual", "Annual"],
   ["monthly", "Monthly"],
-  ["twice_monthly", "Twice monthly"],
+  ["twice_monthly", "Twice a month"],
   ["weekly", "Weekly"],
+  ["annual", "Once a year"],
   ["daily", "Daily"],
 ];
 const HEADERS = [
-  "Income line",
-  "Frequency",
-  "Pays / yr",
-  "Gross / pay",
-  "Withholding / pay",
-  "Deductions / pay",
+  "Income",
+  "Paid",
+  "Payments a year",
+  "Gross per payment",
+  "Withholding",
+  "Other deductions",
   "Monthly net",
 ];
 const INPUT_LABELS = [
@@ -58,6 +59,16 @@ const INPUT_LABELS = [
 ];
 const FIELDS = ["name", "frequency", "paid_days", "gross", "withholding", "payroll"] as const;
 const MONEY_COLUMNS = new Set([3, 4, 5]);
+const SHORTCUTS = [
+  ["h j k l / arrows", "Move between cells"],
+  ["0 / $ · Home / End", "First / last cell in row"],
+  ["gg / G", "First / last line"],
+  ["i / Enter", "Edit the selected value"],
+  ["Escape / Enter", "Keep a valid edit in the draft"],
+  ["a / A", "Add an income line"],
+  ["dd", "Remove the line, with confirmation"],
+  ["Ctrl / ⌘ + S", "Save estimate"],
+];
 
 const blankLine = (): LineForm => ({
   key: crypto.randomUUID(),
@@ -80,12 +91,6 @@ const fromSaved = (record: EstimateResult): Draft => ({
     paid_days: line.paid_days ?? "",
   })),
 });
-function moneyLabel(value: string): string {
-  const [whole, cents] = value.split(".");
-  const negative = whole.startsWith("-");
-  const digits = negative ? whole.slice(1) : whole;
-  return `${negative ? "-" : ""}$${digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${cents ?? "00"}`;
-}
 function cellError(line: LineForm, col: number): string {
   if (col === 0) return line.name.trim() ? "" : "Enter a name.";
   if (col === 2)
@@ -112,7 +117,7 @@ function savedResult(line: LineForm, saved: EstimateResult | null): EstimateLine
     return match;
   return undefined;
 }
-const signedClass = (value: string) => (value.startsWith("-") ? "negative" : "");
+const signedClass = (value: string) => (value.startsWith("-") ? "bad" : "");
 
 export function IncomeEstimates(p: ScreenProps) {
   const [reload, setReload] = useState(0);
@@ -127,25 +132,9 @@ export function IncomeEstimates(p: ScreenProps) {
   const [editError, setEditError] = useState("");
   const [showErrors, setShowErrors] = useState(false);
   const [notice, setNotice] = useState("");
-  const [inTable, setInTable] = useState(false);
   const [help, setHelp] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null);
-  const priorFocus = useRef<HTMLElement | null>(null);
   const lineKeys = useGridKeys();
   const listKeys = useGridKeys();
-
-  useEffect(() => {
-    const element = dialog.current;
-    if (!element) return;
-    if (help) {
-      priorFocus.current = document.activeElement as HTMLElement;
-      if (typeof element.showModal === "function") element.showModal();
-      else element.setAttribute("open", "");
-    } else if (element.open) {
-      element.close();
-      priorFocus.current?.focus();
-    }
-  }, [help]);
 
   if (p.concealed) return null;
 
@@ -204,7 +193,7 @@ export function IncomeEstimates(p: ScreenProps) {
   function beginEdit(row: number, col: number) {
     if (!form || p.busy || col > 5) return;
     if (col === 2 && form.lines[row].frequency !== "daily") {
-      setNotice("Pays per year follows the frequency. Choose Daily to enter paid days.");
+      setNotice("Payments a year follows how often you are paid. Choose Daily to enter paid days.");
       return;
     }
     setNotice("");
@@ -302,7 +291,7 @@ export function IncomeEstimates(p: ScreenProps) {
     if (col === 6) {
       const result = savedResult(line, selected);
       return result ? (
-        <span className={signedClass(result.monthly_net)}>{moneyLabel(result.monthly_net)}</span>
+        <span className={signedClass(result.monthly_net)}>{formatMoney(result.monthly_net)}</span>
       ) : (
         <>
           —<span className="sr-only"> calculated when saved</span>
@@ -311,9 +300,7 @@ export function IncomeEstimates(p: ScreenProps) {
     }
     const value = line[FIELDS[col]].trim();
     if (!value) return <span className="muted">—</span>;
-    if (!USD_AMOUNT.test(value)) return value;
-    const [whole, cents = ""] = value.split(".");
-    return moneyLabel(`${whole.replace(/^0+(?=\d)/, "")}.${cents.padEnd(2, "0")}`);
+    return USD_AMOUNT.test(value) ? formatMoney(value) : value;
   }
   function editor(line: LineForm, row: number, col: number) {
     const label = `${INPUT_LABELS[col]} ${row + 1}`;
@@ -326,6 +313,7 @@ export function IncomeEstimates(p: ScreenProps) {
     };
     const common = {
       autoFocus: true,
+      className: "input",
       "aria-label": label,
       "aria-invalid": !!editError,
       "aria-describedby": editError ? "estimate-edit-error" : undefined,
@@ -366,12 +354,11 @@ export function IncomeEstimates(p: ScreenProps) {
     !!selected &&
     form.lines.length === selected.lines.length &&
     form.lines.every((line) => savedResult(line, selected));
-  const mode = edit ? "INSERT" : inTable ? "NORMAL" : "READY";
 
   return (
     <section
-      className="data-workspace estimates-workspace"
-      aria-labelledby="estimates-title"
+      className="screen est-screen"
+      aria-label="Income estimates"
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
           event.preventDefault();
@@ -379,293 +366,311 @@ export function IncomeEstimates(p: ScreenProps) {
         }
       }}
     >
-      <div className="data-toolbar">
-        <h2 id="estimates-title">Income estimates</h2>
-        <p className="muted estimates-note">
-          Monthly net from entered assumptions. Not receipts, Plan income or calculated tax; copy a
-          result into a Plan manually.
-        </p>
-        <button type="button" disabled={p.busy} onClick={startNew}>
+      <Head
+        title="Income estimates"
+        sub="Work out monthly take-home pay from what you enter for each payment. Accanto does not estimate tax, and an estimate is never treated as income received."
+      >
+        <button type="button" className="btn pri" disabled={p.busy} onClick={startNew}>
+          <Icon name="plus" />
           New estimate
         </button>
-      </div>
-      <LoadMessage state={state} retry={() => setReload((value) => value + 1)} />
-      <div className="estimates-layout">
-        <div className="estimates-index">
-          {state.kind === "empty" && (
-            <p className="muted estimates-empty">
-              No estimates yet. Create one to explore assumptions.
-            </p>
-          )}
-          {state.kind === "ready" && (
-            <table className="data-grid" aria-label="Saved income estimates">
-              <colgroup>
-                <col />
-                <col className="estimates-count-col" />
-                <col className="estimates-money-col" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th scope="col">Estimate</th>
-                  <th scope="col" className="numeric">
-                    Lines
-                  </th>
-                  <th scope="col" className="numeric">
-                    Monthly net
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {records.map((record, row) => (
-                  <tr
-                    key={record.uuid}
-                    aria-current={selected?.uuid === record.uuid ? "true" : undefined}
-                    className={selected?.uuid === record.uuid ? "estimates-open-row" : undefined}
-                  >
-                    <td>
-                      <button
-                        type="button"
-                        id={`estimate-open-${row}`}
-                        className="estimates-open"
-                        aria-label={`Open ${record.name}`}
-                        title={record.name}
-                        tabIndex={row === Math.min(listRow, records.length - 1) ? 0 : -1}
-                        disabled={p.busy}
-                        onFocus={() => setListRow(row)}
-                        onClick={() => open(record)}
-                        onKeyDown={(event) =>
-                          listKeys(event, {
-                            rowId: record.uuid,
-                            position: { row, col: 0 },
-                            rows: records.length,
-                            columns: 1,
-                            move: ({ row: next }) => {
-                              setListRow(next);
-                              focusId(`estimate-open-${next}`);
-                            },
-                            edit: () => open(record),
-                            help: () => setHelp(true),
-                          })
-                        }
-                      >
-                        {record.name}
-                      </button>
-                    </td>
-                    <td className="numeric">{record.lines.length}</td>
-                    <td className={`numeric ${signedClass(record.monthly_total)}`}>
-                      {moneyLabel(record.monthly_total)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+      </Head>
+      {state.kind === "loading" && (
+        <output className="card pad sk-card" aria-label="Loading estimates">
+          <div className="sk est-sk-title" />
+          <div className="sk est-sk-row" />
+          <div className="sk est-sk-row" />
+        </output>
+      )}
+      {"error" in state && (
+        <div className="banner bad" role="alert">
+          <span>Could not load income estimates. {state.error.message}</span>
+          <button type="button" className="btn sm" onClick={() => setReload((value) => value + 1)}>
+            Try loading again
+          </button>
         </div>
-        <div className="estimates-editor">
-          {form ? (
-            <fieldset disabled={p.busy} aria-label={form.id ? "Edit estimate" : "New estimate"}>
-              <div className="estimates-editor-bar">
-                <input
-                  id="estimate-name"
-                  className="estimates-name"
-                  aria-label="Estimate name"
-                  required
-                  maxLength={120}
-                  value={form.name}
-                  aria-invalid={showErrors && !form.name.trim()}
-                  onChange={(event) => update({ ...form, name: event.target.value })}
-                />
-                <span className="badge">
-                  {!form.id
-                    ? "New · unsaved"
-                    : changed
-                      ? "Unsaved draft"
-                      : `Saved · rev ${form.revision}`}
+      )}
+      {state.kind === "empty" && !form && (
+        <Empty
+          title="No income estimates yet"
+          action={
+            <button type="button" className="btn pri" disabled={p.busy} onClick={startNew}>
+              Create an estimate
+            </button>
+          }
+        >
+          Enter gross pay, withholding and deductions for each payment to see a monthly figure you
+          can copy into a Plan by hand.
+        </Empty>
+      )}
+      {state.kind === "ready" && (
+        <section aria-labelledby="estimates-saved">
+          <h2 className="h2" id="estimates-saved">
+            Saved estimates
+          </h2>
+          <div className="card">
+            {records.map((record, row) => (
+              <button
+                key={record.uuid}
+                type="button"
+                id={`estimate-open-${row}`}
+                className="row"
+                aria-label={`Open ${record.name}`}
+                aria-current={selected?.uuid === record.uuid ? "true" : undefined}
+                title={record.name}
+                tabIndex={row === Math.min(listRow, records.length - 1) ? 0 : -1}
+                disabled={p.busy}
+                onFocus={() => setListRow(row)}
+                onClick={() => open(record)}
+                onKeyDown={(event) =>
+                  listKeys(event, {
+                    rowId: record.uuid,
+                    position: { row, col: 0 },
+                    rows: records.length,
+                    columns: 1,
+                    move: ({ row: next }) => {
+                      setListRow(next);
+                      focusId(`estimate-open-${next}`);
+                    },
+                    edit: () => open(record),
+                    help: () => setHelp(true),
+                  })
+                }
+              >
+                <span className="t">
+                  <span className="est-open-name">{record.name}</span>
+                  <small>{plural(record.lines.length, "income line")}</small>
                 </span>
-                <button type="button" className="primary" onClick={save}>
-                  Save estimate
-                </button>
-                {selected && !changed && (
-                  <span className="estimates-duplicate">
-                    <input
-                      aria-label="New estimate name"
-                      maxLength={120}
-                      value={copyName}
-                      onChange={(event) => setCopyName(event.target.value)}
-                    />
-                    <button
-                      type="button"
-                      disabled={!copyName.trim()}
-                      onClick={() =>
-                        p.save(
-                          incomeEstimates.duplicate(p.entity.id, selected.uuid, {
-                            name: copyName,
-                            expected_revision: selected.revision,
-                          }),
-                          confirmed,
-                        )
-                      }
-                    >
-                      Duplicate estimate
-                    </button>
-                  </span>
-                )}
-              </div>
-              <div className="data-table-scroll">
-                <table
-                  className="data-grid estimates-lines"
-                  aria-label="Income lines"
-                  onFocus={() => setInTable(true)}
-                  onBlur={(event) => {
-                    if (!event.currentTarget.contains(event.relatedTarget)) setInTable(false);
-                  }}
-                >
-                  <colgroup>
-                    <col className="estimates-name-col" />
-                    <col className="estimates-frequency-col" />
-                    <col className="estimates-pays-col" />
-                    <col />
-                    <col />
-                    <col />
-                    <col />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      {HEADERS.map((header, col) => (
-                        <th key={header} scope="col" className={col >= 2 ? "numeric" : undefined}>
-                          {header}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {form.lines.map((line, row) => (
-                      <tr key={line.key}>
-                        {HEADERS.map((header, col) => {
-                          const active = cell.row === row && cell.col === col;
-                          const editing = edit?.row === row && edit.col === col;
-                          const error = showErrors && !editing ? cellError(line, col) : "";
-                          return (
-                            <td
-                              key={header}
-                              id={`estimate-cell-${row}-${col}`}
-                              aria-label={`${line.name || `Line ${row + 1}`}, ${header}`}
-                              aria-selected={active}
-                              tabIndex={active && !editing ? 0 : -1}
-                              className={[
-                                col >= 2 ? "numeric" : "",
-                                col === 6 ? "estimates-result" : "",
-                                error ? "estimates-invalid" : "",
-                              ].join(" ")}
-                              onClick={(event) => {
-                                if ((event.target as HTMLElement).closest("input,select")) return;
-                                if (finishEdit()) focusCell(row, col);
-                              }}
-                              onDoubleClick={() => beginEdit(row, col)}
-                              onKeyDown={(event) =>
-                                lineKeys(event, {
-                                  rowId: line.key,
-                                  position: { row, col },
-                                  rows: form.lines.length,
-                                  columns: HEADERS.length,
-                                  move: (next) => focusCell(next.row, next.col),
-                                  edit: () => beginEdit(row, col),
-                                  add: addLine,
-                                  remove: () => removeLine(row),
-                                  help: () => setHelp(true),
-                                })
-                              }
-                            >
-                              {editing ? editor(line, row, col) : display(line, col)}
-                              {error && <span className="sr-only">. {error}</span>}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <th scope="row" colSpan={6}>
-                        Combined monthly net
+                <span className={`a ${signedClass(record.monthly_total)}`}>
+                  {formatMoney(record.monthly_total)} a month
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      {!form && state.kind === "ready" && (
+        <p className="note">Open a saved estimate to edit it, or start a new one.</p>
+      )}
+      {form && (
+        <div className="card est-editor">
+          <fieldset disabled={p.busy} aria-label={form.id ? "Edit estimate" : "New estimate"}>
+            <div className="est-bar">
+              <input
+                id="estimate-name"
+                className="input est-name"
+                aria-label="Estimate name"
+                placeholder="Name this estimate"
+                required
+                maxLength={120}
+                value={form.name}
+                aria-invalid={showErrors && !form.name.trim()}
+                onChange={(event) => update({ ...form, name: event.target.value })}
+              />
+              <span className={`chip${changed || !form.id ? " warn" : ""}`}>
+                {!form.id
+                  ? "New · unsaved"
+                  : changed
+                    ? "Unsaved draft"
+                    : `Saved · rev ${form.revision}`}
+              </span>
+              <span className="spacer" />
+              <button
+                type="button"
+                className="btn pri"
+                aria-keyshortcuts="Control+S Meta+S"
+                onClick={save}
+              >
+                Save estimate
+              </button>
+            </div>
+            <div className="est-scroll">
+              <table className="est-grid" aria-label="Income lines">
+                <colgroup>
+                  <col className="est-col-name" />
+                  <col className="est-col-paid" />
+                  <col className="est-col-pays" />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col className="est-col-x" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    {HEADERS.map((header, col) => (
+                      <th key={header} scope="col" className={col >= 2 ? "num" : undefined}>
+                        {header}
                       </th>
-                      <td className="numeric estimates-result" aria-label="Combined monthly net">
-                        {totalKnown && selected ? (
-                          <span className={signedClass(selected.monthly_total)}>
-                            {moneyLabel(selected.monthly_total)}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
+                    ))}
+                    <th scope="col">
+                      <span className="sr-only">Remove</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {form.lines.map((line, row) => (
+                    <tr key={line.key}>
+                      {HEADERS.map((header, col) => {
+                        const active = cell.row === row && cell.col === col;
+                        const editing = edit?.row === row && edit.col === col;
+                        const error = showErrors && !editing ? cellError(line, col) : "";
+                        return (
+                          <td
+                            key={header}
+                            id={`estimate-cell-${row}-${col}`}
+                            data-label={header}
+                            data-col={col}
+                            aria-label={`${line.name || `Line ${row + 1}`}, ${header}`}
+                            aria-selected={active}
+                            tabIndex={active && !editing ? 0 : -1}
+                            className={[
+                              col >= 2 ? "num" : "",
+                              col === 6 ? "est-result" : "",
+                              error ? "est-invalid" : "",
+                            ].join(" ")}
+                            onClick={(event) => {
+                              if ((event.target as HTMLElement).closest("input,select")) return;
+                              if (!finishEdit()) return;
+                              focusCell(row, col);
+                              // A touch screen has no double click, so a tap edits the cell.
+                              if (window.matchMedia?.("(pointer: coarse)").matches)
+                                beginEdit(row, col);
+                            }}
+                            onDoubleClick={() => beginEdit(row, col)}
+                            onKeyDown={(event) =>
+                              lineKeys(event, {
+                                rowId: line.key,
+                                position: { row, col },
+                                rows: form.lines.length,
+                                columns: HEADERS.length,
+                                move: (next) => focusCell(next.row, next.col),
+                                edit: () => beginEdit(row, col),
+                                add: addLine,
+                                remove: () => removeLine(row),
+                                help: () => setHelp(true),
+                              })
+                            }
+                          >
+                            {editing ? editor(line, row, col) : display(line, col)}
+                            {error && <span className="sr-only">. {error}</span>}
+                          </td>
+                        );
+                      })}
+                      <td className="est-x">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={`Remove ${line.name.trim() || `line ${row + 1}`}`}
+                          onClick={() => removeLine(row)}
+                        >
+                          <Icon name="x" />
+                        </button>
                       </td>
                     </tr>
-                  </tfoot>
-                </table>
-              </div>
-              <div className="estimates-messages">
-                {editError && (
-                  <p id="estimate-edit-error" className="field-error" role="alert">
-                    {editError}
-                  </p>
-                )}
-                {notice && <output id="estimate-notice">{notice}</output>}
-                {!totalKnown && (
-                  <p className="muted">
-                    Results are calculated when saved.
-                    {selected && ` Last saved combined: ${moneyLabel(selected.monthly_total)}.`}
-                  </p>
-                )}
-              </div>
-            </fieldset>
-          ) : (
-            <p className="muted estimates-empty">Open or create an estimate.</p>
-          )}
-        </div>
-      </div>
-      <footer className="data-status">
-        <span className="badge">{mode}</span>
-        <span>
-          <kbd>h j k l</kbd> Move <kbd>i</kbd> Edit <kbd>Esc</kbd> Keep <kbd>a</kbd> Add{" "}
-          <kbd>dd</kbd> Remove <kbd>Ctrl/⌘ S</kbd> Save <kbd>?</kbd> Help
-        </span>
-        <button
-          type="button"
-          className="estimates-add"
-          disabled={!form || p.busy || form.lines.length >= 100}
-          onClick={addLine}
-        >
-          Add income line
-        </button>
-      </footer>
-      <dialog ref={dialog} aria-labelledby="estimates-help-title" onCancel={() => setHelp(false)}>
-        <h2 id="estimates-help-title">Keyboard shortcuts</h2>
-        <dl className="estimates-shortcuts">
-          {[
-            ["h j k l / arrows", "Move between cells"],
-            ["0 / $ · Home / End", "First / last cell in row"],
-            ["gg / G", "First / last line"],
-            ["i / Enter", "Edit the selected value"],
-            ["Escape / Enter", "Keep a valid edit in the draft"],
-            ["a / A", "Add an income line"],
-            ["dd", "Remove the line, with confirmation"],
-            ["Ctrl / ⌘ + S", "Save estimate"],
-          ].map(([key, label]) => (
-            <div key={key}>
-              <dt>
-                <kbd>{key}</kbd>
-              </dt>
-              <dd>{label}</dd>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th scope="row" colSpan={6} className="num">
+                      Combined monthly net
+                    </th>
+                    <td className="num est-result" aria-label="Combined monthly net">
+                      {totalKnown && selected ? (
+                        <span className={signedClass(selected.monthly_total)}>
+                          {formatMoney(selected.monthly_total)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
             </div>
-          ))}
-        </dl>
-        <p>
-          Pays per year are assumed from the frequency, except daily lines, which use entered paid
-          days. Withholding and deductions are entered assumptions; no tax is calculated.
-        </p>
-        <button type="button" onClick={() => setHelp(false)}>
-          Close
-        </button>
-      </dialog>
+            <div className="est-foot">
+              <button
+                type="button"
+                className="btn sm quiet"
+                disabled={p.busy || form.lines.length >= 100}
+                onClick={addLine}
+              >
+                <Icon name="plus" />
+                Add income line
+              </button>
+              <span className="spacer" />
+              {selected && !changed && (
+                <span className="est-duplicate">
+                  <input
+                    className="input"
+                    aria-label="New estimate name"
+                    maxLength={120}
+                    value={copyName}
+                    onChange={(event) => setCopyName(event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn sm"
+                    disabled={!copyName.trim()}
+                    onClick={() =>
+                      p.save(
+                        incomeEstimates.duplicate(p.entity.id, selected.uuid, {
+                          name: copyName,
+                          expected_revision: selected.revision,
+                        }),
+                        confirmed,
+                      )
+                    }
+                  >
+                    Duplicate estimate
+                  </button>
+                </span>
+              )}
+            </div>
+            <div className="est-msgs">
+              {editError && (
+                <p id="estimate-edit-error" className="err" role="alert">
+                  {editError}
+                </p>
+              )}
+              {notice && (
+                <output id="estimate-notice" className="note">
+                  {notice}
+                </output>
+              )}
+              {!totalKnown && (
+                <p className="note">
+                  Results are calculated when saved.
+                  {selected && ` Last saved combined: ${formatMoney(selected.monthly_total)}.`}
+                </p>
+              )}
+              <p className="note est-hint">Select a cell and press ? for keyboard shortcuts.</p>
+            </div>
+          </fieldset>
+        </div>
+      )}
+      {help && (
+        <Dialog title="Keyboard shortcuts" onClose={() => setHelp(false)}>
+          <div className="dlg-b">
+            <dl className="est-keys">
+              {SHORTCUTS.map(([key, label]) => (
+                <div key={key}>
+                  <dt>
+                    <kbd className="kbd">{key}</kbd>
+                  </dt>
+                  <dd>{label}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="note">
+              Payments a year are assumed from how often you are paid, except daily lines, which use
+              the paid days you enter. Withholding and deductions are your own assumptions; no tax
+              is calculated.
+            </p>
+          </div>
+        </Dialog>
+      )}
     </section>
   );
 }

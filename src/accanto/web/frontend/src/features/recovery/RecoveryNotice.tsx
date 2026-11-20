@@ -1,4 +1,3 @@
-import "../workspace/worksheet-ui.css";
 import "./recovery.css";
 
 /** Status and actions for a pending in-memory write; form values remain with its owner. */
@@ -39,32 +38,28 @@ export function RecoveryNotice({
   onDiscard: () => void;
 }) {
   return (
-    <section
-      className="recovery-notice recovery-bar"
-      role="alert"
-      aria-label="Save needs attention"
-    >
+    <section className="recovery-notice" role="alert" aria-label="Save needs attention">
       <p>{messages[status]}</p>
       <div className="recovery-actions">
         {status === "unavailable" && (
-          <button type="button" onClick={onRetry}>
+          <button type="button" className="btn sm pri" onClick={onRetry}>
             Retry save
           </button>
         )}
         {(
           ["unauthenticated", "blocked", "cancelled", "failed", "wrong_user"] as RecoveryStatus[]
         ).includes(status) && (
-          <button type="button" onClick={onSignIn}>
+          <button type="button" className="btn sm pri" onClick={onSignIn}>
             Sign in in a new window
           </button>
         )}
         {status === "conflict" && (
-          <button type="button" onClick={onReconcile}>
+          <button type="button" className="btn sm pri" onClick={onReconcile}>
             Review current record
           </button>
         )}
         {status !== "wrong_user" && (
-          <button type="button" onClick={onDiscard}>
+          <button type="button" className="btn sm" onClick={onDiscard}>
             Discard pending save
           </button>
         )}

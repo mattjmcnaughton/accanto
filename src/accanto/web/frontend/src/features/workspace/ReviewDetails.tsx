@@ -1,6 +1,16 @@
-import { type KeyboardEvent, useState } from "react";
-import type { Activity, ComparisonGroup, Metric, ReviewResult } from "../../lib/monthly";
-import { dollars } from "./shared";
+import { type KeyboardEvent, type ReactNode, useState } from "react";
+import {
+  decimalToCents,
+  fmtDate,
+  fmtShort,
+  formatMoney,
+  inputMoney,
+  money,
+  parseMoney,
+  plural,
+} from "../../lib/format";
+import type { Activity, Metric, ReviewResult } from "../../lib/monthly";
+import { Meter } from "../../ui";
 import { useGridKeys } from "./useGridKeys";
 
 type Category = keyof NonNullable<ReviewResult["comparison"]>;
@@ -9,16 +19,6 @@ type Entry = Pick<
   "uuid" | "financial_date" | "amount" | "funding_origin" | "is_adjustment" | "note"
 > &
   Partial<Pick<Activity, "is_refund" | "fixed_cost_name">>;
-type Row = {
-  id: string;
-  kind: "group" | "item" | "entry";
-  name: string;
-  planned?: string | null;
-  recorded?: string | null;
-  difference?: string | null;
-  state?: string;
-  children: Row[];
-};
 export type ReviewView = Pick<
   ReviewResult,
   | "version"
@@ -34,53 +34,56 @@ export type ReviewView = Pick<
       "comparison" | "summary" | "metrics" | "expected" | "differences" | "destination_comparisons"
     >
   >;
-const labels: Record<Category, string> = {
+type Amount = string | null | undefined;
+/** One saved identity in a section; `id` is the identity an entry for it would carry. */
+export type ReviewLine = {
+  key: string;
+  id: string | null;
+  name: string;
+  planned: Amount;
+  recorded: Amount;
+  difference: Amount;
+  entries: Entry[];
+};
+export type ReviewSection = {
+  category: Category;
+  name: string;
+  planned: Amount;
+  recorded: Amount;
+  difference: Amount;
+  incomplete: boolean;
+  lines: ReviewLine[];
+  /** Lines with no entry. Unknown is never zero. */
+  unknown: ReviewLine[];
+  lists: Array<{ key: string; name: string; entries: Entry[] }>;
+};
+/** A question the Review asks about one unknown line, answered by recording an entry. */
+export type Resolution = { category: Category; id: string | null; name: string; amount: string };
+
+const names: Record<Category, string> = {
   income: "Net income",
   fixed_cost: "Fixed costs",
   spending: "Guilt-free spending",
-  saving: "New saving",
+  saving: "Saving",
   investing: "Investing",
   giving: "Giving",
 };
+const kinds: Record<Category, string> = {
+  income: "income",
+  fixed_cost: "fixed",
+  spending: "free",
+  saving: "save",
+  investing: "invest",
+  giving: "give",
+};
 const order: Category[] = ["income", "fixed_cost", "spending", "saving", "investing", "giving"];
-const columns = ["Category / item", "Planned", "Recorded", "Difference", "State"];
+const cents = (value: Amount) => (value == null ? null : decimalToCents(value));
 
-/** The same entry can be listed under several parents (e.g. unplanned and adjustments), so ids are scoped. */
-const entryRow =
-  (parent: string) =>
-  (entry: Entry): Row => ({
-    id: `${parent}/e-${entry.uuid}`,
-    kind: "entry",
-    name: [
-      entry.financial_date,
-      entry.funding_origin === "savings" ? "Savings-funded" : "Income-funded",
-      entry.is_adjustment && "Adjustment",
-      entry.is_refund && "Linked refund",
-      entry.fixed_cost_name,
-      entry.note,
-    ]
-      .filter(Boolean)
-      .join(" · "),
-    recorded: entry.amount,
-    children: [],
-  });
-const listRow = (id: string, name: string, entries: Entry[]): Row[] =>
-  entries.length
-    ? [
-        {
-          id,
-          kind: "item",
-          name: `${name} (${entries.length})`,
-          children: entries.map(entryRow(id)),
-        },
-      ]
-    : [];
-
-/** One grouped comparison; every identity, contributor and destination line keeps its own row. */
-function comparisonRows(review: ReviewView): Row[] {
+/** The API's comparison grouped into the six sections a Review walks through. */
+export function reviewSections(review: ReviewView): ReviewSection[] {
   const { version, actual, comparison } = review;
   const destinations = review.destination_comparisons;
-  const top: Record<Category, [string | null, string | null, string | null, boolean]> = {
+  const top: Record<Category, [Amount, Amount, Amount, boolean]> = {
     income: [
       version.income,
       actual.income_recorded,
@@ -133,42 +136,49 @@ function comparisonRows(review: ReviewView): Row[] {
   };
   return order.map((category) => {
     const [planned, recorded, difference, incomplete] = top[category];
-    const group: ComparisonGroup | undefined = comparison?.[category];
-    const children: Row[] = [];
-    group?.items.forEach((item, index) => {
-      children.push({
-        id: `i-${category}-${item.id ?? index}`,
-        kind: "item",
-        name: item.name,
-        planned: item.planned,
-        recorded: item.recorded,
-        difference: item.difference,
-        state: item.recorded === null ? "Unknown" : "",
-        children: item.entries.map(entryRow(`i-${category}-${item.id ?? index}`)),
-      });
-    });
+    const group = comparison?.[category];
+    const lines: ReviewLine[] = (group?.items ?? []).map((item, index) => ({
+      key: `i-${category}-${item.id ?? index}`,
+      id: item.id,
+      name: item.name,
+      planned: item.planned,
+      recorded: item.recorded,
+      difference: item.difference,
+      entries: item.entries,
+    }));
+    const missing = (
+      ids: string[],
+      line: (id: string) => { name: string; amount: string } | undefined,
+      fallback: string,
+    ) =>
+      ids.map((id) => ({
+        key: `m-${category}-${id}`,
+        id,
+        name: line(id)?.name || fallback,
+        planned: line(id)?.amount,
+        recorded: null,
+        difference: null,
+        entries: [],
+      }));
     if (!group && category === "income")
-      for (const id of actual.missing_sources)
-        children.push({
-          id: `m-income-${id}`,
-          kind: "item",
-          name: version.incomes.find((line) => line.source_id === id)?.name || "Historical source",
-          recorded: null,
-          state: "Unknown",
-          children: [],
-        });
+      lines.push(
+        ...missing(
+          actual.missing_sources,
+          (id) => version.incomes.find((line) => line.source_id === id),
+          "Historical source",
+        ),
+      );
     if (!group && category === "fixed_cost")
-      for (const id of actual.missing_fixed_costs)
-        children.push({
-          id: `m-fixed-${id}`,
-          kind: "item",
-          name:
-            version.fixed_costs.find((line) => line.fixed_cost_id === id)?.name ||
-            "Historical fixed cost",
-          recorded: null,
-          state: "Unknown",
-          children: [],
-        });
+      lines.push(
+        ...missing(
+          actual.missing_fixed_costs,
+          (id) => {
+            const line = version.fixed_costs.find((cost) => cost.fixed_cost_id === id);
+            return line && { name: line.name, amount: line.monthly_amount };
+          },
+          "Historical fixed cost",
+        ),
+      );
     if (category === "saving" || category === "investing" || category === "giving")
       for (const line of destinationLines[category] ?? []) {
         const same = group?.items.find(
@@ -179,203 +189,365 @@ function comparisonRows(review: ReviewView): Row[] {
             item.difference === line.difference,
         );
         if (!same)
-          children.push({
-            id: `d-${category}-${line.id}`,
-            kind: "item",
-            name: group ? `${line.name} · destination allocation` : line.name,
+          lines.push({
+            key: `d-${category}-${line.id}`,
+            id: line.id,
+            name: group ? `${line.name} (destination allocation)` : line.name,
             planned: line.planned,
             recorded: line.recorded,
             difference: line.difference,
-            state: line.recorded === null ? "Unknown" : "",
-            children: [],
+            entries: [],
           });
       }
-    if (category === "spending")
-      children.push(
-        ...listRow(
-          "c-spending",
-          "Contributing entries",
-          review.entries.filter((e) => e.category === "spending"),
-        ),
-      );
-    if (group) {
-      children.push(...listRow(`u-${category}`, "Unplanned activity", group.unplanned));
-      children.push(
-        ...listRow(`a-${category}`, "Adjustments, already included", group.adjustments),
-      );
-    }
+    const lists: ReviewSection["lists"] = [];
+    const spendingEntries = review.entries.filter((e) => e.category === "spending");
+    if (category === "spending" && spendingEntries.length)
+      lists.push({ key: "c-spending", name: "Contributing entries", entries: spendingEntries });
+    if (group?.unplanned.length)
+      lists.push({ key: `u-${category}`, name: "Unplanned activity", entries: group.unplanned });
+    if (group?.adjustments.length)
+      lists.push({
+        key: `a-${category}`,
+        name: "Adjustments, already included",
+        entries: group.adjustments,
+      });
+    const unknown = lines.filter((line) => line.recorded === null);
+    if (category === "spending" && recorded === null)
+      unknown.push({
+        key: "s-spending",
+        id: null,
+        name: names.spending,
+        planned,
+        recorded: null,
+        difference: null,
+        entries: [],
+      });
     return {
-      id: `g-${category}`,
-      kind: "group",
-      name: labels[category],
+      category,
+      name: names[category],
       planned,
       recorded,
       difference,
-      state: recorded === null ? "Unknown" : incomplete ? "Incomplete" : "",
-      children,
+      incomplete,
+      lines,
+      unknown,
+      lists,
     };
   });
 }
+export const complete = (s: ReviewSection) =>
+  s.recorded != null && !s.incomplete && s.unknown.length === 0;
 
-function ComparisonGrid({ review, onHelp }: { review: ReviewView; onHelp?: () => void }) {
-  const [open, setOpen] = useState<Record<string, boolean>>({});
-  const [selection, setSelection] = useState({ id: "g-income", col: 0 });
-  const gridKeys = useGridKeys();
-  const isOpen = (row: Row) => open[row.id] ?? row.kind === "group";
-  const rows: Array<Row & { depth: number }> = [];
-  const walk = (list: Row[], depth: number) => {
-    for (const row of list) {
-      rows.push({ ...row, depth });
-      if (isOpen(row)) walk(row.children, depth + 1);
-    }
-  };
-  walk(comparisonRows(review), 0);
-  const index = Math.max(
-    0,
-    rows.findIndex((row) => row.id === selection.id),
-  );
-  const focus = (id: string, col: number) => {
-    setSelection({ id, col });
-    requestAnimationFrame(() => document.getElementById(`review-${id}-${col}`)?.focus());
-  };
-  const toggle = (row: Row) => {
-    if (row.children.length) setOpen({ ...open, [row.id]: !isOpen(row) });
-  };
-  function onKey(e: KeyboardEvent, row: Row, rowIndex: number, col: number) {
-    if (e.key === " ") {
-      e.preventDefault();
-      toggle(row);
-      return;
-    }
-    gridKeys(e, {
-      rowId: row.id,
-      position: { row: rowIndex, col },
-      rows: rows.length,
-      columns: columns.length,
-      move: (next) => focus(rows[next.row].id, next.col),
-      edit: () => toggle(row),
-      help: onHelp,
-    });
+/** How the recorded amount compares with the plan, in the section's own words. */
+function standing(s: ReviewSection, current: boolean): string {
+  const diff = cents(s.difference);
+  if (diff === null) return `${formatMoney(s.recorded)} recorded.`;
+  const amount = money(Math.abs(diff));
+  switch (s.category) {
+    case "income":
+      return diff === 0
+        ? "Received as planned."
+        : diff < 0
+          ? `${amount} less than planned.`
+          : `${amount} more than planned.`;
+    case "spending":
+      return diff > 0
+        ? `${amount} over plan.`
+        : current
+          ? `${amount} left.`
+          : diff === 0
+            ? "Spent as planned."
+            : `${amount} unspent.`;
+    case "fixed_cost":
+      return diff > 0
+        ? `${amount} over plan.`
+        : diff === 0
+          ? "Paid as planned."
+          : `${amount} under plan.`;
+    default:
+      if (diff >= 0) return diff ? `${amount} more than planned.` : "Planned amount reached.";
+      return current ? `${amount} to go.` : `${amount} short of plan.`;
   }
+}
+function verdict(s: ReviewSection, current: boolean): string {
+  if (s.category === "spending" && s.recorded === null)
+    return "No guilt-free spending is recorded for this month.";
+  if (s.unknown.length) {
+    const known = s.lines.length - s.unknown.length;
+    return `${known} of ${plural(s.lines.length, "line")} ${known === 1 ? "has" : "have"} an entry.`;
+  }
+  if (s.recorded == null) return "The recorded amount is unknown for this Plan version.";
+  const lead = s.incomplete
+    ? "Some amounts in this section are still incomplete."
+    : standing(s, current);
+  const differing = s.lines
+    .filter((line) => line.recorded != null && cents(line.difference))
+    .slice(0, 2)
+    .map((line) =>
+      line.planned == null
+        ? `${line.name}: ${formatMoney(line.recorded)}, not in the plan.`
+        : `${line.name}: ${formatMoney(line.recorded)} of ${formatMoney(line.planned)}.`,
+    );
+  return [lead, ...differing].join(" ");
+}
+const entryName = (entry: Entry) =>
+  [
+    fmtDate(entry.financial_date),
+    entry.funding_origin === "savings" ? "Savings-funded" : "Income-funded",
+    entry.is_adjustment && "Adjustment",
+    entry.is_refund && "Linked refund",
+    entry.fixed_cost_name,
+    entry.note,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+/** Answers one unknown line where it sits: the planned amount, nothing, or another amount. */
+function Ask({
+  section,
+  line,
+  busy,
+  resolve,
+}: {
+  section: ReviewSection;
+  line: ReviewLine;
+  busy: boolean;
+  resolve?: (resolution: Resolution) => void;
+}) {
+  const [other, setOther] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const answerable =
+    resolve &&
+    (section.category === "spending" ||
+      (line.id !== null &&
+        (section.category === "income" ||
+          section.category === "fixed_cost" ||
+          section.category === "saving")));
+  const record = (amount: string) =>
+    resolve?.({ category: section.category, id: line.id, name: line.name, amount });
+  const planned = cents(line.planned);
   return (
-    <div className="data-table-scroll">
-      <table
-        className="data-grid review-grid"
-        role="treegrid"
-        aria-readonly="true"
-        aria-label="Comparison by category and saved identity"
-        aria-describedby="review-status"
-      >
-        <caption className="sr-only">USD · recorded minus planned · Unknown is not zero</caption>
-        <thead>
-          <tr>
-            {columns.map((name, col) => (
-              <th key={name} scope="col" className={col && col < 4 ? "numeric" : undefined}>
-                {name}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, rowIndex) => (
-            <tr
-              key={row.id}
-              className={`${row.kind}-row ${row.depth ? "child-row" : ""}`}
-              aria-level={row.depth + 1}
-              aria-expanded={row.children.length ? isOpen(row) : undefined}
+    <div className="ask">
+      <span>
+        {line.name} has no entry. Unknown is not treated as $0.00.
+        {!answerable &&
+          (section.category === "investing" || section.category === "giving") &&
+          " Record it in Investments and giving."}
+      </span>
+      {answerable && other === null && (
+        <>
+          {section.category !== "spending" && planned !== null && planned > 0 && (
+            <button
+              type="button"
+              className="btn sm"
+              disabled={busy}
+              onClick={() => record(inputMoney(planned))}
             >
-              {columns.map((name, col) => {
-                const active = rowIndex === index && col === selection.col;
-                const value = [row.name, row.planned, row.recorded, row.difference, row.state][col];
-                return (
-                  <td
-                    key={name}
-                    id={`review-${row.id}-${col}`}
-                    aria-selected={active}
-                    tabIndex={active ? 0 : -1}
-                    style={col === 0 ? { paddingLeft: 14 + row.depth * 20 } : undefined}
-                    className={`${col && col < 4 ? "numeric" : ""} ${(col === 2 || col === 4) && row.state === "Unknown" ? "unknown" : ""} ${col === 3 && value?.startsWith("-") ? "negative" : ""}`}
-                    onKeyDown={(e) => onKey(e, row, rowIndex, col)}
-                    onClick={() => focus(row.id, col)}
-                  >
-                    {col === 0 ? (
-                      <>
-                        {row.children.length ? (
-                          <button
-                            type="button"
-                            tabIndex={-1}
-                            className="icon-button toggle"
-                            aria-label={`${isOpen(row) ? "Collapse" : "Expand"} ${row.name}`}
-                            onClick={() => toggle(row)}
-                          >
-                            {isOpen(row) ? "▾" : "▸"}
-                          </button>
-                        ) : (
-                          <span className="toggle" />
-                        )}
-                        {row.name}
-                      </>
-                    ) : col === 4 ? (
-                      (value ?? "")
-                    ) : value === undefined ? (
-                      ""
-                    ) : (
-                      dollars(value)
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              Record {money(planned)}
+            </button>
+          )}
+          <button type="button" className="btn sm" disabled={busy} onClick={() => record("0.00")}>
+            Nothing this month
+          </button>
+          <button
+            type="button"
+            className="btn sm quiet"
+            disabled={busy}
+            onClick={() => setOther("")}
+          >
+            Other amount
+          </button>
+        </>
+      )}
+      {answerable && other !== null && (
+        <form
+          className="ar-other"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const value = parseMoney(other);
+            if (value === null) {
+              setError("Enter an amount such as 42.50.");
+              return;
+            }
+            record(inputMoney(value));
+          }}
+        >
+          <input
+            // biome-ignore lint/a11y/noAutofocus: Choosing Other amount asks for the amount.
+            autoFocus
+            className="input"
+            inputMode="decimal"
+            placeholder="0.00"
+            aria-label={`Amount for ${line.name}`}
+            aria-invalid={Boolean(error)}
+            value={other}
+            onChange={(e) => {
+              setOther(e.target.value);
+              setError("");
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                setOther(null);
+              }
+            }}
+          />
+          <button type="submit" className="btn sm pri" disabled={busy}>
+            Record
+          </button>
+          <button type="button" className="btn sm quiet" onClick={() => setOther(null)}>
+            Cancel
+          </button>
+          {error && (
+            <span className="err" role="alert">
+              {error}
+            </span>
+          )}
+        </form>
+      )}
     </div>
   );
 }
 
+function Lines({ section }: { section: ReviewSection }) {
+  const entryRows = (parent: string, entries: Entry[]) =>
+    entries.map((entry) => (
+      <tr key={`${parent}/${entry.uuid}`} className="ar-entry-row">
+        <th scope="row">{entryName(entry)}</th>
+        <td className="num">{formatMoney(entry.amount)}</td>
+        <td className="num c-plan" />
+        <td />
+      </tr>
+    ));
+  return (
+    <table className="lines ar-lines">
+      <caption className="ar-sr">
+        {section.name}: recorded, planned, and recorded minus planned. Unknown is not zero.
+      </caption>
+      <thead>
+        <tr className="ln-head">
+          <th scope="col">Line</th>
+          <th scope="col" className="num">
+            Recorded
+          </th>
+          <th scope="col" className="num c-plan">
+            Planned
+          </th>
+          <th scope="col" className="num">
+            Difference
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {section.lines.map((line) => (
+          <LineRows key={line.key} line={line} entries={entryRows(line.key, line.entries)} />
+        ))}
+        {section.lists.map((list) => [
+          <tr key={list.key} className="ar-list-head">
+            <th scope="rowgroup" colSpan={4}>
+              {list.name} ({list.entries.length})
+            </th>
+          </tr>,
+          ...entryRows(list.key, list.entries),
+        ])}
+        {!section.lines.length && !section.lists.length && (
+          <tr>
+            <td colSpan={4}>No lines or entries.</td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  );
+}
+function LineRows({ line, entries }: { line: ReviewLine; entries: ReactNode[] }) {
+  const unknown = line.recorded === null;
+  return (
+    <>
+      <tr>
+        <th scope="row">{line.name}</th>
+        <td className={`num${unknown ? " warn" : ""}`}>{formatMoney(line.recorded)}</td>
+        <td className="num c-plan">
+          {line.planned === undefined ? "" : formatMoney(line.planned)}
+        </td>
+        <td className={`num${unknown ? " warn" : ""}`}>
+          {unknown ? "Unknown" : line.difference === undefined ? "" : formatMoney(line.difference)}
+        </td>
+      </tr>
+      {entries}
+    </>
+  );
+}
+
+/** Ratio cards: each shows its actual and planned figures and the amounts behind them. */
 export function Metrics({ metrics, title }: { metrics: Metric[]; title: string }) {
+  const [all, setAll] = useState(false);
+  // Keys carry their basis ("planned:…", "actual:…"); a card pairs both bases of one ratio.
+  const ratio = (metric: Metric) => metric.key.replace(/^(planned|actual):/, "");
+  const keys = [...new Set(metrics.map(ratio))];
+  const paired = keys.filter(
+    (key) => new Set(metrics.filter((m) => ratio(m) === key).map((m) => m.basis)).size === 2,
+  );
+  const shown = all ? keys : (paired.length ? paired : keys).slice(0, 3);
+  const figure = (metric?: Metric) =>
+    !metric ? "Unavailable" : metric.percentage === null ? "Unavailable" : `${metric.percentage}%`;
+  const formula = (metric: Metric) =>
+    `${formatMoney(metric.numerator)} ÷ ${formatMoney(metric.denominator)}`;
   return (
     <section aria-label={title}>
-      <h3 className="table-title">{title}</h3>
-      <div className="data-table-scroll">
-        <table className="data-grid metrics">
-          <thead>
-            <tr>
-              <th scope="col">Metric</th>
-              <th scope="col">Basis</th>
-              <th scope="col">Result</th>
-            </tr>
-          </thead>
-          <tbody>
-            {metrics.map((metric) => (
-              <tr key={`${metric.basis}-${metric.key}`}>
-                <th scope="row">{metric.label}</th>
-                <td>{metric.basis === "planned" ? "Planned" : "Actual"}</td>
-                <td>
-                  <details>
-                    <summary>
-                      {metric.percentage === null ? "Unavailable" : `${metric.percentage}%`}
-                    </summary>
-                    <p>
-                      {metric.numerator_label} ÷ {metric.denominator_label} × 100
-                    </p>
-                    <p>
-                      {dollars(metric.numerator)} ÷ {dollars(metric.denominator)} × 100
-                    </p>
-                    {metric.unavailable_reason && <p>Unavailable: {metric.unavailable_reason}</p>}
-                    <ul>
-                      {metric.components.map((component, index) => (
-                        <li key={`${component.name}-${index}`}>
-                          {component.name}: {dollars(component.amount)}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <h2 className="h2">
+        Ratios <span>Each shows the amounts behind it</span>
+        {keys.length > shown.length || all ? (
+          <button type="button" className="btn sm quiet" onClick={() => setAll(!all)}>
+            {all ? "Show fewer" : "All ratios"}
+          </button>
+        ) : null}
+      </h2>
+      <div className="grid3">
+        {shown.map((key) => {
+          const actual = metrics.find((m) => ratio(m) === key && m.basis === "actual");
+          const planned = metrics.find((m) => ratio(m) === key && m.basis === "planned");
+          const label = (actual ?? planned)?.label ?? key;
+          return (
+            <article className="card pad ar-ratio" key={key} aria-label={label}>
+              <span className="cap">{label}</span>
+              <div className="fig">{figure(actual)}</div>
+              <span className="cap">
+                {!actual
+                  ? "No actual figure for this version."
+                  : actual.unavailable_reason
+                    ? `Unavailable: ${actual.unavailable_reason}`
+                    : `${formula(actual)} recorded`}
+              </span>
+              {planned && (
+                <span className="cap">
+                  Planned {figure(planned)}: {formula(planned)}
+                  {planned.unavailable_reason && `. Unavailable: ${planned.unavailable_reason}`}
+                </span>
+              )}
+              <details className="ar-why">
+                <summary>Amounts behind it</summary>
+                {[actual, planned].map(
+                  (metric) =>
+                    metric && (
+                      <div key={metric.basis}>
+                        <p className="cap">
+                          {metric.basis === "planned" ? "Planned" : "Actual"}:{" "}
+                          {metric.numerator_label} ÷ {metric.denominator_label} × 100
+                        </p>
+                        <ul>
+                          {metric.components.map((component, index) => (
+                            <li key={`${component.name}-${index}`}>
+                              {component.name}: {formatMoney(component.amount)}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ),
+                )}
+              </details>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -383,98 +555,194 @@ export function Metrics({ metrics, title }: { metrics: Metric[]; title: string }
 
 function Strip({ label, items }: { label: string; items: Array<[string, string]> }) {
   return (
-    <dl className="summary-strip" aria-label={label}>
-      {items.map(([name, value]) => (
-        <div key={name}>
-          <dt>{name}</dt>
-          <dd>{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <section className="card pad" aria-label={label}>
+      <h2 className="h2">{label}</h2>
+      <dl className="ar-strip">
+        {items.map(([name, value]) => (
+          <div key={name}>
+            <dt>{name}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 
-export function ReviewDetails({ review, onHelp }: { review: ReviewView; onHelp?: () => void }) {
+/** A guided walk through the month: one verdict per section, and each unknown asks its question. */
+export function ReviewDetails({
+  review,
+  current = false,
+  busy = false,
+  resolve,
+  onHelp,
+}: {
+  review: ReviewView;
+  current?: boolean;
+  busy?: boolean;
+  resolve?: (resolution: Resolution) => void;
+  onHelp?: () => void;
+}) {
   const { actual, summary, expected } = review;
-  const missing = actual.missing_sources.length + actual.missing_fixed_costs.length;
+  const sections = reviewSections(review);
+  const [open, setOpen] = useState<Category[]>([]);
+  const [selected, setSelected] = useState<Category>("income");
+  const gridKeys = useGridKeys();
+  const toggle = (category: Category) =>
+    setOpen(open.includes(category) ? open.filter((c) => c !== category) : [...open, category]);
+  const focus = (category: Category) => {
+    setSelected(category);
+    requestAnimationFrame(() => document.getElementById(`review-step-${category}`)?.focus());
+  };
+  function onKey(e: KeyboardEvent, category: Category, index: number) {
+    gridKeys(e, {
+      rowId: category,
+      position: { row: index, col: 0 },
+      rows: sections.length,
+      columns: 1,
+      move: (next) => focus(sections[next.row].category),
+      edit: () => toggle(category),
+      help: onHelp,
+    });
+  }
   return (
     <>
-      {missing > 0 && (
-        <p className="attention">
-          Unknown:{" "}
-          {[
-            [actual.missing_sources.length, "income source"],
-            [actual.missing_fixed_costs.length, "fixed cost"],
-          ]
-            .filter(([count]) => count)
-            .map(([count, name]) => `${count} ${name}${count === 1 ? "" : "s"}`)
-            .join(", ")}
-          . Record an entry for each, including an explicit zero when appropriate.
-        </p>
-      )}
-      <ComparisonGrid review={review} onHelp={onHelp} />
+      <div className="card" aria-describedby="review-keys">
+        {sections.map((s, index) => {
+          const expanded = open.includes(s.category);
+          const diff = cents(s.difference);
+          const recorded = cents(s.recorded);
+          const planned = cents(s.planned);
+          return (
+            <section className="step" key={s.category} aria-label={s.name}>
+              <span
+                className={`mark${complete(s) ? "" : " q"}`}
+                role="img"
+                aria-label={complete(s) ? "Complete" : "Not complete"}
+              >
+                {complete(s) ? "✓" : "?"}
+              </span>
+              <div>
+                <h3 className="nm">
+                  {s.name}
+                  <button
+                    type="button"
+                    id={`review-step-${s.category}`}
+                    className="disclose"
+                    tabIndex={selected === s.category ? 0 : -1}
+                    aria-expanded={expanded}
+                    onFocus={() => setSelected(s.category)}
+                    onKeyDown={(e) => onKey(e, s.category, index)}
+                    onClick={() => toggle(s.category)}
+                  >
+                    {expanded
+                      ? "Hide lines"
+                      : s.category === "spending"
+                        ? plural(
+                            s.lists.reduce((n, list) => n + list.entries.length, 0),
+                            "entry",
+                            "entries",
+                          )
+                        : plural(s.lines.length, "line")}
+                  </button>
+                </h3>
+                <p className="say">{verdict(s, current)}</p>
+              </div>
+              <div className={`amt-col${s.recorded === null ? " warn" : ""}`}>
+                {formatMoney(s.recorded)}
+                <small>
+                  of {s.planned == null ? "an unknown plan" : formatMoney(s.planned)}
+                  {complete(s) &&
+                    diff !== null &&
+                    (diff === 0
+                      ? ", on plan"
+                      : `, ${money(Math.abs(diff))} ${diff < 0 ? "under" : "over"}`)}
+                  {s.incomplete && s.recorded !== null && ", incomplete"}
+                </small>
+              </div>
+              {recorded !== null && planned !== null ? (
+                <Meter value={recorded} max={planned} kind={kinds[s.category]} />
+              ) : (
+                <Meter value={0} max={1} kind={kinds[s.category]} faint />
+              )}
+              {s.unknown.map((line) => (
+                <Ask key={line.key} section={s} line={line} busy={busy} resolve={resolve} />
+              ))}
+              {expanded && <Lines section={s} />}
+            </section>
+          );
+        })}
+      </div>
+      <p id="review-keys" className="note ar-keys">
+        <kbd className="kbd">j</kbd> <kbd className="kbd">k</kbd> move between sections,{" "}
+        <kbd className="kbd">Enter</kbd> shows or hides lines, <kbd className="kbd">?</kbd> all keys
+      </p>
       {!review.destination_comparisons && (
-        <p className="attention">Destination comparison for this older version: Unknown</p>
+        <p className="note">Destination comparison for this older version: Unknown</p>
       )}
       {!review.comparison && review.entries.length > 0 && (
         <section aria-label="Activity in this month">
-          <h3 className="table-title">Activity in this month</h3>
-          <table className="data-grid">
-            <tbody>
-              {review.entries.map((entry) => (
-                <tr key={entry.uuid}>
-                  <td>{entry.financial_date}</td>
-                  <td>
-                    {entry.category}
-                    {entry.is_adjustment && " adjustment"}
-                  </td>
-                  <td className="numeric">{dollars(entry.amount)}</td>
-                  <td>{[entry.fixed_cost_name, entry.note].filter(Boolean).join(" · ")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <h2 className="h2">Activity in this month</h2>
+          <div className="card">
+            {review.entries.map((entry) => (
+              <div className="row" key={entry.uuid}>
+                <span className="t">
+                  {[entry.fixed_cost_name, entry.note].filter(Boolean).join(", ") ||
+                    names[entry.category]}
+                  <small>
+                    {fmtShort(entry.financial_date)}, {names[entry.category]}
+                    {entry.is_adjustment && ", adjustment"}
+                  </small>
+                </span>
+                <span className="a">{formatMoney(entry.amount)}</span>
+              </div>
+            ))}
+          </div>
         </section>
       )}
-      {expected && (
-        <Strip
-          label="Planned funding"
-          items={[
-            ["Planned use of savings", dollars(expected.savings_funding)],
-            ["Total planned funding", dollars(expected.funding)],
-            ["Total planned allocation", dollars(expected.allocation)],
-          ]}
-        />
-      )}
-      {(summary || "savings_used" in actual) && (
-        <Strip
-          label="Same-month saving and funding"
-          items={[
-            ...("savings_used" in actual
-              ? [
-                  ["Outflows funded from savings", dollars(actual.savings_used ?? null)] as [
-                    string,
-                    string,
-                  ],
-                ]
-              : []),
-            ...(summary
-              ? ([
-                  ["New saving", dollars(summary.new_saving)],
-                  [
-                    "Savings used",
-                    `${dollars(summary.savings_used)}${summary.savings_used_incomplete ? " (incomplete)" : ""}`,
-                  ],
-                  ["Net saving", dollars(summary.net_saving)],
-                  ["Investment contributions", dollars(summary.total_investing)],
-                  ["Income-funded investing", dollars(summary.income_funded_investing)],
-                  ["Income-funded fixed costs", dollars(summary.income_funded_fixed_cost)],
-                ] as Array<[string, string]>)
-              : []),
-          ]}
-        />
-      )}
       {review.metrics && <Metrics title="Planned and actual metrics" metrics={review.metrics} />}
+      {(summary || "savings_used" in actual || expected) && (
+        <div className="grid2 ar-strips">
+          {(summary || "savings_used" in actual) && (
+            <Strip
+              label="Same-month saving and funding"
+              items={
+                [
+                  ...("savings_used" in actual
+                    ? [["Outflows funded from savings", formatMoney(actual.savings_used ?? null)]]
+                    : []),
+                  ...(summary
+                    ? [
+                        ["New saving", formatMoney(summary.new_saving)],
+                        [
+                          "Savings used",
+                          `${formatMoney(summary.savings_used)}${summary.savings_used_incomplete ? " (incomplete)" : ""}`,
+                        ],
+                        ["Net saving", formatMoney(summary.net_saving)],
+                        ["Investment contributions", formatMoney(summary.total_investing)],
+                        ["Income-funded investing", formatMoney(summary.income_funded_investing)],
+                        [
+                          "Income-funded fixed costs",
+                          formatMoney(summary.income_funded_fixed_cost),
+                        ],
+                      ]
+                    : []),
+                ] as Array<[string, string]>
+              }
+            />
+          )}
+          {expected && (
+            <Strip
+              label="Planned funding"
+              items={[
+                ["Planned use of savings", formatMoney(expected.savings_funding)],
+                ["Total planned funding", formatMoney(expected.funding)],
+                ["Total planned allocation", formatMoney(expected.allocation)],
+              ]}
+            />
+          )}
+        </div>
+      )}
     </>
   );
 }

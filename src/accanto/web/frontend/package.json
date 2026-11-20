@@ -13,7 +13,9 @@
     "lint": "biome lint .",
     "lint-fix": "biome lint --write .",
     "typecheck": "pnpm build",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "storybook": "storybook dev --port 6006 --no-open",
+    "build-storybook": "storybook build"
   },
   "dependencies": {
     "react": "^19.0",
@@ -40,6 +42,9 @@
     "jsdom": "^26.0",
     "@playwright/test": "^1.49",
     "msw": "^2.7",
+    "msw-storybook-addon": "^3.0.3",
+    "storybook": "^10.6.7",
+    "@storybook/react-vite": "^10.6.7",
     "tailwindcss": "^3.4",
     "postcss": "^8.4",
     "autoprefixer": "^10.4"

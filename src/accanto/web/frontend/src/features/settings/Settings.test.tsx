@@ -1,7 +1,9 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Settings } from "./Settings";
+const navLink = (name: string | RegExp) =>
+  within(screen.getByRole("navigation", { name: "Workspace" })).getByRole("link", { name });
 const entity = { id: "entity", name: "Synthetic", time_zone: "UTC", today: "2026-11-01" };
 const session = { user: { id: "owner" }, entities: [entity], csrf_token: "synthetic" };
 const json = (data: unknown) => new Response(JSON.stringify(data));
@@ -26,14 +28,16 @@ it("submits loaded revision and preserves attempted settings through refreshed r
   );
   const p = props();
   const view = render(<Settings {...p} />);
-  fireEvent.change(await screen.findByLabelText("Entity name"), { target: { value: "Changed" } });
+  fireEvent.change(await screen.findByLabelText("Workspace name"), {
+    target: { value: "Changed" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
   expect(p.save).toHaveBeenCalledWith(
     expect.objectContaining({ body: { name: "Changed", time_zone: "UTC", expected_revision: 4 } }),
     expect.any(Function),
   );
   view.rerender(<Settings {...p} refresh={1} />);
-  await waitFor(() => expect(screen.getByLabelText("Entity name")).toHaveValue("Changed"));
+  await waitFor(() => expect(screen.getByLabelText("Workspace name")).toHaveValue("Changed"));
 });
 it("clears a one-time secret on dismiss and navigation", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) =>
@@ -46,8 +50,8 @@ it("clears a one-time secret on dismiss and navigation", async () => {
     ),
   );
   const view = render(<Settings {...props()} />);
-  fireEvent.change(await screen.findByLabelText("Key name"), { target: { value: "Script" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+  fireEvent.change(await screen.findByLabelText("New key name"), { target: { value: "Script" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create key" }));
   const secret = await screen.findByLabelText("New API key (shown once)");
   expect(secret).toHaveAttribute("type", "password");
   fireEvent.click(screen.getByRole("button", { name: "Show key" }));
@@ -64,7 +68,7 @@ it("saves settings with Ctrl+S only from the Entity form", async () => {
   );
   const p = props();
   render(<Settings {...p} />);
-  fireEvent.keyDown(await screen.findByLabelText("Key name"), { key: "s", ctrlKey: true });
+  fireEvent.keyDown(await screen.findByLabelText("New key name"), { key: "s", ctrlKey: true });
   expect(p.save).not.toHaveBeenCalled();
   fireEvent.keyDown(screen.getByLabelText("Time zone"), { key: "s", metaKey: true });
   expect(p.save).toHaveBeenCalledOnce();
@@ -87,6 +91,7 @@ it("revokes a key only after confirmation; Escape cancels and restores focus", a
   });
   render(<Settings {...props()} />);
   const revoke = await screen.findByRole("button", { name: "Revoke Backup" });
+  expect(screen.getByText("Oct 2, 2026")).toBeInTheDocument();
   fireEvent.click(revoke);
   const cancel = screen.getByRole("button", { name: "Cancel" });
   await waitFor(() => expect(cancel).toHaveFocus());
@@ -110,8 +115,8 @@ it("keeps a new shown-once secret when a revoke is started and cancelled", async
     ),
   );
   render(<Settings {...props()} />);
-  fireEvent.change(await screen.findByLabelText("Key name"), { target: { value: "Script" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+  fireEvent.change(await screen.findByLabelText("New key name"), { target: { value: "Script" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create key" }));
   await screen.findByLabelText("New API key (shown once)");
   fireEvent.click(await screen.findByRole("button", { name: "Revoke Nightly" }));
   expect(screen.getByLabelText("New API key (shown once)")).toBeInTheDocument();
@@ -128,8 +133,8 @@ it("does not automatically retry uncertain issuance", async () => {
     return json(String(path).endsWith("/keys") ? [] : { ...entity, revision: 1 });
   });
   render(<Settings {...props()} />);
-  fireEvent.change(await screen.findByLabelText("Key name"), { target: { value: "Script" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+  fireEvent.change(await screen.findByLabelText("New key name"), { target: { value: "Script" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create key" }));
   expect(await screen.findByText(/Creation was not confirmed/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Reload key list" }));
   await waitFor(() => expect(creates).toBe(1));
@@ -145,8 +150,8 @@ it("ignores a secret response after the screen is concealed", async () => {
   );
   const p = props();
   const view = render(<Settings {...p} />);
-  fireEvent.change(await screen.findByLabelText("Key name"), { target: { value: "Script" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+  fireEvent.change(await screen.findByLabelText("New key name"), { target: { value: "Script" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create key" }));
   await waitFor(() => expect(resolve).toBeDefined());
   view.rerender(<Settings {...p} concealed />);
   resolve(json({ id: "key", name: "Script", key: "deliberately-synthetic-secret" }));
@@ -171,10 +176,10 @@ it("refreshes Entity defaults after confirmed settings and uses them for new act
     return json([]);
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(navLink("Settings"));
   fireEvent.click(await screen.findByRole("button", { name: "Save settings" }));
   await waitFor(() => expect(screen.getByText("Renamed")).toBeInTheDocument());
-  fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+  fireEvent.click(navLink("Activity"));
   fireEvent.click(await screen.findByRole("button", { name: "Record activity" }));
   expect(screen.getByLabelText("Financial date")).toHaveValue("2026-11-02");
 });
@@ -188,11 +193,11 @@ it("conceals settings and prevents key issuance when fresh credentials belong to
     return json([]);
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  fireEvent.change(await screen.findByLabelText("Key name"), { target: { value: "Script" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+  fireEvent.click(navLink("Settings"));
+  fireEvent.change(await screen.findByLabelText("New key name"), { target: { value: "Script" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create key" }));
   await screen.findByText("Account changed");
-  expect(screen.queryByLabelText("Entity name")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
   expect(writes).toBe(0);
 });
 it("blocks stale date defaults until metadata refresh succeeds", async () => {
@@ -207,17 +212,17 @@ it("blocks stale date defaults until metadata refresh succeeds", async () => {
     return json([]);
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(navLink("Settings"));
   fireEvent.click(await screen.findByRole("button", { name: "Save settings" }));
   await screen.findByRole("button", { name: "Refresh Entity defaults" });
-  fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+  fireEvent.click(navLink("Activity"));
   expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
   fail = false;
   fireEvent.click(screen.getByRole("button", { name: "Refresh Entity defaults" }));
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "Refresh Entity defaults" })).toBeNull(),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+  fireEvent.click(navLink("Activity"));
   expect(await screen.findByRole("heading", { name: "Activity" })).toBeInTheDocument();
 });
 it("reauthenticates after a confirmed save when refreshing defaults encounters session expiry", async () => {
@@ -233,13 +238,13 @@ it("reauthenticates after a confirmed save when refreshing defaults encounters s
     return json([]);
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(navLink("Settings"));
   fireEvent.click(await screen.findByRole("button", { name: "Save settings" }));
   fireEvent.click(await screen.findByRole("button", { name: "Sign in and refresh defaults" }));
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "Refresh Entity defaults" })).toBeNull(),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+  fireEvent.click(navLink("Activity"));
   fireEvent.click(await screen.findByRole("button", { name: "Record activity" }));
   expect(screen.getByLabelText("Financial date")).toHaveValue("2026-11-03");
 });
@@ -262,9 +267,9 @@ it("does not let a delayed key credential read overwrite refreshed Entity defaul
     return json([]);
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  fireEvent.change(await screen.findByLabelText("Key name"), { target: { value: "Script" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+  fireEvent.click(navLink("Settings"));
+  fireEvent.change(await screen.findByLabelText("New key name"), { target: { value: "Script" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create key" }));
   await waitFor(() => expect(finish).toBeDefined());
   fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
   await waitFor(() => expect(reads).toBe(2));
@@ -273,7 +278,7 @@ it("does not let a delayed key credential read overwrite refreshed Entity defaul
   );
   finish(json(session));
   await screen.findByLabelText("New API key (shown once)");
-  fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+  fireEvent.click(navLink("Activity"));
   fireEvent.click(await screen.findByRole("button", { name: "Record activity" }));
   expect(screen.getByLabelText("Financial date")).toHaveValue("2026-11-04");
 });

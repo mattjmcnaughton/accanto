@@ -1,243 +1,211 @@
-/* Investments, Giving and Loans: layout on top of worksheet-ui.css. */
-.records .sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+/* Investments, giving and loans: layout on top of the shared kit (ui/ui.css). */
+.records {
+  gap: 32px;
 }
-.records .segmented {
-  display: flex;
-  gap: 0;
-  border: 0;
-  padding: 0;
-  margin: 0;
+.rec-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-content: start;
 }
-.records .segmented button {
-  border-radius: 0;
-}
-.records .segmented button:first-of-type {
-  border-radius: 4px 0 0 4px;
-}
-.records .segmented button:last-of-type {
-  border-radius: 0 4px 4px 0;
-  border-left: 0;
-}
-.records .segmented button[aria-pressed="true"] {
-  background: var(--ui-selected);
-  border-color: var(--ui-focus);
-  color: #e4f0ff;
-}
-.records .pending {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-  color: var(--ui-warning);
-  font-size: 12px;
-}
-.records .annotation {
-  margin: 0;
-  padding: 10px 28px 0;
-  font-size: 12px;
-}
-.records .notice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 10px 28px 0;
-  color: var(--ui-warning);
-  font-size: 12px;
-}
-.records .notice button {
-  padding: 0 6px;
-}
-.records [role="alert"] {
-  margin: 10px 28px 0;
-  color: var(--ui-danger);
-}
-.records .data-sidebar [role="alert"] {
-  margin: 8px 0;
-}
-.records .record-tables {
-  min-width: 0;
-  padding: 4px 28px 20px;
-}
-.records .table-heading {
+.rec-head,
+.rec-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 16px;
-  padding-bottom: 8px;
 }
-.records .table-heading h3 {
+.rec-head .h2,
+.rec-bar .h2 {
   margin: 0;
-  font-size: 15px;
+}
+.rec-head .h2 {
+  font-size: 19px;
+}
+.rec-bar {
+  margin-bottom: 8px;
+}
+.rec-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rec-card-actions {
+  margin-top: 0;
+}
+.rec-meter {
+  margin: 9px 0 6px;
+}
+.rec-records {
+  display: grid;
+  gap: 20px;
+}
+.rec-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  color: var(--bad);
+  background: var(--bad-bg);
+}
+.rec-loading {
+  display: grid;
+  gap: 12px;
+}
+.rec-loading .sk {
+  height: 16px;
+}
+.rec-pending,
+.rec-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.rec-pending {
+  padding: 8px 12px;
+}
+.rec-notice {
+  border-radius: 10px;
+  padding: 6px 6px 6px 12px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 13px;
+}
+.rec-notice span {
+  flex: 1;
+}
+.rec-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.rec-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.rec-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rec-keylist {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.rec-keylist div {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 8px;
+}
+.rec-keylist dd {
+  margin: 0;
+  color: var(--ink2);
+}
+.rec-details {
+  display: grid;
+  gap: 12px;
+}
+.rec-details dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+.rec-details dt {
+  color: var(--ink3);
+}
+.rec-details dd {
+  margin: 0;
+}
+.rec-details h3 {
+  font-size: 14px;
+}
+
+/* Record grids */
+.rec-scroll {
+  overflow-x: auto;
+}
+.rec-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.rec-grid th {
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 12.5px;
   font-weight: 600;
-}
-.records .table-heading button {
-  padding: 5px 10px;
-  font-size: 12px;
-}
-.records .data-grid td {
+  color: var(--ink3);
   white-space: nowrap;
+  border-bottom: 1px solid var(--line);
 }
-.records .data-grid td button {
-  padding: 3px 9px;
-  font-size: 12px;
+.rec-grid th.num {
+  text-align: right;
 }
-.records .data-grid .note {
+.rec-grid td {
+  height: 40px;
+  padding: 4px 10px;
+  white-space: nowrap;
+  border-top: 1px solid var(--line);
+}
+.rec-grid tbody tr:first-child td {
+  border-top: 0;
+}
+.rec-grid td:focus-visible {
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+.rec-grid:focus-within .selected-row td {
+  background: var(--wash);
+}
+.rec-grid:focus-within td[aria-selected="true"] {
+  background: color-mix(in srgb, var(--focus) 14%, var(--surface));
+}
+.rec-grid .chip {
+  margin-left: 8px;
+}
+.rec-grid .note {
   display: inline-block;
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: bottom;
-  color: var(--ui-muted);
 }
-.records .data-grid .selected-row td {
-  background: #1d2a39;
-}
-.records .data-grid td[aria-selected="true"] {
-  background: var(--ui-selected);
-}
-.records .badge.unsaved {
-  margin-left: 8px;
-  color: var(--ui-warning);
-  border-color: var(--ui-warning);
-}
-.records .data-sidebar fieldset {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-}
-.records .data-sidebar legend,
-.records .data-sidebar h3 {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0 0 12px;
-  padding: 0;
-}
-.records .data-sidebar h4 {
-  font-size: 13px;
-  margin: 16px 0 6px;
-}
-.records .data-sidebar label {
-  display: grid;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--ui-muted);
-}
-.records .data-sidebar label.check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ui-text);
-}
-.records .data-sidebar input:not([type="checkbox"]),
-.records .data-sidebar select,
-.records .data-sidebar textarea {
-  width: 100%;
-  box-sizing: border-box;
-}
-.records .data-sidebar input[aria-invalid="true"] {
-  border-color: var(--ui-danger);
-}
-.records .data-sidebar p {
-  font-size: 12px;
-  margin: 0;
-}
-.records .data-sidebar dl {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 12px;
-  margin: 0;
-  font-size: 12px;
-}
-.records .data-sidebar dt {
-  color: var(--ui-muted);
-}
-.records .data-sidebar dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-.records .data-sidebar .data-grid th,
-.records .data-sidebar .data-grid td {
-  padding: 6px 8px;
-  height: auto;
-}
-.records .loan-details > p {
-  margin-top: 10px;
-}
-.records .warning {
-  color: var(--ui-warning);
-}
-.records .record-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-.records .danger {
-  border-color: #5a3633;
-}
-.records .data-status .mode {
-  color: var(--ui-text);
-  font-weight: 600;
-}
-.records .data-status button.link {
-  margin-left: auto;
-  border: 0;
-  background: none;
-  color: var(--ui-focus);
-  padding: 0;
-}
-.records kbd {
-  font: inherit;
-  font-size: 11px;
-  padding: 1px 5px;
-  border: 1px solid var(--ui-border);
-  border-radius: 3px;
-}
-.records dialog h2 {
-  font-size: 17px;
-  margin-top: 0;
-}
-.records .shortcut-list {
-  display: grid;
-  gap: 6px;
-  font-size: 13px;
-}
-.records .shortcut-list div {
-  display: grid;
-  grid-template-columns: 200px 1fr;
-}
-.records .shortcut-list dd {
-  margin: 0;
-}
-@media (max-width: 680px) {
-  .records .annotation,
-  .records .record-tables {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-  .records .shortcut-list div {
-    grid-template-columns: 1fr;
-  }
-}
-.records h2,
-.records h3,
-.records h4 {
-  font-family: inherit;
-}
-.records .data-grid:not(:focus-within) .selected-row td,
-.records .data-grid:not(:focus-within) td[aria-selected="true"] {
-  background: none;
-}
-.records time {
+.rec-grid time {
   white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  /* The cards above already carry each record's figures and its Edit or Details action. */
+  .rec-registry {
+    display: none;
+  }
+  .rec-keys {
+    display: none;
+  }
+  .rec-grid .wide {
+    display: none;
+  }
+  .rec-grid th,
+  .rec-grid td {
+    padding-inline: 6px;
+  }
+  .rec-grid td:not(.num) {
+    white-space: normal;
+  }
+  .rec-keylist div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+.records .two {
+  align-items: end;
 }

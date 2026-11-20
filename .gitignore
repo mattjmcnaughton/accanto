@@ -49,6 +49,7 @@ src/accanto/web/frontend/src/routeTree.gen.ts
 coverage/
 test-results/
 playwright-report/
+storybook-static/
 .ruff_cache/
 
 # Local agent plans and working notes

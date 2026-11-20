@@ -1,9 +1,10 @@
 import type React from "react";
 import { useEffect, useId, useRef, useState } from "react";
+import { decimalToCents, fmtDate, fmtShort, formatMoney, money } from "../../lib/format";
 import { type Goal, type SavingsAccount, type SavingsMovement, savings } from "../../lib/savings";
-import { LoadMessage, type ScreenProps, useLoad } from "../workspace/shared";
+import { Dialog, Empty, Field, Head, Icon, Meter, Skeleton } from "../../ui";
+import { type ScreenProps, useLoad } from "../workspace/shared";
 import { useGridKeys } from "../workspace/useGridKeys";
-import "../workspace/worksheet-ui.css";
 import "./savings.css";
 import {
   type Draft,
@@ -12,9 +13,7 @@ import {
   accountDraft,
   cents,
   changed,
-  dollars,
   draftKey,
-  formatCents,
   goalDraft,
   hasMoney,
   movementDraft,
@@ -24,7 +23,7 @@ import {
 } from "./savingsDraft";
 
 type Grid = "goals" | "moves";
-type Field =
+type CellField =
   | "name"
   | "kind"
   | "target"
@@ -35,10 +34,11 @@ type Field =
   | "from"
   | "to"
   | "note";
-type Cell = { grid: Grid; id: string; col: number; field: Field; value: string; error: string };
+type Cell = { grid: Grid; id: string; col: number; field: CellField; value: string; error: string };
 type GoalRow = { id: string; account: SavingsAccount; goal: Goal | null; isNew?: boolean };
 type MoveRow = { id: string; movement: SavingsMovement | null };
-type Lifecycle = { action: "complete" | "return" | "archive" | "reopen"; date: string };
+type Action = "complete" | "return" | "archive" | "reopen";
+type Lifecycle = { action: Action; date: string };
 
 const GOAL_COLUMNS = [
   "Goal",
@@ -61,7 +61,7 @@ const SHORTCUTS = [
   ["0 / $ · Home / End", "First / last cell in row"],
   ["gg / G", "First / last row"],
   ["i / Enter", "Edit a value, or open details"],
-  ["Enter / Esc while editing", "Keep a valid edit unsaved; return to normal"],
+  ["Enter / Esc while editing", "Keep a valid edit unsaved; return to the table"],
   ["a / A", "Add a goal to this account, or a savings record"],
   ["dd", "Delete the selected savings record, with confirmation"],
   ["Esc", "Close details"],
@@ -70,6 +70,8 @@ const SHORTCUTS = [
   ["?", "Open this reference"],
 ];
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const day = (iso: string) => (ISO_DATE.test(iso) ? fmtDate(iso) : iso || "—");
 const goalStatus = (account: SavingsAccount, goal: Goal) =>
   goal.completed
     ? "Completed"
@@ -79,6 +81,23 @@ const goalStatus = (account: SavingsAccount, goal: Goal) =>
         ? "Inactive"
         : (goal.funded_status ?? "");
 const hiddenGoal = (goal: Goal) => goal.completed && !hasMoney(goal.remaining_saved);
+const isNewRecord = (draft: Draft) =>
+  draft.type === "new-account" ||
+  draft.type === "new-goal" ||
+  (draft.type === "movement" && !draft.movement);
+function lifecycleChoices(account: SavingsAccount, goal?: Goal): Action[] {
+  if (!goal) return [account.active ? "archive" : "reopen"];
+  if (account.active && goal.completed && hasMoney(goal.remaining_saved)) return ["return"];
+  if (
+    account.active &&
+    goal.role === "ordinary" &&
+    goal.kind === "finite" &&
+    goal.active &&
+    !goal.completed
+  )
+    return ["complete"];
+  return [];
+}
 
 export function Savings(p: ScreenProps) {
   const [reload, setReload] = useState(0);
@@ -92,13 +111,14 @@ export function Savings(p: ScreenProps) {
     accounts: [],
     movements: [],
   });
-  if (accountsState.kind !== "loading")
+  const settled = useRef(false);
+  if (accountsState.kind !== "loading") {
+    settled.current = true;
     loaded.current.accounts = accountsState.kind === "ready" ? accountsState.data : [];
+  }
   if (movesState.kind !== "loading")
     loaded.current.movements = movesState.kind === "ready" ? movesState.data : [];
   const { accounts, movements } = loaded.current;
-  const reloading = (state: { kind: string }, rows: unknown[]) =>
-    state.kind === "loading" && rows.length > 0;
   const [pending, setPending] = useState<Draft | null>(null);
   const [cell, setCell] = useState<Cell | null>(null);
   const [selection, setSelection] = useState<Record<Grid, { id: string; col: number }>>({
@@ -109,18 +129,11 @@ export function Savings(p: ScreenProps) {
   const [lifecycle, setLifecycle] = useState<Lifecycle | null>(null);
   const [notice, setNotice] = useState("");
   const [showArchived, setShowArchived] = useState(false);
-  const [area, setArea] = useState<Grid | "details" | "page">("page");
   const [help, setHelp] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
   const uid = useId();
-  const ids = {
-    title: `${uid}-title`,
-    records: `${uid}-records`,
-    details: `${uid}-details`,
-    status: `${uid}-status`,
-    cellError: `${uid}-cell-error`,
-    keys: `${uid}-keys`,
-  };
+  const ids = { status: `${uid}-status`, cellError: `${uid}-cell-error`, keys: `${uid}-keys` };
   const goalKeys = useGridKeys();
   const moveKeys = useGridKeys();
   useEffect(() => {
@@ -163,6 +176,16 @@ export function Savings(p: ScreenProps) {
     ...movements.map((movement) => ({ id: `m:${movement.uuid}`, movement })),
   ];
 
+  const pendingLabel = pending
+    ? {
+        goal: () => `goal ${pending.type === "goal" ? pending.goal.name : ""}`,
+        "new-goal": () => "new goal",
+        account: () => `account ${pending.type === "account" ? pending.account.name : ""}`,
+        "new-account": () => "new account",
+        movement: () => "savings record",
+      }[pending.type]()
+    : "";
+
   // ---- One pending record ------------------------------------------------
   // A busy workspace may hold a failed or unconfirmed write of the attempted values: never replace them.
   function switchTo(key: string): boolean {
@@ -191,12 +214,13 @@ export function Savings(p: ScreenProps) {
   function discard() {
     if (!pending || p.busy) return;
     if (changed(pending) && !window.confirm("Discard the unsaved Savings record?")) return;
-    const wasNewAccount = pending.type === "new-account";
+    const key = draftKey(pending);
+    const wasNew = isNewRecord(pending);
     setPending(null);
     setCell(null);
     setNotice("");
     p.dirty(false);
-    if (wasNewAccount) setSidebar(null);
+    if (wasNew && sidebar === key) setSidebar(null);
   }
   function save() {
     if (p.busy) return;
@@ -214,11 +238,13 @@ export function Savings(p: ScreenProps) {
       return;
     }
     const saving = pending;
+    const key = draftKey(saving);
     p.save(writeFor(p.entity.id, saving), (data) => {
       setPending(null);
       setNotice("");
       p.dirty(false);
       if (saving.type === "new-account") setSidebar(`a:${(data as SavingsAccount).uuid}`);
+      else if (isNewRecord(saving)) setSidebar((open) => (open === key ? null : open));
       setReload((n) => n + 1);
     });
   }
@@ -232,7 +258,7 @@ export function Savings(p: ScreenProps) {
     if (cellElement) cellElement.focus();
     else requestAnimationFrame(() => target()?.focus());
   }
-  function goalField(row: GoalRow, col: number): Field | null {
+  function goalField(row: GoalRow, col: number): CellField | null {
     if (!row.account.active) return null;
     if (!row.goal && !row.isNew) return (["name", "date", null, "amount"] as const)[col] ?? null;
     if (row.goal?.role === "unallocated") return null;
@@ -240,12 +266,12 @@ export function Savings(p: ScreenProps) {
     if (row.goal?.completed) return null;
     return (["name", "kind", "target"] as const)[col] ?? null;
   }
-  function moveField(draft: Draft & { type: "movement" }, col: number): Field | null {
+  function moveField(draft: Draft & { type: "movement" }, col: number): CellField | null {
     if (col === 1) return draft.movement ? null : "action";
     if (col === 3 && draft.action === "reconciliation") return null;
     return (["date", null, "from", "to", "amount", "note"] as const)[col] ?? null;
   }
-  function goalRecord(row: GoalRow, field: Field): Draft {
+  function goalRecord(row: GoalRow, field: CellField): Draft {
     if (!row.goal && !row.isNew)
       return pendingFor(`a:${row.account.uuid}`) ?? accountDraft(row.account);
     if (field === "designation")
@@ -257,7 +283,7 @@ export function Savings(p: ScreenProps) {
     return (pendingFor(row.movement ? `m:${row.movement.uuid}` : "new-move") ??
       movementDraft(row.movement as SavingsMovement)) as Draft & { type: "movement" };
   }
-  function read(draft: Draft, field: Field, goalId?: string): string {
+  function read(draft: Draft, field: CellField, goalId?: string): string {
     if (field === "kind") return "goalKind" in draft ? draft.goalKind : "";
     if (field === "designation" && draft.type === "account")
       return draft.designations[goalId ?? ""] ?? "";
@@ -265,7 +291,7 @@ export function Savings(p: ScreenProps) {
       return draft.goal;
     return String((draft as unknown as Record<string, unknown>)[field] ?? "");
   }
-  function apply(draft: Draft, field: Field, value: string, goalId?: string): Draft {
+  function apply(draft: Draft, field: CellField, value: string, goalId?: string): Draft {
     if (field === "kind") return { ...draft, goalKind: value } as Draft;
     if (field === "designation" && draft.type === "account")
       return { ...draft, designations: { ...draft.designations, [goalId ?? ""]: value } };
@@ -273,7 +299,14 @@ export function Savings(p: ScreenProps) {
       return { ...draft, goal: value };
     return { ...draft, [field]: value } as Draft;
   }
-  function begin(grid: Grid, id: string, col: number, field: Field, draft: Draft, goalId?: string) {
+  function begin(
+    grid: Grid,
+    id: string,
+    col: number,
+    field: CellField,
+    draft: Draft,
+    goalId?: string,
+  ) {
     if (!switchTo(draftKey(draft))) return;
     if (!pendingFor(draftKey(draft))) setPending(draft);
     setCell({ grid, id, col, field, value: read(draft, field, goalId), error: "" });
@@ -290,7 +323,7 @@ export function Savings(p: ScreenProps) {
           ? "Enter a USD amount with up to two decimal places."
           : cell.field === "target" && value !== "" && !hasMoney(value)
             ? "Enter a positive target, or leave it blank."
-            : cell.field === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(value)
+            : cell.field === "date" && !ISO_DATE.test(value)
               ? "Enter a date."
               : cell.field === "note" && value.length > 2000
                 ? "Keep the note within 2000 characters."
@@ -326,34 +359,42 @@ export function Savings(p: ScreenProps) {
     }
     begin("moves", row.id, col, field, draft);
   }
-  function addGoal(row: GoalRow | undefined) {
-    if (!row || p.busy) return;
-    if (!row.account.active) {
+  /** Starts (or resumes) a new goal for this account; returns its draft, or null when blocked. */
+  function startGoal(account: SavingsAccount): NewGoalEdit | null {
+    if (p.busy) return null;
+    if (!account.active) {
       setNotice("Reopen the account to add goals.");
-      return;
+      return null;
     }
-    const key = `new-goal:${row.account.uuid}`;
-    if (!switchTo(key)) return;
+    if (cell && !commitCell()) return null;
+    const key = `new-goal:${account.uuid}`;
+    if (!switchTo(key)) return null;
     const draft = (pendingFor(key) as NewGoalEdit | null) ?? {
       type: "new-goal" as const,
-      account: row.account,
+      account,
       name: "",
       goalKind: "finite",
       target: "",
     };
     setPending(draft);
     p.dirty(true);
+    return draft;
+  }
+  function addGoal(row: GoalRow | undefined) {
+    const draft = row && startGoal(row.account);
+    if (!draft) return;
     setCell({ grid: "goals", id: "new-goal", col: 0, field: "name", value: draft.name, error: "" });
     setSelection((s) => ({ ...s, goals: { id: "new-goal", col: 0 } }));
   }
-  function addMove() {
-    if (!switchTo("new-move")) return;
+  function startMove(from = ""): MovementEdit | null {
+    if (cell && !commitCell()) return null;
+    if (!switchTo("new-move")) return null;
     const draft: MovementEdit = (pendingFor("new-move") as MovementEdit | null) ?? {
       type: "movement",
       movement: null,
       action: "reassignment",
       date: p.entity.today,
-      from: "",
+      from,
       to: "",
       goal: "",
       amount: "",
@@ -361,6 +402,11 @@ export function Savings(p: ScreenProps) {
     };
     setPending(draft);
     p.dirty(true);
+    return draft;
+  }
+  function addMove() {
+    const draft = startMove();
+    if (!draft) return;
     setCell({
       grid: "moves",
       id: "new-move",
@@ -374,7 +420,7 @@ export function Savings(p: ScreenProps) {
   function remove(movement: SavingsMovement) {
     if (p.busy) return;
     if (pending && !p.guard()) return;
-    const label = `${ACTIONS[movement.kind]} ${dollars(movement.amount)} on ${movement.date}`;
+    const label = `${ACTIONS[movement.kind]} ${formatMoney(movement.amount)} on ${day(movement.date)}`;
     if (!window.confirm(`Delete “${label}”? It leaves current totals; its history is kept.`))
       return;
     setPending(null);
@@ -382,22 +428,37 @@ export function Savings(p: ScreenProps) {
     p.dirty(false);
     p.save(savings.deleteMovement(p.entity.id, movement), () => setReload((n) => n + 1));
   }
-  function openDetails(id: string) {
+  function openDetails(id: string, action?: Action) {
+    if (!sidebar && document.activeElement instanceof HTMLElement)
+      opener.current = document.activeElement;
     setSidebar(id);
-    setLifecycle(null);
-    requestAnimationFrame(() => document.getElementById(ids.details)?.focus());
+    setLifecycle(action ? { action, date: p.entity.today } : null);
+    if (action) focusConfirm();
+    // A new record's form starts at its first field rather than the close button.
+    else if (id.startsWith("new"))
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLElement>(".sv-form :is(input, select)")?.focus(),
+      );
+  }
+  function focusConfirm() {
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>(".sv-confirm input, .sv-confirm .pri")?.focus(),
+    );
   }
   function closeDetails() {
-    if (pending?.type === "new-account") {
-      setNotice("Save or discard the new account first.");
+    // While a write is busy the draft is kept, and the page's recovery notice must stay reachable.
+    if (!p.busy && pending && sidebar === draftKey(pending) && isNewRecord(pending)) {
+      setNotice(`Save or discard the ${pendingLabel} first.`);
       return;
     }
     setSidebar(null);
     setLifecycle(null);
-    const { id, col } = selection.goals;
-    if (id) focusCell("goals", id, col);
+    const back = opener.current;
+    opener.current = null;
+    requestAnimationFrame(() => back?.isConnected && back.focus());
   }
   function newAccount() {
+    if (cell && !commitCell()) return;
     if (!switchTo("new-account")) return;
     setPending(
       pendingFor("new-account") ?? {
@@ -411,18 +472,19 @@ export function Savings(p: ScreenProps) {
     openDetails("new-account");
   }
 
-  // ---- Rendering ---------------------------------------------------------
-  function editor(field: Field, label: string) {
+  // ---- Grid rendering ----------------------------------------------------
+  function goalChoices(selected: string) {
+    return [...goalIndex.values()]
+      .filter(({ account, goal }) => (account.active && goal.active) || goal.uuid === selected)
+      .map(({ account, goal }) => (
+        <option key={goal.uuid} value={goal.uuid}>
+          {account.name} / {goal.name} ({formatMoney(goal.remaining_saved)} saved)
+        </option>
+      ));
+  }
+  function editor(field: CellField, label: string) {
     if (!cell) return null;
     const current = cell;
-    const goalChoices = (selected: string) =>
-      [...goalIndex.values()]
-        .filter(({ account, goal }) => (account.active && goal.active) || goal.uuid === selected)
-        .map(({ account, goal }) => (
-          <option key={goal.uuid} value={goal.uuid}>
-            {account.name} / {goal.name} ({dollars(goal.remaining_saved)} saved)
-          </option>
-        ));
     const props = {
       autoFocus: true,
       "aria-label": label,
@@ -503,16 +565,9 @@ export function Savings(p: ScreenProps) {
         aria-label={`${rowName}, ${columns[col]}`}
         aria-selected={active}
         tabIndex={active && !editing ? 0 : -1}
-        className={`${className} ${active ? "selected-cell" : ""}`}
+        className={`${className} ${editing ? "sv-editing" : ""}`}
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget) return;
-          if (e.key === "Escape") {
-            if (sidebar) {
-              e.preventDefault();
-              closeDetails();
-            }
-            return;
-          }
           keys(e, {
             rowId: row.id,
             position: { row: rowIndex, col },
@@ -546,7 +601,7 @@ export function Savings(p: ScreenProps) {
           <>
             {editor(cell.field, `${columns[col]} for ${rowName}`)}
             {cell.error && (
-              <span id={ids.cellError} role="alert" className="field-error">
+              <span id={ids.cellError} role="alert" className="err">
                 {cell.error}
               </span>
             )}
@@ -558,6 +613,11 @@ export function Savings(p: ScreenProps) {
     );
   }
 
+  const unsavedChip = (
+    <span key="u" className="chip warn sv-unsaved">
+      unsaved
+    </span>
+  );
   function goalRowView(row: GoalRow, index: number) {
     const account = (pendingFor(`a:${row.account.uuid}`) as Draft & { type: "account" }) ?? null;
     const pendingKey = pending ? draftKey(pending) : "";
@@ -565,23 +625,26 @@ export function Savings(p: ScreenProps) {
       const a = row.account;
       const name = account?.name ?? a.name;
       const cells = [
-        <strong key="n">{name}</strong>,
+        <strong key="n">
+          {name}
+          {pendingKey === `a:${a.uuid}` && unsavedChip}
+        </strong>,
         <span key="d" className="muted">
-          Opened {account?.date ?? a.opening_date}
+          Opened {day(account?.date ?? a.opening_date)}
         </span>,
         "",
-        dollars(account?.amount ?? a.opening_amount),
-        dollars(a.balance),
+        formatMoney(account?.amount ?? a.opening_amount),
+        formatMoney(a.balance),
         "",
-        <span key="s" className="status-cell">
-          <span className="badge">{a.active ? "Active" : "Archived"}</span>
+        <span key="s" className="sv-status">
+          <span className="chip">{a.active ? "Active" : "Archived"}</span>
           <DetailsButton name={name} onClick={() => openDetails(row.id)} />
         </span>,
       ];
       return (
         <tr
           key={row.id}
-          className={`group-row ${pendingKey === `a:${a.uuid}` ? "pending-row" : ""} ${a.active ? "" : "archived-row"}`}
+          className={`sv-account-row ${pendingKey === `a:${a.uuid}` ? "sv-pending-row" : ""} ${a.active ? "" : "sv-quiet-row"}`}
         >
           {cells.map((content, col) =>
             gridCell(
@@ -595,7 +658,7 @@ export function Savings(p: ScreenProps) {
               () => editGoalCell(row, col),
               () => addGoal(row),
               () => setNotice("Accounts and goals are archived from Details, not deleted."),
-              col >= 3 && col <= 5 ? "numeric" : "",
+              col >= 3 && col <= 5 ? "num" : "",
             ),
           )}
         </tr>
@@ -609,43 +672,43 @@ export function Savings(p: ScreenProps) {
     const kind = draft?.goalKind ?? goal?.kind ?? "finite";
     const target = draft ? draft.target : (goal?.target ?? "");
     const unallocated = goal?.role === "unallocated";
-    const opening = row.isNew
-      ? "—"
-      : unallocated && account
-        ? (() => {
-            const remainder = openingRemainder(account.amount, Object.values(account.designations));
-            return remainder === null ? "—" : dollars(formatCents(remainder));
-          })()
-        : dollars(account?.designations[goal?.uuid ?? ""] ?? goal?.opening_amount ?? "0.00");
+    let opening = "—";
+    let negative = false;
+    if (!row.isNew && unallocated && account) {
+      const remainder = openingRemainder(account.amount, Object.values(account.designations));
+      if (remainder !== null) opening = money(remainder);
+      negative = remainder !== null && remainder < 0;
+    } else if (!row.isNew)
+      opening = formatMoney(
+        account?.designations[goal?.uuid ?? ""] ?? goal?.opening_amount ?? "0.00",
+      );
     const label = name || "New goal";
     const cells = [
-      <span key="n" className="goal-name">
+      <span key="n" className="sv-goal-name">
         {label}
-        {(pendingKey === `g:${goal?.uuid}` || row.isNew) && (
-          <span className="badge pending-badge">unsaved</span>
-        )}
+        {(pendingKey === `g:${goal?.uuid}` || row.isNew) && unsavedChip}
       </span>,
       unallocated ? "Unallocated" : KIND[kind],
       target ? (
-        dollars(target)
+        formatMoney(target)
       ) : (
         <span key="t" className="muted">
           —
         </span>
       ),
-      <span key="o" className={opening.startsWith("$-") ? "negative" : ""}>
+      <span key="o" className={negative ? "bad" : ""}>
         {opening}
       </span>,
-      row.isNew ? "—" : dollars(goal?.remaining_saved ?? "0.00"),
-      row.isNew ? "—" : dollars(goal?.contribution_progress ?? "0.00"),
+      row.isNew ? "—" : formatMoney(goal?.remaining_saved ?? "0.00"),
+      row.isNew ? "—" : formatMoney(goal?.contribution_progress ?? "0.00"),
       row.isNew ? (
-        <span key="s" className="badge pending-badge">
+        <span key="s" className="chip warn">
           new
         </span>
       ) : (
-        <span key="s" className="status-cell">
+        <span key="s" className="sv-status">
           {goal && goalStatus(row.account, goal) && (
-            <span className="badge">{goalStatus(row.account, goal)}</span>
+            <span className="chip">{goalStatus(row.account, goal)}</span>
           )}
           <DetailsButton name={label} onClick={() => openDetails(row.id)} />
         </span>
@@ -654,7 +717,7 @@ export function Savings(p: ScreenProps) {
     return (
       <tr
         key={row.id}
-        className={`${row.isNew || pendingKey === `g:${goal?.uuid}` ? "pending-row" : ""} ${unallocated ? "unallocated-row" : ""}`}
+        className={`${row.isNew || pendingKey === `g:${goal?.uuid}` ? "sv-pending-row" : ""} ${unallocated || !row.account.active ? "sv-quiet-row" : ""}`}
       >
         {cells.map((content, col) =>
           gridCell(
@@ -668,7 +731,7 @@ export function Savings(p: ScreenProps) {
             () => editGoalCell(row, col),
             () => addGoal(row),
             () => setNotice("Accounts and goals are archived from Details, not deleted."),
-            col >= 2 && col <= 5 ? "numeric" : "",
+            col >= 2 && col <= 5 ? "num" : "",
           ),
         )}
       </tr>
@@ -682,18 +745,18 @@ export function Savings(p: ScreenProps) {
     const m = draft ?? movementDraft(row.movement as SavingsMovement);
     const reconcile = m.action === "reconciliation";
     const name = row.movement
-      ? `${ACTIONS[row.movement.kind]} on ${row.movement.date}`
+      ? `${ACTIONS[row.movement.kind]} on ${day(row.movement.date)}`
       : "New savings record";
     const amount = draft
       ? m.amount
-        ? `${reconcile ? "Known " : ""}${dollars(m.amount)}`
+        ? `${reconcile ? "Known " : ""}${formatMoney(m.amount)}`
         : "—"
-      : dollars(row.movement?.amount ?? "");
+      : formatMoney(row.movement?.amount ?? "");
     const cells = [
-      m.date,
+      day(m.date),
       <span key="a">
         {ACTIONS[m.action]}
-        {draft && <span className="badge pending-badge">unsaved</span>}
+        {draft && unsavedChip}
       </span>,
       goalLabel(reconcile ? m.goal : m.from),
       reconcile ? (
@@ -712,7 +775,7 @@ export function Savings(p: ScreenProps) {
           key="x"
           type="button"
           tabIndex={-1}
-          className="text-button"
+          className="btn sm quiet danger"
           aria-label={`Delete ${name}`}
           disabled={p.busy}
           onClick={() => row.movement && remove(row.movement)}
@@ -724,7 +787,7 @@ export function Savings(p: ScreenProps) {
       ),
     ];
     return (
-      <tr key={row.id} className={draft ? "pending-row" : ""}>
+      <tr key={row.id} className={draft ? "sv-pending-row" : ""}>
         {cells.map((content, col) =>
           gridCell(
             "moves",
@@ -740,34 +803,187 @@ export function Savings(p: ScreenProps) {
               if (row.movement) remove(row.movement);
               else setNotice("Discard drops the unsaved record.");
             },
-            col === 4 ? "numeric" : col === 5 ? "note-cell" : "",
+            col === 4
+              ? "num"
+              : col === 5
+                ? "sv-note-cell"
+                : col === 2 || col === 3
+                  ? "sv-wrap"
+                  : "",
           ),
         )}
       </tr>
     );
   }
 
+  // ---- Progress cards ----------------------------------------------------
+  function goalCard(account: SavingsAccount, goal: Goal) {
+    const saved = decimalToCents(goal.remaining_saved) ?? 0;
+    const target = goal.target ? decimalToCents(goal.target) : null;
+    const status = goalStatus(account, goal);
+    const action = lifecycleChoices(account, goal)[0];
+    return (
+      <div className="card pad sv-goal" key={goal.uuid}>
+        <div className="sv-goal-top">
+          <b>{goal.name}</b>
+          <span className="sv-chips">
+            {status && <span className={status === "Funded" ? "chip good" : "chip"}>{status}</span>}
+            <span className="chip">
+              {goal.kind === "finite" ? "Goal with a target" : "Ongoing"}
+            </span>
+          </span>
+        </div>
+        <div className="fig sv-fig">
+          {formatMoney(goal.remaining_saved)}{" "}
+          <small>{goal.target ? `of ${formatMoney(goal.target)}` : "with no target"}</small>
+        </div>
+        <div className="sv-meter">
+          {target ? (
+            <Meter value={saved} max={target} kind="save" />
+          ) : (
+            <Meter value={1} max={1} kind="save" faint />
+          )}
+        </div>
+        <span className="cap">
+          {formatMoney(goal.contribution_progress)} contributed since{" "}
+          {fmtShort(account.opening_date)}.
+        </span>
+        <div className="actions">
+          {account.active && !goal.completed && (
+            <button
+              type="button"
+              className="btn sm"
+              disabled={p.busy}
+              aria-label={`Move money from ${goal.name}`}
+              onClick={() => startMove(goal.uuid) && openDetails("new-move")}
+            >
+              Move
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn sm"
+            aria-label={`Edit ${goal.name}`}
+            onClick={() => openDetails(`g:${goal.uuid}`)}
+          >
+            Edit
+          </button>
+          {action && (
+            <button
+              type="button"
+              className="btn sm quiet"
+              disabled={p.busy}
+              onClick={() => openDetails(`g:${goal.uuid}`, action)}
+            >
+              {action === "complete" ? "Complete goal" : "Return to Unallocated"}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+  function accountSection(account: SavingsAccount) {
+    const goals = account.goals.filter((g) => g.role === "ordinary" && !hiddenGoal(g));
+    const done = account.goals.filter(hiddenGoal);
+    const unallocated = account.goals.find((g) => g.role === "unallocated");
+    return (
+      <section key={account.uuid} aria-label={account.name}>
+        <div className="h2 sv-account-head">
+          <h2>{account.name}</h2>
+          <span>
+            {formatMoney(account.balance)} saved, opened {day(account.opening_date)}
+          </span>
+          {!account.active && <span className="chip">Archived</span>}
+          <div className="sv-actions">
+            {account.active && (
+              <button
+                type="button"
+                className="btn sm"
+                disabled={p.busy}
+                onClick={() => startGoal(account) && openDetails(`new-goal:${account.uuid}`)}
+              >
+                Add goal
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn sm quiet"
+              aria-label={`Edit ${account.name}`}
+              onClick={() => openDetails(`a:${account.uuid}`)}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              className="btn sm quiet"
+              disabled={p.busy}
+              aria-label={`${account.active ? "Archive" : "Reopen"} ${account.name}`}
+              onClick={() =>
+                openDetails(`a:${account.uuid}`, account.active ? "archive" : "reopen")
+              }
+            >
+              {account.active ? "Archive" : "Reopen"}
+            </button>
+          </div>
+        </div>
+        {goals.length > 0 && (
+          <div className="grid2 sv-cards">{goals.map((goal) => goalCard(account, goal))}</div>
+        )}
+        {unallocated && (
+          <div className="card">
+            <div className="row">
+              <span className="t">
+                Unallocated
+                <small>Saved in this account with no goal yet</small>
+              </span>
+              <span className="a">{formatMoney(unallocated.remaining_saved)}</span>
+              {account.active && (
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={p.busy}
+                  onClick={() => startMove(unallocated.uuid) && openDetails("new-move")}
+                >
+                  Move to a goal
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {done.length > 0 && (
+          <p className="note sv-done">
+            Completed: {done.map((g) => g.name).join(", ")}. What was left went back to unallocated
+            money.
+          </p>
+        )}
+      </section>
+    );
+  }
+
+  // ---- Details and forms -------------------------------------------------
   function details() {
     if (!sidebar) return null;
     if (sidebar === "new-account" && pending?.type === "new-account")
-      return <NewAccount titleId={ids.details} draft={pending} onChange={update} />;
+      return <NewAccount draft={pending} onChange={update} />;
+    if (sidebar.startsWith("new-goal:") && pending?.type === "new-goal")
+      return <NewGoal draft={pending} onChange={update} />;
+    if (sidebar === "new-move" && pending?.type === "movement" && !pending.movement)
+      return moveForm(pending);
     const accountRow = accounts.find((a) => `a:${a.uuid}` === sidebar);
     const goalEntry = sidebar.startsWith("g:") ? goalIndex.get(sidebar.slice(2)) : undefined;
     if (accountRow)
       return (
         <AccountDetails
-          titleId={ids.details}
           account={accountRow}
           draft={pendingFor(`a:${accountRow.uuid}`) as (Draft & { type: "account" }) | null}
           onEdit={(patch) => edit(`a:${accountRow.uuid}`, () => accountDraft(accountRow), patch)}
-          onAddGoal={() => addGoal(goalRows.find((r) => r.id === sidebar))}
+          onAddGoal={() => startGoal(accountRow) && openDetails(`new-goal:${accountRow.uuid}`)}
           lifecycleControl={lifecycleControl(accountRow)}
         />
       );
     if (goalEntry)
       return (
         <GoalDetails
-          titleId={ids.details}
           account={goalEntry.account}
           goal={goalEntry.goal}
           draft={pendingFor(`g:${goalEntry.goal.uuid}`) as (Draft & { type: "goal" }) | null}
@@ -783,19 +999,95 @@ export function Savings(p: ScreenProps) {
       );
     return null;
   }
+  function detailsTitle() {
+    if (!sidebar) return "";
+    if (sidebar === "new-account") return "New savings account";
+    if (sidebar === "new-move") return "Move saved money";
+    if (sidebar.startsWith("new-goal:")) {
+      const account = accounts.find((a) => `new-goal:${a.uuid}` === sidebar);
+      return `New goal in ${account?.name ?? "this account"}`;
+    }
+    if (sidebar.startsWith("g:")) return goalIndex.get(sidebar.slice(2))?.goal.name ?? "Goal";
+    return accounts.find((a) => `a:${a.uuid}` === sidebar)?.name ?? "Savings account";
+  }
+  function moveForm(draft: MovementEdit) {
+    const reconcile = draft.action === "reconciliation";
+    const set = (patch: Partial<MovementEdit>) => {
+      const next = { ...draft, ...patch };
+      // Choosing goals picks the matching kind of move; the API still checks both ends.
+      if (!reconcile && ("from" in patch || "to" in patch) && next.from && next.to)
+        next.action = goalAccount(next.from) === goalAccount(next.to) ? "reassignment" : "transfer";
+      update(next);
+    };
+    return (
+      <>
+        <Field label="Kind of record">
+          <select
+            value={draft.action}
+            onChange={(e) => set({ action: e.target.value as MovementEdit["action"] })}
+          >
+            <option value="reassignment">Reassign within account</option>
+            <option value="transfer">Transfer between accounts</option>
+            <option value="reconciliation">Reconcile one goal</option>
+          </select>
+        </Field>
+        {reconcile ? (
+          <Field label="Goal">
+            <select value={draft.goal} onChange={(e) => set({ goal: e.target.value })}>
+              <option value="">Choose goal</option>
+              {goalChoices(draft.goal)}
+            </select>
+          </Field>
+        ) : (
+          <>
+            <Field label="From">
+              <select value={draft.from} onChange={(e) => set({ from: e.target.value })}>
+                <option value="">Choose goal</option>
+                {goalChoices(draft.from)}
+              </select>
+            </Field>
+            <Field label="To">
+              <select value={draft.to} onChange={(e) => set({ to: e.target.value })}>
+                <option value="">Choose goal</option>
+                {goalChoices(draft.to)}
+              </select>
+            </Field>
+          </>
+        )}
+        <div className="two">
+          <Field label={reconcile ? "Known saved amount (USD)" : "Amount (USD)"}>
+            <input
+              inputMode="decimal"
+              placeholder="0.00"
+              value={draft.amount}
+              onChange={(e) => set({ amount: e.target.value })}
+            />
+          </Field>
+          <Field label="Date">
+            <input
+              type="date"
+              required
+              value={draft.date}
+              onChange={(e) => set({ date: e.target.value })}
+            />
+          </Field>
+        </div>
+        <Field
+          label="Note (optional)"
+          hint="Moving saved money is not income, spending or new saving."
+        >
+          <input
+            maxLength={2000}
+            value={draft.note}
+            onChange={(e) => set({ note: e.target.value })}
+          />
+        </Field>
+      </>
+    );
+  }
 
   function lifecycleControl(account: SavingsAccount, goal?: Goal) {
-    const choices: Lifecycle["action"][] = goal
-      ? account.active && goal.completed && hasMoney(goal.remaining_saved)
-        ? ["return"]
-        : account.active &&
-            goal.role === "ordinary" &&
-            goal.kind === "finite" &&
-            goal.active &&
-            !goal.completed
-          ? ["complete"]
-          : []
-      : [account.active ? "archive" : "reopen"];
+    const choices = lifecycleChoices(account, goal);
     if (choices.length === 0) return null;
     const label = {
       complete: `Complete ${goal?.name}`,
@@ -804,9 +1096,9 @@ export function Savings(p: ScreenProps) {
       reopen: `Reopen ${account.name}`,
     };
     const facts = {
-      complete: `Returns ${dollars(goal?.remaining_saved ?? "0.00")} to Unallocated · account total unchanged · no new contributions`,
-      return: `Returns ${dollars(goal?.remaining_saved ?? "0.00")} to Unallocated · goal stays completed`,
-      archive: `Requires $0.00 saved (now ${dollars(account.balance)}) · moves no money · archives its goals`,
+      complete: `Returns ${formatMoney(goal?.remaining_saved ?? "0.00")} to Unallocated · account total unchanged · no new contributions`,
+      return: `Returns ${formatMoney(goal?.remaining_saved ?? "0.00")} to Unallocated · goal stays completed`,
+      archive: `Requires $0.00 saved (now ${formatMoney(account.balance)}) · moves no money · archives its goals`,
       reopen: "Restores goals archived with it · completed and inactive goals keep their status",
     };
     const blocked = !!pending;
@@ -846,34 +1138,33 @@ export function Savings(p: ScreenProps) {
         );
     }
     return (
-      <div className="lifecycle">
+      <div className="sv-lifecycle">
         {choices.map((action) =>
           lifecycle?.action === action ? (
-            <fieldset key={action} className="lifecycle-confirm">
+            <fieldset key={action} className="sv-confirm">
               <legend>{label[action]}</legend>
-              <p>{facts[action]}</p>
+              <p className="note">{facts[action]}</p>
               {(action === "complete" || action === "return") && (
-                <label>
-                  Financial date
+                <Field label="Financial date">
                   <input
                     type="date"
                     required
                     value={lifecycle.date}
                     onChange={(e) => setLifecycle({ ...lifecycle, date: e.target.value })}
                   />
-                </label>
+                </Field>
               )}
-              {blocked && <p className="field-error">Save or discard the unsaved record first.</p>}
-              <div className="button-row">
+              {blocked && <p className="err">Save or discard the unsaved record first.</p>}
+              <div className="sv-buttons">
                 <button
                   type="button"
-                  className="primary"
+                  className="btn pri"
                   disabled={p.busy || blocked || !lifecycle.date}
                   onClick={confirmLifecycle}
                 >
                   Confirm {action}
                 </button>
-                <button type="button" onClick={() => setLifecycle(null)}>
+                <button type="button" className="btn" onClick={() => setLifecycle(null)}>
                   Cancel
                 </button>
               </div>
@@ -882,16 +1173,11 @@ export function Savings(p: ScreenProps) {
             <button
               key={action}
               type="button"
+              className={action === "archive" ? "btn quiet" : "btn"}
               disabled={p.busy}
               onClick={() => {
                 setLifecycle({ action, date: p.entity.today });
-                requestAnimationFrame(() =>
-                  document
-                    .querySelector<HTMLElement>(
-                      ".lifecycle-confirm input, .lifecycle-confirm .primary",
-                    )
-                    ?.focus(),
-                );
+                focusConfirm();
               }}
             >
               {label[action]}…
@@ -903,20 +1189,47 @@ export function Savings(p: ScreenProps) {
   }
 
   if (p.concealed) return null;
-  const pendingLabel = pending
-    ? {
-        goal: () => `goal ${pending.type === "goal" ? pending.goal.name : ""}`,
-        "new-goal": () => "new goal",
-        account: () => `account ${pending.type === "account" ? pending.account.name : ""}`,
-        "new-account": () => "new account",
-        movement: () => "savings record",
-      }[pending.type]()
-    : "";
+  if (!settled.current) return <Skeleton />;
   const dirtyPending = !!pending && changed(pending);
+  const pendingActions = (
+    <>
+      {notice && (
+        <span role="alert" className="err sv-notice">
+          {notice}
+        </span>
+      )}
+      {dirtyPending && (
+        <>
+          <span className="sv-pending">Unsaved {pendingLabel}</span>
+          <span className="spacer" />
+          <button type="button" className="btn" disabled={p.busy} onClick={discard}>
+            Discard
+          </button>
+          <button type="button" className="btn pri" disabled={p.busy} onClick={save}>
+            Save
+          </button>
+        </>
+      )}
+    </>
+  );
+  const active = accounts.filter((a) => a.active);
+  const archived = accounts.filter((a) => !a.active);
+  const loadError = (state: { kind: string; error?: { message: string } }, what: string) =>
+    state.kind !== "loading" && state.kind !== "ready" && state.kind !== "empty" ? (
+      <div className="card pad sv-error" role="alert">
+        <p>
+          Could not load {what}. {state.error?.message}
+        </p>
+        <button type="button" className="btn sm" onClick={() => setReload((n) => n + 1)}>
+          Try loading again
+        </button>
+      </div>
+    ) : null;
+  const movesError = loadError(movesState, "savings records");
   return (
     <section
-      className="data-workspace savings-workspace"
-      aria-labelledby={ids.title}
+      className="screen sv"
+      aria-label="Savings"
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
           e.preventDefault();
@@ -924,81 +1237,113 @@ export function Savings(p: ScreenProps) {
         }
       }}
     >
-      <div className="data-toolbar">
-        <h2 id={ids.title}>Savings</h2>
-        <button type="button" className="primary" disabled={p.busy} onClick={newAccount}>
-          New savings account
-        </button>
-        {hiddenCount > 0 && (
-          <button type="button" onClick={() => setShowArchived((v) => !v)}>
-            {showArchived ? "Hide archived" : `Show archived (${hiddenCount})`}
+      <Head
+        title="Savings"
+        sub={
+          active.length
+            ? "Every saved dollar sits in a goal or in its account's unallocated money."
+            : "Track what you have set aside, and what each dollar is for."
+        }
+      >
+        {accounts.length > 0 && (
+          <button
+            type="button"
+            className="btn"
+            disabled={p.busy}
+            onClick={() => startMove() && openDetails("new-move")}
+          >
+            Move saved money
           </button>
         )}
-        <button type="button" aria-label="Keyboard shortcuts" onClick={() => setHelp(true)}>
+        <button type="button" className="btn pri" disabled={p.busy} onClick={newAccount}>
+          <Icon name="plus" />
+          New account
+        </button>
+        <button
+          type="button"
+          className="btn sv-keys-btn"
+          aria-label="Keyboard shortcuts"
+          onClick={() => setHelp(true)}
+        >
           ?
         </button>
-      </div>
-      <div className={`data-layout ${sidebar ? "with-sidebar" : ""}`}>
-        <div className="savings-tables">
-          {!reloading(accountsState, accounts) && (
-            <LoadMessage state={accountsState} retry={() => setReload((n) => n + 1)} />
-          )}
-          {accountsState.kind === "empty" && <p className="empty">No savings accounts yet.</p>}
-          {goalRows.length > 0 && (
-            <div className="data-table-scroll">
-              {/* biome-ignore lint/a11y/useSemanticElements: Spreadsheet grid with roving cell focus. */}
-              <table
-                role="grid"
-                className="data-grid"
-                aria-label="Savings accounts and goals"
-                aria-describedby={ids.status}
-                onFocus={() => setArea("goals")}
-                onBlur={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget)) setArea("page");
-                }}
-              >
-                <thead>
-                  <tr>
-                    {GOAL_COLUMNS.map((c, i) => (
-                      <th key={c} scope="col" className={i >= 2 && i <= 5 ? "numeric" : ""}>
-                        {c}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>{goalRows.map(goalRowView)}</tbody>
-              </table>
-            </div>
-          )}
-          <div className="table-title">
-            <h3 id={ids.records}>Savings records</h3>
-            {accounts.length > 0 && (
-              <button type="button" disabled={p.busy} onClick={addMove}>
-                Add savings record
-              </button>
-            )}
+      </Head>
+      {loadError(accountsState, "your savings accounts")}
+      {accountsState.kind === "empty" && (
+        <Empty
+          title="No savings accounts yet"
+          action={
+            <button type="button" className="btn pri" disabled={p.busy} onClick={newAccount}>
+              Add a savings account
+            </button>
+          }
+        >
+          Add an account with what it holds today, then split it into goals such as an emergency
+          fund or a trip.
+        </Empty>
+      )}
+      {active.map(accountSection)}
+      {hiddenCount > 0 && (
+        <div>
+          <button
+            type="button"
+            className="sv-disclose"
+            aria-expanded={showArchived}
+            onClick={() => setShowArchived((v) => !v)}
+          >
+            {showArchived ? "Hide archived" : `Show archived (${hiddenCount})`}
+          </button>
+        </div>
+      )}
+      {showArchived && archived.map(accountSection)}
+      {goalRows.length > 0 && (
+        <section aria-label="Table view">
+          <h2 className="h2">
+            Table view{" "}
+            <span>Edit in place: arrow keys or h j k l move, Enter edits, ? lists every key.</span>
+          </h2>
+          <div className="card sv-table">
+            {/* biome-ignore lint/a11y/useSemanticElements: Spreadsheet grid with roving cell focus. */}
+            <table
+              role="grid"
+              className="sv-grid sv-goals"
+              aria-label="Savings accounts and goals"
+              aria-describedby={ids.status}
+            >
+              <thead>
+                <tr>
+                  {GOAL_COLUMNS.map((c, i) => (
+                    <th key={c} scope="col" className={i >= 2 && i <= 5 ? "num" : ""}>
+                      {c}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>{goalRows.map(goalRowView)}</tbody>
+            </table>
           </div>
-          {!reloading(movesState, movements) && (
-            <LoadMessage state={movesState} retry={() => setReload((n) => n + 1)} />
-          )}
+        </section>
+      )}
+      {(accounts.length > 0 || movesError) && (
+        <section aria-label="Moves and corrections">
+          <h2 className="h2">
+            Moves and corrections <span>Not new saving, income or spending</span>
+          </h2>
+          {movesError}
           {accounts.length > 0 && (
-            <div className="data-table-scroll">
+            <div className="card sv-table">
               {/* biome-ignore lint/a11y/useSemanticElements: Spreadsheet grid with roving cell focus. */}
               <table
                 role="grid"
-                className="data-grid"
-                aria-labelledby={ids.records}
+                className="sv-grid sv-moves"
+                aria-label="Savings records"
                 aria-describedby={ids.status}
-                onFocus={() => setArea("moves")}
-                onBlur={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget)) setArea("page");
-                }}
               >
                 <thead>
                   <tr>
                     {MOVE_COLUMNS.map((c, i) => (
-                      <th key={c} scope="col" className={i === 4 ? "numeric" : ""}>
-                        {i === 6 ? <span className="sr-only">{c}</span> : c}
+                      <th key={c} scope="col" className={i === 4 ? "num" : ""}>
+                        {i === 6 ? <span className="sv-sr-only">{c}</span> : c}
                       </th>
                     ))}
                   </tr>
@@ -1008,7 +1353,7 @@ export function Savings(p: ScreenProps) {
                   {moveRows.length === 0 && (
                     <tr>
                       <td colSpan={7} className="muted">
-                        No savings movements yet.
+                        No moves yet. Use Move saved money to reassign or transfer savings.
                       </td>
                     </tr>
                   )}
@@ -1016,73 +1361,53 @@ export function Savings(p: ScreenProps) {
               </table>
             </div>
           )}
-        </div>
-        {sidebar && (
-          <aside
-            className="data-sidebar savings-details"
-            aria-labelledby={ids.details}
-            onFocus={() => setArea("details")}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && !(e.target instanceof HTMLSelectElement)) {
-                e.stopPropagation();
-                closeDetails();
-              }
-            }}
-          >
-            <button
-              type="button"
-              className="close-details"
-              aria-label="Close details"
-              onClick={closeDetails}
-            >
-              ×
-            </button>
-            <fieldset className="details-body" disabled={p.busy}>
-              {details()}
-            </fieldset>
-          </aside>
-        )}
+        </section>
+      )}
+      <div id={ids.status} className="card sv-bar" aria-live="polite">
+        {!sidebar && (notice || dirtyPending) ? pendingActions : null}
       </div>
-      <footer id={ids.status} className="data-status savings-status">
-        <span className="mode">
-          {cell ? "INSERT" : area === "details" ? "DETAILS" : area === "page" ? "READY" : "NORMAL"}
-        </span>
-        {dirtyPending ? (
-          <span className="pending-actions">
-            Unsaved {pendingLabel}
-            <button type="button" className="primary" disabled={p.busy} onClick={save}>
-              Save
-            </button>
-            <button type="button" disabled={p.busy} onClick={discard}>
-              Discard
-            </button>
-          </span>
-        ) : null}
-        {notice && (
-          <span role="alert" className="field-error">
-            {notice}
-          </span>
-        )}
-        <span className="key-hints">
-          <kbd>h j k l</kbd> Move <kbd>i</kbd> Edit <kbd>a</kbd> Add <kbd>Ctrl S</kbd> Save{" "}
-          <kbd>?</kbd> Keys
-        </span>
-      </footer>
-      <dialog ref={dialog} aria-labelledby={ids.keys} onClose={() => setHelp(false)}>
-        <h2 id={ids.keys}>Keyboard shortcuts</h2>
-        <dl className="savings-shortcuts">
+      {sidebar && (
+        <Dialog title={detailsTitle()} onClose={closeDetails} className="sv-dlg">
+          <fieldset className="dlg-b sv-form" disabled={p.busy}>
+            {details()}
+          </fieldset>
+          <div className="dlg-f">
+            {pendingActions}
+            {!dirtyPending && (
+              <button type="button" className="btn" onClick={closeDetails}>
+                Done
+              </button>
+            )}
+          </div>
+        </Dialog>
+      )}
+      <dialog
+        ref={dialog}
+        className="dlg"
+        aria-labelledby={ids.keys}
+        onClose={() => setHelp(false)}
+      >
+        <div className="dlg-h">
+          <h2 id={ids.keys}>Keyboard shortcuts</h2>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Close"
+            onClick={() => setHelp(false)}
+          >
+            <Icon name="x" />
+          </button>
+        </div>
+        <dl className="dlg-b sv-keys">
           {SHORTCUTS.map(([key, label]) => (
             <div key={key}>
               <dt>
-                <kbd>{key}</kbd>
+                <kbd className="kbd">{key}</kbd>
               </dt>
               <dd>{label}</dd>
             </div>
           ))}
         </dl>
-        <button type="button" onClick={() => setHelp(false)}>
-          Close
-        </button>
       </dialog>
     </section>
   );
@@ -1093,11 +1418,11 @@ function DetailsButton({ name, onClick }: { name: string; onClick: () => void })
     <button
       type="button"
       tabIndex={-1}
-      className="details-button"
+      className="icon-btn sv-details-btn"
       aria-label={`Details for ${name}`}
       onClick={onClick}
     >
-      ›
+      <Icon name="right" />
     </button>
   );
 }
@@ -1112,14 +1437,12 @@ function Fact({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function AccountDetails({
-  titleId,
   account,
   draft,
   onEdit,
   onAddGoal,
   lifecycleControl,
 }: {
-  titleId: string;
   account: SavingsAccount;
   draft: (Draft & { type: "account" }) | null;
   onEdit: (patch: (d: Draft) => Draft) => void;
@@ -1133,45 +1456,40 @@ function AccountDetails({
     onEdit((current) => ({ ...current, ...patch }) as Draft);
   return (
     <>
-      <h3 id={titleId} tabIndex={-1}>
-        {account.name}
-      </h3>
-      <dl className="facts">
-        <Fact label="Remaining saved" value={dollars(account.balance)} />
+      <dl className="sv-facts">
+        <Fact label="Remaining saved" value={formatMoney(account.balance)} />
         <Fact label="Status" value={account.active ? "Active" : "Archived"} />
       </dl>
       {account.active && (
         <fieldset>
           <legend>Opening setup</legend>
-          <label>
-            Name
+          <Field label="Account name">
             <input
               required
               maxLength={120}
               value={d.name}
               onChange={(e) => set({ name: e.target.value })}
             />
-          </label>
-          <label>
-            Opening date
-            <input
-              type="date"
-              required
-              value={d.date}
-              onChange={(e) => set({ date: e.target.value })}
-            />
-          </label>
-          <label>
-            Opening amount
-            <input
-              inputMode="decimal"
-              value={d.amount}
-              onChange={(e) => set({ amount: e.target.value })}
-            />
-          </label>
+          </Field>
+          <div className="two">
+            <Field label="Opening amount (USD)">
+              <input
+                inputMode="decimal"
+                value={d.amount}
+                onChange={(e) => set({ amount: e.target.value })}
+              />
+            </Field>
+            <Field label="Opening date">
+              <input
+                type="date"
+                required
+                value={d.date}
+                onChange={(e) => set({ date: e.target.value })}
+              />
+            </Field>
+          </div>
           {ordinary.map((goal) => (
-            <label key={goal.uuid}>
-              {goal.name} opening
+            <Field key={goal.uuid} label={`${goal.name} opening`}>
               <input
                 inputMode="decimal"
                 value={d.designations[goal.uuid] ?? ""}
@@ -1186,13 +1504,14 @@ function AccountDetails({
                   )
                 }
               />
-            </label>
+            </Field>
           ))}
           <Remainder value={remainder} />
         </fieldset>
       )}
       {account.active && (
-        <button type="button" onClick={onAddGoal}>
+        <button type="button" className="btn sv-start" onClick={onAddGoal}>
+          <Icon name="plus" />
           Add goal
         </button>
       )}
@@ -1203,21 +1522,50 @@ function AccountDetails({
 
 function Remainder({ value }: { value: number | null }) {
   return (
-    <output className={value !== null && value < 0 ? "remainder negative" : "remainder"}>
-      Unallocated opening {value === null ? "—" : dollars(formatCents(value))}
+    <output className={value !== null && value < 0 ? "sv-remainder bad" : "sv-remainder"}>
+      Unallocated opening {value === null ? "—" : money(value)}
     </output>
   );
 }
 
+function KindAndTarget({
+  kind,
+  target,
+  onKind,
+  onTarget,
+}: {
+  kind: Goal["kind"];
+  target: string;
+  onKind: (kind: Goal["kind"]) => void;
+  onTarget: (target: string) => void;
+}) {
+  return (
+    <div className="two">
+      <Field label="Goal type">
+        <select value={kind} onChange={(e) => onKind(e.target.value as Goal["kind"])}>
+          <option value="finite">Finite, with a target</option>
+          <option value="ongoing">Ongoing</option>
+        </select>
+      </Field>
+      <Field label={kind === "finite" ? "Target (required)" : "Target (optional)"}>
+        <input
+          inputMode="decimal"
+          placeholder="0.00"
+          value={target}
+          onChange={(e) => onTarget(e.target.value)}
+        />
+      </Field>
+    </div>
+  );
+}
+
 function GoalDetails({
-  titleId,
   account,
   goal,
   draft,
   onEdit,
   lifecycleControl,
 }: {
-  titleId: string;
   account: SavingsAccount;
   goal: Goal;
   draft: (Draft & { type: "goal" }) | null;
@@ -1230,50 +1578,34 @@ function GoalDetails({
     onEdit((current) => ({ ...current, ...patch }) as Draft);
   return (
     <>
-      <h3 id={titleId} tabIndex={-1}>
-        {goal.name}
-      </h3>
-      <dl className="facts">
+      <dl className="sv-facts">
         <Fact label="Account" value={account.name} />
         <Fact label="Type" value={goal.role === "unallocated" ? "Unallocated" : KIND[goal.kind]} />
-        <Fact label="Target" value={goal.target ? dollars(goal.target) : "—"} />
-        <Fact label="Opening" value={dollars(goal.opening_amount)} />
-        <Fact label="Remaining saved" value={dollars(goal.remaining_saved)} />
-        <Fact label="Contributions" value={dollars(goal.contribution_progress)} />
+        <Fact label="Target" value={goal.target ? formatMoney(goal.target) : "—"} />
+        <Fact label="Opening" value={formatMoney(goal.opening_amount)} />
+        <Fact label="Remaining saved" value={formatMoney(goal.remaining_saved)} />
+        <Fact label="Contributions" value={formatMoney(goal.contribution_progress)} />
         <Fact label="Status" value={goalStatus(account, goal) || "Active"} />
       </dl>
-      {goal.role === "unallocated" && <p className="muted">Protected goal.</p>}
+      {goal.role === "unallocated" && <p className="note">Protected goal.</p>}
       {editable && (
         <fieldset>
           <legend>Goal</legend>
-          <label>
-            Name
+          <Field label="Goal name">
             <input
               required
               maxLength={120}
               value={d.name}
               onChange={(e) => set({ name: e.target.value })}
             />
-          </label>
-          <label>
-            Goal type
-            <select
-              value={d.goalKind}
-              onChange={(e) => set({ goalKind: e.target.value as Goal["kind"] })}
-            >
-              <option value="finite">Finite</option>
-              <option value="ongoing">Ongoing</option>
-            </select>
-          </label>
-          <label>
-            {d.goalKind === "finite" ? "Target (required)" : "Target (optional)"}
-            <input
-              inputMode="decimal"
-              value={d.target}
-              onChange={(e) => set({ target: e.target.value })}
-            />
-          </label>
-          <label className="check">
+          </Field>
+          <KindAndTarget
+            kind={d.goalKind}
+            target={d.target}
+            onKind={(goalKind) => set({ goalKind })}
+            onTarget={(target) => set({ target })}
+          />
+          <label className="sv-check">
             <input
               type="checkbox"
               checked={d.active}
@@ -1288,12 +1620,36 @@ function GoalDetails({
   );
 }
 
+function NewGoal({ draft, onChange }: { draft: NewGoalEdit; onChange: (draft: Draft) => void }) {
+  const set = (patch: Partial<NewGoalEdit>) => onChange({ ...draft, ...patch });
+  return (
+    <>
+      <Field label="Goal name">
+        <input
+          required
+          maxLength={120}
+          placeholder="New laptop"
+          value={draft.name}
+          onChange={(e) => set({ name: e.target.value })}
+        />
+      </Field>
+      <KindAndTarget
+        kind={draft.goalKind}
+        target={draft.target}
+        onKind={(goalKind) => set({ goalKind })}
+        onTarget={(target) => set({ target })}
+      />
+      <p className="note">
+        A new goal starts at $0.00. Move money into it from Unallocated once it is saved.
+      </p>
+    </>
+  );
+}
+
 function NewAccount({
-  titleId,
   draft,
   onChange,
 }: {
-  titleId: string;
   draft: Draft & { type: "new-account" };
   onChange: (draft: Draft) => void;
 }) {
@@ -1306,75 +1662,62 @@ function NewAccount({
   );
   return (
     <>
-      <h3 id={titleId} tabIndex={-1}>
-        New savings account
-      </h3>
-      <label>
-        Name
+      <Field label="Account name">
         <input
           required
           maxLength={120}
+          placeholder="Rainy day savings"
           value={draft.name}
           onChange={(e) => set({ name: e.target.value })}
         />
-      </label>
-      <label>
-        Opening date
-        <input
-          type="date"
-          required
-          value={draft.date}
-          onChange={(e) => set({ date: e.target.value })}
-        />
-      </label>
-      <label>
-        Opening amount
-        <input
-          inputMode="decimal"
-          value={draft.amount}
-          onChange={(e) => set({ amount: e.target.value })}
-        />
-      </label>
+      </Field>
+      <div className="two">
+        <Field label="Holds today (USD)">
+          <input
+            inputMode="decimal"
+            value={draft.amount}
+            onChange={(e) => set({ amount: e.target.value })}
+          />
+        </Field>
+        <Field label="As of">
+          <input
+            type="date"
+            required
+            value={draft.date}
+            onChange={(e) => set({ date: e.target.value })}
+          />
+        </Field>
+      </div>
+      <p className="note">
+        An opening amount is not new saving. What no goal holds starts as unallocated money.
+      </p>
       {draft.goals.map((goal, index) => (
         <fieldset key={goal.key}>
           <legend>Opening goal {index + 1}</legend>
-          <label>
-            Goal name
+          <Field label="Goal name">
             <input
               required
               maxLength={120}
               value={goal.name}
               onChange={(e) => setGoal(index, { name: e.target.value })}
             />
-          </label>
-          <label>
-            Goal type
-            <select
-              value={goal.goalKind}
-              onChange={(e) => setGoal(index, { goalKind: e.target.value as Goal["kind"] })}
-            >
-              <option value="finite">Finite</option>
-              <option value="ongoing">Ongoing</option>
-            </select>
-          </label>
-          <label>
-            {goal.goalKind === "finite" ? "Target (required)" : "Target (optional)"}
-            <input
-              inputMode="decimal"
-              value={goal.target}
-              onChange={(e) => setGoal(index, { target: e.target.value })}
-            />
-          </label>
-          <label>
-            Opening designation
+          </Field>
+          <KindAndTarget
+            kind={goal.goalKind}
+            target={goal.target}
+            onKind={(goalKind) => setGoal(index, { goalKind })}
+            onTarget={(target) => setGoal(index, { target })}
+          />
+          <Field label="Opening designation">
             <input
               inputMode="decimal"
               value={goal.amount}
               onChange={(e) => setGoal(index, { amount: e.target.value })}
             />
-          </label>
+          </Field>
           <button
             type="button"
+            className="btn sm quiet danger sv-start"
             onClick={() => set({ goals: draft.goals.filter((_, i) => i !== index) })}
           >
             Remove goal
@@ -1383,6 +1726,7 @@ function NewAccount({
       ))}
       <button
         type="button"
+        className="btn sv-start"
         onClick={() =>
           set({
             goals: [
@@ -1398,6 +1742,7 @@ function NewAccount({
           })
         }
       >
+        <Icon name="plus" />
         Add opening goal
       </button>
       <Remainder value={remainder} />

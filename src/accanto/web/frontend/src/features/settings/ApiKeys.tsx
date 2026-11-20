@@ -1,22 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { type BrowserSession, fetchJson, loadResource } from "../../lib/api";
-import { LoadMessage, useLoad } from "../workspace/shared";
-import { Help } from "./Help";
+import { fmtDate } from "../../lib/format";
+import { parseTimestamp } from "../../lib/timestamp";
+import { useLoad } from "../workspace/shared";
+
 interface KeyMetadata {
   id: string;
   name: string;
   created_at: string;
   revoked_at: string | null;
 }
-const formatDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
-function Timestamp({ value }: { value: string }) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? (
+/** An API timestamp as the calendar day it falls on for the person reading it. */
+function Day({ value }: { value: string }) {
+  const ms = parseTimestamp(value);
+  return ms === null ? (
     <>{value}</>
   ) : (
-    <time dateTime={value} title={date.toLocaleString()}>
-      {formatDate.format(date)}
-    </time>
+    <time dateTime={value}>{fmtDate(new Date(ms).toLocaleDateString("en-CA"))}</time>
   );
 }
 export function ApiKeys({
@@ -25,7 +25,7 @@ export function ApiKeys({
 }: { credentials: (signIn?: boolean) => Promise<BrowserSession>; disabled: boolean }) {
   const [attempt, setAttempt] = useState(0);
   const [name, setName] = useState("");
-  const [secret, setSecret] = useState<string | null>(null);
+  const [secret, setSecret] = useState<{ name: string; value: string } | null>(null);
   const [shown, setShown] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,10 +64,10 @@ export function ApiKeys({
         ...(id ? {} : { body: JSON.stringify({ name }) }),
       });
       if (!live.current) return;
-      setSecret(result.key || null);
+      setSecret(result.key ? { name: name.trim(), value: result.key } : null);
       setName("");
       setAttempt((x) => x + 1);
-      setMessage(id ? "API key revoked." : "Copy this key now. It cannot be shown again.");
+      setMessage(id ? "API key revoked." : "");
     } catch {
       if (!live.current) return;
       setMessage(
@@ -84,189 +84,215 @@ export function ApiKeys({
   async function copy() {
     if (!secret) return;
     try {
-      await navigator.clipboard.writeText(secret);
+      await navigator.clipboard.writeText(secret.value);
       if (live.current) setMessage("Key copied. It cannot be shown again after you dismiss it.");
     } catch {
       if (live.current) setMessage("Could not copy. Show the key and copy it manually.");
     }
   }
   return (
-    <section className="settings-section api-keys" aria-labelledby="api-keys-heading">
-      <div className="api-keys-heading">
-        <h3 id="api-keys-heading">API keys</h3>
-        <Help label="About API keys">
-          Keys give scripts access to your current Entities. Keep them private. Each secret is shown
-          only once.
-        </Help>
-        <div className="api-keys-tools">
-          <button
-            type="button"
-            className="text-button"
-            disabled={locked}
-            onClick={() => {
-              clearSecret();
-              setAttempt((x) => x + 1);
-            }}
-          >
-            Reload key list
+    <section aria-labelledby="api-keys-heading">
+      <h2 className="h2" id="api-keys-heading">
+        API keys <span>For your own scripts. A key is shown once, when you create it.</span>
+      </h2>
+      {"error" in state && (
+        <div className="banner bad" role="alert">
+          <span>Could not load API keys. {state.error.message}</span>
+          <button type="button" className="btn sm" onClick={() => setAttempt((x) => x + 1)}>
+            Try loading again
           </button>
-          <button
-            type="button"
-            className="text-button"
-            disabled={locked}
-            onClick={async () => {
-              clearSecret();
-              setBusy(true);
-              try {
-                await credentials(true);
-                if (live.current) {
-                  setAttempt((x) => x + 1);
-                  setMessage("Sign-in verified. Review the list before choosing another action.");
-                }
-              } catch {
-                if (live.current) setMessage("Sign-in was not completed for this account.");
-              } finally {
-                if (live.current) setBusy(false);
-              }
-            }}
-          >
-            Sign in again for key access
-          </button>
-        </div>
-      </div>
-      <LoadMessage state={state} retry={() => setAttempt((x) => x + 1)} />
-      {message && <output className="api-keys-message">{message}</output>}
-      {secret && (
-        <div className="api-key-secret">
-          <label htmlFor="new-key-value">New API key (shown once)</label>
-          <input
-            id="new-key-value"
-            type={shown ? "text" : "password"}
-            readOnly
-            value={secret}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <div className="api-key-secret-actions">
-            <button type="button" className="primary" onClick={() => void copy()}>
-              Copy key
-            </button>
-            <button type="button" aria-pressed={shown} onClick={() => setShown((x) => !x)}>
-              {shown ? "Hide key" : "Show key"}
-            </button>
-            <button type="button" onClick={clearSecret}>
-              Dismiss secret
-            </button>
-          </div>
         </div>
       )}
-      <form
-        className="api-key-create"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void change();
-        }}
-      >
-        <fieldset disabled={locked}>
-          <legend className="sr-only">Create a key</legend>
-          <label htmlFor="api-key-name">Key name</label>
-          <input
-            id="api-key-name"
-            required
-            maxLength={120}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            autoComplete="off"
-          />
-          <button type="submit">Create API key</button>
-        </fieldset>
-      </form>
-      {state.kind === "ready" &&
-        (state.data.length ? (
-          <div className="data-table-scroll">
-            <table className="data-grid api-key-table">
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Created</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {state.data.map((key) => (
-                  <tr
-                    key={key.id}
-                    className={key.revoked_at ? "muted" : undefined}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape" && confirming === key.id) {
-                        event.preventDefault();
-                        cancelRevoke(key.id);
-                      }
-                    }}
-                  >
-                    <th scope="row">{key.name}</th>
-                    <td>
-                      <Timestamp value={key.created_at} />
-                    </td>
-                    <td>
-                      {key.revoked_at ? (
-                        <>
-                          Revoked <Timestamp value={key.revoked_at} />
-                        </>
-                      ) : (
-                        <span className="badge">Active</span>
-                      )}
-                    </td>
-                    <td className="action-cell">
-                      {!key.revoked_at &&
-                        (confirming === key.id ? (
-                          <span className="api-key-confirm">
-                            <span className="danger">Revoke {key.name}?</span>
-                            <button
-                              type="button"
-                              className="danger-button"
-                              disabled={locked}
-                              onClick={() => void change(key.id)}
-                            >
-                              Revoke key
-                            </button>
-                            <button
-                              type="button"
-                              // biome-ignore lint/a11y/noAutofocus: Focus moves only after the user chose Revoke; Cancel is the safe default.
-                              autoFocus
-                              disabled={locked}
-                              onClick={() => cancelRevoke(key.id)}
-                            >
-                              Cancel
-                            </button>
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="text-button"
-                            ref={(node) => {
-                              if (node) revokeButtons.current.set(key.id, node);
-                              else revokeButtons.current.delete(key.id);
-                            }}
-                            aria-label={`Revoke ${key.name}`}
-                            disabled={locked}
-                            onClick={() => setConfirming(key.id)}
-                          >
-                            Revoke
-                          </button>
-                        ))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div className="card">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void change();
+          }}
+        >
+          <fieldset className="setting set-fieldset" disabled={locked}>
+            <div>
+              <label htmlFor="api-key-name">New key name</label>
+              <small>Name it after what will use it, so you know which one to revoke later.</small>
+            </div>
+            <div className="set-actions">
+              <input
+                id="api-key-name"
+                className="input set-key-name"
+                required
+                maxLength={120}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                autoComplete="off"
+                placeholder="Budget script"
+              />
+              <button type="submit" className="btn">
+                Create key
+              </button>
+            </div>
+          </fieldset>
+        </form>
+        {message && (
+          <div className="setting">
+            <output>{message}</output>
           </div>
-        ) : (
-          <p className="muted">No API keys have been issued.</p>
-        ))}
+        )}
+        {secret && (
+          <div className="setting set-secret">
+            <div>
+              Copy the key for “{secret.name}” now
+              <small>It will not be shown again.</small>
+            </div>
+            <div className="set-secret-body">
+              <label className="sr-only" htmlFor="new-key-value">
+                New API key (shown once)
+              </label>
+              <input
+                id="new-key-value"
+                className="input keyval"
+                type={shown ? "text" : "password"}
+                readOnly
+                value={secret.value}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <div className="set-actions">
+                <button type="button" className="btn sm pri" onClick={() => void copy()}>
+                  Copy key
+                </button>
+                <button
+                  type="button"
+                  className="btn sm"
+                  aria-pressed={shown}
+                  onClick={() => setShown((x) => !x)}
+                >
+                  {shown ? "Hide key" : "Show key"}
+                </button>
+                <button type="button" className="btn sm quiet" onClick={clearSecret}>
+                  Dismiss secret
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {state.kind === "loading" && (
+          <output className="setting" aria-label="Loading API keys">
+            <span className="sk set-sk" />
+          </output>
+        )}
+        {state.kind === "ready" &&
+          state.data.map((key) => (
+            <div
+              className="setting"
+              key={key.id}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && confirming === key.id) {
+                  event.preventDefault();
+                  cancelRevoke(key.id);
+                }
+              }}
+            >
+              <div>
+                {key.name}
+                <small>
+                  Created <Day value={key.created_at} />
+                  {key.revoked_at && (
+                    <>
+                      , revoked <Day value={key.revoked_at} />
+                    </>
+                  )}
+                </small>
+              </div>
+              {key.revoked_at ? (
+                <span className="chip">Revoked</span>
+              ) : confirming === key.id ? (
+                <span className="set-actions">
+                  <span className="bad">Revoke {key.name}?</span>
+                  <button
+                    type="button"
+                    className="btn sm danger"
+                    disabled={locked}
+                    onClick={() => void change(key.id)}
+                  >
+                    Revoke key
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm"
+                    // biome-ignore lint/a11y/noAutofocus: Focus moves only after the user chose Revoke; Cancel is the safe default.
+                    autoFocus
+                    disabled={locked}
+                    onClick={() => cancelRevoke(key.id)}
+                  >
+                    Cancel
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="btn sm quiet danger"
+                  ref={(node) => {
+                    if (node) revokeButtons.current.set(key.id, node);
+                    else revokeButtons.current.delete(key.id);
+                  }}
+                  aria-label={`Revoke ${key.name}`}
+                  disabled={locked}
+                  onClick={() => setConfirming(key.id)}
+                >
+                  Revoke
+                </button>
+              )}
+            </div>
+          ))}
+        {state.kind === "ready" && state.data.length === 0 && !secret && (
+          <div className="setting">
+            <span className="muted">No keys yet.</span>
+          </div>
+        )}
+        <div className="setting">
+          <div>
+            <small>
+              Missing a key you just made, or key actions failing? Reload the list, or sign in
+              again.
+            </small>
+          </div>
+          <div className="set-actions">
+            <button
+              type="button"
+              className="btn sm quiet"
+              disabled={locked}
+              onClick={() => {
+                clearSecret();
+                setAttempt((x) => x + 1);
+              }}
+            >
+              Reload key list
+            </button>
+            <button
+              type="button"
+              className="btn sm quiet"
+              disabled={locked}
+              onClick={async () => {
+                clearSecret();
+                setBusy(true);
+                try {
+                  await credentials(true);
+                  if (live.current) {
+                    setAttempt((x) => x + 1);
+                    setMessage("Sign-in verified. Review the list before choosing another action.");
+                  }
+                } catch {
+                  if (live.current) setMessage("Sign-in was not completed for this account.");
+                } finally {
+                  if (live.current) setBusy(false);
+                }
+              }}
+            >
+              Sign in again for key access
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }

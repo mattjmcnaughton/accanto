@@ -1,9 +1,12 @@
-import { type FocusEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import type { LoadState } from "../../lib/api";
+import type { Observation } from "../../lib/balances";
+import { decimalToCents, fmtDate, formatMoney } from "../../lib/format";
 import { SIGNED_USD_AMOUNT, USD_AMOUNT } from "../../lib/money";
 import type { WriteSpec } from "../../lib/monthly";
-import { useGridKeys } from "../workspace/useGridKeys";
+import { Dialog, Field, Meter } from "../../ui";
 import type { ScreenProps } from "../workspace/shared";
-import "../workspace/worksheet-ui.css";
+import { useGridKeys } from "../workspace/useGridKeys";
 import "./records.css";
 
 /** Feature-local pieces shared by the Investments/Giving and Loans screens. */
@@ -11,7 +14,19 @@ import "./records.css";
 export const dash = <span className="muted">—</span>;
 export const validMoney = (value: string, signed = false) =>
   (signed ? SIGNED_USD_AMOUNT : USD_AMOUNT).test(value.trim());
-export const amountClass = (value: string) => `numeric${value.startsWith("-") ? " negative" : ""}`;
+
+export const Day = ({ iso }: { iso: string }) => <time dateTime={iso}>{fmtDate(iso)}</time>;
+
+/** Dated observations of one account as chart points, oldest first. */
+export function trendPoints(rows: Observation[], account: string) {
+  return rows
+    .filter((row) => row.account_id === account && !row.deleted)
+    .flatMap((row) => {
+      const value = decimalToCents(row.amount);
+      return value === null ? [] : [{ date: row.financial_date, value }];
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
 
 /** The last focused grid cell, restored after a save reloads (and briefly unmounts) the grids. */
 let lastCell: { label: string; row: number; col: number } | null = null;
@@ -25,7 +40,15 @@ function armFocusRestore() {
     document.addEventListener(type, stop, { capture: true, once: true });
 }
 
-export type Column<T> = { header: string; numeric?: boolean; cell: (row: T) => ReactNode };
+/** `wide` columns are dropped on a phone so the date, name and amount stay on screen. */
+export type Column<T> = {
+  header: string;
+  numeric?: boolean;
+  wide?: boolean;
+  cell: (row: T) => ReactNode;
+};
+const cellClass = (column: { numeric?: boolean; wide?: boolean }) =>
+  [column.numeric && "num", column.wide && "wide"].filter(Boolean).join(" ") || undefined;
 
 export function RecordGrid<T>({
   label,
@@ -75,23 +98,19 @@ export function RecordGrid<T>({
     );
   });
   return (
-    <div className="data-table-scroll">
+    <div className="rec-scroll">
       <table
         ref={table}
         // biome-ignore lint/a11y/useSemanticElements: Interactive record grid with roving cell focus.
         role="grid"
-        className="data-grid"
+        className="rec-grid"
         aria-label={label}
         aria-describedby="records-status"
       >
         <thead>
           <tr>
             {columns.map((column, col) => (
-              <th
-                key={column.header || col}
-                scope="col"
-                className={column.numeric ? "numeric" : ""}
-              >
+              <th key={column.header || col} scope="col" className={cellClass(column)}>
                 {column.header}
               </th>
             ))}
@@ -137,7 +156,7 @@ export function RecordGrid<T>({
                       data-cell={`${index}-${col}`}
                       tabIndex={selected ? 0 : -1}
                       aria-selected={selected}
-                      className={column.numeric ? "numeric" : undefined}
+                      className={cellClass(column)}
                       onClick={() => setPosition({ row: index, col })}
                       onFocus={() => {
                         lastCell = { label, row: index, col };
@@ -158,7 +177,7 @@ export function RecordGrid<T>({
                       }
                     >
                       {column.cell(row)}
-                      {col === 0 && marked === id && <span className="badge unsaved">Unsaved</span>}
+                      {col === 0 && marked === id && <span className="chip warn">Unsaved</span>}
                     </td>
                   );
                 })}
@@ -171,48 +190,15 @@ export function RecordGrid<T>({
   );
 }
 
-/** Native modal dialog; returns focus to where it opened. */
-export function Modal({
-  title,
-  open,
-  close,
-  children,
-}: {
-  title: string;
-  open: boolean;
-  close: () => void;
-  children: ReactNode;
-}) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
-  const prior = useRef<HTMLElement | null>(null);
+/** Focus `ref` once its dialog is open: showModal moves focus itself on the next frame. */
+function useFocusWhenOpen<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
   useEffect(() => {
-    const element = dialog.current;
-    if (!element) return;
-    if (open && !element.open) {
-      prior.current = document.activeElement as HTMLElement | null;
-      if (typeof element.showModal === "function") element.showModal();
-      else element.setAttribute("open", "");
-      element.querySelector<HTMLElement>("[data-autofocus]")?.focus();
-    } else if (!open && element.open) {
-      if (typeof element.close === "function") element.close();
-      else element.removeAttribute("open");
-      prior.current?.focus();
-    }
-  }, [open]);
-  return (
-    <dialog
-      ref={dialog}
-      aria-labelledby={titleId}
-      onCancel={(event) => {
-        event.preventDefault();
-        close();
-      }}
-    >
-      <h2 id={titleId}>{title}</h2>
-      {children}
-    </dialog>
-  );
+    ref.current?.focus();
+    const frame = requestAnimationFrame(() => ref.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  return ref;
 }
 
 export type Confirmation = { title: string; message: string; action: string; run: () => void };
@@ -223,80 +209,231 @@ export function ConfirmDialog({
   confirmation: Confirmation | null;
   close: () => void;
 }) {
+  return confirmation && <Confirm confirmation={confirmation} close={close} />;
+}
+function Confirm({ confirmation, close }: { confirmation: Confirmation; close: () => void }) {
+  // Cancel is the safe default in a destructive confirmation.
+  const cancel = useFocusWhenOpen<HTMLButtonElement>();
   return (
-    <Modal title={confirmation?.title ?? ""} open={!!confirmation} close={close}>
-      <p>{confirmation?.message}</p>
-      <div className="record-actions">
-        <button
-          type="button"
-          className="danger"
-          onClick={() => {
-            close();
-            confirmation?.run();
-          }}
-        >
-          {confirmation?.action}
-        </button>
-        {/* Cancel is the safe default in a destructive confirmation. */}
-        <button type="button" data-autofocus onClick={close}>
+    <Dialog title={confirmation.title} onClose={close}>
+      <div className="dlg-b">
+        <p>{confirmation.message}</p>
+      </div>
+      <div className="dlg-f">
+        <button type="button" className="btn" ref={cancel} onClick={close}>
           Cancel
         </button>
+        <button
+          type="button"
+          className="btn danger"
+          onClick={() => {
+            close();
+            confirmation.run();
+          }}
+        >
+          {confirmation.action}
+        </button>
       </div>
-    </Modal>
+    </Dialog>
   );
 }
 
+const SHORTCUTS = [
+  ["h j k l / arrows", "Move between cells"],
+  ["0 / $ · Home / End", "First / last cell in row"],
+  ["gg / G", "First / last row"],
+  ["i / Enter", "Open the selected record"],
+  ["a / A", "Add a record to this table"],
+  ["dd", "Delete the selected entry or observation, with confirmation"],
+  ["Enter / Escape in details", "Keep a valid edit and return to the table"],
+  ["Ctrl / ⌘ + S", "Save the record being edited"],
+  ["Tab / Shift+Tab", "Leave the table or move through form fields"],
+  ["?", "Open this reference"],
+];
 export function Shortcuts({ open, close }: { open: boolean; close: () => void }) {
   return (
-    <Modal title="Keyboard shortcuts" open={open} close={close}>
-      <p>Vim-style keys apply while a table has focus. Each record saves on its own.</p>
-      <dl className="shortcut-list">
-        {[
-          ["h j k l / arrows", "Move between cells"],
-          ["0 / $ · Home / End", "First / last cell in row"],
-          ["gg / G", "First / last row"],
-          ["i / Enter", "Open the selected record"],
-          ["a / A", "Add a record to this table"],
-          ["dd", "Delete the selected entry or observation, with confirmation"],
-          ["Enter / Escape in details", "Keep a valid edit and return to the table"],
-          ["Ctrl / ⌘ + S", "Save the record being edited"],
-          ["Tab / Shift+Tab", "Leave the table or move through form fields"],
-          ["?", "Open this reference"],
-        ].map(([key, label]) => (
-          <div key={key}>
-            <dt>
-              <kbd>{key}</kbd>
-            </dt>
-            <dd>{label}</dd>
-          </div>
-        ))}
-      </dl>
-      <button type="button" onClick={close}>
-        Close
-      </button>
-    </Modal>
+    open && (
+      <Dialog title="Keyboard shortcuts" onClose={close}>
+        <div className="dlg-b">
+          <p className="note">
+            Vim-style keys apply while a table has focus. Each record saves on its own.
+          </p>
+          <dl className="rec-keylist">
+            {SHORTCUTS.map(([key, label]) => (
+              <div key={key}>
+                <dt>
+                  <kbd className="kbd">{key}</kbd>
+                </dt>
+                <dd>{label}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </Dialog>
+    )
   );
 }
 
-export function StatusBar({ mode, help }: { mode: string; help: () => void }) {
+export function KeyHint({ help }: { help: () => void }) {
   return (
-    <footer id="records-status" className="data-status">
-      <span className="mode">{mode}</span>
+    <p id="records-status" className="note rec-keys">
       <span>
-        <kbd>h j k l</kbd> Move <kbd>i</kbd> Open <kbd>a</kbd> Add <kbd>dd</kbd> Delete{" "}
-        <kbd>Ctrl S</kbd> Save <kbd>Esc</kbd> Back
+        In tables: <kbd className="kbd">h j k l</kbd> move <kbd className="kbd">i</kbd> open{" "}
+        <kbd className="kbd">a</kbd> add <kbd className="kbd">dd</kbd> delete{" "}
+        <kbd className="kbd">Ctrl S</kbd> save <kbd className="kbd">Esc</kbd> back
       </span>
-      <button type="button" className="link" onClick={help}>
+      <button type="button" className="btn sm quiet" onClick={help}>
         Keyboard shortcuts ?
       </button>
-    </footer>
+    </p>
   );
 }
 
-export const modeFor = (event: FocusEvent) => {
-  const target = event.target as HTMLElement;
-  return target.closest("[role=grid]") ? "NORMAL" : target.closest("aside") ? "DETAILS" : "READY";
-};
+export function Notice({ text, dismiss }: { text: string; dismiss: () => void }) {
+  return (
+    text && (
+      <output className="rec-notice">
+        <span>{text}</span>
+        <button
+          type="button"
+          className="btn sm quiet"
+          aria-label="Dismiss message"
+          onClick={dismiss}
+        >
+          ×
+        </button>
+      </output>
+    )
+  );
+}
+
+/** A closed edit that still holds unsaved values. */
+export function PendingEdit({
+  show,
+  busy,
+  review,
+  save,
+  discard,
+}: {
+  show: boolean;
+  busy: boolean;
+  review: () => void;
+  save: () => void;
+  discard: () => void;
+}) {
+  return (
+    show && (
+      <output className="rec-pending card">
+        <span className="chip warn">Unsaved edit</span>
+        <span className="spacer" />
+        <button type="button" className="btn sm" onClick={review}>
+          Review
+        </button>
+        <button type="button" className="btn sm pri" disabled={busy} onClick={save}>
+          Save
+        </button>
+        <button type="button" className="btn sm" disabled={busy} onClick={discard}>
+          Discard
+        </button>
+      </output>
+    )
+  );
+}
+
+export function Loading({ what }: { what: string }) {
+  return (
+    <div className="card pad rec-loading" aria-busy="true" aria-label={`Loading ${what}`}>
+      <div className="sk" />
+      <div className="sk" />
+    </div>
+  );
+}
+
+export function LoadFailure({ state, retry }: { state: LoadState<unknown>; retry: () => void }) {
+  if (state.kind === "loading" || state.kind === "ready" || state.kind === "empty") return null;
+  return (
+    <div role="alert" className="card pad rec-alert">
+      <p>Could not load this workspace. {state.error.message}</p>
+      <button type="button" className="btn sm" onClick={retry}>
+        Try loading again
+      </button>
+    </div>
+  );
+}
+
+export function MoneyField({
+  label,
+  value,
+  onChange,
+  signed = false,
+  required = true,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  signed?: boolean;
+  required?: boolean;
+}) {
+  return (
+    <Field label={label}>
+      <input
+        required={required}
+        inputMode="decimal"
+        placeholder="0.00"
+        pattern={signed ? "-?[0-9]{1,9}([.][0-9]{1,2})?" : "[0-9]{1,9}([.][0-9]{1,2})?"}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </Field>
+  );
+}
+
+/** A destination or loan at a glance: the card body is the caller's, actions sit at the foot. */
+export function TrackedCard({
+  name,
+  chip,
+  actions,
+  children,
+}: { name: string; chip?: string; actions: ReactNode; children: ReactNode }) {
+  return (
+    <div className="card pad stack">
+      <div className="rec-card-head">
+        <b>{name}</b>
+        {chip && <span className="chip">{chip}</span>}
+      </div>
+      {children}
+      <div className="actions rec-card-actions">{actions}</div>
+    </div>
+  );
+}
+
+/** Recorded progress against an optional target. It never mixes in an observed value. */
+export function Progress({
+  done,
+  target,
+  kind,
+  text,
+}: { done: string; target: string | null; kind: string; text: string | null }) {
+  return (
+    <div>
+      {text && <span className="cap">{text}</span>}
+      {target && (
+        <>
+          <div className="rec-meter">
+            <Meter
+              value={decimalToCents(done) ?? 0}
+              max={decimalToCents(target) ?? 0}
+              kind={kind}
+            />
+          </div>
+          <span className="cap">
+            {formatMoney(done)} of the {formatMoney(target)} target
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
 
 export type Draft<F> = { key: string; form: F; changed: boolean; error: string; open: boolean };
 
@@ -304,7 +441,7 @@ export type Draft<F> = { key: string; form: F; changed: boolean; error: string; 
 export function useRecordEditor<F>(p: ScreenProps, reload: () => void) {
   const [draft, setDraft] = useState<Draft<F> | null>(null);
   const origin = useRef<HTMLElement | null>(null);
-  const aside = useRef<HTMLElement>(null);
+  const aside = useRef<HTMLDivElement>(null);
   const focusAside = () =>
     requestAnimationFrame(() =>
       aside.current

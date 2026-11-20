@@ -70,7 +70,7 @@ it("keeps the full allocation input and flags inactive draft references", async 
   };
   render(<Plans {...props} />);
   fireEvent.click(await screen.findByRole("button", { name: "Synthetic Plan" }));
-  expect(screen.getAllByText("-$300.00").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("−$300.00").length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button", { name: "Details for Laptop" }));
   expect(
     screen.getByText(

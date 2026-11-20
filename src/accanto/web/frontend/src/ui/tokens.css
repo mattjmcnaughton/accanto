@@ -1,0 +1,61 @@
+/* Design tokens: one set of colors for the whole app, in light and dark. */
+@font-face {
+  font-family: "Figtree";
+  src: url("./figtree.woff2") format("woff2");
+  font-weight: 300 900;
+  font-display: swap;
+}
+:root {
+  color-scheme: light;
+  --bg: #f3f5f2;
+  --surface: #ffffff;
+  --ink: #10221e;
+  --ink2: #4a5b56;
+  --ink3: #6b7a75;
+  --line: #dfe6e1;
+  --wash: #eaf0ec;
+  --brand: #12493d;
+  --brand-ink: #ffffff;
+  --focus: #1c7a63;
+  --c-income: #1c7a52;
+  --c-fixed: #5b6b7f;
+  --c-free: #e39a2d;
+  --c-save: #2f8fd8;
+  --c-invest: #7c5ce6;
+  --c-give: #d95f8a;
+  --c-none: #9aa7a2;
+  --good: #1c7a52;
+  --warn: #8f5a0c;
+  --bad: #c2413a;
+  --good-bg: #e4f2ea;
+  --warn-bg: #fbf2df;
+  --bad-bg: #fbeae8;
+  --pop: 0 0 0 1px var(--line), 0 18px 48px -14px rgb(8 20 16 / 0.35);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d1311;
+  --surface: #151c19;
+  --ink: #e7eeea;
+  --ink2: #a7b5af;
+  --ink3: #7f8e88;
+  --line: #26312c;
+  --wash: #1c2622;
+  --brand: #8fd9bd;
+  --brand-ink: #0b1f19;
+  --focus: #8fd9bd;
+  --c-income: #6fcf9f;
+  --c-fixed: #8a9bb0;
+  --c-free: #f0b04e;
+  --c-save: #5aaef0;
+  --c-invest: #9d85f5;
+  --c-give: #ea82a6;
+  --c-none: #5d6b66;
+  --good: #6fcf9f;
+  --warn: #e5b05a;
+  --bad: #f08a80;
+  --good-bg: #15291f;
+  --warn-bg: #2a2313;
+  --bad-bg: #2e1917;
+  --pop: 0 0 0 1px var(--line), 0 18px 48px -14px rgb(0 0 0 / 0.7);
+}

@@ -146,7 +146,11 @@ it("archives only at zero owed and asks first", async () => {
   fireEvent.click(within(again).getByRole("button", { name: "Details for Example loan B" }));
   fireEvent.click(screen.getByRole("button", { name: "Archive loan" }));
   expect(save).not.toHaveBeenCalled();
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Archive loan" }));
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: "Archive Example loan B?" })).getByRole("button", {
+      name: "Archive loan",
+    }),
+  );
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
       method: "PUT",
@@ -170,15 +174,14 @@ it("closes an untouched new record panel with Close and with Escape", async () =
   render(<Balances {...props} />);
   await screen.findByRole("grid", { name: "Loans" });
   fireEvent.click(screen.getByRole("button", { name: "Add loan" }));
-  const panel = await screen.findByRole("complementary", { name: "Record details" });
+  const panel = await screen.findByRole("dialog", { name: "Add loan" });
   fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
-  expect(screen.queryByRole("complementary", { name: "Record details" })).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByText("Enter a name.")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Record observation" }));
-  fireEvent.keyDown(await screen.findByRole("complementary", { name: "Record details" }), {
-    key: "Escape",
-  });
-  expect(screen.queryByRole("complementary", { name: "Record details" })).toBeNull();
+  const observation = await screen.findByRole("dialog", { name: "Record amount owed" });
+  fireEvent.keyDown(within(observation).getByLabelText("Observation date"), { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByText("Choose a loan.")).toBeNull();
 });
 
@@ -187,9 +190,9 @@ it("keeps an invalid edited panel open on Escape and shows the problem", async (
   render(<Balances {...props} />);
   await screen.findByRole("grid", { name: "Loans" });
   fireEvent.click(screen.getByRole("button", { name: "Add loan" }));
-  const panel = await screen.findByRole("complementary", { name: "Record details" });
+  const panel = await screen.findByRole("dialog");
   fireEvent.change(within(panel).getByLabelText("Name"), { target: { value: "  " } });
-  fireEvent.keyDown(panel, { key: "Escape" });
+  fireEvent.keyDown(within(panel).getByLabelText("Name"), { key: "Escape" });
   expect(await within(panel).findByText("Enter a name.")).toBeDefined();
 });
 
@@ -199,7 +202,7 @@ it("retains a valid observation edit on Escape and writes only on Ctrl+S, trimme
   render(<Balances {...props} save={save} />);
   await screen.findByRole("grid", { name: "Loans" });
   fireEvent.click(screen.getByRole("button", { name: "Record observation" }));
-  const panel = await screen.findByRole("complementary", { name: "Record details" });
+  const panel = await screen.findByRole("dialog");
   fireEvent.change(within(panel).getByLabelText("Loan"), { target: { value: "loan-b" } });
   fireEvent.change(within(panel).getByLabelText("Observation date"), {
     target: { value: "2026-10-03" },
@@ -207,12 +210,12 @@ it("retains a valid observation edit on Escape and writes only on Ctrl+S, trimme
   fireEvent.change(within(panel).getByLabelText(/Amount owed \(USD\)/), {
     target: { value: " 450.25 " },
   });
-  fireEvent.keyDown(panel, { key: "Escape" });
+  fireEvent.keyDown(within(panel).getByLabelText(/Amount owed \(USD\)/), { key: "Escape" });
   expect(save).not.toHaveBeenCalled();
-  expect(screen.queryByRole("complementary", { name: "Record details" })).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByText(/Unsaved edit/)).toBeDefined();
   fireEvent.click(screen.getByRole("button", { name: "Review" }));
-  const reopened = await screen.findByRole("complementary", { name: "Record details" });
+  const reopened = await screen.findByRole("dialog");
   expect((within(reopened).getByLabelText(/Amount owed \(USD\)/) as HTMLInputElement).value).toBe(
     " 450.25 ",
   );
@@ -234,7 +237,7 @@ it("corrects an observation against its loaded revision and refuses an invalid a
   render(<Balances {...props} save={save} />);
   const grid = await screen.findByRole("grid", { name: "Amount owed observations" });
   fireEvent.keyDown(grid.querySelector('[data-cell="0-0"]') as HTMLElement, { key: "Enter" });
-  const panel = await screen.findByRole("complementary", { name: "Record details" });
+  const panel = await screen.findByRole("dialog");
   const amount = within(panel).getByLabelText(/Amount owed \(USD\)/);
   fireEvent.change(amount, { target: { value: "12.345" } });
   fireEvent.click(within(panel).getByRole("button", { name: "Save observation" }));

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { ScreenProps } from "../workspace/shared";
 import { Balances } from "../balances/Balances";
+import type { ScreenProps } from "../workspace/shared";
 import { Destinations } from "./Destinations";
 
 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 });
@@ -71,11 +71,11 @@ it("keeps contribution progress apart from the observed value and corrects by re
   render(<Destinations {...p} />);
   const investments = await grid("Investments");
   const fund = within(investments).getByText("Example fund").closest("tr") as HTMLElement;
-  expect(within(fund).getByText("$1000.00")).toBeDefined();
-  expect(within(fund).getByText("$26100.00")).toBeDefined();
-  expect(within(fund).queryByText("$25000.00")).toBeNull();
+  expect(within(fund).getByText("$1,000.00")).toBeDefined();
+  expect(within(fund).getByText("$26,100.00")).toBeDefined();
+  expect(within(fund).queryByText("$25,000.00")).toBeNull();
 
-  fireEvent.keyDown(cell(await grid("Investment contributions"), "2026-02-01"), { key: "Enter" });
+  fireEvent.keyDown(cell(await grid("Investment contributions"), "Feb 1, 2026"), { key: "Enter" });
   fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "900.00" } });
   fireEvent.keyDown(screen.getByLabelText("Amount (USD)"), { key: "s", ctrlKey: true });
   expect(p.save).toHaveBeenCalledWith(
@@ -92,7 +92,7 @@ it("keeps a valid edit on Escape without saving and holds an invalid edit open",
   mock();
   const p = props();
   render(<Destinations {...p} />);
-  fireEvent.keyDown(cell(await grid("Investment contributions"), "2026-02-01"), { key: "i" });
+  fireEvent.keyDown(cell(await grid("Investment contributions"), "Feb 1, 2026"), { key: "i" });
   const amount = screen.getByLabelText("Amount (USD)");
   fireEvent.change(amount, { target: { value: "12.345" } });
   fireEvent.keyDown(amount, { key: "Escape" });
@@ -101,7 +101,7 @@ it("keeps a valid edit on Escape without saving and holds an invalid edit open",
 
   fireEvent.change(amount, { target: { value: "950.00" } });
   fireEvent.keyDown(amount, { key: "Escape" });
-  expect(screen.queryByRole("complementary", { name: "Record details" })).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(p.save).not.toHaveBeenCalled();
   expect(within(await grid("Investment contributions")).getByText("Unsaved")).toBeDefined();
 
@@ -117,13 +117,13 @@ it("deletes a later observation after confirmation but never an opening value", 
   const p = props();
   render(<Destinations {...p} />);
   const table = await grid("Investment value observations");
-  const opening = cell(table, "2026-01-01");
+  const opening = cell(table, "Jan 1, 2026");
   fireEvent.keyDown(opening, { key: "d" });
   fireEvent.keyDown(opening, { key: "d" });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByText("Opening values cannot be deleted.")).toBeDefined();
 
-  const later = cell(table, "2026-03-01");
+  const later = cell(table, "Mar 1, 2026");
   fireEvent.keyDown(later, { key: "d" });
   fireEvent.keyDown(later, { key: "d" });
   expect(p.save).not.toHaveBeenCalled();
@@ -148,7 +148,7 @@ it("permits a destination without a target or opening", async () => {
   const investments = await grid("Investments");
   fireEvent.keyDown(within(investments).getByText(/No investments yet/), { key: "a" });
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Example fund" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save destination" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save investment" }));
   expect(p.save).toHaveBeenCalledWith(
     expect.objectContaining({ body: { name: "Example fund", target: null, opening: null } }),
     expect.any(Function),
@@ -224,7 +224,6 @@ it("shows net donations and leaves linked refunds to Activity", async () => {
   });
   const p = props();
   render(<Destinations {...p} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Giving recipients" }));
   const recipients = await grid("Giving recipients");
   expect(within(recipients).getByRole("columnheader", { name: "Net donations" })).toBeDefined();
   const charity = within(recipients).getByText("Example charity").closest("tr") as HTMLElement;
@@ -232,14 +231,14 @@ it("shows net donations and leaves linked refunds to Activity", async () => {
   expect(within(charity).getByText("—")).toBeDefined();
 
   const donations = await grid("Donations");
-  const refund = cell(donations, "2026-02-09");
+  const refund = cell(donations, "Feb 9, 2026");
   expect(
     within(refund.closest("tr") as HTMLElement).getByText("Correct in Activity"),
   ).toBeDefined();
   fireEvent.keyDown(refund, { key: "Enter" });
   fireEvent.keyDown(refund, { key: "d" });
   fireEvent.keyDown(refund, { key: "d" });
-  expect(screen.queryByRole("complementary", { name: "Record details" })).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByText("Correct this linked refund in Activity.")).toBeDefined();
 });
@@ -247,7 +246,7 @@ it("shows net donations and leaves linked refunds to Activity", async () => {
 it("names each dialog by its own title", async () => {
   mock();
   render(<Destinations {...props()} />);
-  const later = cell(await grid("Investment value observations"), "2026-03-01");
+  const later = cell(await grid("Investment value observations"), "Mar 1, 2026");
   fireEvent.keyDown(later, { key: "d" });
   fireEvent.keyDown(later, { key: "d" });
   expect(screen.getByRole("dialog", { name: "Delete observation?" })).toBeDefined();
@@ -261,16 +260,17 @@ it("keeps attempted values while a write is pending", async () => {
   const p = props();
   const { rerender } = render(<Destinations {...p} />);
   const contributions = await grid("Investment contributions");
-  fireEvent.keyDown(cell(contributions, "2026-02-01"), { key: "Enter" });
+  fireEvent.keyDown(cell(contributions, "Feb 1, 2026"), { key: "Enter" });
   fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "975.00" } });
   fireEvent.keyDown(screen.getByLabelText("Amount (USD)"), { key: "Escape" });
   rerender(<Destinations {...p} busy />);
   expect(screen.getByRole("button", { name: "Discard" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Giving recipients" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Add recipient" })).toBeDisabled();
   fireEvent.keyDown(cell(await grid("Investments"), "Example fund"), { key: "Enter" });
-  fireEvent.keyDown(cell(contributions, "2026-02-01"), { key: "a" });
+  fireEvent.keyDown(cell(contributions, "Feb 1, 2026"), { key: "a" });
   expect(screen.queryByLabelText("Name")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Review" }));
+  rerender(<Destinations {...p} busy={false} />);
   expect(screen.getByLabelText("Amount (USD)")).toHaveValue("975.00");
 });
 
@@ -289,7 +289,7 @@ it("keeps keyboard focus in the grid after a confirmed delete reloads the list",
   });
   render(<Destinations {...p} />);
   const table = await grid("Investment value observations");
-  const doomed = cell(table, "2026-03-01");
+  const doomed = cell(table, "Mar 1, 2026");
   doomed.focus();
   fireEvent.keyDown(doomed, { key: "d" });
   fireEvent.keyDown(doomed, { key: "d" });
@@ -297,7 +297,7 @@ it("keeps keyboard focus in the grid after a confirmed delete reloads the list",
   await waitFor(() =>
     expect(
       within(screen.getByRole("grid", { name: "Investment value observations" })).queryByText(
-        "2026-03-01",
+        "Mar 1, 2026",
       ),
     ).toBeNull(),
   );
@@ -316,7 +316,7 @@ it("returns Escape focus to the grid when the opening click did not focus its tr
   render(<Destinations {...p} />);
   await grid("Investment value observations");
   // fireEvent.click, like WebKit, does not focus the clicked button.
-  fireEvent.click(screen.getByRole("button", { name: "Correct observation on 2026-03-01" }));
+  fireEvent.click(screen.getByRole("button", { name: "Correct observation on Mar 1, 2026" }));
   const amount = screen.getByLabelText("Observed value (USD)");
   amount.focus();
   fireEvent.change(amount, { target: { value: "31025.50" } });
@@ -358,7 +358,7 @@ it("keeps the Escape fallback inside this screen, past hidden grids and another 
     </>,
   );
   await grid("Investment value observations");
-  fireEvent.click(screen.getByRole("button", { name: "Correct observation on 2026-03-01" }));
+  fireEvent.click(screen.getByRole("button", { name: "Correct observation on Mar 1, 2026" }));
   const amount = screen.getByLabelText("Observed value (USD)");
   amount.focus();
   fireEvent.keyDown(amount, { key: "Escape" });
