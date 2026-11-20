@@ -14,6 +14,16 @@ Coverage and outstanding release gates are recorded in the
 [readiness matrix](docs/technical/release-readiness.md).
 See [API usage](docs/api.md) and [browser configuration](docs/development.md#browser-identity-setup-manual-provider-configuration).
 
+## Screenshots
+
+Home shows where the month's money is going and what needs attention. Review
+compares the month's activity with its Plan. Both use synthetic fixture data;
+see [every screen in light, dark and at 390 px](docs/screenshots/README.md).
+
+![Home in the light theme](docs/screenshots/home-light.png)
+
+![Review in the dark theme](docs/screenshots/review-dark.png)
+
 ## Run the production workspace
 
 Follow the full-stack setup below, configure browser authentication, and provision
