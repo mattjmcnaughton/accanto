@@ -47,8 +47,8 @@ configuration is implicitly authorized by the local implementation.
    recovery-point/retention evidence. For a new empty database, use `alembic upgrade
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
-   Serialize migrations and hold traffic if compatibility is uncertain. This wave
-   adds no migration; current supported revision is `5k019`.
+   Serialize migrations and hold traffic if compatibility is uncertain. The current
+   supported revision is `5l020`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -90,8 +90,12 @@ Select the recorded previous image only when its code can read the current schem
 and safely preserve all newer rows, flags, categories, saved snapshots, nullable
 session/MCP audit attribution, retry outcomes and revocation state. Demonstrate
 compatibility against synthetic populated current-schema data before switching.
-This wave introduces no schema change; its source base and candidate share5k019.
-That is a compatibility prerequisite, not proof every older app is safe.
+`5l020` only adds the nullable `plan_revision.updated_at` column and the triggers
+that maintain it; application code from `5k019` ignores the column, so it can run on
+a `5l020` database without a downgrade. That is a compatibility prerequisite, not
+proof every older app is safe. An earlier image's `/readyz` either accepts any
+revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility
+decision.
 
 Do not run `alembic downgrade` for an application rollback. The initial downgrade
 drops tables, and older session/audit or lifecycle implementations can destroy or
