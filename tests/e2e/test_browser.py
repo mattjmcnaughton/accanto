@@ -263,6 +263,20 @@ def test_signed_in_workspace(tmp_path):
         button("Synthetic loan details")
         until("!!document.querySelector('dialog[open]')")
 
+    def tab_to_button(name):
+        # Verify reachability through native sequential keyboard navigation.
+        for _ in range(80):
+            if (
+                value(
+                    "document.activeElement.tagName === 'BUTTON' && "
+                    "document.activeElement.textContent.trim() === " + repr(name)
+                )
+                == "true"
+            ):
+                return
+            browser("press", "Tab")
+        raise AssertionError("Keyboard could not reach " + name)
+
     def signed_in():
         # The Entity's name is in the sidebar, which phone widths hide.
         until(
@@ -309,8 +323,40 @@ def test_signed_in_workspace(tmp_path):
         go("Activity")
         record_activity()
         browser("find", "label", "Amount (USD)", "fill", "210")
-        save_activity()
+        # Mobile keyboard recovery uses the real UI/API, with a deliberate local
+        # network failure before the request can reach the service. No storage or
+        # response-body export is retained.
+        browser("set", "viewport", "390", "760")
+        browser("network", "route", "**/api/entities/*/activity", "--abort")
+        tab_to_button("Record")
+        browser("press", "Enter")
+        browser("wait", "--text", "Save was not confirmed. Your input is still here.")
+        # The notice is inside the modal dialog, next to the retained input.
+        until("!!document.querySelector('dialog[open] .recovery-notice')")
+        assert (
+            browser("get", "value", "#activity-record input[inputmode='decimal']")
+            .strip()
+            .strip('"')
+            == "210"
+        )
+        assert fits()
+        browser("network", "unroute", "**/api/entities/*/activity")
+        tab_to_button("Retry save")
+        assert value("document.activeElement.textContent") == "Retry save"
+        browser("press", "Enter")
+        until("!document.querySelector('#activity-record')")
         browser("wait", "--text", "$210.00")
+        # A failed reload must be explicit rather than an empty financial workspace.
+        go("Plans")
+        browser("network", "route", "**/api/entities/*/activity*", "--abort")
+        go("Activity")
+        browser("wait", "--text", "Could not load this workspace.")
+        assert "Nothing is recorded in" not in browser("get", "text", "#main")
+        browser("network", "unroute", "**/api/entities/*/activity*")
+        tab_to_button("Try loading again")
+        browser("press", "Enter")
+        browser("wait", "--text", "$210.00")
+        browser("set", "viewport", "1280", "900")
         button("Enter known total")
         until("!!document.querySelector('dialog[open] #activity-record')")
         browser("find", "label", "Known total (USD)", "fill", "250")

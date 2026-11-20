@@ -79,6 +79,11 @@ tests/
 docs/
 .github/
 
+# Storybook's static build and local agent media stay out of the build context;
+# the image builds only the app from src/ and copies its dist/.
+**/storybook-static/
+.amp/
+
 **/node_modules/
 **/dist/
 **/*.tsbuildinfo
