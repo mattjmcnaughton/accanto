@@ -244,7 +244,7 @@ export function Balances(p: ScreenProps) {
     >
       <Head
         title={<span id="balances-title">Loans</span>}
-        sub="The amount owed is a dated check-in you record from your lender. Recording a payment never changes it. Investment values are recorded in Investments and giving."
+        sub="The amount owed is a dated check-in you record from your lender. Recording a payment never changes it. Investment values are recorded in Investments."
       >
         {accounts.length > 0 && add}
       </Head>

@@ -7,12 +7,20 @@ import { screenArgs, stateStory } from "../mocks/api";
 const meta = {
   title: "Screens/Home",
   component: Plans,
-  args: { ...screenArgs(), home: true, visible: true, showPlans: fn().mockName("showPlans") },
+  args: {
+    ...screenArgs(),
+    home: true,
+    visible: true,
+    showPlans: fn().mockName("showPlans"),
+    go: fn().mockName("go"),
+  },
 } satisfies Meta<typeof Plans>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Loaded: Story = {};
+/** A past month chosen in the top bar: its figures, without today's pace marker. */
+export const AnotherMonth: Story = { args: { month: "2026-09" } };
 export const Empty: Story = stateStory("empty");
 export const Loading: Story = stateStory("loading");
 export const Failed: Story = stateStory("failed");

@@ -123,7 +123,7 @@ it("shows named investment and giving destinations in shared Activity", async ()
   expect(await screen.findByText("Example recipient")).toBeDefined();
   expect(screen.getAllByText("Read only")).toHaveLength(2);
   fireEvent.click(screen.getByRole("gridcell", { name: /Example recipient/ }));
-  expect(screen.getByText("Correct this entry in Investments and giving.")).toBeDefined();
+  expect(screen.getByText("Correct this entry in Giving.")).toBeDefined();
   expect(screen.queryByRole("button", { name: /Save/ })).toBeNull();
 });
 it("shows both the destination and savings origin for funded outflows", async () => {
@@ -311,7 +311,7 @@ it("keeps the attempted record while a write is pending instead of opening or di
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByText("$13.50")).toBeDefined();
   // The attempted record stays on its row and opens read-only for review while the write is pending.
-  fireEvent.click(screen.getByRole("button", { name: "Review attempted entry" }));
+  fireEvent.keyDown(screen.getByText("$13.50"), { key: "Enter" });
   const dialog = within(screen.getByRole("dialog", { name: "Edit activity" }));
   expect((dialog.getByLabelText("Amount (USD)") as HTMLInputElement).value).toBe("13.50");
   expect(dialog.getByRole("button", { name: "Discard changes" }).matches(":disabled")).toBe(true);

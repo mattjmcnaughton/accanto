@@ -186,16 +186,6 @@
 }
 
 /* Review */
-.ar .ar-monthnav {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.ar .ar-monthnav .input {
-  width: auto;
-  min-height: 32px;
-  padding: 3px 8px;
-}
 .ar .head-actions {
   align-items: center;
 }

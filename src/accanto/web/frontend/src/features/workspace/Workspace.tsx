@@ -1,6 +1,7 @@
 import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type BrowserSession, readSession } from "../../lib/api";
+import { addMonths, daysInMonth, fmtMonth } from "../../lib/format";
 import type { WriteSpec } from "../../lib/monthly";
 import {
   RecoverableWrite,
@@ -30,12 +31,16 @@ export const SCREENS = [
   "estimates",
   "savings",
   "investments",
+  "giving",
   "loans",
   "settings",
   "more",
 ] as const;
 export type Screen = (typeof SCREENS)[number];
-export const hrefFor = (screen: Screen) => (screen === "home" ? "#/" : `#/${screen}`);
+/** A month in the address, YYYY-MM; without one the screens show the Entity's current month. */
+export const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+export const hrefFor = (screen: Screen, month?: string) =>
+  `${screen === "home" ? "#/" : `#/${screen}`}${month ? `?m=${month}` : ""}`;
 
 // Destinations grouped by job instead of nine numbered tabs.
 const NAV: { group: string; items: [Screen, string][] }[] = [
@@ -58,7 +63,8 @@ const NAV: { group: string; items: [Screen, string][] }[] = [
     group: "Balances",
     items: [
       ["savings", "Savings"],
-      ["investments", "Investments and giving"],
+      ["investments", "Investments"],
+      ["giving", "Giving"],
       ["loans", "Loans"],
     ],
   },
@@ -68,9 +74,11 @@ const TITLES = Object.fromEntries([
   ["settings", "Settings"],
   ["more", "More"],
 ]) as Record<Screen, string>;
-/** Sidebar order; keys 1 to 9 jump to these. */
+/** Sidebar order; keys 1 to 9 jump to the first nine. */
 const ORDER: Screen[] = [...NAV.flatMap((g) => g.items.map(([to]) => to)), "settings"];
 const TABBED: Screen[] = ["home", "activity", "review", "plans"];
+/** The screens that show one month, chosen in the top bar. */
+const MONTHLY: Screen[] = ["home", "activity", "review"];
 const typing = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   Boolean(target.closest("input,textarea,select,[contenteditable],[role=textbox]"));
@@ -79,19 +87,28 @@ export function Workspace({
   initial,
   signedOut,
   screen: requested,
+  month: requestedMonth,
   navigate,
 }: {
   initial: BrowserSession;
   signedOut: (message?: string) => void;
   /** The screen in the address. Without it the workspace keeps its own screen, as in tests. */
   screen?: Screen;
-  navigate?: (to: Screen, replace?: boolean) => void;
+  /** The month in the address, YYYY-MM; undefined is the Entity's current month. */
+  month?: string;
+  /** month: undefined leaves the address without a month. */
+  navigate?: (to: Screen, replace?: boolean, month?: string) => void;
 }) {
   const [session, setSession] = useState(initial);
-  const [local, setLocal] = useState<Screen>("home");
-  const target = requested ?? local;
+  const thisMonth = initial.entities[0]?.today.slice(0, 7) ?? "";
+  const [local, setLocal] = useState<{ screen: Screen; month?: string }>({ screen: "home" });
+  const target = requested ?? local.screen;
+  const targetMonth = (navigate ? requestedMonth : local.month) ?? thisMonth;
   const [screen, setScreen] = useState<Screen>(target);
-  const approved = useRef<{ to: Screen; keep: boolean } | null>(null);
+  const [month, setMonth] = useState(targetMonth);
+  // A one-shot request for Activity's entry dialog, from Add activity or the N key.
+  const [add, setAdd] = useState(0);
+  const approved = useRef<{ to: Screen; month: string; keep: boolean } | null>(null);
   const [palette, setPalette] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
   const [theme, setTheme] = useTheme();
@@ -232,17 +249,29 @@ export function Workspace({
   // Every screen change, from a link, a key, the palette or Back and Forward, passes this guard.
   // Plan edits remain mounted in tab memory across workspace navigation.
   const canLeave = () => !props.busy && confirmInAppNavigation(() => dirty.current);
-  const move = (to: Screen, replace = false) => (navigate ? navigate(to, replace) : setLocal(to));
-  /** keep: Home and Plans are one mounted screen, so moving between them keeps its pending write. */
-  function go(to: Screen, keep = false) {
-    if (to === screen || concealed || !(keep || canLeave())) return;
-    approved.current = { to, keep };
-    move(to);
+  const move = (to: Screen, replace = false, m = month) => {
+    const kept = m === thisMonth ? undefined : m;
+    if (navigate) navigate(to, replace, kept);
+    else setLocal({ screen: to, month: kept });
+  };
+  /**
+   * keep: Home and Plans are one mounted screen, so moving between them keeps its pending write.
+   * A change of month is a navigation too, and passes the same guard.
+   */
+  function go(to: Screen, keep = false, m = month): boolean {
+    if ((to === screen && m === month) || concealed || !(keep || canLeave())) return false;
+    approved.current = { to, month: m, keep };
+    move(to, false, m);
+    return true;
+  }
+  function addActivity() {
+    if (screen === "activity") setAdd((x) => x + 1);
+    else if (go("activity")) setAdd(1);
   }
   // biome-ignore lint/correctness/useExhaustiveDependencies: Only a change of address is a navigation.
   useEffect(() => {
-    if (target === screen) return;
-    const ok = approved.current?.to === target;
+    if (target === screen && targetMonth === month) return;
+    const ok = approved.current?.to === target && approved.current?.month === targetMonth;
     const keep = ok && approved.current?.keep;
     approved.current = null;
     if (ok || (!concealed && canLeave())) {
@@ -253,8 +282,9 @@ export function Workspace({
         setMessage("");
       }
       setScreen(target);
+      setMonth(targetMonth);
     } else move(screen, true);
-  }, [target]);
+  }, [target, targetMonth]);
   useEffect(() => {
     document.title = concealed ? "Accanto" : `${TITLES[screen]} · Accanto`;
     document.documentElement.scrollTop = 0;
@@ -288,7 +318,10 @@ export function Workspace({
     } else if (event.key === "?") setShortcuts(true);
     else if (event.key === "n") {
       event.preventDefault();
-      go("activity");
+      addActivity();
+    } else if (MONTHLY.includes(screen) && (event.key === "[" || event.key === "]")) {
+      event.preventDefault();
+      if (!props.busy) go(screen, false, addMonths(month, event.key === "[" ? -1 : 1));
     } else if (event.key === "j" || event.key === "k") {
       const rows = [...document.querySelectorAll<HTMLElement>("#main [data-row]")];
       const at = rows.indexOf(document.activeElement as HTMLElement);
@@ -308,9 +341,11 @@ export function Workspace({
     <a
       key={to}
       className="nav"
-      href={hrefFor(to)}
+      href={hrefFor(to, month === thisMonth ? undefined : month)}
       aria-current={(to === "more" ? !TABBED.includes(screen) : screen === to) ? "page" : undefined}
-      aria-keyshortcuts={ORDER.includes(to) ? String(ORDER.indexOf(to) + 1) : undefined}
+      aria-keyshortcuts={
+        ORDER.indexOf(to) >= 0 && ORDER.indexOf(to) < 9 ? String(ORDER.indexOf(to) + 1) : undefined
+      }
       onClick={(event: MouseEvent) => {
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
           return;
@@ -324,7 +359,16 @@ export function Workspace({
   );
   const commands: Command[] = [
     ...ORDER.map((to) => ({ text: `Go to ${TITLES[to]}`, hint: "Screen", run: () => go(to) })),
-    { text: "Add activity", hint: "Action", run: () => go("activity") },
+    { text: "Add activity", hint: "Action", run: addActivity },
+    ...(month === thisMonth
+      ? []
+      : [
+          {
+            text: `Go to ${fmtMonth(thisMonth)}`,
+            hint: "Month",
+            run: () => go(screen, false, thisMonth),
+          },
+        ]),
     ...(["light", "dark", "system"] as const)
       .filter((choice) => choice !== theme)
       .map((choice) => ({
@@ -395,7 +439,48 @@ export function Workspace({
       </aside>
       <div className="main">
         <header className="top">
-          {!concealed && <span className="top-title">{TITLES[screen]}</span>}
+          {!concealed &&
+            (entity && MONTHLY.includes(screen) ? (
+              <div className="month">
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Previous month"
+                  aria-keyshortcuts="["
+                  disabled={props.busy}
+                  onClick={() => go(screen, false, addMonths(month, -1))}
+                >
+                  <Icon name="left" />
+                </button>
+                <span aria-live="polite">{fmtMonth(month)}</span>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Next month"
+                  aria-keyshortcuts="]"
+                  disabled={props.busy}
+                  onClick={() => go(screen, false, addMonths(month, 1))}
+                >
+                  <Icon name="right" />
+                </button>
+                {month === thisMonth ? (
+                  <span className="day">
+                    Day {Number(entity.today.slice(8, 10))} of {daysInMonth(month)}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn sm"
+                    disabled={props.busy}
+                    onClick={() => go(screen, false, thisMonth)}
+                  >
+                    This month
+                  </button>
+                )}
+              </div>
+            ) : (
+              <span className="top-title">{TITLES[screen]}</span>
+            ))}
           <span className="spacer" />
           {entity && !concealed && (
             <>
@@ -410,9 +495,9 @@ export function Workspace({
                 <span>Search or jump</span>
                 <span className="kbd">Ctrl K</span>
               </button>
-              <button type="button" className="btn pri" onClick={() => go("activity")}>
+              <button type="button" className="btn pri" aria-keyshortcuts="N" onClick={addActivity}>
                 <Icon name="plus" />
-                Add activity
+                <span className="top-add">Add activity</span>
               </button>
             </>
           )}
@@ -463,17 +548,30 @@ export function Workspace({
                   {...props}
                   home={screen === "home"}
                   visible={screen === "home" || screen === "plans"}
+                  month={month}
                   showPlans={() => go("plans", true)}
+                  go={(to) => go(to)}
                   retainedDirty={(value) => {
                     planDirty.current = value;
                   }}
                 />
               </div>
-              {screen === "activity" && <ActivityScreen {...props} />}
-              {screen === "review" && <MonthlyReview {...props} />}
+              {screen === "activity" && (
+                <ActivityScreen
+                  key={month}
+                  {...props}
+                  month={month}
+                  add={add}
+                  added={() => setAdd(0)}
+                />
+              )}
+              {screen === "review" && (
+                <MonthlyReview key={month} {...props} month={month} go={(to) => go(to)} />
+              )}
               {screen === "estimates" && <IncomeEstimates {...props} />}
               {screen === "savings" && <Savings {...props} />}
-              {screen === "investments" && <Destinations {...props} />}
+              {screen === "investments" && <Destinations {...props} kind="investment" />}
+              {screen === "giving" && <Destinations {...props} kind="giving" />}
               {screen === "loans" && <Balances {...props} />}
               {screen === "settings" && (
                 <Settings
@@ -485,24 +583,31 @@ export function Workspace({
               {screen === "more" && !concealed && (
                 <div className="screen">
                   <div className="card">
-                    {(["estimates", "savings", "investments", "loans", "settings"] as const).map(
-                      (to) => (
-                        <a
-                          key={to}
-                          className="row"
-                          href={hrefFor(to)}
-                          data-row
-                          onClick={(e) => {
-                            e.preventDefault();
-                            go(to);
-                          }}
-                        >
-                          <Icon name={to} />
-                          <span className="t">{TITLES[to]}</span>
-                          <Icon name="right" />
-                        </a>
-                      ),
-                    )}
+                    {(
+                      [
+                        "estimates",
+                        "savings",
+                        "investments",
+                        "giving",
+                        "loans",
+                        "settings",
+                      ] as const
+                    ).map((to) => (
+                      <a
+                        key={to}
+                        className="row"
+                        href={hrefFor(to)}
+                        data-row
+                        onClick={(e) => {
+                          e.preventDefault();
+                          go(to);
+                        }}
+                      >
+                        <Icon name={to} />
+                        <span className="t">{TITLES[to]}</span>
+                        <Icon name="right" />
+                      </a>
+                    ))}
                   </div>
                   <div className="more-user">
                     <span className="note">Signed in to {entity.name}</span>
@@ -609,6 +714,7 @@ const Shortcuts = ({ close }: { close: () => void }) => (
           ["Ctrl K or ⌘ K", "Search, jump to a screen, or run an action"],
           ["1 to 9", "Go to a screen, in sidebar order"],
           ["N", "Add activity"],
+          ["[ and ]", "Previous and next month on Home, Activity and Review"],
           ["J and K", "Move through rows, then Enter to open one"],
           ["Esc", "Close a dialog"],
           ["?", "Show this list"],

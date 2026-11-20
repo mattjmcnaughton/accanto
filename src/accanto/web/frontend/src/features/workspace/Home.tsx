@@ -2,7 +2,6 @@ import type { LoadState } from "../../lib/api";
 import type { Loan } from "../../lib/balances";
 import type { Destination } from "../../lib/destinations";
 import {
-  daysBetween,
   daysInMonth,
   decimalToCents,
   fmtShort,
@@ -14,6 +13,7 @@ import {
 import type { ComparisonGroup, ReviewResult } from "../../lib/monthly";
 import type { SavingsAccount } from "../../lib/savings";
 import { Band, type BandPart, Empty, tint } from "../../ui";
+import type { Screen } from "./Workspace";
 import { LoadMessage } from "./shared";
 
 /** A Plan Home asks about: overallocated, or edited in this tab and not saved. */
@@ -67,6 +67,7 @@ function status(key: Category, group: ComparisonGroup) {
  * money gone against the plan, and what needs me. Every figure comes from the API as it is.
  */
 export function Home({
+  month,
   today,
   plans,
   hasVersion,
@@ -79,8 +80,11 @@ export function Home({
   open,
   newPlan,
   showPlans,
+  go,
   retry,
 }: {
+  /** The month Home shows, YYYY-MM. */
+  month: string;
   today: string;
   plans: number;
   hasVersion: boolean;
@@ -94,10 +98,12 @@ export function Home({
   open: (id: string) => void;
   newPlan: () => void;
   showPlans: () => void;
+  /** Opens another screen; without it, items say where to go instead of linking. */
+  go?: (to: Screen) => void;
   retry: () => void;
 }) {
   if (!plans) return <Welcome newPlan={newPlan} />;
-  const month = today.slice(0, 7);
+  const toReview = go && (() => go("review"));
   const name = monthName(month);
   // An empty mocked or legacy body is treated as no Review rather than as zeros.
   const result = review.kind === "ready" && review.data?.review ? review.data : null;
@@ -113,6 +119,8 @@ export function Home({
         key: "unknown",
         title: `${unknown.length} planned lines have no ${name} entry`,
         detail: "Resolve each in Review: record what happened, or $0.00 if nothing did.",
+        action: toReview && "Resolve in Review",
+        run: toReview,
       });
     else
       for (const line of unknown)
@@ -120,6 +128,8 @@ export function Home({
           key: `u-${line.id}-${line.name}`,
           title: `${line.name} has no ${name} entry`,
           detail: `Planned ${formatMoney(line.planned)}. Record what happened in Review, or $0.00 if nothing did.`,
+          action: toReview && "Resolve in Review",
+          run: toReview,
         });
   }
   for (const plan of attention) {
@@ -136,16 +146,6 @@ export function Home({
       run: () => open(plan.id),
     });
   }
-  if (loans.kind === "ready")
-    for (const loan of loans.data.filter((l) => l.active && l.latest)) {
-      const age = daysBetween(loan.latest.financial_date, today);
-      if (age > 60)
-        items.push({
-          key: `l-${loan.uuid}`,
-          title: `${loan.name} was last checked ${age} days ago`,
-          detail: `${formatMoney(loan.latest.amount)} owed on ${fmtShort(loan.latest.financial_date)}. Payments do not change this figure; record a new amount owed in Loans.`,
-        });
-    }
   if (result && !result.review.reviewed_at)
     items.push({
       key: "review",
@@ -153,6 +153,8 @@ export function Home({
       detail: comparison
         ? "Mark it reviewed in Review once the month is complete."
         : "Open Review to compare the month against its Plan version.",
+      action: toReview && `Review ${name}`,
+      run: toReview,
       quiet: true,
     });
 
@@ -177,7 +179,13 @@ export function Home({
         <Empty
           title={`${name} has no Review yet`}
           action={
-            hasVersion ? undefined : (
+            hasVersion ? (
+              toReview && (
+                <button type="button" className="btn pri" onClick={toReview}>
+                  Start {name}'s Review
+                </button>
+              )
+            ) : (
               <button type="button" className="btn pri" onClick={showPlans}>
                 Open Plans
               </button>
@@ -337,6 +345,9 @@ function Hero({
 }) {
   const days = daysInMonth(month);
   const day = Number(today.slice(8, 10));
+  // Only the current month has a today; another month shows its figures without a pace marker.
+  const current = month === today.slice(0, 7);
+  const name = monthName(month);
   const planned = cents(spending.planned) ?? 0;
   const recorded = cents(spending.recorded);
   const over = cents(difference);
@@ -344,10 +355,12 @@ function Hero({
     <div className="card pad home-hero">
       <h1 className="h1">
         {over === null
-          ? `${formatMoney(spending.planned)} is planned for guilt-free spending this month`
+          ? `${formatMoney(spending.planned)} is planned for guilt-free spending ${current ? "this month" : `in ${name}`}`
           : over <= 0
-            ? `${money(-over)} left to spend freely this month`
-            : `${money(over)} over your guilt-free plan`}
+            ? current
+              ? `${money(-over)} left to spend freely this month`
+              : `${money(-over)} left of ${name}'s guilt-free plan`
+            : `${money(over)} over your guilt-free plan${current ? "" : ` in ${name}`}`}
       </h1>
       <p className="sub">
         {recorded === null
@@ -361,13 +374,15 @@ function Hero({
             background: over !== null && over > 0 ? "var(--bad)" : undefined,
           }}
         />
-        <b style={{ left: `${(day / days) * 100}%` }} />
+        {current && <b style={{ left: `${(day / days) * 100}%` }} />}
       </div>
       <div className="pace-labels">
         <span>{fmtShort(`${month}-01`)}</span>
-        <span>
-          Today is day {day} of {days}
-        </span>
+        {current && (
+          <span>
+            Today is day {day} of {days}
+          </span>
+        )}
         <span>{fmtShort(`${month}-${days}`)}</span>
       </div>
     </div>

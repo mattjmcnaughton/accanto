@@ -253,7 +253,7 @@ it("shows saved destination expectations and category differences in Review", as
   expect(retirement.textContent).toContain("$100.00");
   expect(screen.getByRole("row", { name: /Community Fund/ }).textContent).toContain("$400.00");
   // Destinations are recorded elsewhere, so their questions point there instead of writing.
-  expect(screen.getByText(/Retirement has no entry.*Investments and giving/)).toBeDefined();
+  expect(screen.getByText(/Retirement has no entry.*Record it in Investments\./)).toBeDefined();
   const funding = within(screen.getByLabelText("Planned funding"));
   expect(funding.getByText("$1,000.00")).toBeDefined();
 });
@@ -287,9 +287,8 @@ it("answers an unknown line with an explicit zero entry dated in the reviewed mo
         : absent(),
   );
   const p = props();
-  render(<MonthlyReview {...p} />);
-  await screen.findByRole("button", { name: "Start Review" });
-  fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
+  // The shell passes the month chosen in the top bar.
+  render(<MonthlyReview {...p} month="2026-10" />);
   const income = await screen.findByRole("region", { name: "Net income" });
   fireEvent.click(within(income).getByRole("button", { name: "Record $4,000.00" }));
   fireEvent.click(within(income).getByRole("button", { name: "Nothing this month" }));

@@ -121,6 +121,19 @@
 .top-signout {
   display: none;
 }
+.month {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.day {
+  color: var(--ink3);
+  font-size: 13px;
+  white-space: nowrap;
+  margin-left: 6px;
+}
 .jump {
   display: flex;
   align-items: center;
@@ -243,6 +256,7 @@
 }
 
 @media (max-width: 1000px) {
+  .day,
   .jump span {
     display: none;
   }
@@ -291,5 +305,16 @@
   }
   .pal {
     margin-top: 12px;
+  }
+}
+/* The narrowest phones keep the month and the action: Add activity shows only its icon. */
+@media (max-width: 383px) {
+  .top-add {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }

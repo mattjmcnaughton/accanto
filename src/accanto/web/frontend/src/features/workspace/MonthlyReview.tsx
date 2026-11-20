@@ -1,21 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { fmtMonth, fmtShort, monthName, plural } from "../../lib/format";
 import { type PlanRevision, monthly } from "../../lib/monthly";
-import { Dialog, Empty, Head, Icon } from "../../ui";
+import { Dialog, Empty, Head } from "../../ui";
 import { LoadProblem, LoadingCard, defaultDate } from "./Activity";
 import { type Resolution, ReviewDetails, complete, reviewSections } from "./ReviewDetails";
+import type { Screen } from "./Workspace";
 import { type ScreenProps, previousMonth, useLoad } from "./shared";
 import "./activity-review.css";
 
-const nextMonth = (month: string) => {
-  const [year, number] = month.split("-").map(Number);
-  return `${number === 12 ? year + 1 : year}-${String(number === 12 ? 1 : number + 1).padStart(2, "0")}`;
-};
 const versionLabel = (r: PlanRevision) =>
   `${r.name} v${r.number}${r.saved_at ? `, saved ${fmtShort(r.saved_at.slice(0, 10))}` : ""}`;
 
-export function MonthlyReview(p: ScreenProps) {
-  const [month, setMonth] = useState(p.entity.today.slice(0, 7));
+/** The shell owns the month: changing it remounts the Review, after the unsaved-change guard. */
+export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Screen) => void }) {
+  const month = p.month ?? p.entity.today.slice(0, 7);
   const [reload, setReload] = useState(0);
   const state = useLoad(
     () => monthly.review(p.entity.id, `${month}-01`),
@@ -99,14 +97,6 @@ export function MonthlyReview(p: ScreenProps) {
       () => p.dirty(editedRef.current),
     );
   };
-  const go = (value: string) => {
-    if (value && value !== month && !p.busy && p.guard()) {
-      setMonth(value);
-      setChoice("");
-      setEdited(false);
-      p.dirty(false);
-    }
-  };
   const canChoose =
     state.kind === "empty" &&
     (previous.kind === "ready" || previous.kind === "empty") &&
@@ -159,35 +149,6 @@ export function MonthlyReview(p: ScreenProps) {
                 : undefined
           }
         >
-          <div className="ar-monthnav">
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Previous month"
-              disabled={p.busy}
-              onClick={() => go(previousMonth(month).slice(0, 7))}
-            >
-              <Icon name="left" />
-            </button>
-            <input
-              type="month"
-              className="input"
-              aria-label="Review month"
-              required
-              value={month}
-              disabled={p.busy}
-              onChange={(e) => go(e.target.value)}
-            />
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Next month"
-              disabled={p.busy}
-              onClick={() => go(nextMonth(month))}
-            >
-              <Icon name="right" />
-            </button>
-          </div>
           {status && (
             <span
               className={`chip${status === "Reviewed" ? " good" : status === "Changed since review" ? " warn" : ""}`}
@@ -238,7 +199,16 @@ export function MonthlyReview(p: ScreenProps) {
       {state.kind === "empty" &&
         canChoose &&
         (versions.length === 0 ? (
-          <Empty title="A Review needs a saved Plan version">
+          <Empty
+            title="A Review needs a saved Plan version"
+            action={
+              p.go && (
+                <button type="button" className="btn pri" onClick={() => p.go?.("plans")}>
+                  Open Plans
+                </button>
+              )
+            }
+          >
             A Review compares what you recorded in {name} against one saved version of a Plan. Open
             a Plan in Plans and choose Save version, then come back.
           </Empty>

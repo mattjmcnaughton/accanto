@@ -223,7 +223,9 @@ it("shows net donations and leaves linked refunds to Activity", async () => {
     ],
   });
   const p = props();
-  render(<Destinations {...p} />);
+  render(<Destinations {...p} kind="giving" />);
+  expect(screen.getByRole("heading", { level: 1, name: "Giving" })).toBeDefined();
+  expect(screen.queryByRole("grid", { name: "Investments" })).toBeNull();
   const recipients = await grid("Giving recipients");
   expect(within(recipients).getByRole("columnheader", { name: "Net donations" })).toBeDefined();
   const charity = within(recipients).getByText("Example charity").closest("tr") as HTMLElement;
@@ -265,7 +267,7 @@ it("keeps attempted values while a write is pending", async () => {
   fireEvent.keyDown(screen.getByLabelText("Amount (USD)"), { key: "Escape" });
   rerender(<Destinations {...p} busy />);
   expect(screen.getByRole("button", { name: "Discard" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Add recipient" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Add investment" })).toBeDisabled();
   fireEvent.keyDown(cell(await grid("Investments"), "Example fund"), { key: "Enter" });
   fireEvent.keyDown(cell(contributions, "Feb 1, 2026"), { key: "a" });
   expect(screen.queryByLabelText("Name")).toBeNull();

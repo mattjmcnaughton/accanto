@@ -105,7 +105,14 @@ export const LoadingCard = ({ label }: { label: string }) => (
   </div>
 );
 
-export function ActivityScreen(p: ScreenProps) {
+/**
+ * month: the shell's month, which the list shows unless All months is chosen.
+ * add: a request the shell raises to open the entry dialog, from Add activity or the N key;
+ * added tells the shell it was taken, so a later visit does not reopen the dialog.
+ */
+export function ActivityScreen(
+  p: ScreenProps & { month?: string; add?: number; added?: () => void },
+) {
   const [reload, setReload] = useState(0);
   const entries = useLoad(() => monthly.activity(p.entity.id), [p.entity.id, p.refresh, reload]);
   const plans = useLoad(() => monthly.plans(p.entity.id), [p.entity.id, p.refresh, reload]);
@@ -123,11 +130,12 @@ export function ActivityScreen(p: ScreenProps) {
   const [changed, setChanged] = useState(false);
   const [info, setInfo] = useState<Activity | null>(null);
   const [open, setOpen] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
   const [edit, setEdit] = useState<{ id: string; value: string } | null>(null);
   const [cellError, setCellError] = useState("");
   const [selection, setSelection] = useState({ id: "", col: 0 });
-  const [month, setMonth] = useState(p.entity.today.slice(0, 7));
+  const [allMonths, setAllMonths] = useState(false);
+  const shown = p.month ?? p.entity.today.slice(0, 7);
+  const month = allMonths ? "" : shown;
   const [category, setCategory] = useState<Activity["category"] | "">("");
   const [search, setSearch] = useState("");
   const [quick, setQuick] = useState("");
@@ -136,17 +144,16 @@ export function ActivityScreen(p: ScreenProps) {
   const [submitRequest, setSubmitRequest] = useState(0);
   const form = useRef<HTMLFormElement>(null);
   const gridKeys = useGridKeys();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Only a new request opens the dialog.
+  useEffect(() => {
+    if (!p.add) return;
+    p.added?.();
+    openNew();
+  }, [p.add]);
   // Ctrl/⌘+S submits after a committed amount edit has rendered into the record form.
   useEffect(() => {
     if (submitRequest) form.current?.requestSubmit();
   }, [submitRequest]);
-  // A discarded or failed save hands the retained input back for review.
-  useEffect(() => {
-    if (submitted && !p.busy) {
-      setSubmitted(false);
-      if (draft) setOpen(true);
-    }
-  }, [submitted, p.busy, draft]);
   const data = entries.kind === "ready" ? entries.data : [];
   const today = p.entity.today;
   const sources = plans.kind === "ready" ? sourceChoices(plans.data) : [];
@@ -326,9 +333,6 @@ export function ActivityScreen(p: ScreenProps) {
         rows: [row],
       });
   }
-  const months = [
-    ...new Set([today.slice(0, 7), ...data.map((e) => e.financial_date.slice(0, 7))]),
-  ].sort((a, b) => b.localeCompare(a));
   const rowIndex = Math.max(
     0,
     rows.findIndex((row) => row.id === selection.id),
@@ -547,9 +551,8 @@ export function ActivityScreen(p: ScreenProps) {
       done,
     );
   }
+  /** The dialog stays open while the write is pending, so a save failure is answered there. */
   function submit(next: Draft) {
-    setSubmitted(true);
-    setOpen(false);
     if (next.kind === "activity")
       p.save(
         next.entry
@@ -664,16 +667,12 @@ export function ActivityScreen(p: ScreenProps) {
       >
         <select
           className="input ar-month"
-          aria-label="Month"
+          aria-label="Months shown"
           value={month}
-          onChange={(e) => setMonth(e.target.value)}
+          onChange={(e) => setAllMonths(!e.target.value)}
         >
+          <option value={shown}>{fmtMonth(shown)}</option>
           <option value="">All months</option>
-          {months.map((m) => (
-            <option key={m} value={m}>
-              {fmtMonth(m)}
-            </option>
-          ))}
         </select>
         <button type="button" className="btn" disabled={p.busy || !loaded} onClick={openKnown}>
           Enter known total
@@ -742,23 +741,12 @@ export function ActivityScreen(p: ScreenProps) {
         states={[entries, plans, accounts, investments, loans, recipients]}
         retry={() => setReload((x) => x + 1)}
       />
-      {p.busy && draft && changed && !open && (
-        <output className="ar-banner">
-          <span>
-            This {draft.kind === "known" ? "known total" : "entry"} is not confirmed as saved. If a
-            notice above asks for attention, answer it there; your input is kept.
-          </span>
-          <button type="button" className="btn sm" onClick={() => setOpen(true)}>
-            Review attempted entry
-          </button>
-        </output>
-      )}
       {entries.kind === "loading" ? (
         <LoadingCard label="Loading activity" />
       ) : !loaded ? null : inMonth.length === 0 && !pendingRow ? (
         <Empty title={`Nothing is recorded in ${month ? monthName(month) : "any month"} yet`}>
           Record spending in the line above, or use Record activity for income, fixed costs and
-          saving. Investing and giving are recorded in Investments and giving.
+          saving. Investing and giving are recorded in Investments and Giving.
         </Empty>
       ) : (
         <section aria-label="Entries">
@@ -943,7 +931,9 @@ export function ActivityScreen(p: ScreenProps) {
                     </>
                   )}
                 </dl>
-                <p className="note">Correct this entry in Investments and giving.</p>
+                <p className="note">
+                  Correct this entry in {info.category === "investing" ? "Investments" : "Giving"}.
+                </p>
               </div>
               <div className="dlg-f">
                 {info.remaining_refundable != null && Number(info.remaining_refundable) > 0 && (

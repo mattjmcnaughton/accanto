@@ -446,8 +446,8 @@ export function Savings(p: ScreenProps) {
     );
   }
   function closeDetails() {
-    // While a write is busy the draft is kept, and the page's recovery notice must stay reachable.
-    if (!p.busy && pending && sidebar === draftKey(pending) && isNewRecord(pending)) {
+    // A new record stays open until it is saved or discarded; a failed save's notice shows in it.
+    if (pending && sidebar === draftKey(pending) && isNewRecord(pending)) {
       setNotice(`Save or discard the ${pendingLabel} first.`);
       return;
     }
