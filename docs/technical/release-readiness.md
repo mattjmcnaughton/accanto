@@ -1,5 +1,10 @@
 # MVP local release readiness
 
+> **Scope of this record.** Its checks ran on 2026-10-19 against the UI before the
+> redesign and schema revision `5k019`. They are not evidence about the rebuilt UI;
+> the redesign's own checks are its CI jobs (`gate`, `integration`, `e2e`) on the
+> branch that merged it.
+
 This matrix maps the agreed [PRD](../prd/01-mvp.md) to production source and
 reproducible checks at merged base `602aec6` plus the MVP-023 local branch.
 It replaces no PRD requirement. Execution results, immutable candidates, proof

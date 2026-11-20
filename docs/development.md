@@ -187,10 +187,9 @@ or forward repair.
 Migration `5l020` adds nullable `plan_revision.updated_at` and the triggers that
 maintain it. Apply it before starting an application version that reads the column:
 until then every Plan and Review endpoint fails with an undefined-column error, and
-nothing gates startup on the schema revision. Record `alembic_version` first. An
-older application ignores the column, so an application rollback does not need the
-downgrade. If a readiness check or test pins an expected Alembic revision, move that
-pin to `5l020` together with this migration. Browser login transaction records contain short-lived PKCE
+`/readyz` reports the schema incompatible. Record `alembic_version` first. An older
+application ignores the column, so an application rollback does not need the
+downgrade. Browser login transaction records contain short-lived PKCE
 material; expired records are removed when a later login starts.
 
 Production reverse proxies must suppress callback query strings, cookies and
@@ -290,8 +289,8 @@ storage, tokens or server logs are uploaded as CI artifacts.
 ## Readiness and deployment preparation
 
 `/healthz` checks process liveness. `/readyz` checks database connectivity and exactly
-the supported Alembic revision (`5k019`); empty, old, unknown or unreadable migration
-metadata returns503. It does not probe providers or establish runtime grants.
+the supported Alembic revision (`5l020`); empty, old, unknown or unreadable migration
+metadata returns 503. It does not probe providers or establish runtime grants.
 [Deployment and recovery](technical/deployment.md) separates locally verified
 behavior from pending Fly.io/Neon configuration, compatible rollback and credential
 revocation reconciliation. Never reset a populated database for readiness.

@@ -1,5 +1,10 @@
 # MVP-023 populated-upgrade local checkpoint
 
+> **Scope of this record.** Its checks ran on 2026-10-19 against the UI before the
+> redesign and schema revision `5k019`. They are not evidence about the rebuilt UI;
+> the redesign's own checks are its CI jobs (`gate`, `integration`, `e2e`) on the
+> branch that merged it.
+
 Scope: one new integration test; no production or migration changes. Branch
 `codex/mvp-023-upgrade-20261019`, persistent ignored worktree
 `.agentic/worktrees/mvp023-upgrade`, base merged MVP-022 tip
