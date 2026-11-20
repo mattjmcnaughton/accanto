@@ -95,64 +95,17 @@ def test_signed_in_workspace(tmp_path):
     browser_env["AGENT_BROWSER_DEFAULT_TIMEOUT"] = "15000"
 
     def browser(*args, check=True):
-        opens_activity_form = args[:5] == (
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-        ) and args[5] in {
-            "Record activity",
-            "Enter known total",
-            "Record refund from this purchase",
-        }
-        if opens_activity_form:
-            # The save callback closes the old form before the workspace clears
-            # its busy state. Do not click an opener that is still disabled.
-            browser(
-                "wait",
-                "--fn",
-                "Array.from(document.querySelectorAll('.activity-screen button'))"
-                f".some(button => button.textContent.trim() === {args[5]!r}"
-                " && !button.disabled)",
-            )
-        if args[:5] == ("find", "role", "button", "click", "--name") and args[5] in {
-            "Save activity",
-            "Save adjustment",
-            "Save refund",
-        }:
-            # The Activity sidebar scrolls independently too. Center its submit
-            # button before pointer input instead of clicking beneath a sticky edge.
-            args = ("click", "#activity-record button[type='submit']")
-        elif args[:5] == ("find", "role", "button", "click", "--name") and args[5] in {
-            "Save loan",
-            "Save observation",
-            "Save destination",
-            "Save contribution",
-        }:
-            # Record sidebars also scroll independently at narrow widths.
-            args = ("click", ".records aside button.primary")
-        elif args == (
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Record activity",
-            "--exact",
-        ):
-            args = ("click", ".activity-screen .toolbar-actions button:first-child")
         if args[0] == "click":
-            # A newly created Plan is rendered before the save's finally block
-            # enables its enclosing fieldset. Visible is not yet actionable.
+            # A control inside a dialog or form is rendered before a pending save
+            # re-enables its fieldset. Visible is not yet actionable.
             browser(
                 "wait",
                 "--fn",
                 "document.querySelector(" + repr(args[1]) + ")"
                 "?.matches(':not(:disabled)')",
             )
-            # Center targets inside the worksheet's nested scrolling region
-            # before native pointer input; its sticky header can cover an edge.
+            # Center targets inside scrolling dialogs and the worksheet before
+            # native pointer input; a sticky header or footer can cover an edge.
             browser(
                 "eval",
                 "document.querySelector(" + repr(args[1]) + ")"
@@ -185,18 +138,58 @@ def test_signed_in_workspace(tmp_path):
                 f"Browser command failed: {args[0]} {args[1:]}\n"
                 f"{result.stderr}\nSynthetic page state:\n{state}"
             )
-        if opens_activity_form:
-            # New activity, known totals and refunds all schedule date-field
-            # focus on the next frame. Wait for that handoff before typing.
-            browser(
-                "wait",
-                "--fn",
-                "document.activeElement === "
-                "document.querySelector('#activity-record input[type=date]')",
-            )
         return result.stdout
 
-    def set_date(selector, value):
+    def value(expression):
+        return browser("eval", expression).strip().strip('"')
+
+    def until(expression):
+        browser("wait", "--fn", expression)
+
+    def button(name):
+        # find does not wait: screens and dialogs render their controls after
+        # their reads, and a pending save disables them.
+        until(
+            "Array.from(document.querySelectorAll('button')).some(b => !b.disabled"
+            f" && (b.getAttribute('aria-label') ?? b.textContent.trim()) === {name!r})"
+        )
+        browser("find", "role", "button", "click", "--name", name, "--exact")
+
+    def go(screen):
+        # Screens are links: the sidebar at desktop widths; below 760 px the
+        # phone tabs, with More listing the screens that have no tab.
+        until("!document.querySelector('dialog[open]')")
+        wide = value("innerWidth > 760") == "true"
+        if not wide and screen not in {"Home", "Activity", "Review", "Plans"}:
+            browser("find", "role", "link", "click", "--name", "More", "--exact")
+            until("document.title === 'More · Accanto'")
+        browser("find", "role", "link", "click", "--name", screen, "--exact")
+        until(f"document.title === {screen + ' · Accanto'!r}")
+
+    def close_dialog():
+        browser("click", "dialog[open] .dlg-h button[aria-label='Close']")
+        until("!document.querySelector('dialog[open]')")
+
+    def record_activity():
+        # The Activity screen's own opener; Add activity in the top bar and the
+        # N key open the same dialog from any screen.
+        until(
+            "Array.from(document.querySelectorAll('#main button'))"
+            ".some(b => b.textContent.trim() === 'Record activity' && !b.disabled)"
+        )
+        button("Record activity")
+        until("!!document.querySelector('dialog[open] #activity-record')")
+
+    def save_activity():
+        browser("click", "#activity-record button[type='submit']")
+        until("!document.querySelector('#activity-record')")
+
+    def save_record(name):
+        # Investments, Giving and Loans save from the dialog's primary button.
+        button(name)
+        until("!document.querySelector('dialog[open]')")
+
+    def set_date(selector, date):
         # Native setter triggers React's delegated handlers on date controls.
         expression = (
             "(() => { const input = document.querySelector("
@@ -204,13 +197,24 @@ def test_signed_in_workspace(tmp_path):
             + "); const setter = Object.getOwnPropertyDescriptor("
             "HTMLInputElement.prototype, 'value').set; "
             + "setter.call(input, "
-            + repr(value)
+            + repr(date)
             + "); "
             "input.dispatchEvent(new Event('input', {bubbles: true})); "
             "input.dispatchEvent(new Event('change', {bubbles: true})); "
             "return input.value; })()"
         )
-        assert browser("eval", expression).strip().strip('"') == value
+        assert value(expression) == date
+
+    def option(select, text, *also):
+        # Waits for the option, then returns its value.
+        found = (
+            f"Array.from(document.querySelector({select!r})?.options ?? [])"
+            f".find(o => o.textContent.includes({text!r})"
+            + "".join(f" && o.textContent.includes({more!r})" for more in also)
+            + ")"
+        )
+        until(f"!!{found}")
+        return value(f"{found}.value")
 
     def record_cell(grid, column, expected):
         selector = (
@@ -221,32 +225,53 @@ def test_signed_in_workspace(tmp_path):
     def expect_cell(selector, expected):
         # Assert in one browser evaluation: save-triggered reloads can remove
         # a matching cell between a separate wait and get-text command.
-        browser(
-            "wait",
-            "--fn",
-            f"document.querySelector({selector!r})?.textContent === {expected!r}",
+        until(f"document.querySelector({selector!r})?.textContent === {expected!r}")
+
+    def section(name):
+        # A Review section's recorded total, then "of" its planned amount.
+        return f"section.step[aria-label={name!r}] .amt-col"
+
+    def expect_section(name, recorded):
+        until(
+            f"document.querySelector({section(name)!r})?.firstChild?.textContent"
+            f" === {recorded!r}"
+        )
+
+    def expand_section(category):
+        browser("click", f"#review-step-{category}")
+        until(
+            f"document.querySelector('#review-step-{category}')?.textContent"
+            " === 'Hide lines'"
         )
 
     def activity_details(text):
-        cell_id = (
-            browser(
-                "eval",
-                "Array.from(document.querySelectorAll('.activity-grid tbody tr'))"
-                ".find(row => Array.from(row.cells)"
-                f".some(cell => cell.textContent === {text!r}))"
-                ".lastElementChild.id",
-            )
-            .strip()
-            .strip('"')
+        # Opens the entry whose row has a cell with exactly this text.
+        cell_id = value(
+            "Array.from(document.querySelectorAll('#main [role=row]'))"
+            ".find(row => Array.from(row.querySelectorAll('[role=gridcell]'))"
+            f".some(cell => cell.textContent === {text!r}"
+            " || cell.querySelector('.ar-title')?.firstChild?.textContent"
+            f" === {text!r}))"
+            "?.querySelector('[role=gridcell]').id"
         )
-        browser("click", f"#{cell_id} button")
-        browser(
-            "wait",
-            "--fn",
-            "document.activeElement === document.querySelector("
-            "'#activity-details input, #activity-details select, "
-            "#activity-details textarea, #activity-details button')",
+        browser("click", f"#{cell_id}")
+        until("!!document.querySelector('dialog[open]')")
+
+    def open_loan():
+        # Phone widths show each loan as a card; its details button opens the
+        # loan's dialog with payments, archive and reopen.
+        button("Synthetic loan details")
+        until("!!document.querySelector('dialog[open]')")
+
+    def signed_in():
+        # The Entity's name is in the sidebar, which phone widths hide.
+        until(
+            "document.querySelector('.side-user span')?.textContent"
+            " === 'Synthetic E2E Entity'"
         )
+
+    def fits():
+        return value("document.documentElement.scrollWidth <= innerWidth") == "true"
 
     processes = []
     try:
@@ -279,20 +304,15 @@ def test_signed_in_workspace(tmp_path):
         # The session request completes after navigation; find does not wait.
         browser("wait", "a[href='/api/auth/login']")
         browser("find", "role", "link", "click", "--name", "Sign in", "--exact")
-        browser("wait", "--text", "Synthetic E2E Entity")
+        signed_in()
         assert "Sign out" in browser("snapshot", "-i")
-        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
-        browser("wait", "--text", "Record activity")
-        browser(
-            "find", "role", "button", "click", "--name", "Record activity", "--exact"
-        )
+        go("Activity")
+        record_activity()
         browser("find", "label", "Amount (USD)", "fill", "210")
-        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
-        browser("wait", "--fn", "!document.querySelector('#activity-record')")
+        save_activity()
         browser("wait", "--text", "$210.00")
-        browser(
-            "find", "role", "button", "click", "--name", "Enter known total", "--exact"
-        )
+        button("Enter known total")
+        until("!!document.querySelector('dialog[open] #activity-record')")
         browser("find", "label", "Known total (USD)", "fill", "250")
         assert (
             browser(
@@ -300,17 +320,14 @@ def test_signed_in_workspace(tmp_path):
             ).strip()
             == "250"
         )
-        browser(
-            "find", "role", "button", "click", "--name", "Save adjustment", "--exact"
-        )
-        browser("wait", "--fn", "!document.querySelector('#activity-record')")
+        save_activity()
         browser("wait", "--text", "$40.00")
-        assert "Adjustment" in browser("get", "text", "body")
+        assert "Adjustment" in browser("get", "text", "#main")
         browser("reload")
-        browser("wait", "--text", "Synthetic E2E Entity")
-        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        signed_in()
+        go("Activity")
         browser("wait", "--text", "$40.00")
-        browser("find", "role", "button", "click", "--name", "Plans", "--exact")
+        go("Plans")
         # A reviewed month can contain unknown actuals. Later activity leaves the
         # annotation set and displays an informational checkpoint mismatch.
         browser("click", "#new-plan")
@@ -333,224 +350,138 @@ def test_signed_in_workspace(tmp_path):
         browser("select", "#detail-frequency", "Annual")
         browser("click", "#save-draft")
         browser("wait", "--text", "$8.33")
-        browser(
-            "wait",
-            "--fn",
+        until(
             "!document.querySelector('#save-version').matches(':disabled') "
-            "&& document.querySelector('#save-state').textContent === 'Draft saved'",
+            "&& document.querySelector('#save-state').textContent"
+            ".startsWith('Draft saved')"
         )
         browser("click", "#save-version")
-        browser(
-            "wait",
-            "--fn",
-            "!!document.querySelector('#plan-version option[value=\"0\"]')",
+        until("!!document.querySelector('#plan-version option[value=\"0\"]')")
+        go("Review")
+        until(
+            "Array.from(document.querySelectorAll('#main button'))"
+            ".some(b => b.textContent.trim() === 'Start Review')"
         )
-        browser(
-            "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
-        )
-        browser("wait", "--text", "Start this month's Review")
-        choice = (
-            browser("eval", "document.querySelector('select').options[1].value")
-            .strip()
-            .strip('"')
-        )
-        browser("select", "select", choice)
-        browser("find", "role", "button", "click", "--name", "Create Review", "--exact")
-        browser("wait", "aside[aria-label='Review details'] textarea")
+        choice = value("document.querySelector('#main select').options[1].value")
+        browser("select", "#main select", choice)
+        button("Start Review")
+        browser("wait", "form[aria-label='Close the month'] textarea")
         browser("find", "label", "Review note", "fill", "Synthetic takeaway")
-        browser("find", "label", "Mark reviewed", "check")
-        browser("find", "role", "button", "click", "--name", "Save Review", "--exact")
-        expect_cell(".review-screen .data-toolbar .badge:last-child", "Reviewed")
-        expect_cell("#review-g-income-2", "Unknown")
-        expect_cell("#review-g-fixed_cost-2", "Unknown")
-        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
-        browser(
-            "find", "role", "button", "click", "--name", "Record activity", "--exact"
-        )
+        # Marking the month reviewed saves the note with it.
+        browser("click", "form[aria-label='Close the month'] button.pri")
+        expect_cell("#main .head .chip", "Reviewed")
+        expect_section("Net income", "Unknown")
+        expect_section("Fixed costs", "Unknown")
+        go("Activity")
+        record_activity()
         browser("select", "#activity-record select", "fixed_cost")
-        browser(
-            "wait",
-            "--fn",
-            "Array.from(document.querySelector("
-            "'select[name=\"fixed-cost\"]')?.options ?? [])"
-            ".some(option => option.textContent.includes('Synthetic annual service'))",
-        )
-        fixed_option = (
-            browser(
-                "eval",
-                "Array.from(document.querySelector('select[name=\"fixed-cost\"]').options)"
-                ".find(option => option.textContent.includes("
-                "'Synthetic annual service')).value",
-            )
-            .strip()
-            .strip('"')
-        )
-        browser("select", "select[name='fixed-cost']", fixed_option)
+        fixed = option("select[name='fixed-cost']", "Synthetic annual service")
+        browser("select", "select[name='fixed-cost']", fixed)
         browser("find", "label", "Amount (USD)", "fill", "8.33")
-        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
-        browser("wait", "--fn", "!document.querySelector('#activity-record')")
+        save_activity()
         browser("wait", "--text", "Synthetic annual service")
-        browser(
-            "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
+        go("Review")
+        expect_section("Fixed costs", "$8.33")
+        until(
+            f"document.querySelector({section('Fixed costs')!r})"
+            ".textContent.includes('of $8.33, on plan')"
         )
-        browser("wait", "--text", "$8.33")
-        expect_cell("#review-g-fixed_cost-2", "$8.33")
-        expect_cell("#review-g-fixed_cost-4", "")
-        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
-        browser(
-            "find", "role", "button", "click", "--name", "Record activity", "--exact"
-        )
+        go("Activity")
+        record_activity()
         browser("find", "label", "Amount (USD)", "fill", "25")
-        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
-        browser("wait", "--fn", "!document.querySelector('#activity-record')")
+        save_activity()
         browser("wait", "--text", "$25.00")
-        browser(
-            "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
-        )
+        go("Review")
         browser("wait", "--text", "Changed since review")
-        assert (
-            browser(
-                "eval", "document.querySelector('input[type=checkbox]').checked"
-            ).strip()
-            == "true"
+        assert "Reviewed. Clear the mark" in browser(
+            "get", "text", "form[aria-label='Close the month']"
         )
-        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
-        browser("wait", "--text", "No savings accounts yet.")
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "New savings account",
-            "--exact",
-        )
-        browser("find", "label", "Name", "fill", "Synthetic savings")
-        browser("find", "label", "Opening amount", "fill", "10000.00")
-        browser(
-            "find", "role", "button", "click", "--name", "Add opening goal", "--exact"
-        )
+        go("Savings")
+        browser("wait", "--text", "No savings accounts yet")
+        button("New account")
+        browser("find", "label", "Account name", "fill", "Synthetic savings")
+        browser("find", "label", "Holds today (USD)", "fill", "10000.00")
+        button("Add opening goal")
         browser("find", "label", "Goal name", "fill", "Emergency")
         browser("find", "label", "Target (required)", "fill", "8000.00")
         browser("find", "label", "Opening designation", "fill", "5000.00")
-        browser(
-            "find", "role", "button", "click", "--name", "Add opening goal", "--exact"
-        )
-        browser("fill", "fieldset:nth-of-type(2) label:nth-of-type(1) input", "Laptop")
-        browser("fill", "fieldset:nth-of-type(2) label:nth-of-type(3) input", "1000.00")
-        browser("fill", "fieldset:nth-of-type(2) label:nth-of-type(4) input", "1000.00")
-        browser("find", "role", "button", "click", "--name", "Save", "--exact")
-        browser("wait", "--text", "Synthetic savings")
+        button("Add opening goal")
+        second = "dialog[open] .dlg-b > fieldset:nth-of-type(2)"
+        browser("fill", f"{second} > label:nth-of-type(1) input", "Laptop")
+        browser("fill", f"{second} .two label:nth-of-type(2) input", "1000.00")
+        browser("fill", f"{second} > label:nth-of-type(2) input", "1000.00")
+        browser("click", "dialog[open] .dlg-f button.pri")
+        # A saved account opens its details in the same dialog.
+        browser("wait", "--text", "Remaining saved")
+        close_dialog()
         page = browser("snapshot")
-        assert "Remaining saved" in page, page
-        assert "Unallocated" in page and "$4000.00" in page
+        assert "Synthetic savings" in page, page
+        assert "Unallocated" in page and "$4,000.00" in page
         expect_cell("td[aria-label='Laptop, Contributions']", "$0.00")
         assert "Not yet funded" in page and "Funded" in page
         browser("reload")
-        browser("wait", "--text", "Synthetic E2E Entity")
-        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
+        signed_in()
+        go("Savings")
         browser("wait", "--text", "Synthetic savings")
         browser("set", "viewport", "375", "760")
         assert "Unallocated" in browser("snapshot")
-        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
-        browser("wait", "--text", "Record activity")
-        browser(
-            "find", "role", "button", "click", "--name", "Record activity", "--exact"
-        )
+        go("Activity")
+        record_activity()
         browser("find", "label", "Amount (USD)", "fill", "1200.00")
-        browser("select", "select[name='funding-origin']", "savings")
-        browser(
-            "wait",
-            "--fn",
-            "Array.from(document.querySelector('select[name=\"saving-goal\"]').options)"
-            ".some(option => option.textContent.includes('Laptop'))",
-        )
-        goal_option = (
-            browser(
-                "eval",
-                "Array.from(document.querySelector('select[name=\"saving-goal\"]').options)"
-                ".find(option => option.textContent.includes('Laptop')).value",
-            )
-            .strip()
-            .strip('"')
-        )
-        browser("select", "select[name='saving-goal']", goal_option)
-        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
+        # Paid from names the goal the saved money comes from.
+        laptop = option("select[name='funding-origin']", "Laptop")
+        browser("select", "select[name='funding-origin']", laptop)
+        save_button = "#activity-record button[type='submit']"
+        browser("click", save_button)
+        # The failed save's notice appears inside the open dialog, with the
+        # attempted input still in the form.
         browser(
             "wait", "--text", "The input needs correction. Your entries are still here."
+        )
+        until(
+            "!!document.querySelector('dialog[open] .recovery-notice')"
+            " && !!document.querySelector('dialog[open] #activity-record')"
         )
         assert "1200.00" in browser(
             "get", "value", "#activity-record input[inputmode='decimal']"
         )
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Discard pending save",
-            "--exact",
-        )
+        button("Discard pending save")
         browser("select", "#activity-record select", "saving")
         browser("find", "label", "Amount (USD)", "fill", "200.00")
-        browser("select", "select[name='saving-goal']", goal_option)
-        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
-        browser("wait", "--fn", "!document.querySelector('#activity-record')")
+        option("select[name='saving-goal']", "Laptop")
+        browser("select", "select[name='saving-goal']", laptop)
+        save_activity()
         browser("wait", "--text", "$200.00")
-        browser(
-            "find", "role", "button", "click", "--name", "Record activity", "--exact"
-        )
+        record_activity()
         browser("find", "label", "Amount (USD)", "fill", "1200.00")
-        browser("select", "select[name='funding-origin']", "savings")
-        browser("select", "select[name='saving-goal']", goal_option)
-        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
-        browser("wait", "--fn", "!document.querySelector('#activity-record')")
-        browser("wait", "--text", "$1200.00")
+        browser("select", "select[name='funding-origin']", laptop)
+        save_activity()
+        browser("wait", "--text", "$1,200.00")
         # The refund starts from its purchase and retains that purchase's origin.
-        activity_details("$1200.00")
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Record refund from this purchase",
-            "--exact",
-        )
+        activity_details("$1,200.00")
+        button("Record a refund")
         browser("wait", "--text", "Refund date")
         set_date(
             "#activity-record input[type='date']", datetime.now(UTC).date().isoformat()
         )
         browser("find", "label", "Refund amount (USD)", "fill", "300.00")
-        browser("find", "role", "button", "click", "--name", "Save refund", "--exact")
-        browser("wait", "--fn", "!document.querySelector('#activity-record')")
-        browser("wait", "--text", "$-300.00")
-        assert "Refund of" in browser("get", "text", "body")
-        activity_details("$1200.00")
-        assert "Remaining refundable: $900.00" in browser("get", "text", "body")
-        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
+        save_activity()
+        browser("wait", "--text", "−$300.00")
+        assert "Refund:" in browser("get", "text", "#main")
+        activity_details("$1,200.00")
+        assert "Remaining refundable: $900.00" in browser("get", "text", "dialog[open]")
+        close_dialog()
+        go("Savings")
         expect_cell("td[aria-label='Laptop, Contributions']", "$200.00")
-        browser(
-            "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
-        )
+        go("Review")
         browser("wait", "--text", "Outflows funded from savings")
-        browser("click", "#review-c-spending-0 button")
-        review_text = browser("get", "text", "body")
+        expand_section("spending")
+        review_text = browser("get", "text", "#main")
         assert "New saving" in review_text and "$200.00" in review_text
-        assert "$1200.00" in review_text
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Investments and giving",
-            "--exact",
-        )
-        browser("wait", "--text", "No investments yet. Press a to add one.")
-        browser(
-            "find", "role", "button", "click", "--name", "Add investment", "--exact"
-        )
+        assert "$1,200.00" in review_text
+        go("Investments")
+        browser("wait", "--text", "No investments yet")
+        button("Add investment")
         browser("find", "label", "Name", "fill", "Example fund")
         browser(
             "find",
@@ -566,74 +497,41 @@ def test_signed_in_workspace(tmp_path):
             "fill",
             "25000.00",
         )
-        browser(
-            "find", "role", "button", "click", "--name", "Save destination", "--exact"
-        )
+        save_record("Save investment")
         record_cell("Investments", 2, "Active")
         record_cell("Investments", 3, "$0.00")
-        record_cell("Investments", 5, "$25000.00")
-        record_cell("Investment value observations", 3, "$25000.00")
+        record_cell("Investments", 5, "$25,000.00")
+        record_cell("Investment value observations", 3, "$25,000.00")
         record_cell("Investment value observations", 4, "Opening")
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Record contribution",
-            "--exact",
+        button("Record contribution")
+        fund = value(
+            "document.querySelector('select[name=investment-destination]')"
+            ".options[1].value"
         )
+        browser("select", "select[name='investment-destination']", fund)
         browser("find", "label", "Amount (USD)", "fill", "1000.00")
-        investment_option = (
-            browser(
-                "eval",
-                "document.querySelector('select[name=contribution-destination]')"
-                ".options[1].value",
-            )
-            .strip()
-            .strip('"')
-        )
-        browser(
-            "select",
-            "aside select[name='contribution-destination']",
-            investment_option,
-        )
-        browser(
-            "find", "role", "button", "click", "--name", "Save contribution", "--exact"
-        )
+        assert "1000.00" in browser("get", "value", "dialog[open] input[inputmode]")
+        save_record("Save contribution")
         record_cell("Investments", 2, "Active")
-        record_cell("Investments", 3, "$1000.00")
-        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
-        browser(
-            "wait",
-            "--fn",
-            "Array.from(document.querySelectorAll('.activity-grid tbody tr'))"
-            ".some(row => row.textContent.includes('Investment contribution'))",
+        record_cell("Investments", 3, "$1,000.00")
+        go("Activity")
+        until(
+            "Array.from(document.querySelectorAll('#main [role=row]'))"
+            ".some(row => row.textContent.includes('Investing'))"
         )
-        investment_activity = browser(
-            "eval",
-            "Array.from(document.querySelectorAll('.activity-grid tbody tr'))"
-            ".find(article => article.textContent"
-            ".includes('Investment contribution')).textContent",
+        investment_activity = value(
+            "Array.from(document.querySelectorAll('#main [role=row]'))"
+            ".find(row => row.textContent.includes('Investing')).textContent"
         )
         assert (
             "Example fund" in investment_activity
             and "Unassigned" not in investment_activity
         )
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Investments and giving",
-            "--exact",
-        )
-        browser(
-            "find", "role", "button", "click", "--name", "Giving recipients", "--exact"
-        )
-        browser("wait", "--text", "No recipients yet. Press a to add one.")
-        browser("find", "role", "button", "click", "--name", "Add recipient", "--exact")
+        # Giving is its own screen with its own address.
+        go("Giving")
+        assert value("location.hash") == "#/giving"
+        browser("wait", "--text", "No recipients yet")
+        button("Add recipient")
         browser("find", "label", "Name", "fill", "Example recipient")
         browser(
             "find",
@@ -642,345 +540,168 @@ def test_signed_in_workspace(tmp_path):
             "fill",
             "500.00",
         )
-        browser(
-            "find", "role", "button", "click", "--name", "Save destination", "--exact"
-        )
+        save_record("Save recipient")
         browser("wait", "--text", "Example recipient")
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Record contribution",
-            "--exact",
-        )
+        button("Record donation")
         browser("find", "label", "Amount (USD)", "fill", "100.00")
-        giving_option = (
-            browser(
-                "eval",
-                "document.querySelector('select[name=contribution-destination]')"
-                ".options[1].value",
-            )
-            .strip()
-            .strip('"')
+        recipient = value(
+            "document.querySelector('select[name=giving-destination]').options[1].value"
         )
-        browser(
-            "select",
-            "aside select[name='contribution-destination']",
-            giving_option,
-        )
-        browser(
-            "find", "role", "button", "click", "--name", "Save contribution", "--exact"
-        )
+        browser("select", "select[name='giving-destination']", recipient)
+        save_record("Save donation")
         record_cell("Giving recipients", 2, "Active")
         record_cell("Giving recipients", 3, "$100.00")
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Record contribution",
-            "--exact",
-        )
+        button("Record donation")
         browser("find", "label", "Adjustment to recorded total", "check")
         browser("find", "label", "Amount (USD)", "fill", "-25.00")
-        browser(
-            "select",
-            "aside select[name='contribution-destination']",
-            giving_option,
-        )
-        browser(
-            "find", "role", "button", "click", "--name", "Save contribution", "--exact"
-        )
+        browser("select", "select[name='giving-destination']", recipient)
+        save_record("Save donation")
         record_cell("Giving recipients", 2, "Active")
         record_cell("Giving recipients", 3, "$75.00")
         browser("set", "viewport", "360", "780")
         browser("reload")
-        browser("wait", "--text", "Synthetic E2E Entity")
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Investments and giving",
-            "--exact",
-        )
+        signed_in()
+        go("Investments")
         record_cell("Investments", 2, "Active")
-        record_cell("Investments", 3, "$1000.00")
-        record_cell("Investments", 5, "$25000.00")
-        record_cell("Investment value observations", 3, "$25000.00")
+        record_cell("Investments", 3, "$1,000.00")
+        record_cell("Investments", 5, "$25,000.00")
+        record_cell("Investment value observations", 3, "$25,000.00")
         record_cell("Investment value observations", 4, "Opening")
-        assert (
-            browser(
-                "eval", "document.documentElement.scrollWidth <= innerWidth"
-            ).strip()
-            == "true"
-        )
+        assert fits()
         # Loan payoff: the payment is one fixed-cost outflow and leaves the
         # dated amount owed unchanged until an independent zero observation.
-        browser(
-            "find", "role", "button", "click", "--name", "Loans and balances", "--exact"
-        )
-        browser("find", "role", "button", "click", "--name", "Add loan", "--exact")
+        go("Loans")
+        browser("wait", "--text", "No loans yet")
+        browser("click", "#main .empty button.pri")
         browser("find", "label", "Name", "fill", "Synthetic loan")
-        set_date('aside input[type="date"]', "2026-10-01")
+        set_date('dialog[open] input[type="date"]', "2026-10-01")
         browser("find", "label", "Opening amount owed (USD)", "fill", "300")
-        browser("find", "role", "button", "click", "--name", "Save loan", "--exact")
+        save_record("Save loan")
         record_cell("Loans", 5, "$300.00")
-        record_cell("Loans", 4, "2026-10-01")
-        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
-        browser(
-            "find", "role", "button", "click", "--name", "Record activity", "--exact"
-        )
+        record_cell("Loans", 4, "Oct 1, 2026")
+        # Add activity in the top bar opens the entry dialog from any screen.
+        button("Add activity")
+        until("!!document.querySelector('dialog[open] #activity-record')")
+        assert value("location.hash").startswith("#/activity")
         browser("select", "#activity-record select", "fixed_cost")
-        browser(
-            "wait",
-            "--fn",
-            "Array.from(document.querySelector("
-            "'select[name=\"loan-account\"]')?.options ?? [])"
-            ".some(option => option.textContent === 'Synthetic loan')",
-        )
-        loan_option = (
-            browser(
-                "eval",
-                "Array.from(document.querySelector('select[name=\"loan-account\"]').options)"
-                ".find(option => option.textContent === 'Synthetic loan').value",
-            )
-            .strip()
-            .strip('"')
-        )
-        browser("select", "select[name='loan-account']", loan_option)
+        loan = option("select[name='loan-account']", "Synthetic loan")
+        browser("select", "select[name='loan-account']", loan)
         browser("find", "label", "Amount (USD)", "fill", "300")
-        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
-        browser("wait", "--fn", "!document.querySelector('#activity-record')")
+        save_activity()
         browser("wait", "--text", "Loan: Synthetic loan")
-        browser(
-            "find", "role", "button", "click", "--name", "Loans and balances", "--exact"
-        )
+        go("Loans")
         record_cell("Loans", 5, "$300.00")
         record_cell("Loans", 7, "1")
-        browser("click", "table[aria-label='Loans'] td[data-cell='0-0']")
-        browser("press", "Enter")
+        open_loan()
         record_cell("Payments for Synthetic loan", 3, "$300.00")
-        browser("find", "role", "button", "click", "--name", "Close", "--exact")
-        browser(
-            "find", "role", "button", "click", "--name", "Record observation", "--exact"
-        )
-        set_date('aside input[type="date"]', "2026-10-01")
+        close_dialog()
+        button("Record observation")
+        set_date('dialog[open] input[type="date"]', "2026-10-01")
         browser("find", "label", "Amount owed (USD)", "fill", "0")
-        browser(
-            "find", "role", "button", "click", "--name", "Save observation", "--exact"
-        )
+        save_record("Save observation")
         record_cell("Loans", 5, "$0.00")
-        record_cell("Loans", 6, "2026-10-01")
-        browser("click", "table[aria-label='Loans'] td[data-cell='0-0']")
-        browser("press", "Enter")
-        browser("find", "role", "button", "click", "--name", "Archive loan", "--exact")
-        browser("wait", "dialog[open]")
-        browser("click", "dialog[open] button.danger")
+        record_cell("Loans", 6, "Oct 1, 2026")
+        open_loan()
+        button("Archive loan")
+        browser("wait", "dialog[aria-label='Archive Synthetic loan?']")
+        browser("click", "dialog[aria-label='Archive Synthetic loan?'] button.danger")
         record_cell("Loans", 1, "Synthetic loan")
         record_cell("Loans", 2, "Archived")
-        browser("click", "table[aria-label='Loans'] td[data-cell='0-0']")
-        browser("press", "Enter")
-        # The archived label alone does not establish that the next control is
-        # enabled and unobstructed after the asynchronous view update.
-        browser(
-            "wait",
-            "--fn",
-            "(() => { const button = Array.from(document.querySelectorAll('button'))"
-            ".find(b => b.textContent.trim() === 'Reopen loan'); "
-            "if (!button || button.disabled) return false; "
-            "button.scrollIntoView({block: 'center', inline: 'nearest'}); "
-            "const r = button.getBoundingClientRect(); "
-            "const hit = document.elementFromPoint(r.x + r.width / 2, "
-            "r.y + r.height / 2); "
-            "return hit === button || button.contains(hit); })()",
+        until("!document.querySelector('dialog[open]')")
+        open_loan()
+        until(
+            "Array.from(document.querySelectorAll('dialog[open] button'))"
+            ".some(b => b.textContent.trim() === 'Reopen loan' && !b.disabled)"
         )
-        browser("find", "role", "button", "click", "--name", "Reopen loan", "--exact")
+        button("Reopen loan")
         record_cell("Loans", 2, "Active")
-        browser("click", "table[aria-label='Loans'] td[data-cell='0-0']")
-        browser("press", "Enter")
+        until("!document.querySelector('dialog[open]')")
+        open_loan()
         browser("wait", "--text", "Archive loan")
+        close_dialog()
         # MVP-019: one isolated synthetic lifecycle journey through production UI.
-        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "New savings account",
-            "--exact",
-        )
-        browser("find", "label", "Name", "fill", "Synthetic lifecycle cash")
-        browser("find", "label", "Opening amount", "fill", "100.00")
-        browser(
-            "find", "role", "button", "click", "--name", "Add opening goal", "--exact"
-        )
+        go("Savings")
+        button("New account")
+        browser("find", "label", "Account name", "fill", "Synthetic lifecycle cash")
+        browser("find", "label", "Holds today (USD)", "fill", "100.00")
+        button("Add opening goal")
         browser("find", "label", "Goal name", "fill", "Lifecycle purpose")
         browser("find", "label", "Target (required)", "fill", "100.00")
         browser("find", "label", "Opening designation", "fill", "100.00")
-        browser("find", "role", "button", "click", "--name", "Save", "--exact")
+        browser("click", "dialog[open] .dlg-f button.pri")
+        browser("wait", "--text", "Remaining saved")
+        close_dialog()
         browser("wait", "--text", "Synthetic lifecycle cash")
-        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
-        browser(
-            "find", "role", "button", "click", "--name", "Record activity", "--exact"
-        )
-        browser("select", "select[name='funding-origin']", "savings")
-        browser(
-            "wait",
-            "--fn",
-            "Array.from(document.querySelector('select[name=\"saving-goal\"]').options)"
-            ".some(o => o.textContent.includes('Lifecycle purpose'))",
-        )
-        lifecycle_goal = (
-            browser(
-                "eval",
-                "Array.from(document.querySelector('select[name=\"saving-goal\"]').options)"
-                ".find(o => o.textContent.includes('Lifecycle purpose')).value",
-            )
-            .strip()
-            .strip('"')
-        )
-        browser("select", "select[name='saving-goal']", lifecycle_goal)
+        go("Activity")
+        record_activity()
+        purpose = option("select[name='funding-origin']", "Lifecycle purpose")
+        browser("select", "select[name='funding-origin']", purpose)
         browser("find", "label", "Amount (USD)", "fill", "90.00")
-        browser("find", "label", "Note", "fill", "Synthetic lifecycle purchase")
-        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
-        browser("wait", "--fn", "!document.querySelector('#activity-record')")
+        browser("find", "label", "What was it?", "fill", "Synthetic lifecycle purchase")
+        save_activity()
         browser("wait", "--text", "Synthetic lifecycle purchase")
-        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
-        browser("wait", "button[aria-label='Details for Lifecycle purpose']")
+        go("Savings")
         browser("click", "button[aria-label='Details for Lifecycle purpose']")
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Complete Lifecycle purpose…",
-            "--exact",
-        )
+        button("Complete Lifecycle purpose…")
         browser(
             "wait",
             "--text",
             "Returns $10.00 to Unallocated · account total unchanged"
             " · no new contributions",
         )
-        browser(
-            "find", "role", "button", "click", "--name", "Confirm complete", "--exact"
-        )
-        browser(
-            "wait",
-            "--fn",
+        button("Confirm complete")
+        until(
             "document.body.textContent.includes('Completed') && "
-            "!document.body.textContent.includes('Confirm complete')",
+            "!document.body.textContent.includes('Confirm complete')"
         )
-        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
+        close_dialog()
+        go("Activity")
         browser("wait", "--text", "Synthetic lifecycle purchase")
         activity_details("Synthetic lifecycle purchase")
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Record refund from this purchase",
-            "--exact",
-        )
+        button("Record a refund")
         browser("wait", "--text", "Refund date")
         browser("find", "label", "Refund amount (USD)", "fill", "20.00")
-        browser("find", "role", "button", "click", "--name", "Save refund", "--exact")
-        browser("wait", "--fn", "!document.querySelector('#activity-record')")
-        browser("wait", "--text", "$-20.00")
+        save_activity()
+        browser("wait", "--text", "−$20.00")
         activity_details("Synthetic lifecycle purchase")
         browser("wait", "--text", "Remaining refundable: $70.00")
-        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
-        browser("wait", "button[aria-label='Details for Lifecycle purpose']")
+        close_dialog()
+        go("Savings")
         browser("click", "button[aria-label='Details for Lifecycle purpose']")
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Return Lifecycle purpose to Unallocated…",
-            "--exact",
-        )
+        button("Return Lifecycle purpose to Unallocated…")
         browser(
             "wait",
             "--text",
             "Returns $20.00 to Unallocated · goal stays completed",
         )
-        browser(
-            "find", "role", "button", "click", "--name", "Confirm return", "--exact"
+        button("Confirm return")
+        until("!document.body.textContent.includes('Confirm return')")
+        close_dialog()
+        go("Activity")
+        record_activity()
+        unallocated = option(
+            "select[name='funding-origin']", "Synthetic lifecycle cash", "Unallocated"
         )
-        browser("wait", "--fn", "!document.body.textContent.includes('Confirm return')")
-        browser("find", "role", "button", "click", "--name", "Activity", "--exact")
-        browser(
-            "find", "role", "button", "click", "--name", "Record activity", "--exact"
-        )
-        browser("select", "select[name='funding-origin']", "savings")
-        browser(
-            "wait",
-            "--fn",
-            "Array.from(document.querySelector('select[name=\"saving-goal\"]').options)"
-            ".some(o => o.textContent.includes('Synthetic lifecycle cash') "
-            "&& o.textContent.includes('Unallocated'))",
-        )
-        lifecycle_unallocated = (
-            browser(
-                "eval",
-                "Array.from(document.querySelector('select[name=\"saving-goal\"]').options)"
-                ".find(o => o.textContent.includes('Synthetic lifecycle cash') "
-                "&& o.textContent.includes('Unallocated')).value",
-            )
-            .strip()
-            .strip('"')
-        )
-        browser("select", "select[name='saving-goal']", lifecycle_unallocated)
+        browser("select", "select[name='funding-origin']", unallocated)
         browser("find", "label", "Amount (USD)", "fill", "30.00")
-        browser("find", "label", "Note", "fill", "Synthetic final use")
-        browser("find", "role", "button", "click", "--name", "Save activity", "--exact")
-        browser("wait", "--fn", "!document.querySelector('#activity-record')")
+        browser("find", "label", "What was it?", "fill", "Synthetic final use")
+        save_activity()
         browser("wait", "--text", "Synthetic final use")
-        browser("find", "role", "button", "click", "--name", "Savings", "--exact")
-        browser("wait", "button[aria-label='Details for Synthetic lifecycle cash']")
+        go("Savings")
         browser("click", "button[aria-label='Details for Synthetic lifecycle cash']")
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Archive Synthetic lifecycle cash…",
-            "--exact",
-        )
-        browser(
-            "find", "role", "button", "click", "--name", "Confirm archive", "--exact"
-        )
+        button("Archive Synthetic lifecycle cash…")
+        button("Confirm archive")
         browser("wait", "--text", "Reopen Synthetic lifecycle cash…")
-        browser(
-            "find", "role", "button", "click", "--name", "Show archived (1)", "--exact"
-        )
+        close_dialog()
+        button("Show archived (1)")
         assert "Archived" in browser(
             "get", "text", "td[aria-label='Synthetic lifecycle cash, Status']"
         )
-        browser(
-            "find",
-            "role",
-            "button",
-            "click",
-            "--name",
-            "Reopen Synthetic lifecycle cash…",
-            "--exact",
-        )
-        browser(
-            "find", "role", "button", "click", "--name", "Confirm reopen", "--exact"
-        )
+        browser("click", "button[aria-label='Details for Synthetic lifecycle cash']")
+        button("Reopen Synthetic lifecycle cash…")
+        button("Confirm reopen")
         browser("wait", "--text", "Archive Synthetic lifecycle cash…")
+        close_dialog()
         assert "Active" in browser(
             "get", "text", "td[aria-label='Synthetic lifecycle cash, Status']"
         )
@@ -993,69 +714,54 @@ def test_signed_in_workspace(tmp_path):
         expect_cell("td[aria-label='Lifecycle purpose, Contributions']", "$0.00")
         # The same month's Review explains all delivered activity without
         # promoting observations, transfers or an unassigned income into receipts.
-        browser(
-            "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
-        )
-        browser("wait", "table[aria-label='Comparison by category and saved identity']")
-        browser("wait", "--text", "Planned and actual metrics")
-        review_text = browser("get", "text", "body")
-        assert "Synthetic month · v1" in review_text
+        go("Review")
+        browser("wait", "section[aria-label='Planned and actual metrics']")
+        review_text = browser("get", "text", "#main")
+        assert "Synthetic month v1" in review_text
         assert "Changed since review" in review_text
-        assert (
-            browser(
-                "eval", "document.querySelector('input[type=checkbox]').checked"
-            ).strip()
-            == "true"
+        assert "Reviewed. Clear the mark" in review_text
+        assert "Synthetic takeaway" in browser(
+            "get", "value", "form[aria-label='Close the month'] textarea"
         )
-        assert "Synthetic takeaway" in browser("get", "value", "textarea")
-        expect_cell("#review-g-income-2", "Unknown")
+        expect_section("Net income", "Unknown")
+        expand_section("investing")
         assert "Unplanned activity (1)" in browser(
-            "get", "text", "#review-u-investing-0"
+            "get", "text", "section.step[aria-label='Investing'] table"
         )
-        assert "Unplanned activity (2)" in browser("get", "text", "#review-u-giving-0")
+        expand_section("giving")
+        assert "Unplanned activity (2)" in browser(
+            "get", "text", "section.step[aria-label='Giving'] table"
+        )
         assert "Income-funded investing" in review_text
-        # Exact activity totals exclude the $25000 investment observation,
+        # Exact activity totals exclude the $25,000 investment observation,
         # loan observations and savings lifecycle reassignments.
-        expect_cell("#review-g-fixed_cost-2", "$308.33")
-        expect_cell("#review-g-spending-2", "$1275.00")
-        expect_cell("#review-g-saving-2", "$200.00")
-        expect_cell("#review-g-investing-2", "$1000.00")
-        expect_cell("#review-g-giving-2", "$75.00")
-        browser(
-            "click",
-            "section[aria-label='Planned and actual metrics'] "
-            "tbody tr:nth-child(1) summary",
+        expect_section("Fixed costs", "$308.33")
+        expect_section("Guilt-free spending", "$1,275.00")
+        expect_section("Saving", "$200.00")
+        expect_section("Investing", "$1,000.00")
+        expect_section("Giving", "$75.00")
+        fixed_ratio = "article[aria-label='All fixed costs ÷ actual net income']"
+        browser("click", f"{fixed_ratio} summary")
+        ratio_text = browser("get", "text", fixed_ratio)
+        assert "÷" in ratio_text and "× 100" in ratio_text, ratio_text
+        assert "$8.33 ÷ $4,000.00" in ratio_text, ratio_text
+        button("All ratios")
+        browser("wait", "--text", "Required amount is unknown or incomplete.")
+        expand_section("spending")
+        spending = browser(
+            "get", "text", "section.step[aria-label='Guilt-free spending']"
         )
-        assert "All fixed costs ÷ net income × 100" in browser("get", "text", "body")
-        assert "$8.33 ÷ $4000.00 × 100" in browser("get", "text", "body")
-        browser(
-            "click",
-            "section[aria-label='Planned and actual metrics'] "
-            "tbody tr:nth-child(7) summary",
-        )
-        assert "Required amount is unknown or incomplete." in browser(
-            "get", "text", "body"
-        )
-        browser(
-            "click",
-            "#review-a-spending-0 button",
-        )
-        expect_cell("td[id^='review-a-spending/e-'][id$='-2']", "$40.00")
+        assert "Adjustments, already included (1)" in spending and "$40.00" in spending
         browser("reload")
-        browser("wait", "--text", "Synthetic E2E Entity")
-        browser(
-            "find", "role", "button", "click", "--name", "Monthly Review", "--exact"
-        )
-        browser("wait", "table[aria-label='Comparison by category and saved identity']")
-        assert "Synthetic month · v1" in browser("get", "text", "body")
+        signed_in()
+        go("Review")
+        browser("wait", "section[aria-label='Planned and actual metrics']")
+        assert "Synthetic month v1" in browser("get", "text", "#main")
         browser("set", "viewport", "320", "760")
-        assert (
-            browser(
-                "eval", "document.documentElement.scrollWidth <= innerWidth"
-            ).strip()
-            == "true"
-        )
-        browser("find", "role", "button", "click", "--name", "Sign out", "--exact")
+        assert fits()
+        # Below 760 px the sidebar is hidden; More holds Sign out.
+        browser("find", "role", "link", "click", "--name", "More", "--exact")
+        browser("click", "#main .more-user button")
         browser("wait", "--text", "Sign in")
         assert "Synthetic E2E Entity" not in browser("get", "text", "body")
     finally:
