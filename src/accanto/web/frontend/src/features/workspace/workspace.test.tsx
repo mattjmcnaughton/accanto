@@ -81,7 +81,7 @@ it("returns the address to the current screen when Back or Forward would abandon
   view.rerender(
     <Workspace initial={session} signedOut={vi.fn()} screen="activity" navigate={navigate} />,
   );
-  await waitFor(() => expect(navigate).toHaveBeenCalledWith("plans", true));
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith("plans", true, undefined));
   expect(screen.queryByRole("button", { name: "Record activity" })).toBeNull();
   expect(screen.getByDisplayValue("Pending Plan")).toBeDefined();
 });
@@ -108,4 +108,55 @@ it("keeps the save notice reachable by moving it into an open dialog", async () 
   fireEvent(dialog, new Event("cancel", { cancelable: true }));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(within(main).getByRole("button", { name: "Retry save" })).toBeDefined();
+});
+it("opens the entry dialog from any screen and shares one month across Home, Activity and Review", async () => {
+  const session = {
+    user: { id: "u" },
+    csrf_token: "test",
+    entities: [{ id: "e", name: "Synthetic Entity", today: "2026-10-17", time_zone: "UTC" }],
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("[]"));
+  const navigate = vi.fn();
+  const view = render(
+    <Workspace initial={session} signedOut={vi.fn()} screen="settings" navigate={navigate} />,
+  );
+  expect(screen.queryByRole("button", { name: "Next month" })).toBeNull();
+  fireEvent.keyDown(document, { key: "n" });
+  expect(navigate).toHaveBeenLastCalledWith("activity", false, undefined);
+  view.rerender(
+    <Workspace initial={session} signedOut={vi.fn()} screen="activity" navigate={navigate} />,
+  );
+  const dialog = await screen.findByRole("dialog", { name: "Record activity" });
+  expect(within(dialog).getByLabelText("Amount (USD)")).toBeDefined();
+  fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  // The new entry counts as unsaved, so leaving asks first.
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  // The request is one-shot: coming back to Activity later does not reopen the dialog.
+  view.rerender(
+    <Workspace initial={session} signedOut={vi.fn()} screen="review" navigate={navigate} />,
+  );
+  view.rerender(
+    <Workspace initial={session} signedOut={vi.fn()} screen="activity" navigate={navigate} />,
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+  const top = screen.getByRole("banner");
+  expect(within(top).getByText("October 2026")).toBeDefined();
+  fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+  expect(navigate).toHaveBeenLastCalledWith("activity", false, "2026-11");
+  view.rerender(
+    <Workspace
+      initial={session}
+      signedOut={vi.fn()}
+      screen="activity"
+      month="2026-11"
+      navigate={navigate}
+    />,
+  );
+  expect(within(top).getByText("November 2026")).toBeDefined();
+  const nav = screen.getByRole("navigation", { name: "Workspace" });
+  expect(within(nav).getByRole("link", { name: "Review" }).getAttribute("href")).toBe(
+    "#/review?m=2026-11",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "This month" }));
+  expect(navigate).toHaveBeenLastCalledWith("activity", false, undefined);
 });

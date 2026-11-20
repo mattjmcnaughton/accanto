@@ -3,7 +3,7 @@ import { Balances } from "../../features/balances/Balances";
 import { screenArgs, stateStory } from "../mocks/api";
 
 const meta = {
-  title: "Screens/Loans and balances",
+  title: "Screens/Loans",
   component: Balances,
   args: screenArgs(),
 } satisfies Meta<typeof Balances>;

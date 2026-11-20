@@ -332,7 +332,7 @@ function Ask({
         {line.name} has no entry. Unknown is not treated as $0.00.
         {!answerable &&
           (section.category === "investing" || section.category === "giving") &&
-          " Record it in Investments and giving."}
+          ` Record it in ${section.category === "investing" ? "Investments" : "Giving"}.`}
       </span>
       {answerable && other === null && (
         <>

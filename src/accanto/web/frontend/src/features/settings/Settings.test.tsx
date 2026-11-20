@@ -28,7 +28,7 @@ it("submits loaded revision and preserves attempted settings through refreshed r
   );
   const p = props();
   const view = render(<Settings {...p} />);
-  fireEvent.change(await screen.findByLabelText("Workspace name"), {
+  fireEvent.change(await screen.findByLabelText("Entity name"), {
     target: { value: "Changed" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
@@ -37,7 +37,7 @@ it("submits loaded revision and preserves attempted settings through refreshed r
     expect.any(Function),
   );
   view.rerender(<Settings {...p} refresh={1} />);
-  await waitFor(() => expect(screen.getByLabelText("Workspace name")).toHaveValue("Changed"));
+  await waitFor(() => expect(screen.getByLabelText("Entity name")).toHaveValue("Changed"));
 });
 it("clears a one-time secret on dismiss and navigation", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) =>
@@ -197,7 +197,7 @@ it("conceals settings and prevents key issuance when fresh credentials belong to
   fireEvent.change(await screen.findByLabelText("New key name"), { target: { value: "Script" } });
   fireEvent.click(screen.getByRole("button", { name: "Create key" }));
   await screen.findByText("Account changed");
-  expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Entity name")).not.toBeInTheDocument();
   expect(writes).toBe(0);
 });
 it("blocks stale date defaults until metadata refresh succeeds", async () => {

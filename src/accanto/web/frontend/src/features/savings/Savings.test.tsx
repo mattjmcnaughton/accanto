@@ -435,11 +435,12 @@ it("moves saved money from a goal card through the dialog", async () => {
     path: "/api/entities/entity/savings-accounts/movements",
     body: { kind: "reassignment", from_goal_id: "goal-1", to_goal_id: "goal-u", amount: "12.00" },
   });
-  // An unconfirmed write keeps the new record but must not trap the page behind the dialog.
+  // An unconfirmed new record stays in its dialog, where the shell shows a failed save's notice.
   fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
   expect(screen.getByRole("dialog", { name: "Move saved money" })).toBeTruthy();
   view.rerender(<Savings {...p} busy />);
   fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
-  expect(screen.queryByRole("dialog", { name: "Move saved money" })).toBeNull();
+  expect(screen.getByRole("dialog", { name: "Move saved money" })).toBeTruthy();
+  expect(within(dialog).getByLabelText("Amount (USD)")).toHaveProperty("value", "12.00");
   expect(screen.getByRole("row", { name: /New savings record/ })).toBeTruthy();
 });

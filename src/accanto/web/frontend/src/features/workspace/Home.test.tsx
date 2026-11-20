@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ComparisonGroup, ReviewResult } from "../../lib/monthly";
 import { Home } from "./Home";
@@ -41,7 +41,8 @@ const review = (spending: ComparisonGroup, spendingDifference: string | null) =>
     },
     spending_difference: spendingDifference,
   }) as unknown as ReviewResult;
-const props = (result: ReviewResult) => ({
+const props = (result: ReviewResult, month = "2026-11") => ({
+  month,
   today: "2026-11-10",
   plans: 1,
   hasVersion: true,
@@ -54,6 +55,7 @@ const props = (result: ReviewResult) => ({
   open: vi.fn(),
   newPlan: vi.fn(),
   showPlans: vi.fn(),
+  go: vi.fn(),
   retry: vi.fn(),
 });
 
@@ -73,6 +75,23 @@ it("takes what is left from the API's difference and never shows a missing figur
   );
   const needs = screen.getByRole("list", { name: "Needs you" });
   expect(within(needs).getByText("Synthetic goal has no November entry")).toBeDefined();
+  const go = vi.fn();
+  rerender(<Home {...props(review(group("1000.00", "400.00", "-600.00"), "-600.00"))} go={go} />);
+  fireEvent.click(
+    within(screen.getByRole("list", { name: "Needs you" })).getByRole("button", {
+      name: /Synthetic goal has no November entry/,
+    }),
+  );
+  expect(go).toHaveBeenCalledWith("review");
+
+  // Another month has no today: its figures, without "this month" or a pace marker.
+  rerender(
+    <Home {...props(review(group("1000.00", "400.00", "-600.00"), "-600.00"), "2026-09")} />,
+  );
+  expect(
+    screen.getByRole("heading", { name: "$600.00 left of September's guilt-free plan" }),
+  ).toBeDefined();
+  expect(screen.queryByText(/Today is day/)).toBeNull();
 
   // Nothing recorded for spending: the API sends no difference, so Home claims nothing is left.
   rerender(<Home {...props(review(group("1000.00", null, null), null))} />);

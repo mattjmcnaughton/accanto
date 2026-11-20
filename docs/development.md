@@ -48,7 +48,16 @@ tab memory until the server confirms it; stale conflicts require explicit
 reconciliation. Session recovery opens a separate sign-in window and verifies the
 same User through `/api/auth/session` before retrying with fresh CSRF. This memory
 is cleared on explicit logout and does not survive closing or reloading the tab.
-The UI exposes Plans, Activity, Monthly Review and independent Income estimates.
+The workspace shell has a sidebar grouped by job (This month: Home, Activity,
+Review; Planning: Plans, Income estimates; Balances: Savings, Investments, Giving,
+Loans; then Settings) and, below 760 px, five tabs with More for the rest. Every
+screen has its own hash address, such as `#/giving`. Home, Activity and Review share
+the month chosen in the top bar, kept in the address as `?m=YYYY-MM` when it is not
+the Entity's current month. Add activity in the top bar opens the entry dialog from
+any screen. Keys: Ctrl/⌘ K searches and jumps, 1 to 9 open the first nine screens in
+sidebar order, N adds activity, [ and ] change the month, J and K move through rows,
+and ? lists the shortcuts. Edit forms open in dialogs; a failed save's recovery
+notice appears inside the open dialog. The theme choice lasts until reload.
 Estimates save per-payment assumptions and show server-calculated monthly line and
 combined results; manually copy a result into a Plan. Save a draft before saving an
 immutable version. Activity is independent of Reviews; starting a Review visibly

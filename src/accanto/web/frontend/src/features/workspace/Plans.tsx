@@ -25,6 +25,7 @@ import {
   storedTotals,
   totals,
 } from "./planWorksheetModel";
+import type { Screen } from "./Workspace";
 import { LoadMessage, type ScreenProps, composing, useLoad } from "./shared";
 import "./planning.css";
 
@@ -39,7 +40,11 @@ export function Plans(
   p: ScreenProps & {
     home?: boolean;
     visible?: boolean;
+    /** The shell's month, which Home shows. */
+    month?: string;
     showPlans?: () => void;
+    /** Opens another screen, for Home's links. */
+    go?: (to: Screen) => void;
     retainedDirty?: (value: boolean) => void;
   },
 ) {
@@ -55,10 +60,11 @@ export function Plans(
     [p.entity.id, p.refresh, reload],
   );
   const loans = useLoad(() => balances.loans(p.entity.id), [p.entity.id, p.refresh, reload]);
-  // Home compares the current month with its Review, read exactly as the Review screen reads it.
+  // Home compares the shell's month with its Review, read exactly as the Review screen reads it.
+  const month = p.month ?? p.entity.today.slice(0, 7);
   const review = useLoad(
-    () => monthly.review(p.entity.id, `${p.entity.today.slice(0, 7)}-01`),
-    [p.entity.id, p.entity.today, p.refresh, reload],
+    () => monthly.review(p.entity.id, `${month}-01`),
+    [p.entity.id, month, p.refresh, reload],
   );
   const [opened, setOpened] = useState<Record<string, OpenDraft>>({});
   const [active, setActive] = useState<string | null>(null);
@@ -320,6 +326,7 @@ export function Plans(
       ) : null}
       {ready && home && (
         <Home
+          month={month}
           today={p.entity.today}
           plans={plans.length}
           hasVersion={plans.some((plan) => versionsOf(plan).length > 0)}
@@ -342,6 +349,7 @@ export function Plans(
             setActive(null);
             p.showPlans?.();
           }}
+          go={p.go}
           retry={() => setReload((n) => n + 1)}
         />
       )}

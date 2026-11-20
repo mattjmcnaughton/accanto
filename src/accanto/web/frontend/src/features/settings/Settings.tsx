@@ -83,7 +83,7 @@ export function Settings(p: SettingsProps) {
             <fieldset className="set-fields" disabled={p.busy}>
               <div className="setting">
                 <div>
-                  <label htmlFor="entity-name">Workspace name</label>
+                  <label htmlFor="entity-name">Entity name</label>
                   <small id="entity-name-help">
                     The finances tracked here are kept separate from any other workspace.
                   </small>

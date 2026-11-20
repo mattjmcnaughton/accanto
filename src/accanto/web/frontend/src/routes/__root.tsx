@@ -1,14 +1,21 @@
-import { createRootRoute, useNavigate, useParams } from "@tanstack/react-router";
+import { createRootRoute, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { SCREENS, type Screen, Workspace } from "../features/workspace/Workspace";
+import { MONTH, SCREENS, type Screen, Workspace } from "../features/workspace/Workspace";
 import { useTheme } from "../features/workspace/shared";
 import { ApiError, type BrowserSession, readSession } from "../lib/api";
 
 // The session gate stays mounted across screens, so retained Plan edits survive navigation.
-export const Route = createRootRoute({ component: Root, notFoundComponent: () => null });
+// ?m=YYYY-MM is the month Home, Activity and Review show; anything else is dropped.
+export const Route = createRootRoute({
+  component: Root,
+  notFoundComponent: () => null,
+  validateSearch: (search: Record<string, unknown>): { m?: string } =>
+    typeof search.m === "string" && MONTH.test(search.m) ? { m: search.m } : {},
+});
 
 function Root() {
   const { screen } = useParams({ strict: false });
+  const { m } = useSearch({ strict: false });
   const navigate = useNavigate();
   const known = SCREENS.find((s) => s === screen);
   useEffect(() => {
@@ -17,10 +24,11 @@ function Root() {
   return (
     <ProductionHome
       screen={known ?? "home"}
-      navigate={(to, replace) =>
+      month={m}
+      navigate={(to, replace, month) =>
         void (to === "home"
-          ? navigate({ to: "/", replace })
-          : navigate({ to: "/$screen", params: { screen: to }, replace }))
+          ? navigate({ to: "/", search: { m: month }, replace })
+          : navigate({ to: "/$screen", params: { screen: to }, search: { m: month }, replace }))
       }
     />
   );
@@ -28,8 +36,13 @@ function Root() {
 
 export function ProductionHome({
   screen,
+  month,
   navigate,
-}: { screen?: Screen; navigate?: (to: Screen, replace?: boolean) => void }) {
+}: {
+  screen?: Screen;
+  month?: string;
+  navigate?: (to: Screen, replace?: boolean, month?: string) => void;
+}) {
   useTheme();
   const [session, setSession] = useState<BrowserSession | null>(null);
   const [state, setState] = useState("loading");
@@ -62,6 +75,7 @@ export function ProductionHome({
         key={session.user.id}
         initial={session}
         screen={screen}
+        month={month}
         navigate={navigate}
         signedOut={(notice) => {
           setSession(null);

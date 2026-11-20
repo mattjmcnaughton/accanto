@@ -107,7 +107,9 @@ function problem(form: Form): string {
 const ready = <T,>(state: LoadState<T[]>): T[] => (state.kind === "ready" ? state.data : []);
 const shown = (state: LoadState<unknown>) => state.kind === "ready" || state.kind === "empty";
 
-export function Destinations(p: ScreenProps) {
+/** One screen per kind: Investments or Giving, each at its own address. */
+export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
+  const screenKind = p.kind ?? "investment";
   const [reload, setReload] = useState(0);
   const again = () => setReload((value) => value + 1);
   const deps = [p.entity.id, p.refresh, reload];
@@ -495,29 +497,23 @@ export function Destinations(p: ScreenProps) {
       );
     });
 
+  const addButton = (kind: DestinationKind) => (
+    <button
+      type="button"
+      className="btn pri sm"
+      disabled={p.busy}
+      onClick={() => editDestination(kind, null)}
+    >
+      <Icon name="plus" />
+      Add {COPY[kind].one}
+    </button>
+  );
   const section = (kind: DestinationKind) => {
     const copy = COPY[kind];
     const list = ready(rows[kind]);
-    const add = (
-      <button
-        type="button"
-        className="btn pri sm"
-        disabled={p.busy}
-        onClick={() => editDestination(kind, null)}
-      >
-        <Icon name="plus" />
-        Add {copy.one}
-      </button>
-    );
+    const add = addButton(kind);
     return (
-      <section className="rec-section" aria-labelledby={copy.id}>
-        <div className="rec-head">
-          <h2 className="h2" id={copy.id}>
-            {copy.title}
-          </h2>
-          {list.length > 0 && add}
-        </div>
-        <p className="note">{copy.sub}</p>
+      <>
         <LoadFailure state={rows[kind]} retry={again} />
         <LoadFailure state={history[kind]} retry={again} />
         {rows[kind].kind === "loading" && <Loading what={copy.many} />}
@@ -608,7 +604,7 @@ export function Destinations(p: ScreenProps) {
             </div>
           )}
         </div>
-      </section>
+      </>
     );
   };
 
@@ -629,7 +625,7 @@ export function Destinations(p: ScreenProps) {
 
   return (
     <section
-      aria-labelledby="destinations-title"
+      aria-labelledby={COPY[screenKind].id}
       className="screen records"
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
@@ -648,9 +644,11 @@ export function Destinations(p: ScreenProps) {
       }}
     >
       <Head
-        title={<span id="destinations-title">Investments and giving</span>}
-        sub="Investments and giving are tracked apart, and neither is added into a total."
-      />
+        title={<span id={COPY[screenKind].id}>{COPY[screenKind].title}</span>}
+        sub={COPY[screenKind].sub}
+      >
+        {ready(rows[screenKind]).length > 0 && addButton(screenKind)}
+      </Head>
       <PendingEdit
         show={!!draft?.changed && !draft.open}
         busy={p.busy}
@@ -659,8 +657,7 @@ export function Destinations(p: ScreenProps) {
         discard={editor.discard}
       />
       <Notice text={notice} dismiss={() => setNotice("")} />
-      {section("investment")}
-      {section("giving")}
+      {section(screenKind)}
       <KeyHint help={showHelp} />
       {draft?.open && form && (
         <Dialog key={draft.key} title={titleOf(form)} onClose={() => editor.close(problem(form))}>

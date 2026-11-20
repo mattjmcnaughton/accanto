@@ -2,25 +2,14 @@
 .records {
   gap: 32px;
 }
-.rec-section {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-  align-content: start;
-}
-.rec-head,
 .rec-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
-.rec-head .h2,
 .rec-bar .h2 {
   margin: 0;
-}
-.rec-head .h2 {
-  font-size: 19px;
 }
 .rec-bar {
   margin-bottom: 8px;
