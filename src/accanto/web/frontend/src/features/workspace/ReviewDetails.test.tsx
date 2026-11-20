@@ -50,6 +50,7 @@ const base: ReviewView = {
   fixed_cost_difference: "0.00",
 };
 const row = (name: string) => screen.getByRole("row", { name: new RegExp(name) });
+const section = (name: string) => screen.getByRole("region", { name });
 
 it("discloses planned and actual formulas, component amounts and unavailable reasons independently", () => {
   render(
@@ -68,16 +69,14 @@ it("discloses planned and actual formulas, component amounts and unavailable rea
       ]}
     />,
   );
-  const [planned, actual] = screen.getAllByRole("row", { name: /Fixed costs ÷ net income/ });
-  expect(within(planned).getByText("Planned")).toBeDefined();
-  expect(within(planned).getByText("62.50%")).toBeDefined();
-  expect(within(planned).getByText("$2500.00 ÷ $4000.00 × 100")).toBeDefined();
-  expect(within(actual).getByText("Actual")).toBeDefined();
-  expect(within(actual).getByText("Unavailable")).toBeDefined();
-  expect(within(actual).getByText("$2000.00 ÷ Unknown × 100")).toBeDefined();
-  expect(within(actual).getByText("Unavailable: Income is incomplete.")).toBeDefined();
-  const line = within(screen.getByRole("table"));
-  expect(line.getAllByText("Net income: $4000.00")).toHaveLength(2);
+  const card = within(screen.getByRole("article", { name: "Fixed costs ÷ net income" }));
+  // The actual figure is unavailable; the planned one keeps its own figure and amounts.
+  expect(card.getByText("Unavailable")).toBeDefined();
+  expect(card.getByText("Unavailable: Income is incomplete.")).toBeDefined();
+  expect(card.getByText("Planned 62.50%: $2,500.00 ÷ $4,000.00")).toBeDefined();
+  expect(card.getByText("Actual: Fixed costs ÷ Net income × 100")).toBeDefined();
+  expect(card.getByText("Planned: Fixed costs ÷ Net income × 100")).toBeDefined();
+  expect(card.getAllByText("Net income: $4,000.00")).toHaveLength(2);
 });
 
 it("keeps missing identities unknown and exposes unplanned contributors and already-included adjustments", () => {
@@ -145,30 +144,38 @@ it("keeps missing identities unknown and exposes unplanned contributors and alre
       }}
     />,
   );
-  // Recorded $25 stays visible while the group remains incomplete; the missing source is Unknown, not $0.
-  expect(row("Net income").textContent).toContain("$25.00");
-  expect(row("Net income").textContent).toContain("Incomplete");
-  const source = row("Synthetic source");
-  expect(source.textContent).toContain("$4000.00");
-  expect(within(source).getAllByText("Unknown")).toHaveLength(3);
-  expect(source.textContent).not.toContain("$0.00");
-  // An explicit zero is known and complete.
-  expect(row("Fixed costs").textContent).not.toContain("Unknown");
-  // Contributors are collapsed until expanded, then appear once in each list.
-  expect(screen.queryByText(/Synthetic correction/)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Expand Unplanned activity (1)" }));
-  fireEvent.click(screen.getByRole("button", { name: "Expand Adjustments, already included (1)" }));
+  // Recorded $25 stays visible while the section remains incomplete; the missing source asks.
+  const income = within(section("Net income"));
+  expect(income.getByText("$25.00", { exact: false })).toBeDefined();
+  expect(income.getByLabelText("Not complete")).toBeDefined();
+  expect(income.getByText("0 of 1 line have an entry.")).toBeDefined();
   expect(
-    screen.getAllByText("2026-10-01 · Income-funded · Adjustment · Synthetic correction"),
+    income.getByText("Synthetic source has no entry. Unknown is not treated as $0.00."),
+  ).toBeDefined();
+  // An explicit zero is known and complete.
+  const fixed = within(section("Fixed costs"));
+  expect(fixed.getByLabelText("Complete")).toBeDefined();
+  expect(section("Fixed costs").textContent).not.toContain("Unknown");
+  // Lines and contributors are collapsed until expanded, then each entry appears once per list.
+  expect(screen.queryByText(/Synthetic correction/)).toBeNull();
+  fireEvent.click(income.getByRole("button", { name: "1 line" }));
+  const source = row("Synthetic source");
+  expect(source.textContent).toContain("$4,000.00");
+  expect(within(source).getAllByText("Unknown")).toHaveLength(2);
+  expect(source.textContent).not.toContain("$0.00");
+  expect(income.getByText("Unplanned activity (1)")).toBeDefined();
+  expect(income.getByText("Adjustments, already included (1)")).toBeDefined();
+  expect(
+    screen.getAllByText("Oct 1, 2026, Income-funded, Adjustment, Synthetic correction"),
   ).toHaveLength(2);
-  // Listing one entry under two parents must not collide on React keys or cell ids.
+  // Listing one entry under two parents must not collide on React keys or element ids.
   expect(consoleError).not.toHaveBeenCalled();
   consoleError.mockRestore();
-  const ids = [...document.querySelectorAll("td[id]")].map((cell) => cell.id);
+  const ids = [...document.querySelectorAll("[id]")].map((element) => element.id);
   expect(new Set(ids).size).toBe(ids.length);
   const saving = within(screen.getByLabelText("Same-month saving and funding"));
-  expect(saving.getByText("$-500.00")).toBeDefined();
-  expect(saving.getByText("$2000.00")).toBeDefined();
+  expect(saving.getByText("−$500.00")).toBeDefined();
+  expect(saving.getByText("$2,000.00")).toBeDefined();
   expect(screen.getByText("Destination comparison for this older version: Unknown")).toBeDefined();
 });
 
@@ -198,8 +205,14 @@ it("renders older contracts from missing-source ids and month entries without in
       }}
     />,
   );
+  expect(
+    screen.getByText("Synthetic source has no entry. Unknown is not treated as $0.00."),
+  ).toBeDefined();
+  fireEvent.click(within(section("Net income")).getByRole("button", { name: "1 line" }));
   expect(within(row("Synthetic source")).getAllByText("Unknown").length).toBeGreaterThan(0);
-  expect(row("New saving").textContent).toContain("Unknown");
-  expect(screen.getByText("Synthetic lunch")).toBeDefined();
+  // Older versions have no saving expectation: the section is unknown, never a computed zero.
+  expect(section("Saving").textContent).toContain("Unknown");
+  expect(section("Saving").textContent).not.toContain("$0.00");
+  expect(screen.getByText("Synthetic lunch", { exact: false })).toBeDefined();
   expect(screen.queryByRole("region", { name: "Planned and actual metrics" })).toBeNull();
 });

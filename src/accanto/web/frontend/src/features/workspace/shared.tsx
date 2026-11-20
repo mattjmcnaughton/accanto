@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { BrowserSession, LoadState } from "../../lib/api";
 import type { PlanGroup, WriteSpec } from "../../lib/monthly";
 
@@ -30,8 +30,40 @@ export function sourceChoices(plans: PlanGroup[]) {
     }
   return [...sources.values()];
 }
-export const dollars = (value: string | null) => (value === null ? "Unknown" : `$${value}`);
-
+export type ThemeChoice = "system" | "light" | "dark";
+// Tab memory only: the choice is not written to browser storage and resets on reload.
+let themeChoice: ThemeChoice = "system";
+const themeListeners = new Set<() => void>();
+const systemDark = () => window.matchMedia?.("(prefers-color-scheme: dark)");
+function applyTheme() {
+  const dark = themeChoice === "system" ? Boolean(systemDark()?.matches) : themeChoice === "dark";
+  if (dark) document.documentElement.dataset.theme = "dark";
+  else delete document.documentElement.dataset.theme;
+}
+/** Follows the system until the User picks Light or Dark; `<html data-theme="dark">` is dark. */
+export function useTheme(): [ThemeChoice, (choice: ThemeChoice) => void] {
+  const choice = useSyncExternalStore(
+    (notify) => {
+      themeListeners.add(notify);
+      const media = systemDark();
+      media?.addEventListener("change", applyTheme);
+      return () => {
+        themeListeners.delete(notify);
+        media?.removeEventListener("change", applyTheme);
+      };
+    },
+    () => themeChoice,
+  );
+  useEffect(applyTheme, []);
+  return [
+    choice,
+    (next) => {
+      themeChoice = next;
+      applyTheme();
+      for (const notify of themeListeners) notify();
+    },
+  ];
+}
 /** Enter or Escape that confirms an input-method candidate must not commit or leave the field. */
 export const composing = (event: { nativeEvent: KeyboardEvent }) =>
   event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229;
@@ -53,40 +85,14 @@ export function useLoad<T>(load: () => Promise<LoadState<T>>, dependencies: unkn
   return state;
 }
 export function LoadMessage({ state, retry }: { state: LoadState<unknown>; retry: () => void }) {
-  if (state.kind === "loading") return <output>Loading…</output>;
+  if (state.kind === "loading") return <output className="note">Loading…</output>;
   if (state.kind === "ready" || state.kind === "empty") return null;
   return (
-    <div role="alert">
-      <p>Could not load this workspace. {state.error.message}</p>
-      <button type="button" onClick={retry}>
+    <div role="alert" className="banner bad">
+      <span>Could not load this workspace. {state.error.message}</span>
+      <button type="button" className="btn sm" onClick={retry}>
         Try loading again
       </button>
     </div>
-  );
-}
-export function MoneyInput({
-  label,
-  value,
-  onChange,
-  signed = false,
-  required = true,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  signed?: boolean;
-  required?: boolean;
-}) {
-  return (
-    <label>
-      {label}
-      <input
-        required={required}
-        inputMode="decimal"
-        pattern={signed ? "-?[0-9]{1,9}([.][0-9]{1,2})?" : "[0-9]{1,9}([.][0-9]{1,2})?"}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
   );
 }

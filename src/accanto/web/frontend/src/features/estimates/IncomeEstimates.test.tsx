@@ -1,8 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { IncomeEstimates } from "./IncomeEstimates";
-import type { ScreenProps } from "../workspace/shared";
 import { Workspace } from "../workspace/Workspace";
+import type { ScreenProps } from "../workspace/shared";
+import { IncomeEstimates } from "./IncomeEstimates";
+const navLink = (name: string | RegExp) =>
+  within(screen.getByRole("navigation", { name: "Workspace" })).getByRole("link", { name });
 
 const entity = { id: "entity", name: "Synthetic Entity", today: "2026-10-17", time_zone: "UTC" };
 const line = (uuid: string, name: string, gross: string, withholding: string, payroll: string) => ({
@@ -136,6 +138,39 @@ it("adds with a or A, removes with confirmed dd, and keeps at least one line", a
   expect(p.dirty).toHaveBeenLastCalledWith(true);
 });
 
+it("removes a line from the draft with its remove button, after confirmation", async () => {
+  const p = await openSaved();
+  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValue(true);
+  fireEvent.click(screen.getByRole("button", { name: "Remove Role B" }));
+  expect(document.querySelectorAll(".est-grid tbody tr")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Remove Role B" }));
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(document.querySelectorAll(".est-grid tbody tr")).toHaveLength(1);
+  expect(p.dirty).toHaveBeenLastCalledWith(true);
+  // The saved result is dropped from the total until the changed estimate is saved.
+  expect(combined().textContent).toBe("—");
+});
+
+it("opens the shortcut list from a cell with ? and closes it with Escape", async () => {
+  await openSaved();
+  press("?");
+  const dialog = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
+  expect(within(dialog).getByText("Add an income line")).toBeDefined();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("edits a cell with one tap on a touch screen", async () => {
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(pointer: coarse)" }));
+  try {
+    await openSaved();
+    fireEvent.click(cell(1, 3));
+    expect(screen.getByLabelText("Gross per payment 2")).toBeDefined();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it("requires explicit daily paid days, permits zero, and never infers workdays", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(json([]));
   const p = props();
@@ -150,7 +185,7 @@ it("requires explicit daily paid days, permits zero, and never infers workdays",
   expect(cell(0, 2).textContent).toBe("— entered");
   fireEvent.click(screen.getByRole("button", { name: "Save estimate" }));
   expect(p.save).not.toHaveBeenCalled();
-  expect(cell(0, 2).className).toMatch(/estimates-invalid/);
+  expect(cell(0, 2).className).toMatch(/est-invalid/);
   // Trailing whitespace is accepted when validating, so it must not reach the API.
   editCell(0, 2, "Paid days per year 1", "0 ");
   fireEvent.click(screen.getByRole("button", { name: "Save estimate" }));
@@ -185,8 +220,8 @@ it("marks negative saved results and duplicates through the API with an explicit
     ],
   };
   const p = await openSaved(negative);
-  expect(cell(0, 6).querySelector(".negative")?.textContent).toBe("-$125.00");
-  expect(within(combined()).getByText("-$125.00").className).toBe("negative");
+  expect(cell(0, 6).querySelector(".bad")?.textContent).toBe("−$125.00");
+  expect(within(combined()).getByText("−$125.00").className).toBe("bad");
   fireEvent.change(screen.getByLabelText("New estimate name"), {
     target: { value: "Alternative" },
   });
@@ -215,7 +250,7 @@ it("cannot replace an attempted draft while a write is pending", async () => {
   press("a");
   expect(cell(1, 3).textContent).toBe("$4,100.00");
   expect(screen.queryByLabelText("Gross per payment 2")).toBeNull();
-  expect(document.querySelectorAll(".estimates-lines tbody tr")).toHaveLength(2);
+  expect(document.querySelectorAll(".est-grid tbody tr")).toHaveLength(2);
   expect(screen.getByDisplayValue("Two roles")).toBeDefined();
 });
 
@@ -223,11 +258,11 @@ it("distinguishes empty from failed loads and hides content for a different User
   const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(json([]));
   const p = props();
   const { rerender } = render(<IncomeEstimates {...p} />);
-  await screen.findByText(/No estimates yet/);
+  await screen.findByText(/No income estimates yet/);
   fetch.mockResolvedValue(json({ detail: { code: "storage_unavailable", message: "Retry" } }, 503));
   rerender(<IncomeEstimates {...p} refresh={1} />);
   await screen.findByRole("alert");
-  expect(screen.queryByText(/No estimates yet/)).toBeNull();
+  expect(screen.queryByText(/No income estimates yet/)).toBeNull();
   rerender(<IncomeEstimates {...p} concealed refresh={1} />);
   await waitFor(() => expect(screen.queryByText("Two roles")).toBeNull());
   expect(screen.queryByRole("button", { name: "New estimate" })).toBeNull();
@@ -248,7 +283,7 @@ it("retains estimate inputs and exact request identity after an uncertain save",
       signedOut={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: /^Income estimates/ }));
+  fireEvent.click(navLink(/^Income estimates/));
   fireEvent.click(screen.getByRole("button", { name: "New estimate" }));
   fireEvent.change(screen.getByLabelText("Estimate name"), {
     target: { value: "Attempted scenario" },

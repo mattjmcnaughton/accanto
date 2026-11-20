@@ -1,3 +1,4 @@
+import { fmtDate, money as formatCents } from "../../lib/format";
 import { USD_AMOUNT } from "../../lib/money";
 import type { PlanInput, PlanRevision } from "../../lib/monthly";
 import { parseTimestamp } from "../../lib/timestamp";
@@ -39,10 +40,84 @@ export const monthlyAmount = (line: Line): number | null => {
   const value = cents(line.amount);
   return value === null ? null : line.frequency === "Annual" ? even(value, 12) : value;
 };
-export const money = (n: number | null) =>
-  n === null
-    ? "Unknown"
-    : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n / 100);
+/** Cents for display. A missing amount is "Unknown", never zero. */
+export const money = (n: number | null) => (n === null ? "Unknown" : formatCents(n));
+
+export const titles: Record<Group, string> = {
+  income: "Net income",
+  funding: "From savings",
+  fixed: "Fixed costs",
+  spending: "Guilt-free spending",
+  saving: "Saving",
+  investing: "Investing",
+  giving: "Giving",
+};
+/** Each group keeps its kit category color on every screen. */
+export const kinds: Record<Group, string> = {
+  income: "income",
+  funding: "save",
+  fixed: "fixed",
+  spending: "free",
+  saving: "save",
+  investing: "invest",
+  giving: "give",
+};
+export const allocations = ["fixed", "spending", "saving", "investing", "giving"] as const;
+export type GroupAmounts = Record<Group, number | null>;
+
+/** The stored, server-computed group totals of a revision. */
+export const storedGroups = (r: PlanRevision): GroupAmounts => ({
+  income: storedCents(r.income),
+  funding: storedCents(r.savings_funding_total ?? (r.savings_funding?.length ? null : "0.00")),
+  fixed: storedCents(r.fixed_cost_total),
+  spending: storedCents(r.spending),
+  saving: storedCents(r.saving_total ?? (r.saving_goals?.length ? null : "0.00")),
+  investing: storedCents(r.investing_total ?? (r.investments?.length ? null : "0.00")),
+  giving: storedCents(r.giving_total ?? (r.giving?.length ? null : "0.00")),
+});
+export const lineGroups = (lines: Line[] | null): GroupAmounts => {
+  const of = (group: Group) =>
+    lines === null ? null : sum(lines.filter((line) => line.group === group));
+  return {
+    income: of("income"),
+    funding: of("funding"),
+    fixed: of("fixed"),
+    spending: of("spending"),
+    saving: of("saving"),
+    investing: of("investing"),
+    giving: of("giving"),
+  };
+};
+/** Band segments for the allocation, or null when any allocation is unknown. */
+export function allocationBand(amounts: GroupAmounts, unassigned: number | null) {
+  if (allocations.some((group) => amounts[group] === null)) return null;
+  const parts: { key: string; kind: string; weight: number; title: string }[] = allocations.map(
+    (group) => ({
+      key: group,
+      kind: kinds[group],
+      weight: amounts[group] ?? 0,
+      title: `${titles[group]}: ${money(amounts[group])}`,
+    }),
+  );
+  if (unassigned !== null && unassigned > 0)
+    parts.push({
+      key: "none",
+      kind: "none",
+      weight: unassigned,
+      title: `Unassigned: ${money(unassigned)}`,
+    });
+  return parts;
+}
+/** Whether every dollar has a job, in words and a status tone. */
+export function balance(stats: { funding: number | null; unassigned: number | null }) {
+  if (stats.unassigned === null) return { tone: "", text: "Totals unknown" };
+  if (stats.unassigned < 0)
+    return { tone: "bad", text: `${money(-stats.unassigned)} overallocated` };
+  if (stats.unassigned > 0) return { tone: "warn", text: `${money(stats.unassigned)} unassigned` };
+  return stats.funding
+    ? { tone: "good", text: "Every dollar assigned" }
+    : { tone: "", text: "No funding yet" };
+}
 export const sum = (lines: Line[]): number | null => {
   let total = 0;
   for (const line of lines) {
@@ -174,29 +249,15 @@ export function planInput(name: string, lines: Line[], revision?: number): PlanI
   };
 }
 
-export function versionLabel(version: PlanRevision, versions: PlanRevision[], timeZone: string) {
+/** "Version 2, saved Nov 20, 2026", with the save date in the Entity time zone. */
+export function savedLabel(version: PlanRevision, timeZone: string) {
   const savedAt = parseTimestamp(version.saved_at);
   if (savedAt === null) return `Version ${version.number}`;
-  const day = (ms: number) =>
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    })
-      .formatToParts(new Date(ms))
-      .filter((part) => ["year", "month", "day"].includes(part.type));
-  const date = (ms: number) => {
-    const parts = day(ms);
-    return ["year", "month", "day"]
-      .map((type) => parts.find((part) => part.type === type)?.value)
-      .join(".");
-  };
-  const savedDay = date(savedAt);
-  const sameDay = versions
-    .map((item) => ({ item, at: parseTimestamp(item.saved_at) }))
-    .filter((entry) => entry.at !== null && date(entry.at) === savedDay)
-    .sort((a, b) => (a.at ?? 0) - (b.at ?? 0) || a.item.number - b.item.number)
-    .map((entry) => entry.item);
-  return `${savedDay}.${String(sameDay.findIndex((item) => item.uuid === version.uuid) + 1).padStart(2, "0")}`;
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(savedAt));
+  return `Version ${version.number}, saved ${fmtDate(day)}`;
 }

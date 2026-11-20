@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PlanGroup, PlanRevision } from "../../lib/monthly";
-import { Plans } from "./Plans";
 import { CopyPlan } from "./PlanScenarios";
+import { Plans } from "./Plans";
 import type { ScreenProps } from "./shared";
 const historical: PlanRevision = {
   uuid: "old",

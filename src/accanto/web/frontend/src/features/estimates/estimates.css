@@ -1,194 +1,266 @@
-/* Income estimates layout on top of the shared worksheet vocabulary. */
-.estimates-workspace h2 {
-  font-family: inherit;
+/* Income estimates: the saved list, and the editable lines grid, on the shared kit. */
+.est-sk-title {
+  width: 40%;
+  height: 20px;
 }
-.estimates-workspace .estimates-note {
-  flex: 1 1 320px;
-  margin: 0;
-  font-size: 12px;
+.est-sk-row {
+  height: 34px;
 }
-.estimates-layout {
-  display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-  align-items: start;
+
+/* Saved estimates */
+.est-screen .row[aria-current="true"] {
+  background: var(--wash);
+  box-shadow: inset 3px 0 0 var(--brand);
 }
-.estimates-index {
-  border-right: 1px solid var(--ui-border);
-  min-height: 100%;
-}
-.estimates-index .data-grid {
-  table-layout: fixed;
-}
-.estimates-count-col {
-  width: 52px;
-}
-.estimates-money-col {
-  width: 112px;
-}
-.estimates-workspace .estimates-open {
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
+.est-open-name {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 600;
 }
-.estimates-workspace .estimates-open:hover {
-  background: none;
-  color: var(--ui-focus);
-}
-.estimates-open-row {
-  box-shadow: inset 3px 0 0 var(--ui-focus);
-}
-.estimates-empty {
-  padding: 16px 28px;
-  margin: 0;
-}
-.estimates-editor fieldset {
+
+/* Editor */
+.est-editor fieldset {
   border: 0;
   margin: 0;
   padding: 0;
   min-width: 0;
 }
-.estimates-editor-bar {
+.est-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  padding: 12px 20px;
+  padding: 12px 16px;
 }
-.estimates-workspace .estimates-name {
-  flex: 1 1 180px;
+.est-bar .est-name {
+  flex: 1 1 200px;
+  width: auto;
+  max-width: 360px;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 650;
 }
-.estimates-duplicate {
-  display: inline-flex;
-  gap: 6px;
+.est-scroll {
+  overflow-x: auto;
 }
-.estimates-workspace .estimates-duplicate input {
-  width: 180px;
-}
-.estimates-workspace .estimates-editor-bar button {
-  white-space: nowrap;
-}
-.estimates-lines {
+.est-grid {
+  width: 100%;
+  min-width: 760px;
   table-layout: fixed;
-  /* Seven columns stay legible; narrower panes scroll inside .data-table-scroll. */
-  min-width: 800px;
+  border-collapse: collapse;
 }
-.estimates-name-col {
-  width: 16%;
+.est-col-name {
+  width: 20%;
 }
-.estimates-frequency-col {
-  width: 17%;
+.est-col-paid {
+  width: 15%;
 }
-.estimates-pays-col {
+.est-col-pays {
   width: 13%;
 }
-.estimates-lines td {
+.est-col-x {
+  width: 46px;
+}
+.est-grid th,
+.est-grid td {
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: middle;
+}
+.est-grid thead th {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink3);
+  line-height: 1.2;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.est-grid .num {
+  text-align: right;
+}
+.est-grid tbody td,
+.est-grid tfoot th,
+.est-grid tfoot td {
+  height: 46px;
+  border-top: 1px solid var(--line);
+}
+.est-grid tbody tr:first-child td {
+  border-top: 0;
+}
+.est-grid tbody td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.estimates-lines thead th {
-  line-height: 1.2;
+.est-grid tbody td:not(.est-x) {
+  cursor: default;
 }
-.estimates-workspace .estimates-lines td input,
-.estimates-workspace .estimates-lines td select {
-  width: 100%;
-  padding: 3px 6px;
-  height: 26px;
+.est-grid tbody td[aria-selected="true"] {
+  background: var(--wash);
 }
-.estimates-lines td.numeric input {
+.est-grid tbody td:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.est-grid td .input {
+  min-height: 32px;
+  padding: 3px 8px;
+}
+.est-grid td.num .input {
   text-align: right;
 }
-.estimates-lines small {
-  font-size: 11px;
-}
-.estimates-lines .estimates-result {
-  font-weight: 600;
-}
-.estimates-lines tfoot th,
-.estimates-lines tfoot td {
-  border-top: 1px solid var(--ui-muted);
-  color: var(--ui-text);
-  font-weight: 600;
-}
-.estimates-lines tfoot th {
-  text-align: right;
-  background: none;
-}
-.estimates-invalid {
-  box-shadow: inset 0 0 0 1px var(--ui-danger);
-}
-.estimates-messages {
-  padding: 8px 20px;
+.est-grid small {
   font-size: 12px;
 }
-.estimates-messages p,
-.estimates-messages output {
-  display: block;
-  margin: 0 0 4px;
+.est-grid .est-result,
+.est-grid tfoot th {
+  font-weight: 650;
 }
-.estimates-workspace .estimates-add {
-  margin-left: auto;
+.est-grid tfoot th {
+  color: var(--ink2);
+}
+.est-grid td.est-x {
+  padding: 0 8px 0 0;
+  text-align: right;
+}
+.est-invalid {
+  box-shadow: inset 0 0 0 1px var(--bad);
+}
+.est-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+}
+.est-duplicate {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.est-duplicate .input {
+  width: 260px;
+  min-height: 32px;
   padding: 3px 10px;
-  font-size: 12px;
 }
-.estimates-workspace dialog {
-  width: min(520px, calc(100vw - 32px));
-}
-.estimates-workspace .estimates-shortcuts {
+.est-msgs {
   display: grid;
-  grid-template-columns: 1fr;
+  gap: 4px;
+  padding: 0 16px 12px;
+}
+.est-msgs output {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.est-keys {
+  display: grid;
   gap: 6px;
+  margin: 0;
 }
-.estimates-shortcuts div {
+.est-keys div {
   display: grid;
-  grid-template-columns: 170px minmax(0, 1fr);
+  grid-template-columns: 160px minmax(0, 1fr);
   gap: 12px;
 }
-.estimates-shortcuts dt {
+.est-keys dt,
+.est-keys dd {
   margin: 0;
 }
-.estimates-shortcuts dd {
-  margin: 0;
-}
-@media (max-width: 900px) {
-  .estimates-layout {
-    grid-template-columns: minmax(0, 1fr);
+
+@media (max-width: 760px) {
+  .est-scroll {
+    overflow: visible;
   }
-  .estimates-index {
-    border-right: 0;
-    border-bottom: 1px solid var(--ui-border);
+  .est-grid,
+  .est-grid tbody,
+  .est-grid tfoot {
+    display: block;
+    min-width: 0;
   }
-  .estimates-duplicate {
+  .est-grid colgroup,
+  .est-grid thead {
+    display: none;
+  }
+  .est-grid tbody tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--line);
+  }
+  .est-grid tbody tr:first-child {
+    border-top: 0;
+  }
+  .est-grid tbody td {
+    display: block;
+    height: auto;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 8px;
+    overflow: visible;
+    white-space: normal;
+  }
+  .est-grid tbody td,
+  .est-grid tbody td.num {
+    text-align: left;
+  }
+  .est-grid tbody td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 12.5px;
+    font-weight: 400;
+    color: var(--ink3);
+  }
+  .est-grid tbody td[data-col="0"] {
+    grid-column: 1 / 3;
+  }
+  .est-grid tbody td.est-x {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    padding: 0;
+  }
+  .est-grid tbody td.est-x::before {
+    content: none;
+  }
+  .est-grid tfoot tr {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--line);
+  }
+  .est-grid tfoot td:empty {
+    display: none;
+  }
+  .est-grid tfoot th,
+  .est-grid tfoot td {
+    display: block;
+    height: auto;
+    padding: 0;
+    border: 0;
+  }
+  .est-bar .est-name {
+    max-width: none;
+  }
+  .est-duplicate {
     flex: 1 1 100%;
-    min-width: 0;
   }
-  .estimates-workspace .estimates-duplicate input {
-    flex: 1 1 auto;
+  .est-duplicate .input {
+    flex: 1 1 140px;
     width: auto;
-    min-width: 0;
+  }
+  .est-keys div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
   }
 }
-/* Local until the shared worksheet styles provide a global visually hidden class. */
-.estimates-workspace .sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-.estimates-workspace > [role="alert"],
-.estimates-workspace > output {
-  display: block;
-  padding: 12px 28px;
+@media (pointer: coarse) {
+  .est-hint {
+    display: none;
+  }
 }

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { type KeyboardEvent, useState } from "react";
+import type { LoadState } from "../../lib/api";
 import { type Observation, type ObservationInput, balances } from "../../lib/balances";
 import {
   type Contribution,
@@ -7,18 +8,27 @@ import {
   type DestinationKind,
   destinations,
 } from "../../lib/destinations";
+import { fmtDate, formatMoney, plural } from "../../lib/format";
 import { savings } from "../../lib/savings";
-import { LoadMessage, MoneyInput, type ScreenProps, dollars, useLoad } from "../workspace/shared";
+import { Dialog, Empty, Field, Head, Icon, Trend } from "../../ui";
+import { type ScreenProps, useLoad } from "../workspace/shared";
 import {
   type Column,
-  type Confirmation,
   ConfirmDialog,
+  type Confirmation,
+  Day,
+  KeyHint,
+  LoadFailure,
+  Loading,
+  MoneyField,
+  Notice,
+  PendingEdit,
+  Progress,
   RecordGrid,
   Shortcuts,
-  StatusBar,
-  amountClass,
+  TrackedCard,
   dash,
-  modeFor,
+  trendPoints,
   useRecordEditor,
   validMoney,
 } from "./records";
@@ -31,9 +41,43 @@ type DestinationForm = {
   openingAmount: string;
 };
 type Form =
-  | { type: "destination"; record: Destination | null; value: DestinationForm }
-  | { type: "entry"; record: Contribution | null; value: ContributionInput }
+  | {
+      type: "destination";
+      kind: DestinationKind;
+      record: Destination | null;
+      value: DestinationForm;
+    }
+  | { type: "entry"; kind: DestinationKind; record: Contribution | null; value: ContributionInput }
   | { type: "observation"; record: Observation | null; value: ObservationInput };
+
+const COPY = {
+  investment: {
+    title: "Investments",
+    one: "investment",
+    many: "investments",
+    sub: "Contributions are money you added. A value is a dated check-in you record from your statement; Accanto never calculates it from contributions.",
+    empty: "Add an investment to track what you contribute and what it is worth when you check.",
+    registry: "Investments",
+    entries: "Investment contributions",
+    entryHeading: "Contributions",
+    entryOne: "contribution",
+    id: "investments-title",
+    color: "invest",
+  },
+  giving: {
+    title: "Giving",
+    one: "recipient",
+    many: "recipients",
+    sub: "Progress counts the donations you recorded, net of refunds. It says nothing about how a donation is treated for tax.",
+    empty: "Add a person or organization you give to, then record donations against it.",
+    registry: "Giving recipients",
+    entries: "Donations",
+    entryHeading: "Donations",
+    entryOne: "donation",
+    id: "giving-title",
+    color: "give",
+  },
+} as const;
 
 function problem(form: Form): string {
   if (form.type === "destination") {
@@ -60,53 +104,46 @@ function problem(form: Form): string {
     : "Enter a nonnegative USD value with up to two decimals.";
 }
 
+const ready = <T,>(state: LoadState<T[]>): T[] => (state.kind === "ready" ? state.data : []);
+const shown = (state: LoadState<unknown>) => state.kind === "ready" || state.kind === "empty";
+
 export function Destinations(p: ScreenProps) {
-  const [kind, setKind] = useState<DestinationKind>("investment");
   const [reload, setReload] = useState(0);
   const again = () => setReload((value) => value + 1);
-  const rows = useLoad(
-    () => destinations.list(p.entity.id, kind),
-    [p.entity.id, kind, p.refresh, reload],
-  );
-  const history = useLoad(
-    () => destinations.history(p.entity.id, kind),
-    [p.entity.id, kind, p.refresh, reload],
-  );
-  const observed = useLoad(
-    () =>
-      kind === "investment"
-        ? balances.list(p.entity.id, "investment")
-        : Promise.resolve({ kind: "empty" as const }),
-    [p.entity.id, kind, p.refresh, reload],
-  );
-  const accounts = useLoad(() => savings.list(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const deps = [p.entity.id, p.refresh, reload];
+  const rows = {
+    investment: useLoad(() => destinations.list(p.entity.id, "investment"), deps),
+    giving: useLoad(() => destinations.list(p.entity.id, "giving"), deps),
+  };
+  const history = {
+    investment: useLoad(() => destinations.history(p.entity.id, "investment"), deps),
+    giving: useLoad(() => destinations.history(p.entity.id, "giving"), deps),
+  };
+  const observed = useLoad(() => balances.list(p.entity.id, "investment"), deps);
+  const accounts = useLoad(() => savings.list(p.entity.id), deps);
   const editor = useRecordEditor<Form>(p, again);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [help, setHelp] = useState(false);
   const [notice, setNotice] = useState("");
-  const [mode, setMode] = useState("READY");
-  const named = rows.kind === "ready" ? rows.data : [];
-  const entries = history.kind === "ready" ? history.data : [];
-  const observations = observed.kind === "ready" ? observed.data : [];
+  const observations = ready(observed);
   const savingGoals =
     accounts.kind === "ready"
       ? accounts.data.flatMap((account) =>
           account.goals.map((goal) => ({ account, goal, label: `${account.name} · ${goal.name}` })),
         )
       : [];
-  const investment = kind === "investment";
-  const noun = investment ? "investment" : "recipient";
-  const nameOf = (id: string | null) =>
-    named.find((item) => item.uuid === id)?.name ?? "Unassigned";
+  const nameOf = (kind: DestinationKind, id: string | null) =>
+    ready(rows[kind]).find((item) => item.uuid === id)?.name ?? "Unassigned";
   const draft = editor.draft;
   const form = draft?.form;
   const set = <V,>(patch: Partial<V>) =>
     editor.update((current) => ({ ...current, value: { ...current.value, ...patch } }) as Form);
   const showHelp = () => setHelp(true);
 
-  function editDestination(row: Destination | null) {
-    editor.start(`destination:${row?.uuid ?? "new"}`, {
+  function editDestination(kind: DestinationKind, row: Destination | null) {
+    editor.start(`destination:${kind}:${row?.uuid ?? "new"}`, {
       type: "destination",
+      kind,
       record: row,
       value: row
         ? {
@@ -119,13 +156,18 @@ export function Destinations(p: ScreenProps) {
         : { name: "", target: "", active: true, openingDate: p.entity.today, openingAmount: "" },
     });
   }
-  function editEntry(row: Contribution | null) {
+  function editEntry(
+    kind: DestinationKind,
+    row: Contribution | null,
+    destination: string | null = null,
+  ) {
     if (row?.is_refund) {
       setNotice("Correct this linked refund in Activity.");
       return;
     }
-    editor.start(`entry:${row?.uuid ?? "new"}`, {
+    editor.start(`entry:${kind}:${row?.uuid ?? "new"}`, {
       type: "entry",
+      kind,
       record: row,
       value: row
         ? {
@@ -141,7 +183,7 @@ export function Destinations(p: ScreenProps) {
         : {
             date: p.entity.today,
             amount: "",
-            destination_id: null,
+            destination_id: destination,
             note: "",
             is_adjustment: false,
             funding_origin: "income",
@@ -149,7 +191,7 @@ export function Destinations(p: ScreenProps) {
           },
     });
   }
-  function editObservation(row: Observation | null) {
+  function editObservation(row: Observation | null, account: string | null = null) {
     if (row?.is_opening) {
       setNotice("An opening value is set when the investment is added and cannot be corrected.");
       return;
@@ -164,7 +206,7 @@ export function Destinations(p: ScreenProps) {
             account_id: row.account_id,
             expected_revision: row.revision,
           }
-        : { date: p.entity.today, amount: "", account_id: null },
+        : { date: p.entity.today, amount: "", account_id: account },
     });
   }
   function confirmDelete(what: string, run: () => void) {
@@ -179,7 +221,7 @@ export function Destinations(p: ScreenProps) {
       run,
     });
   }
-  function removeEntry(row: Contribution) {
+  function removeEntry(kind: DestinationKind, row: Contribution) {
     if (row.is_refund) {
       setNotice("Correct this linked refund in Activity.");
       return;
@@ -206,17 +248,17 @@ export function Destinations(p: ScreenProps) {
       editor.submit(
         error,
         form.record
-          ? destinations.edit(p.entity.id, kind, form.record.uuid, {
+          ? destinations.edit(p.entity.id, form.kind, form.record.uuid, {
               name: v.name.trim(),
               target,
               active: v.active,
               expected_revision: form.record.revision,
             })
-          : destinations.create(p.entity.id, kind, {
+          : destinations.create(p.entity.id, form.kind, {
               name: v.name.trim(),
               target,
               opening:
-                investment && v.openingAmount
+                form.kind === "investment" && v.openingAmount
                   ? { date: v.openingDate, amount: v.openingAmount.trim() }
                   : null,
             }),
@@ -226,8 +268,8 @@ export function Destinations(p: ScreenProps) {
       editor.submit(
         error,
         form.record
-          ? destinations.correct(p.entity.id, kind, form.record.uuid, v)
-          : destinations.record(p.entity.id, kind, v),
+          ? destinations.correct(p.entity.id, form.kind, form.record.uuid, v)
+          : destinations.record(p.entity.id, form.kind, v),
       );
     } else {
       const v = { ...form.value, amount: form.value.amount.trim() };
@@ -242,28 +284,31 @@ export function Destinations(p: ScreenProps) {
 
   if (p.concealed) return null;
 
-  const destinationColumns: Column<Destination>[] = [
+  const destinationColumns = (kind: DestinationKind): Column<Destination>[] => [
     { header: "Name", cell: (row) => row.name },
     { header: "Status", cell: (row) => (row.active ? "Active" : "Inactive") },
     {
-      header: investment ? "Contributions" : "Net donations",
+      header: kind === "investment" ? "Contributions" : "Net donations",
       numeric: true,
-      cell: (row) => dollars(row.contribution_progress),
+      cell: (row) => formatMoney(row.contribution_progress),
     },
     {
       header: "Target",
       numeric: true,
-      cell: (row) => (row.target ? dollars(row.target) : dash),
+      cell: (row) => (row.target ? formatMoney(row.target) : dash),
     },
-    ...(investment
+    ...(kind === "investment"
       ? [
           {
             header: "Latest observed value",
             numeric: true,
             cell: (row: Destination) =>
-              row.latest ? dollars(row.latest.amount) : <span className="muted">None</span>,
+              row.latest ? formatMoney(row.latest.amount) : <span className="muted">None</span>,
           },
-          { header: "Observed on", cell: (row: Destination) => row.latest?.date ?? dash },
+          {
+            header: "Observed on",
+            cell: (row: Destination) => (row.latest ? <Day iso={row.latest.date} /> : dash),
+          },
         ]
       : []),
     {
@@ -271,43 +316,45 @@ export function Destinations(p: ScreenProps) {
       cell: (row) => (
         <button
           type="button"
+          className="btn sm quiet"
           tabIndex={-1}
           aria-label={`Edit ${row.name}`}
-          onClick={() => editDestination(row)}
+          onClick={() => editDestination(kind, row)}
         >
           Edit
         </button>
       ),
     },
   ];
-  const entryColumns: Column<Contribution>[] = [
-    { header: "Date", cell: (row) => <time>{row.financial_date}</time> },
-    { header: investment ? "Investment" : "Recipient", cell: (row) => nameOf(row.destination_id) },
+  const entryColumns = (kind: DestinationKind): Column<Contribution>[] => [
+    { header: "Date", cell: (row) => <Day iso={row.financial_date} /> },
+    {
+      header: kind === "investment" ? "Investment" : "Recipient",
+      cell: (row) => nameOf(kind, row.destination_id),
+    },
     {
       header: "Kind",
+      wide: true,
       cell: (row) =>
         row.is_refund
           ? "Refund"
           : row.is_adjustment
             ? "Adjustment"
-            : investment
+            : kind === "investment"
               ? "Contribution"
               : "Donation",
     },
     {
       header: "Funded from",
+      wide: true,
       cell: (row) =>
         row.funding_origin === "savings"
           ? (savingGoals.find(({ goal }) => goal.uuid === row.saving_goal_id)?.label ??
             "Historical saving goal")
           : "Income",
     },
-    {
-      header: "Amount",
-      numeric: true,
-      cell: (row) => <span className={amountClass(row.amount)}>{dollars(row.amount)}</span>,
-    },
-    { header: "Note", cell: (row) => <span className="note">{row.note}</span> },
+    { header: "Amount", numeric: true, cell: (row) => formatMoney(row.amount) },
+    { header: "Note", wide: true, cell: (row) => <span className="note">{row.note}</span> },
     {
       header: "",
       cell: (row) =>
@@ -316,9 +363,10 @@ export function Destinations(p: ScreenProps) {
         ) : (
           <button
             type="button"
+            className="btn sm quiet"
             tabIndex={-1}
-            aria-label={`Correct entry on ${row.financial_date}`}
-            onClick={() => editEntry(row)}
+            aria-label={`Correct entry on ${fmtDate(row.financial_date)}`}
+            onClick={() => editEntry(kind, row)}
           >
             Correct
           </button>
@@ -326,18 +374,19 @@ export function Destinations(p: ScreenProps) {
     },
   ];
   const observationColumns: Column<Observation>[] = [
-    { header: "Date", cell: (row) => <time>{row.financial_date}</time> },
-    { header: "Investment", cell: (row) => nameOf(row.account_id) },
-    { header: "Observed value", numeric: true, cell: (row) => dollars(row.amount) },
-    { header: "Kind", cell: (row) => (row.is_opening ? "Opening" : "Observation") },
+    { header: "Date", cell: (row) => <Day iso={row.financial_date} /> },
+    { header: "Investment", cell: (row) => nameOf("investment", row.account_id) },
+    { header: "Observed value", numeric: true, cell: (row) => formatMoney(row.amount) },
+    { header: "Kind", wide: true, cell: (row) => (row.is_opening ? "Opening" : "Observation") },
     {
       header: "",
       cell: (row) =>
         row.is_opening ? null : (
           <button
             type="button"
+            className="btn sm quiet"
             tabIndex={-1}
-            aria-label={`Correct observation on ${row.financial_date}`}
+            aria-label={`Correct observation on ${fmtDate(row.financial_date)}`}
             onClick={() => editObservation(row)}
           >
             Correct
@@ -345,14 +394,243 @@ export function Destinations(p: ScreenProps) {
         ),
     },
   ];
-  const marked = draft?.changed ? draft.key.split(":")[1] : null;
-  const markedIn = (type: Form["type"]) => (form?.type === type ? marked : null);
+  const marked = draft?.changed ? draft.key.split(":").pop() : null;
+  const markedIn = (type: Form["type"], kind?: DestinationKind) =>
+    form?.type === type && (form.type === "observation" || form.kind === kind) ? marked : null;
+
+  const cards = (kind: DestinationKind) =>
+    ready(rows[kind]).map((row) => {
+      const entries = ready(history[kind]).filter((entry) => entry.destination_id === row.uuid);
+      const investment = kind === "investment";
+      const name = row.name;
+      return (
+        <TrackedCard
+          key={row.uuid}
+          name={name}
+          chip={row.active ? undefined : "Inactive"}
+          actions={
+            <>
+              {row.active && investment && (
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={p.busy}
+                  aria-label={`Record value for ${name}`}
+                  onClick={() => editObservation(null, row.uuid)}
+                >
+                  Record value
+                </button>
+              )}
+              {row.active && (
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={p.busy}
+                  aria-label={`Record ${COPY[kind].entryOne} for ${name}`}
+                  onClick={() => editEntry(kind, null, row.uuid)}
+                >
+                  Record {COPY[kind].entryOne}
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn sm quiet"
+                disabled={p.busy}
+                aria-label={`Edit ${name} settings`}
+                onClick={() => editDestination(kind, row)}
+              >
+                Edit
+              </button>
+            </>
+          }
+        >
+          {investment && (
+            <div>
+              <div className="fig">
+                {row.latest ? formatMoney(row.latest.amount) : "No value yet"}
+              </div>
+              <span className="cap">
+                {row.latest
+                  ? `Observed on ${fmtDate(row.latest.date)}`
+                  : "Record a value from your statement to start a trend."}
+              </span>
+              <Trend
+                points={trendPoints(observations, row.uuid)}
+                kind={COPY[kind].color}
+                label={`${name}, observed value`}
+              />
+            </div>
+          )}
+          {!investment && (
+            <div>
+              <div className="fig">{formatMoney(row.contribution_progress)}</div>
+              <span className="cap">
+                Net donations
+                {entries.length > 0 && `, ${plural(entries.length, "entry", "entries")}`}
+              </span>
+            </div>
+          )}
+          {investment ? (
+            <Progress
+              done={row.contribution_progress}
+              target={row.target}
+              kind={COPY[kind].color}
+              text={
+                entries.length > 0
+                  ? `${formatMoney(row.contribution_progress)} contributed in ${plural(entries.length, "entry", "entries")}`
+                  : "No contributions recorded yet"
+              }
+            />
+          ) : (
+            row.target && (
+              <Progress
+                done={row.contribution_progress}
+                target={row.target}
+                kind={COPY[kind].color}
+                text={null}
+              />
+            )
+          )}
+        </TrackedCard>
+      );
+    });
+
+  const section = (kind: DestinationKind) => {
+    const copy = COPY[kind];
+    const list = ready(rows[kind]);
+    const add = (
+      <button
+        type="button"
+        className="btn pri sm"
+        disabled={p.busy}
+        onClick={() => editDestination(kind, null)}
+      >
+        <Icon name="plus" />
+        Add {copy.one}
+      </button>
+    );
+    return (
+      <section className="rec-section" aria-labelledby={copy.id}>
+        <div className="rec-head">
+          <h2 className="h2" id={copy.id}>
+            {copy.title}
+          </h2>
+          {list.length > 0 && add}
+        </div>
+        <p className="note">{copy.sub}</p>
+        <LoadFailure state={rows[kind]} retry={again} />
+        <LoadFailure state={history[kind]} retry={again} />
+        {rows[kind].kind === "loading" && <Loading what={copy.many} />}
+        {rows[kind].kind === "empty" && (
+          <Empty title={`No ${copy.many} yet`} action={add}>
+            {copy.empty}
+          </Empty>
+        )}
+        {list.length > 0 && <div className="grid2">{cards(kind)}</div>}
+        <div className="card pad rec-records">
+          {shown(rows[kind]) && (
+            <div className="rec-registry">
+              <div className="rec-bar">
+                <h3 className="h2">All {copy.registry.toLowerCase()}</h3>
+              </div>
+              <RecordGrid
+                label={copy.registry}
+                rows={list}
+                rowId={(row) => row.uuid}
+                columns={destinationColumns(kind)}
+                empty={`No ${copy.one}s yet. Press a to add one.`}
+                marked={markedIn("destination", kind)}
+                edit={(row) => editDestination(kind, row)}
+                add={() => editDestination(kind, null)}
+                help={showHelp}
+              />
+            </div>
+          )}
+          <div>
+            <div className="rec-bar">
+              <h3 className="h2">{copy.entryHeading}</h3>
+              <button
+                type="button"
+                className="btn sm"
+                disabled={p.busy}
+                onClick={() => editEntry(kind, null)}
+              >
+                Record {copy.entryOne}
+              </button>
+            </div>
+            {shown(history[kind]) ? (
+              <RecordGrid
+                label={copy.entries}
+                rows={ready(history[kind])}
+                rowId={(row) => row.uuid}
+                columns={entryColumns(kind)}
+                empty={`No recorded ${copy.entryHeading.toLowerCase()} yet.`}
+                marked={markedIn("entry", kind)}
+                edit={(row) => editEntry(kind, row)}
+                add={() => editEntry(kind, null)}
+                remove={(row) => removeEntry(kind, row)}
+                help={showHelp}
+              />
+            ) : (
+              history[kind].kind === "loading" && <Loading what={copy.entryHeading.toLowerCase()} />
+            )}
+          </div>
+          {kind === "investment" && (
+            <div>
+              <div className="rec-bar">
+                <h3 className="h2">Observed values</h3>
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={p.busy}
+                  onClick={() => editObservation(null)}
+                >
+                  Record value
+                </button>
+              </div>
+              <LoadFailure state={observed} retry={again} />
+              {shown(observed) ? (
+                <RecordGrid
+                  label="Investment value observations"
+                  rows={observations}
+                  rowId={(row) => row.uuid}
+                  columns={observationColumns}
+                  empty="No observed values yet."
+                  marked={markedIn("observation")}
+                  edit={editObservation}
+                  add={() => editObservation(null)}
+                  remove={removeObservation}
+                  help={showHelp}
+                />
+              ) : (
+                observed.kind === "loading" && <Loading what="observed values" />
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  };
+
+  const keepOnEscape = (event: KeyboardEvent) => {
+    if (form && event.key === "Escape" && !(event.target instanceof HTMLSelectElement)) {
+      event.preventDefault();
+      editor.close(problem(form));
+    }
+  };
+  const titleOf = (value: Form) =>
+    value.type === "destination"
+      ? `${value.record ? "Edit" : "Add"} ${value.kind === "investment" ? "investment" : "giving recipient"}`
+      : value.type === "entry"
+        ? `${value.record ? "Correct" : "Record"} ${COPY[value.kind].entryOne}`
+        : value.record
+          ? "Correct observed value"
+          : "Record observed value";
 
   return (
     <section
       aria-labelledby="destinations-title"
-      className="data-workspace records"
-      onFocus={(event) => setMode(modeFor(event))}
+      className="screen records"
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
           event.preventDefault();
@@ -369,137 +647,24 @@ export function Destinations(p: ScreenProps) {
         }
       }}
     >
-      <div className="data-toolbar">
-        <h2 id="destinations-title">Investments and giving</h2>
-        <fieldset className="segmented">
-          <legend className="sr-only">Destination type</legend>
-          {(["investment", "giving"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={kind === value}
-              disabled={p.busy}
-              onClick={() => {
-                if (kind !== value && p.guard()) {
-                  setKind(value);
-                  setNotice("");
-                  editor.reset();
-                }
-              }}
-            >
-              {value === "investment" ? "Investments" : "Giving recipients"}
-            </button>
-          ))}
-        </fieldset>
-        {draft?.changed && !draft.open && (
-          <output className="pending">
-            Unsaved edit
-            <button type="button" onClick={() => editor.start(draft.key, draft.form)}>
-              Review
-            </button>
-            <button type="button" className="primary" disabled={p.busy} onClick={save}>
-              Save
-            </button>
-            <button type="button" disabled={p.busy} onClick={editor.discard}>
-              Discard
-            </button>
-          </output>
-        )}
-      </div>
-      <p className="annotation muted">
-        {investment
-          ? "Contributions count money added. Observed value is a dated reading, not contribution progress."
-          : "Net donations include refunds. Recording giving does not establish tax deductibility."}
-      </p>
-      {notice && (
-        <output className="notice">
-          {notice}
-          <button type="button" aria-label="Dismiss message" onClick={() => setNotice("")}>
-            ×
-          </button>
-        </output>
-      )}
-      <LoadMessage state={rows} retry={again} />
-      <LoadMessage state={history} retry={again} />
-      <LoadMessage state={observed} retry={again} />
-      <div className={`data-layout${draft?.open ? " with-sidebar" : ""}`}>
-        <div className="record-tables">
-          <div className="table-heading">
-            <h3>{investment ? "Investments" : "Giving recipients"}</h3>
-            <button type="button" disabled={p.busy} onClick={() => editDestination(null)}>
-              Add {noun}
-            </button>
-          </div>
-          {(rows.kind === "ready" || rows.kind === "empty") && (
-            <RecordGrid
-              label={investment ? "Investments" : "Giving recipients"}
-              rows={named}
-              rowId={(row) => row.uuid}
-              columns={destinationColumns}
-              empty={`No ${noun}s yet. Press a to add one.`}
-              marked={markedIn("destination")}
-              edit={editDestination}
-              add={() => editDestination(null)}
-              help={showHelp}
-            />
-          )}
-          <div className="table-heading">
-            <h3>{investment ? "Contributions" : "Donations"}</h3>
-            <button type="button" disabled={p.busy} onClick={() => editEntry(null)}>
-              Record contribution
-            </button>
-          </div>
-          {(history.kind === "ready" || history.kind === "empty") && (
-            <RecordGrid
-              label={investment ? "Investment contributions" : "Donations"}
-              rows={entries}
-              rowId={(row) => row.uuid}
-              columns={entryColumns}
-              empty={`No recorded ${investment ? "contributions" : "donations"} yet.`}
-              marked={markedIn("entry")}
-              edit={editEntry}
-              add={() => editEntry(null)}
-              remove={removeEntry}
-              help={showHelp}
-            />
-          )}
-          {investment && (
-            <>
-              <div className="table-heading">
-                <h3>Observed values</h3>
-                <button type="button" disabled={p.busy} onClick={() => editObservation(null)}>
-                  Record observation
-                </button>
-              </div>
-              {(observed.kind === "ready" || observed.kind === "empty") && (
-                <RecordGrid
-                  label="Investment value observations"
-                  rows={observations}
-                  rowId={(row) => row.uuid}
-                  columns={observationColumns}
-                  empty="No observed values yet."
-                  marked={markedIn("observation")}
-                  edit={editObservation}
-                  add={() => editObservation(null)}
-                  remove={removeObservation}
-                  help={showHelp}
-                />
-              )}
-            </>
-          )}
-        </div>
-        {draft?.open && form && (
-          <aside
-            ref={editor.aside}
-            className="data-sidebar"
-            aria-label="Record details"
-            onKeyDown={(event) => {
-              if (event.key === "Escape" && !(event.target instanceof HTMLSelectElement)) {
-                event.preventDefault();
-                editor.close(problem(form));
-              }
-            }}
-          >
+      <Head
+        title={<span id="destinations-title">Investments and giving</span>}
+        sub="Investments and giving are tracked apart, and neither is added into a total."
+      />
+      <PendingEdit
+        show={!!draft?.changed && !draft.open}
+        busy={p.busy}
+        review={() => draft && editor.start(draft.key, draft.form)}
+        save={save}
+        discard={editor.discard}
+      />
+      <Notice text={notice} dismiss={() => setNotice("")} />
+      {section("investment")}
+      {section("giving")}
+      <KeyHint help={showHelp} />
+      {draft?.open && form && (
+        <Dialog key={draft.key} title={titleOf(form)} onClose={() => editor.close(problem(form))}>
+          <div ref={editor.aside} onKeyDown={keepOnEscape}>
             <form
               noValidate
               onSubmit={(event) => {
@@ -507,75 +672,76 @@ export function Destinations(p: ScreenProps) {
                 editor.close(problem(form));
               }}
             >
-              <fieldset disabled={p.busy}>
-                {form.type === "destination" && (
-                  <DestinationFields
-                    kind={kind}
-                    record={form.record}
-                    value={form.value}
-                    set={set<DestinationForm>}
-                  />
-                )}
-                {form.type === "entry" && (
-                  <EntryFields
-                    record={form.record}
-                    value={form.value}
-                    set={set<ContributionInput>}
-                    destinations={named}
-                    goals={savingGoals}
-                  />
-                )}
-                {form.type === "observation" && (
-                  <>
-                    <legend>
-                      {form.record ? "Correct observed value" : "Record observed value"}
-                    </legend>
-                    <label>
-                      Investment
-                      <select
-                        value={form.value.account_id ?? ""}
-                        onChange={(event) =>
-                          set<ObservationInput>({ account_id: event.target.value || null })
-                        }
-                      >
-                        <option value="">Unassigned</option>
-                        {named.map((row) => (
-                          <option key={row.uuid} value={row.uuid}>
-                            {row.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Observation date
-                      <input
-                        type="date"
-                        value={form.value.date}
-                        onChange={(event) => set<ObservationInput>({ date: event.target.value })}
-                      />
-                    </label>
-                    <MoneyInput
-                      label="Observed value (USD)"
-                      value={form.value.amount}
-                      onChange={(amount) => set<ObservationInput>({ amount })}
+              <fieldset disabled={p.busy} className="rec-fields">
+                <div className="dlg-b">
+                  {form.type === "destination" && (
+                    <DestinationFields
+                      kind={form.kind}
+                      record={form.record}
+                      value={form.value}
+                      set={set<DestinationForm>}
                     />
-                  </>
-                )}
-                {draft.error && (
-                  <p className="field-error" role="alert">
-                    {draft.error}
-                  </p>
-                )}
-                <div className="record-actions">
-                  <button className="primary" type="button" onClick={save}>
-                    Save {form.type === "entry" ? "contribution" : form.type}
-                  </button>
+                  )}
+                  {form.type === "entry" && (
+                    <EntryFields
+                      kind={form.kind}
+                      record={form.record}
+                      value={form.value}
+                      set={set<ContributionInput>}
+                      destinations={ready(rows[form.kind])}
+                      goals={savingGoals}
+                    />
+                  )}
+                  {form.type === "observation" && (
+                    <>
+                      <Field label="Investment">
+                        <select
+                          value={form.value.account_id ?? ""}
+                          onChange={(event) =>
+                            set<ObservationInput>({ account_id: event.target.value || null })
+                          }
+                        >
+                          <option value="">Unassigned</option>
+                          {ready(rows.investment).map((row) => (
+                            <option key={row.uuid} value={row.uuid}>
+                              {row.name}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Observation date">
+                        <input
+                          type="date"
+                          value={form.value.date}
+                          onChange={(event) => set<ObservationInput>({ date: event.target.value })}
+                        />
+                      </Field>
+                      <MoneyField
+                        label="Observed value (USD)"
+                        value={form.value.amount}
+                        onChange={(amount) => set<ObservationInput>({ amount })}
+                      />
+                    </>
+                  )}
+                  {draft.error && (
+                    <p className="err" role="alert">
+                      {draft.error}
+                    </p>
+                  )}
+                </div>
+                <div className="dlg-f">
+                  {draft.changed && (
+                    <button type="button" className="btn quiet" onClick={editor.discard}>
+                      Discard changes
+                    </button>
+                  )}
                   {form.type === "entry" && form.record && (
                     <button
                       type="button"
-                      className="danger"
+                      className="btn danger"
                       onClick={() => {
                         const row = form.record as Contribution;
+                        const kind = form.kind;
                         setConfirmation({
                           title: "Delete entry?",
                           message: "Use this for a mistaken record. Its history is retained.",
@@ -588,13 +754,13 @@ export function Destinations(p: ScreenProps) {
                         });
                       }}
                     >
-                      Delete contribution
+                      Delete {COPY[form.kind].entryOne}
                     </button>
                   )}
                   {form.type === "observation" && form.record && (
                     <button
                       type="button"
-                      className="danger"
+                      className="btn danger"
                       onClick={() => {
                         const row = form.record as Observation;
                         setConfirmation({
@@ -612,21 +778,20 @@ export function Destinations(p: ScreenProps) {
                       Delete observation
                     </button>
                   )}
-                  {draft.changed && (
-                    <button type="button" onClick={editor.discard}>
-                      Discard changes
-                    </button>
-                  )}
-                  <button type="button" onClick={() => editor.close(problem(form))}>
-                    Close
+                  <button type="button" className="btn pri" onClick={save}>
+                    Save{" "}
+                    {form.type === "entry"
+                      ? COPY[form.kind].entryOne
+                      : form.type === "destination"
+                        ? COPY[form.kind].one
+                        : "observation"}
                   </button>
                 </div>
               </fieldset>
             </form>
-          </aside>
-        )}
-      </div>
-      <StatusBar mode={mode} help={showHelp} />
+          </div>
+        </Dialog>
+      )}
       <ConfirmDialog confirmation={confirmation} close={() => setConfirmation(null)} />
       <Shortcuts open={help} close={() => setHelp(false)} />
     </section>
@@ -644,20 +809,17 @@ function DestinationFields({
   value: DestinationForm;
   set: (patch: Partial<DestinationForm>) => void;
 }) {
-  const noun = kind === "investment" ? "investment" : "giving recipient";
   return (
     <>
-      <legend>{record ? `Edit ${noun}` : `Add ${noun}`}</legend>
-      <label>
-        Name
+      <Field label="Name">
         <input
           maxLength={120}
           value={value.name}
           aria-invalid={!value.name.trim()}
           onChange={(event) => set({ name: event.target.value })}
         />
-      </label>
-      <MoneyInput
+      </Field>
+      <MoneyField
         label="Cumulative contribution target (USD, optional)"
         value={value.target}
         required={false}
@@ -665,37 +827,38 @@ function DestinationFields({
       />
       {!record && kind === "investment" && (
         <>
-          <p className="muted">An opening observed value is optional and is not a contribution.</p>
-          <label>
-            Opening date
-            <input
-              type="date"
-              value={value.openingDate}
-              onChange={(event) => set({ openingDate: event.target.value })}
+          <p className="note">An opening observed value is optional and is not a contribution.</p>
+          <div className="two">
+            <Field label="Opening date">
+              <input
+                type="date"
+                value={value.openingDate}
+                onChange={(event) => set({ openingDate: event.target.value })}
+              />
+            </Field>
+            <MoneyField
+              label="Opening observed value (USD, optional)"
+              value={value.openingAmount}
+              required={false}
+              onChange={(openingAmount) => set({ openingAmount })}
             />
-          </label>
-          <MoneyInput
-            label="Opening observed value (USD, optional)"
-            value={value.openingAmount}
-            required={false}
-            onChange={(openingAmount) => set({ openingAmount })}
-          />
+          </div>
         </>
       )}
       {record?.opening && (
-        <p className="muted">
-          Opening observed value {dollars(record.opening.amount)} on {record.opening.date}; excluded
-          from contribution progress.
+        <p className="note">
+          Opening observed value {formatMoney(record.opening.amount)} on{" "}
+          {fmtDate(record.opening.date)}; excluded from contribution progress.
         </p>
       )}
       {record && (
-        <label className="check">
+        <label className="rec-check">
           <input
             type="checkbox"
             checked={value.active}
             onChange={(event) => set({ active: event.target.checked })}
           />
-          Active for new contributions
+          Active for new {kind === "investment" ? "contributions" : "donations"}
         </label>
       )}
     </>
@@ -703,12 +866,14 @@ function DestinationFields({
 }
 
 function EntryFields({
+  kind,
   record,
   value,
   set,
   destinations: named,
   goals,
 }: {
+  kind: DestinationKind;
   record: Contribution | null;
   value: ContributionInput;
   set: (patch: Partial<ContributionInput>) => void;
@@ -721,15 +886,12 @@ function EntryFields({
 }) {
   return (
     <>
-      <legend>{record ? "Correct contribution" : "Record contribution"}</legend>
-      <label>
-        Financial date
+      <Field label="Financial date">
         <input type="date" value={value.date} onChange={(e) => set({ date: e.target.value })} />
-      </label>
-      <label>
-        Destination
+      </Field>
+      <Field label="Destination">
         <select
-          name="contribution-destination"
+          name={`${kind}-destination`}
           value={value.destination_id ?? ""}
           onChange={(event) => set({ destination_id: event.target.value || null })}
         >
@@ -743,14 +905,14 @@ function EntryFields({
               </option>
             ))}
         </select>
-      </label>
-      <MoneyInput
+      </Field>
+      <MoneyField
         label="Amount (USD)"
         signed={value.is_adjustment}
         value={value.amount}
         onChange={(amount) => set({ amount })}
       />
-      <label className="check">
+      <label className="rec-check">
         <input
           type="checkbox"
           checked={value.is_adjustment}
@@ -758,8 +920,7 @@ function EntryFields({
         />
         Adjustment to recorded total
       </label>
-      <label>
-        Funding origin
+      <Field label="Funding origin">
         <select
           value={value.funding_origin ?? "income"}
           onChange={(event) =>
@@ -772,10 +933,9 @@ function EntryFields({
           <option value="income">Current income</option>
           <option value="savings">Previously saved money</option>
         </select>
-      </label>
+      </Field>
       {value.funding_origin === "savings" && (
-        <label>
-          Saving goal
+        <Field label="Saving goal">
           <select
             value={value.saving_goal_id ?? ""}
             onChange={(event) => set({ saving_goal_id: event.target.value || null })}
@@ -789,16 +949,15 @@ function EntryFields({
                 </option>
               ))}
           </select>
-        </label>
+        </Field>
       )}
-      <label>
-        Note
+      <Field label="Note">
         <textarea
           maxLength={2000}
           value={value.note}
           onChange={(event) => set({ note: event.target.value })}
         />
-      </label>
+      </Field>
     </>
   );
 }

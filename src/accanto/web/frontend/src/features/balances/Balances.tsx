@@ -1,19 +1,28 @@
-import { useState } from "react";
+import { type KeyboardEvent, useState } from "react";
 import { type Loan, type Observation, type ObservationInput, balances } from "../../lib/balances";
+import { fmtDate, formatMoney, plural } from "../../lib/format";
 import { monthly } from "../../lib/monthly";
+import { Dialog, Empty, Field, Head, Icon, Trend } from "../../ui";
 import {
   type Column,
-  type Confirmation,
   ConfirmDialog,
+  type Confirmation,
+  Day,
+  KeyHint,
+  LoadFailure,
+  Loading,
+  MoneyField,
+  Notice,
+  PendingEdit,
   RecordGrid,
   Shortcuts,
-  StatusBar,
+  TrackedCard,
   dash,
-  modeFor,
+  trendPoints,
   useRecordEditor,
   validMoney,
 } from "../destinations/records";
-import { LoadMessage, MoneyInput, type ScreenProps, dollars, useLoad } from "../workspace/shared";
+import { type ScreenProps, useLoad } from "../workspace/shared";
 
 type LoanForm = { name: string; date: string; amount: string };
 type Form =
@@ -44,7 +53,6 @@ export function Balances(p: ScreenProps) {
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [help, setHelp] = useState(false);
   const [notice, setNotice] = useState("");
-  const [mode, setMode] = useState("READY");
   const accounts = loans.kind === "ready" ? loans.data : [];
   const observations = observed.kind === "ready" ? observed.data : [];
   const paymentsFor = (loan: Loan) =>
@@ -67,7 +75,7 @@ export function Balances(p: ScreenProps) {
       record: loan,
       value: { name: "", date: p.entity.today, amount: "" },
     });
-  function editObservation(row: Observation | null) {
+  function editObservation(row: Observation | null, account?: string) {
     if (row?.is_opening) {
       setNotice("An opening amount owed is set when the loan is added and cannot be corrected.");
       return;
@@ -85,7 +93,7 @@ export function Balances(p: ScreenProps) {
         : {
             date: p.entity.today,
             amount: "",
-            account_id: accounts.find((loan) => loan.active)?.uuid ?? null,
+            account_id: account ?? accounts.find((loan) => loan.active)?.uuid ?? null,
           },
     });
   }
@@ -148,10 +156,14 @@ export function Balances(p: ScreenProps) {
   const loanColumns: Column<Loan>[] = [
     { header: "Name", cell: (loan) => loan.name },
     { header: "Status", cell: (loan) => (loan.active ? "Active" : "Archived") },
-    { header: "Opening owed", numeric: true, cell: (loan) => dollars(loan.opening.amount) },
-    { header: "Opened", cell: (loan) => <time>{loan.opening.date}</time> },
-    { header: "Latest observed owed", numeric: true, cell: (loan) => dollars(loan.latest.amount) },
-    { header: "Observed on", cell: (loan) => <time>{loan.latest.financial_date}</time> },
+    { header: "Opening owed", numeric: true, cell: (loan) => formatMoney(loan.opening.amount) },
+    { header: "Opened", cell: (loan) => <Day iso={loan.opening.date} /> },
+    {
+      header: "Latest observed owed",
+      numeric: true,
+      cell: (loan) => formatMoney(loan.latest.amount),
+    },
+    { header: "Observed on", cell: (loan) => <Day iso={loan.latest.financial_date} /> },
     {
       header: "Payments",
       numeric: true,
@@ -163,6 +175,7 @@ export function Balances(p: ScreenProps) {
       cell: (loan) => (
         <button
           type="button"
+          className="btn sm quiet"
           tabIndex={-1}
           aria-label={`Details for ${loan.name}`}
           onClick={() => openLoan(loan)}
@@ -173,18 +186,19 @@ export function Balances(p: ScreenProps) {
     },
   ];
   const observationColumns: Column<Observation>[] = [
-    { header: "Date", cell: (row) => <time>{row.financial_date}</time> },
+    { header: "Date", cell: (row) => <Day iso={row.financial_date} /> },
     { header: "Loan", cell: (row) => nameOf(row.account_id) },
-    { header: "Amount owed", numeric: true, cell: (row) => dollars(row.amount) },
-    { header: "Kind", cell: (row) => (row.is_opening ? "Opening" : "Observation") },
+    { header: "Amount owed", numeric: true, cell: (row) => formatMoney(row.amount) },
+    { header: "Kind", wide: true, cell: (row) => (row.is_opening ? "Opening" : "Observation") },
     {
       header: "",
       cell: (row) =>
         row.is_opening ? null : (
           <button
             type="button"
+            className="btn sm quiet"
             tabIndex={-1}
-            aria-label={`Correct observation on ${row.financial_date}`}
+            aria-label={`Correct observation on ${fmtDate(row.financial_date)}`}
             onClick={() => editObservation(row)}
           >
             Correct
@@ -195,12 +209,23 @@ export function Balances(p: ScreenProps) {
   const marked = draft?.changed && form?.type === "observation" ? draft.key.split(":")[1] : null;
   const loan = form?.type === "loan" ? form.record : null;
   const loanPayments = loan ? paymentsFor(loan) : [];
+  const add = (
+    <button type="button" className="btn pri" disabled={p.busy} onClick={() => openLoan(null)}>
+      <Icon name="plus" />
+      Add loan
+    </button>
+  );
+  const keepOnEscape = (event: KeyboardEvent) => {
+    if (form && event.key === "Escape" && !(event.target instanceof HTMLSelectElement)) {
+      event.preventDefault();
+      editor.close(problem(form));
+    }
+  };
 
   return (
     <section
       aria-labelledby="balances-title"
-      className="data-workspace records"
-      onFocus={(event) => setMode(modeFor(event))}
+      className="screen records"
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
           event.preventDefault();
@@ -217,47 +242,89 @@ export function Balances(p: ScreenProps) {
         }
       }}
     >
-      <div className="data-toolbar">
-        <h2 id="balances-title">Loans and observed balances</h2>
-        {draft?.changed && !draft.open && (
-          <output className="pending">
-            Unsaved edit
-            <button type="button" onClick={() => editor.start(draft.key, draft.form)}>
-              Review
-            </button>
-            <button type="button" className="primary" disabled={p.busy} onClick={save}>
-              Save
-            </button>
-            <button type="button" disabled={p.busy} onClick={editor.discard}>
-              Discard
-            </button>
-          </output>
-        )}
-      </div>
-      <p className="annotation muted">
-        Payments do not calculate amounts owed; each amount owed is a dated observation. Investment
-        values are recorded in Investments and giving.
-      </p>
-      {notice && (
-        <output className="notice">
-          {notice}
-          <button type="button" aria-label="Dismiss message" onClick={() => setNotice("")}>
-            ×
-          </button>
-        </output>
+      <Head
+        title={<span id="balances-title">Loans</span>}
+        sub="The amount owed is a dated check-in you record from your lender. Recording a payment never changes it. Investment values are recorded in Investments and giving."
+      >
+        {accounts.length > 0 && add}
+      </Head>
+      <PendingEdit
+        show={!!draft?.changed && !draft.open}
+        busy={p.busy}
+        review={() => draft && editor.start(draft.key, draft.form)}
+        save={save}
+        discard={editor.discard}
+      />
+      <Notice text={notice} dismiss={() => setNotice("")} />
+      <LoadFailure state={loans} retry={again} />
+      <LoadFailure state={payments} retry={again} />
+      <LoadFailure state={observed} retry={again} />
+      {loans.kind === "loading" && <Loading what="loans" />}
+      {loans.kind === "empty" && (
+        <Empty title="No loans yet" action={add}>
+          Add a loan with what you owe today, then check in whenever your lender shows a new figure.
+        </Empty>
       )}
-      <LoadMessage state={loans} retry={again} />
-      <LoadMessage state={payments} retry={again} />
-      <LoadMessage state={observed} retry={again} />
-      <div className={`data-layout${draft?.open ? " with-sidebar" : ""}`}>
-        <div className="record-tables">
-          <div className="table-heading">
-            <h3>Loans</h3>
-            <button type="button" disabled={p.busy} onClick={() => openLoan(null)}>
-              Add loan
-            </button>
-          </div>
-          {(loans.kind === "ready" || loans.kind === "empty") && (
+      {accounts.length > 0 && (
+        <div className="grid2">
+          {accounts.map((account) => {
+            const count = paymentsFor(account).length;
+            return (
+              <TrackedCard
+                key={account.uuid}
+                name={account.name}
+                chip={account.active ? undefined : "Archived"}
+                actions={
+                  <>
+                    {account.active && (
+                      <button
+                        type="button"
+                        className="btn sm"
+                        disabled={p.busy}
+                        aria-label={`Record amount owed for ${account.name}`}
+                        onClick={() => editObservation(null, account.uuid)}
+                      >
+                        Record amount owed
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn sm quiet"
+                      disabled={p.busy}
+                      aria-label={`${account.name} details`}
+                      onClick={() => openLoan(account)}
+                    >
+                      Details
+                    </button>
+                  </>
+                }
+              >
+                <div>
+                  <div className="fig">{formatMoney(account.latest.amount)}</div>
+                  <span className="cap">Owed on {fmtDate(account.latest.financial_date)}</span>
+                  <Trend
+                    points={trendPoints(observations, account.uuid)}
+                    kind="fixed"
+                    label={`${account.name}, amount owed`}
+                  />
+                </div>
+                {payments.kind === "ready" || payments.kind === "empty" ? (
+                  <span className="cap">
+                    {count ? `${plural(count, "payment")} recorded.` : "No payments recorded."}{" "}
+                    Payments do not change the amount owed.
+                  </span>
+                ) : null}
+              </TrackedCard>
+            );
+          })}
+        </div>
+      )}
+      <div className="card pad rec-records">
+        {(loans.kind === "ready" || loans.kind === "empty") && (
+          <div className="rec-registry">
+            <div className="rec-bar">
+              <h2 className="h2">All loans</h2>
+            </div>
             <RecordGrid
               label="Loans"
               rows={accounts}
@@ -268,14 +335,21 @@ export function Balances(p: ScreenProps) {
               add={() => openLoan(null)}
               help={showHelp}
             />
-          )}
-          <div className="table-heading">
-            <h3>Amount owed observations</h3>
-            <button type="button" disabled={p.busy} onClick={() => editObservation(null)}>
+          </div>
+        )}
+        <div>
+          <div className="rec-bar">
+            <h2 className="h2">Amount owed observations</h2>
+            <button
+              type="button"
+              className="btn sm"
+              disabled={p.busy}
+              onClick={() => editObservation(null)}
+            >
               Record observation
             </button>
           </div>
-          {(observed.kind === "ready" || observed.kind === "empty") && (
+          {observed.kind === "ready" || observed.kind === "empty" ? (
             <RecordGrid
               label="Amount owed observations"
               rows={observations}
@@ -288,85 +362,96 @@ export function Balances(p: ScreenProps) {
               remove={removeObservation}
               help={showHelp}
             />
+          ) : (
+            observed.kind === "loading" && <Loading what="observations" />
           )}
         </div>
-        {draft?.open && form && (
-          <aside
-            ref={editor.aside}
-            className="data-sidebar"
-            aria-label="Record details"
-            onKeyDown={(event) => {
-              if (event.key === "Escape" && !(event.target instanceof HTMLSelectElement)) {
-                event.preventDefault();
-                editor.close(problem(form));
-              }
-            }}
-          >
+      </div>
+      <KeyHint help={showHelp} />
+      {draft?.open && form && (
+        <Dialog
+          key={draft.key}
+          title={
+            form.type === "loan"
+              ? form.record
+                ? form.record.name
+                : "Add loan"
+              : form.record
+                ? "Correct amount owed"
+                : "Record amount owed"
+          }
+          onClose={() => editor.close(problem(form))}
+        >
+          <div ref={editor.aside} onKeyDown={keepOnEscape}>
             {loan ? (
-              <div className="loan-details">
-                <h3>{loan.name}</h3>
-                <dl>
-                  <dt>Opened</dt>
-                  <dd>
-                    {loan.opening.date} owing {dollars(loan.opening.amount)}
-                  </dd>
-                  <dt>Latest observed owed</dt>
-                  <dd>
-                    {dollars(loan.latest.amount)} on {loan.latest.financial_date}
-                  </dd>
-                </dl>
-                <h4>Payment history</h4>
-                {loanPayments.length === 0 ? (
-                  <p className="muted">No payments recorded for this loan.</p>
-                ) : (
-                  <table className="data-grid" aria-label={`Payments for ${loan.name}`}>
-                    <thead>
-                      <tr>
-                        <th scope="col">Date</th>
-                        <th scope="col">Fixed cost</th>
-                        <th scope="col" className="numeric">
-                          Payment
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loanPayments.map((entry) => (
-                        <tr key={entry.uuid}>
-                          <td>
-                            <time>{entry.financial_date}</time>
-                          </td>
-                          <td>{entry.fixed_cost_name ?? dash}</td>
-                          <td className="numeric">{dollars(entry.amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                <p className="muted">Payments are recorded in Activity as fixed costs.</p>
-                {!loan.active && loan.draft_fixed_cost_lines.length > 0 && (
-                  <p className="warning">
-                    Review draft fixed-cost allocations for this archived loan.
-                  </p>
-                )}
-                <div className="record-actions">
+              <>
+                <div className="dlg-b rec-details">
+                  <dl>
+                    <dt>Opened</dt>
+                    <dd>
+                      {fmtDate(loan.opening.date)} owing {formatMoney(loan.opening.amount)}
+                    </dd>
+                    <dt>Latest observed owed</dt>
+                    <dd>
+                      {formatMoney(loan.latest.amount)} on {fmtDate(loan.latest.financial_date)}
+                    </dd>
+                  </dl>
+                  <h3>Payment history</h3>
+                  {loanPayments.length === 0 ? (
+                    <p className="note">No payments recorded for this loan.</p>
+                  ) : (
+                    <div className="rec-scroll">
+                      <table className="rec-grid" aria-label={`Payments for ${loan.name}`}>
+                        <thead>
+                          <tr>
+                            <th scope="col">Date</th>
+                            <th scope="col">Fixed cost</th>
+                            <th scope="col" className="num">
+                              Payment
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {loanPayments.map((entry) => (
+                            <tr key={entry.uuid}>
+                              <td>
+                                <Day iso={entry.financial_date} />
+                              </td>
+                              <td>{entry.fixed_cost_name ?? dash}</td>
+                              <td className="num">{formatMoney(entry.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <p className="note">Payments are recorded in Activity as fixed costs.</p>
+                  {!loan.active && loan.draft_fixed_cost_lines.length > 0 && (
+                    <p className="warn">
+                      Review draft fixed-cost allocations for this archived loan.
+                    </p>
+                  )}
+                  {loan.active && (
+                    <p id="archive-rule" className="note">
+                      Archive requires a latest observed amount owed of $0.00.
+                    </p>
+                  )}
+                </div>
+                <div className="dlg-f">
                   <button
                     type="button"
+                    className="btn"
                     disabled={p.busy || (loan.active && loan.latest.amount !== "0.00")}
                     aria-describedby={loan.active ? "archive-rule" : undefined}
                     onClick={() => toggleArchive(loan)}
                   >
                     {loan.active ? "Archive loan" : "Reopen loan"}
                   </button>
-                  <button type="button" onClick={() => editor.close("")}>
+                  <button type="button" className="btn pri" onClick={() => editor.close("")}>
                     Close
                   </button>
                 </div>
-                {loan.active && (
-                  <p id="archive-rule" className="muted">
-                    Archive requires a latest observed amount owed of $0.00.
-                  </p>
-                )}
-              </div>
+              </>
             ) : (
               <form
                 noValidate
@@ -375,79 +460,87 @@ export function Balances(p: ScreenProps) {
                   editor.close(problem(form));
                 }}
               >
-                <fieldset disabled={p.busy}>
-                  {form.type === "loan" ? (
-                    <>
-                      <legend>Add loan</legend>
-                      <label>
-                        Name
-                        <input
-                          maxLength={120}
-                          value={form.value.name}
-                          onChange={(event) => set<LoanForm>({ name: event.target.value })}
-                        />
-                      </label>
-                      <label>
-                        Opening date
-                        <input
-                          type="date"
-                          value={form.value.date}
-                          onChange={(event) => set<LoanForm>({ date: event.target.value })}
-                        />
-                      </label>
-                      <MoneyInput
-                        label="Opening amount owed (USD)"
-                        value={form.value.amount}
-                        onChange={(amount) => set<LoanForm>({ amount })}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <legend>{form.record ? "Correct amount owed" : "Record amount owed"}</legend>
-                      <label>
-                        Loan
-                        <select
-                          value={form.value.account_id ?? ""}
-                          onChange={(event) =>
-                            set<ObservationInput>({ account_id: event.target.value || null })
-                          }
-                        >
-                          <option value="">Choose loan</option>
-                          {accounts.map((account) => (
-                            <option key={account.uuid} value={account.uuid}>
-                              {account.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Observation date
-                        <input
-                          type="date"
-                          value={form.value.date}
-                          onChange={(event) => set<ObservationInput>({ date: event.target.value })}
-                        />
-                      </label>
-                      <MoneyInput
-                        label="Amount owed (USD)"
-                        value={form.value.amount}
-                        onChange={(amount) => set<ObservationInput>({ amount })}
-                      />
-                    </>
-                  )}
-                  {draft.error && (
-                    <p className="field-error" role="alert">
-                      {draft.error}
-                    </p>
-                  )}
-                  <div className="record-actions">
-                    <button className="primary" type="button" onClick={save}>
-                      {form.type === "loan" ? "Save loan" : "Save observation"}
-                    </button>
+                <fieldset disabled={p.busy} className="rec-fields">
+                  <div className="dlg-b">
+                    {form.type === "loan" ? (
+                      <>
+                        <Field label="Name">
+                          <input
+                            maxLength={120}
+                            value={form.value.name}
+                            onChange={(event) => set<LoanForm>({ name: event.target.value })}
+                          />
+                        </Field>
+                        <div className="two">
+                          <Field label="Opening date">
+                            <input
+                              type="date"
+                              value={form.value.date}
+                              onChange={(event) => set<LoanForm>({ date: event.target.value })}
+                            />
+                          </Field>
+                          <MoneyField
+                            label="Opening amount owed (USD)"
+                            value={form.value.amount}
+                            onChange={(amount) => set<LoanForm>({ amount })}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Field label="Loan">
+                          <select
+                            value={form.value.account_id ?? ""}
+                            onChange={(event) =>
+                              set<ObservationInput>({ account_id: event.target.value || null })
+                            }
+                          >
+                            <option value="">Choose loan</option>
+                            {accounts.map((account) => (
+                              <option key={account.uuid} value={account.uuid}>
+                                {account.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <div className="two">
+                          <Field label="Observation date">
+                            <input
+                              type="date"
+                              value={form.value.date}
+                              onChange={(event) =>
+                                set<ObservationInput>({ date: event.target.value })
+                              }
+                            />
+                          </Field>
+                          <MoneyField
+                            label="Amount owed (USD)"
+                            value={form.value.amount}
+                            onChange={(amount) => set<ObservationInput>({ amount })}
+                          />
+                        </div>
+                        <p className="note">
+                          Copy the figure your lender shows. Payments you recorded are kept
+                          separately.
+                        </p>
+                      </>
+                    )}
+                    {draft.error && (
+                      <p className="err" role="alert">
+                        {draft.error}
+                      </p>
+                    )}
+                  </div>
+                  <div className="dlg-f">
+                    {draft.changed && (
+                      <button type="button" className="btn quiet" onClick={editor.discard}>
+                        Discard changes
+                      </button>
+                    )}
                     {form.type === "observation" && form.record && (
                       <button
                         type="button"
-                        className="danger"
+                        className="btn danger"
                         onClick={() => {
                           const row = form.record as Observation;
                           setConfirmation({
@@ -465,22 +558,16 @@ export function Balances(p: ScreenProps) {
                         Delete observation
                       </button>
                     )}
-                    {draft.changed && (
-                      <button type="button" onClick={editor.discard}>
-                        Discard changes
-                      </button>
-                    )}
-                    <button type="button" onClick={() => editor.close(problem(form))}>
-                      Close
+                    <button type="button" className="btn pri" onClick={save}>
+                      {form.type === "loan" ? "Save loan" : "Save observation"}
                     </button>
                   </div>
                 </fieldset>
               </form>
             )}
-          </aside>
-        )}
-      </div>
-      <StatusBar mode={mode} help={showHelp} />
+          </div>
+        </Dialog>
+      )}
       <ConfirmDialog confirmation={confirmation} close={() => setConfirmation(null)} />
       <Shortcuts open={help} close={() => setHelp(false)} />
     </section>

@@ -70,6 +70,7 @@ const cell = (grid: string, row: string, col: number) =>
 const press = (target: Element, key: string, init: KeyboardEventInit = {}) =>
   fireEvent.keyDown(target, { key, ...init });
 const savedBody = (p: ScreenProps) => vi.mocked(p.save).mock.lastCall?.[0];
+const loaded = () => screen.findByRole("grid", { name: "Savings accounts and goals" });
 
 afterEach(() => {
   cleanup();
@@ -80,7 +81,7 @@ it("moves with Vim keys, keeps an Escaped edit unsaved, and saves only on Ctrl+S
   serve([account([goal({}), unallocated])]);
   const p = props();
   render(<Savings {...p} />);
-  await screen.findByText("Emergency");
+  await loaded();
   const start = cell("goals", "a:account-1", 0);
   press(start, "j");
   await waitFor(() => expect(document.activeElement).toBe(cell("goals", "g:goal-1", 0)));
@@ -94,7 +95,7 @@ it("moves with Vim keys, keeps an Escaped edit unsaved, and saves only on Ctrl+S
   fireEvent.change(target, { target: { value: "12.5" } });
   press(target, "Escape");
   expect(p.save).not.toHaveBeenCalled();
-  expect(cell("goals", "g:goal-1", 2).textContent).toBe("$12.5");
+  expect(cell("goals", "g:goal-1", 2).textContent).toBe("$12.50");
   expect(screen.getByText(/Unsaved goal Emergency/)).toBeTruthy();
   expect(p.dirty).toHaveBeenLastCalledWith(true);
   press(cell("goals", "g:goal-1", 2), "s", { ctrlKey: true });
@@ -115,7 +116,7 @@ it("keeps invalid input open and blocks finite goals without a target", async ()
   serve([account([goal({}), unallocated])]);
   const p = props();
   render(<Savings {...p} />);
-  await screen.findByText("Emergency");
+  await loaded();
   press(cell("goals", "g:goal-1", 2), "Enter");
   const target = screen.getByLabelText("Target for Emergency");
   fireEvent.change(target, { target: { value: "1.234" } });
@@ -137,7 +138,7 @@ it("adds a goal with a/A against the account revision and an ongoing blank targe
   serve([account([goal({}), unallocated])]);
   const p = props();
   render(<Savings {...p} />);
-  await screen.findByText("Emergency");
+  await loaded();
   press(cell("goals", "g:goal-u", 0), "A");
   const name = await screen.findByLabelText("Goal for New goal");
   fireEvent.change(name, { target: { value: "Bike" } });
@@ -158,7 +159,7 @@ it("corrects ordinary opening designations and shows the live Unallocated remain
   serve([account([goal({}), unallocated])]);
   const p = props();
   render(<Savings {...p} />);
-  await screen.findByText("Emergency");
+  await loaded();
   expect(cell("goals", "g:goal-u", 0).textContent).toBe("Unallocated");
   press(cell("goals", "g:goal-u", 3), "i");
   expect(screen.queryByRole("textbox")).toBeNull();
@@ -167,7 +168,7 @@ it("corrects ordinary opening designations and shows the live Unallocated remain
   const opening = screen.getByLabelText("Opening for Emergency");
   fireEvent.change(opening, { target: { value: "120.00" } });
   press(opening, "Enter");
-  expect(cell("goals", "g:goal-u", 3).textContent).toBe("$-20.00");
+  expect(cell("goals", "g:goal-u", 3).textContent).toBe("−$20.00");
   press(cell("goals", "g:goal-1", 3), "s", { ctrlKey: true });
   expect(p.save).not.toHaveBeenCalled();
   expect(screen.getByRole("alert").textContent).toContain("must fit within");
@@ -195,7 +196,7 @@ it("guards switching to another record and keeps the pending one when declined",
   const p = props();
   vi.mocked(p.guard).mockReturnValue(false);
   render(<Savings {...p} />);
-  await screen.findByText("Travel");
+  await loaded();
   press(cell("goals", "g:goal-1", 0), "i");
   fireEvent.change(screen.getByLabelText("Goal for Emergency"), { target: { value: "Rainy day" } });
   press(screen.getByLabelText("Goal for Emergency"), "Enter");
@@ -209,11 +210,13 @@ it("creates an account from details only when designations fit the opening amoun
   serve([]);
   const p = props();
   render(<Savings {...p} />);
-  await screen.findByText("No savings accounts yet.");
-  fireEvent.click(screen.getByRole("button", { name: "New savings account" }));
-  const details = screen.getByRole("complementary");
-  fireEvent.change(within(details).getByLabelText("Name"), { target: { value: "Reserve" } });
-  fireEvent.change(within(details).getByLabelText("Opening amount"), {
+  await screen.findByText("No savings accounts yet");
+  fireEvent.click(screen.getByRole("button", { name: "New account" }));
+  const details = screen.getByRole("dialog", { name: "New savings account" });
+  fireEvent.change(within(details).getByLabelText("Account name"), {
+    target: { value: "Reserve" },
+  });
+  fireEvent.change(within(details).getByLabelText("Holds today (USD)"), {
     target: { value: "10.00" },
   });
   fireEvent.click(within(details).getByRole("button", { name: "Add opening goal" }));
@@ -224,7 +227,7 @@ it("creates an account from details only when designations fit the opening amoun
   fireEvent.change(within(details).getByLabelText("Opening designation"), {
     target: { value: "10.01" },
   });
-  expect(within(details).getByText("Unallocated opening $-0.01")).toBeTruthy();
+  expect(within(details).getByText("Unallocated opening −$0.01")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   expect(p.save).not.toHaveBeenCalled();
   fireEvent.change(within(details).getByLabelText("Opening designation"), {
@@ -247,7 +250,7 @@ it("previews completion return and submits the displayed revision and amount", a
   serve([account([goal({ kind: "finite", target: "100.00" }), unallocated])]);
   const p = props();
   render(<Savings {...p} />);
-  await screen.findByText("Emergency");
+  await loaded();
   press(cell("goals", "g:goal-1", 6), "Enter");
   fireEvent.click(screen.getByRole("button", { name: "Complete Emergency…" }));
   expect(screen.getByText(/Returns \$50.00 to Unallocated · account total unchanged/)).toBeTruthy();
@@ -273,7 +276,7 @@ it("keeps completed goals with money visible and returns them without reactivati
   serve([account([completed, spent, unallocated])]);
   const p = props();
   render(<Savings {...p} />);
-  await screen.findByText("Emergency");
+  await loaded();
   expect(screen.queryByText("Old trip")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Show archived (1)" }));
   expect(screen.getByText("Old trip")).toBeTruthy();
@@ -296,7 +299,7 @@ it("keeps movement identity on correction and rejects a transfer within one acco
   press(cell("moves", "m:move-1", 1), "i");
   expect(screen.getByText(/recorded action cannot change/)).toBeTruthy();
   press(cell("moves", "m:move-1", 4), "i");
-  const amount = screen.getByLabelText("Amount for Reassign on 2026-10-10");
+  const amount = screen.getByLabelText("Amount for Reassign on Oct 10, 2026");
   fireEvent.change(amount, { target: { value: "40.00" } });
   press(amount, "Enter");
   press(cell("moves", "m:move-1", 4), "s", { ctrlKey: true });
@@ -363,7 +366,7 @@ it("never replaces or discards attempted values while a write is busy", async ()
   serve([account([goal({}), second, unallocated])], [movement]);
   const p = props();
   const view = render(<Savings {...p} />);
-  await screen.findByText("Travel");
+  await loaded();
   press(cell("goals", "g:goal-1", 0), "i");
   fireEvent.change(screen.getByLabelText("Goal for Emergency"), { target: { value: "Rainy day" } });
   press(screen.getByLabelText("Goal for Emergency"), "Enter");
@@ -373,7 +376,7 @@ it("never replaces or discards attempted values while a write is busy", async ()
   press(cell("moves", "m:move-1", 0), "a");
   press(cell("moves", "m:move-1", 0), "s", { ctrlKey: true });
   fireEvent.click(screen.getByRole("button", { name: "Discard" }));
-  fireEvent.click(screen.getByRole("button", { name: "New savings account" }));
+  fireEvent.click(screen.getByRole("button", { name: "New account" }));
   expect(p.guard).not.toHaveBeenCalled();
   expect(p.save).not.toHaveBeenCalled();
   expect(screen.queryByRole("textbox")).toBeNull();
@@ -381,7 +384,9 @@ it("never replaces or discards attempted values while a write is busy", async ()
   expect(cell("goals", "g:goal-1", 0).textContent).toContain("Rainy day");
   press(cell("goals", "g:goal-1", 6), "Enter");
   expect(
-    within(screen.getByRole("complementary")).getByLabelText("Name").matches(":disabled"),
+    within(screen.getByRole("dialog", { name: "Emergency" }))
+      .getByLabelText("Goal name")
+      .matches(":disabled"),
   ).toBe(true);
   view.rerender(<Savings {...p} busy={false} />);
   press(cell("goals", "g:goal-1", 0), "i");
@@ -397,7 +402,9 @@ it("gives each Savings dialog a unique accessible title", async () => {
       <Savings {...p} />
     </>,
   );
-  await waitFor(() => expect(screen.getAllByText("Emergency")).toHaveLength(2));
+  await waitFor(() =>
+    expect(screen.getAllByRole("grid", { name: "Savings accounts and goals" })).toHaveLength(2),
+  );
   const titles = screen
     .getAllByText("Keyboard shortcuts", { selector: "h2" })
     .map((heading) => heading.id);
@@ -406,4 +413,33 @@ it("gives each Savings dialog a unique accessible title", async () => {
     expect(document.getElementById(dialog.getAttribute("aria-labelledby") ?? "")?.textContent).toBe(
       "Keyboard shortcuts",
     );
+});
+
+it("moves saved money from a goal card through the dialog", async () => {
+  serve([account([goal({}), unallocated])]);
+  const p = props();
+  const view = render(<Savings {...p} />);
+  await loaded();
+  fireEvent.click(screen.getByRole("button", { name: "Move money from Emergency" }));
+  const dialog = screen.getByRole("dialog", { name: "Move saved money" });
+  expect(within(dialog).getByLabelText("From")).toHaveProperty("value", "goal-1");
+  fireEvent.change(within(dialog).getByLabelText("To"), { target: { value: "goal-u" } });
+  fireEvent.change(within(dialog).getByLabelText("Amount (USD)"), { target: { value: "0" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(p.save).not.toHaveBeenCalled();
+  expect(within(dialog).getByRole("alert").textContent).toContain("positive amount");
+  fireEvent.change(within(dialog).getByLabelText("Amount (USD)"), { target: { value: "12.00" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(savedBody(p)).toMatchObject({
+    method: "POST",
+    path: "/api/entities/entity/savings-accounts/movements",
+    body: { kind: "reassignment", from_goal_id: "goal-1", to_goal_id: "goal-u", amount: "12.00" },
+  });
+  // An unconfirmed write keeps the new record but must not trap the page behind the dialog.
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  expect(screen.getByRole("dialog", { name: "Move saved money" })).toBeTruthy();
+  view.rerender(<Savings {...p} busy />);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("dialog", { name: "Move saved money" })).toBeNull();
+  expect(screen.getByRole("row", { name: /New savings record/ })).toBeTruthy();
 });

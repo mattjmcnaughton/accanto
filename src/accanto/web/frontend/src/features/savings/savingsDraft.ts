@@ -60,17 +60,11 @@ export type AccountEdit = Extract<Draft, { type: "account" }>;
 export type NewAccountEdit = Extract<Draft, { type: "new-account" }>;
 export type MovementEdit = Extract<Draft, { type: "movement" }>;
 
-export const dollars = (amount: string) => `$${amount}`;
 /** Exact cents for a nonnegative USD input, or null when it is not one. */
 export function cents(value: string): number | null {
   if (!USD_AMOUNT.test(value)) return null;
   const [whole, part = ""] = value.split(".");
   return Number(whole) * 100 + Number(part.padEnd(2, "0"));
-}
-export function formatCents(value: number): string {
-  const sign = value < 0 ? "-" : "";
-  const abs = Math.abs(value);
-  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
 }
 export const hasMoney = (amount: string) => (cents(amount) ?? 0) > 0;
 

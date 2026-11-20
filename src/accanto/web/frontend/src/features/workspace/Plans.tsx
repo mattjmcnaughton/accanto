@@ -1,24 +1,31 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LoadState } from "../../lib/api";
 import { balances } from "../../lib/balances";
 import { destinations } from "../../lib/destinations";
-import { monthly, type PlanGroup, type PlanRevision } from "../../lib/monthly";
+import { fmtDate } from "../../lib/format";
+import { type PlanGroup, type PlanRevision, monthly } from "../../lib/monthly";
 import { confirmInAppNavigation } from "../../lib/recoverableWrite";
 import { savings } from "../../lib/savings";
 import { parseTimestamp } from "../../lib/timestamp";
-import { LoadMessage, type ScreenProps, composing, useLoad } from "./shared";
+import { Band, Dialog, Empty, Icon, Skeleton } from "../../ui";
+import { Home } from "./Home";
 import { CopyPlan } from "./PlanScenarios";
 import { PlanWorksheet } from "./PlanWorksheet";
 import {
   type Catalog,
   type WorksheetDraft,
+  allocationBand,
+  balance,
+  lineGroups,
   money,
   planInput,
   revisionLines,
+  savedLabel,
+  storedGroups,
   storedTotals,
   totals,
-  versionLabel,
 } from "./planWorksheetModel";
+import { LoadMessage, type ScreenProps, composing, useLoad } from "./shared";
 import "./planning.css";
 
 type OpenDraft = { revision: PlanRevision; input?: WorksheetDraft; generation: number };
@@ -48,21 +55,25 @@ export function Plans(
     [p.entity.id, p.refresh, reload],
   );
   const loans = useLoad(() => balances.loans(p.entity.id), [p.entity.id, p.refresh, reload]);
+  // Home compares the current month with its Review, read exactly as the Review screen reads it.
+  const review = useLoad(
+    () => monthly.review(p.entity.id, `${p.entity.today.slice(0, 7)}-01`),
+    [p.entity.id, p.entity.today, p.refresh, reload],
+  );
   const [opened, setOpened] = useState<Record<string, OpenDraft>>({});
   const [active, setActive] = useState<string | null>(null);
   useEffect(() => {
     if (p.home) setActive(null);
   }, [p.home]);
   const [creating, setCreating] = useState(false);
-  const [copying, setCopying] = useState(false);
+  // The copy dialog, with the revision it starts from when opened from a worksheet.
+  const [copying, setCopying] = useState<false | { from?: string }>(false);
   const [name, setName] = useState("");
   const [invalid, setInvalid] = useState(false);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [mode, setMode] = useState("NORMAL");
   const [confirmed, setConfirmed] = useState<Record<string, PlanGroup>>({});
-  const help = useRef<HTMLDialogElement>(null);
-  const helpOrigin = useRef<HTMLElement | null>(null);
+  const [help, setHelp] = useState(false);
   const gTime = useRef(0);
   const root = useRef<HTMLDivElement>(null);
   const hasChanges = !!name || Object.values(opened).some(changed);
@@ -126,15 +137,18 @@ export function Plans(
       (parseTimestamp(draftOf(b)?.updated_at) ?? 0) -
         (parseTimestamp(draftOf(a)?.updated_at) ?? 0) || a.plan_id.localeCompare(b.plan_id),
   );
+  // The update instant, as a calendar date in the Entity time zone.
   const updated = (plan: PlanGroup) => {
     const value = parseTimestamp(draftOf(plan)?.updated_at);
     return value !== null
-      ? new Intl.DateTimeFormat("en-US", {
-          timeZone: p.entity.time_zone,
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        }).format(new Date(value))
+      ? fmtDate(
+          new Intl.DateTimeFormat("en-CA", {
+            timeZone: p.entity.time_zone,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(new Date(value)),
+        )
       : "Unknown";
   };
   const displayName = (plan: PlanGroup) =>
@@ -193,17 +207,22 @@ export function Plans(
     setName("");
   }
   function showHelp() {
-    helpOrigin.current = document.activeElement as HTMLElement;
-    help.current?.showModal();
+    setHelp(true);
   }
-  function keys(event: React.KeyboardEvent<HTMLTableElement>) {
+  function closeCopy() {
+    if (!p.guard()) return;
+    p.dirty(false);
+    setCopying(false);
+  }
+  /** Rows of a list move like a table: j/k or arrows, gg/G, h/l between a row's buttons. */
+  function keys(event: React.KeyboardEvent<HTMLElement>) {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     const button = (event.target as HTMLElement).closest("button");
     if (!button) return;
     const rows = Array.from(
-      event.currentTarget.querySelectorAll<HTMLTableRowElement>("tbody tr"),
+      event.currentTarget.querySelectorAll<HTMLElement>("[data-keyrow]"),
     ).filter((row) => row.querySelector("button"));
-    const currentRow = button.closest("tr");
+    const currentRow = button.closest<HTMLElement>("[data-keyrow]");
     if (!currentRow) return;
     let row = rows.indexOf(currentRow);
     let col = Array.from(rows[row].querySelectorAll("button")).indexOf(button);
@@ -234,8 +253,7 @@ export function Plans(
   const visible = plans.filter((plan) =>
     displayName(plan).toLowerCase().includes(query.trim().toLowerCase()),
   );
-  const continuation = plans.slice(0, 3);
-  const attention = plans.flatMap((plan) => {
+  const statsOf = (plan: PlanGroup) => {
     const local = opened[plan.plan_id];
     const dirty = changed(local);
     const revision = draftOf(plan);
@@ -247,29 +265,34 @@ export function Plans(
         : revision
           ? storedTotals(revision)
           : { funding: null, allocated: null, unassigned: null };
+    const amounts =
+      dirty && local?.input
+        ? lineGroups(local.input.editing ? null : local.input.lines)
+        : revision
+          ? storedGroups(revision)
+          : lineGroups(null);
+    return { dirty, stats, amounts };
+  };
+  const attention = plans.flatMap((plan) => {
+    const { dirty, stats } = statsOf(plan);
     return dirty || (stats.unassigned !== null && stats.unassigned < 0)
-      ? [{ plan, dirty, stats }]
+      ? [{ id: plan.plan_id, name: displayName(plan), dirty, ...stats }]
       : [];
   });
+  const ready = state.kind === "ready" || state.kind === "empty";
   return (
     <div
       className="planning"
       ref={root}
-      onFocus={(event) =>
-        setMode(
-          event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement
-            ? "INSERT"
-            : "NORMAL",
-        )
-      }
       onKeyDown={(event) => {
         if (
           (!home && active) ||
           event.ctrlKey ||
           event.metaKey ||
           event.altKey ||
-          help.current?.open ||
-          (event.target as HTMLElement).closest("input,select,textarea")
+          help ||
+          copying ||
+          (event.target as HTMLElement).closest("input,select,textarea,dialog")
         )
           return;
         if (event.key === "?") {
@@ -286,275 +309,197 @@ export function Plans(
         }
       }}
     >
-      <LoadMessage state={state} retry={() => setReload((n) => n + 1)} />
-      {(state.kind === "ready" || state.kind === "empty") && (
-        <div hidden={!home} id="home">
-          <div id="home-heading">
-            <h1>{plans.length ? "Home" : "Welcome to Accanto"}</h1>
-            {!!plans.length && (
-              <button type="button" onClick={newPlan}>
-                New Plan <kbd>A</kbd>
-              </button>
-            )}
+      {!home ? null : state.kind === "loading" ? (
+        <Skeleton />
+      ) : !ready ? (
+        <div className="screen">
+          <div className="card pad">
+            <LoadMessage state={state} retry={() => setReload((n) => n + 1)} />
           </div>
-          {!plans.length ? (
-            <section id="home-start">
-              <h2>No Plans yet</h2>
-              <button type="button" id="home-create" className="primary" onClick={newPlan}>
-                Create your first Plan
-              </button>
-            </section>
-          ) : (
-            <>
-              <section className="home-section">
-                <div className="home-section-heading">
-                  <h2>Continue working</h2>
-                  <button
-                    type="button"
-                    className="text-button"
-                    onClick={() => {
-                      setActive(null);
-                      p.showPlans?.();
-                    }}
-                  >
-                    All Plans ({plans.length})
-                  </button>
-                </div>
-                <div className="home-table-scroll">
-                  <table aria-label="Continue working" onKeyDown={keys}>
-                    <thead>
-                      <tr>
-                        <th>Plan</th>
-                        <th>Draft</th>
-                        <th>Updated</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {continuation.map((plan) => {
-                        return (
-                          <tr key={plan.plan_id}>
-                            <td>
-                              <button
-                                type="button"
-                                className="plan-open"
-                                onClick={() => open(plan)}
-                              >
-                                {displayName(plan)}
-                              </button>
-                            </td>
-                            <td>
-                              {changed(opened[plan.plan_id])
-                                ? "Unsaved changes in this tab"
-                                : "Saved draft"}
-                            </td>
-                            <td>{updated(plan)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-              <section className="home-section">
-                <div className="home-section-heading">
-                  <h2>
-                    Plan attention <span className="count">{attention.length}</span>
-                  </h2>
-                  <span>Current drafts</span>
-                </div>
-                {attention.length ? (
-                  <div className="home-table-scroll">
-                    <table aria-label="Plan attention" onKeyDown={keys}>
-                      <thead>
-                        <tr>
-                          <th>Plan</th>
-                          <th>What to revisit</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {attention.map(({ plan, dirty, stats }) => (
-                          <Fragment key={plan.plan_id}>
-                            <tr>
-                              <td>{displayName(plan)}</td>
-                              <td>
-                                <button
-                                  type="button"
-                                  className="attention-reason text-button"
-                                  aria-expanded={expanded === plan.plan_id}
-                                  onClick={() =>
-                                    setExpanded(expanded === plan.plan_id ? null : plan.plan_id)
-                                  }
-                                >
-                                  {stats.unassigned !== null && stats.unassigned < 0
-                                    ? `${money(-stats.unassigned)} overallocated`
-                                    : "Unsaved draft changes"}{" "}
-                                  {expanded === plan.plan_id ? "−" : "+"}
-                                </button>
-                              </td>
-                              <td>
-                                <button
-                                  type="button"
-                                  className="text-button"
-                                  onClick={() => open(plan)}
-                                >
-                                  Open draft
-                                </button>
-                              </td>
-                            </tr>
-                            {expanded === plan.plan_id && (
-                              <tr className="home-explanation">
-                                <td colSpan={3}>
-                                  {stats.unassigned !== null && stats.unassigned < 0 && (
-                                    <p>
-                                      Monthly funding <strong>{money(stats.funding)}</strong> −
-                                      allocations <strong>{money(stats.allocated)}</strong> =
-                                      unassigned <strong>{money(stats.unassigned)}</strong>.
-                                    </p>
-                                  )}
-                                  {dirty && <p>Unsaved changes in this tab.</p>}
-                                </td>
-                              </tr>
-                            )}
-                          </Fragment>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p id="home-clear">No reported Plan attention items.</p>
-                )}
-              </section>
-            </>
-          )}
         </div>
+      ) : null}
+      {ready && home && (
+        <Home
+          today={p.entity.today}
+          plans={plans.length}
+          hasVersion={plans.some((plan) => versionsOf(plan).length > 0)}
+          attention={attention}
+          recent={plans.slice(0, 3).map((plan) => ({
+            id: plan.plan_id,
+            name: displayName(plan),
+            detail: `${changed(opened[plan.plan_id]) ? "Unsaved changes in this tab" : "Saved draft"}, updated ${updated(plan)}`,
+          }))}
+          review={review}
+          accounts={accounts}
+          investments={investments}
+          loans={loans}
+          open={(id) => {
+            const plan = plans.find((item) => item.plan_id === id);
+            if (plan) open(plan);
+          }}
+          newPlan={newPlan}
+          showPlans={() => {
+            setActive(null);
+            p.showPlans?.();
+          }}
+          retry={() => setReload((n) => n + 1)}
+        />
       )}
-      <div hidden={home || !!active} id="plans-index">
-        <div id="plans-heading">
-          <h1>
-            Plans <span className="count">{plans.length}</span>
-          </h1>
-          <div>
-            <button
-              type="button"
-              className="text-button"
-              disabled={p.busy || !plans.length}
-              onClick={() => {
-                setCopying(true);
-                setCreating(false);
-              }}
-            >
-              Copy Plan
-            </button>
-            <button
-              type="button"
-              id="new-plan"
-              className="primary"
-              disabled={p.busy}
-              onClick={newPlan}
-            >
-              New Plan <kbd>A</kbd>
-            </button>
-          </div>
-        </div>
-        {creating && (
-          <form
-            id="plan-create"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!name.trim()) {
-                setInvalid(true);
-                return;
-              }
-              p.save(
-                monthly.createPlan(p.entity.id, {
-                  name: name.trim(),
-                  incomes: [{ name: "Net income", amount: "0.00" }],
-                  fixed_costs: [],
-                  spending: "0.00",
-                  savings_funding: [],
-                  saving_goals: [],
-                  investments: [],
-                  giving: [],
-                }),
-                (result) => accepted(result.plan_id, result.draft),
-              );
-            }}
-          >
-            <fieldset disabled={p.busy}>
-              <label htmlFor="new-plan-name">Plan name</label>
-              <input
-                id="new-plan-name"
-                maxLength={120}
-                value={name}
-                aria-invalid={invalid}
-                onChange={(event) => {
-                  setName(event.target.value);
-                  setInvalid(false);
+      {!home && !active && (
+        <div className="screen" id="plans-index">
+          <div className="head">
+            <div>
+              <h1 className="h1">Plans</h1>
+              <p className="sub">
+                A Plan gives every dollar of a month a job. Save a version when you want to compare
+                a month against it.
+              </p>
+            </div>
+            <div className="head-actions">
+              <button
+                type="button"
+                className="btn"
+                disabled={p.busy || !plans.length}
+                onClick={() => {
+                  setCopying({});
+                  setCreating(false);
                 }}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape" && !composing(event)) {
-                    event.preventDefault();
-                    if (!name.trim()) setInvalid(true);
-                    else focus("#create-plan");
-                  }
-                }}
-              />
-              {invalid && (
-                <p role="alert" className="field-error">
-                  Enter a Plan name.
-                </p>
-              )}
-              <button type="submit" id="create-plan" className="primary">
-                Create and open
+              >
+                <Icon name="copy" />
+                Copy Plan
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setCreating(false);
-                  focus("#new-plan");
-                }}
+                id="new-plan"
+                className="btn pri"
+                disabled={p.busy}
+                onClick={newPlan}
               >
-                Cancel
+                <Icon name="plus" />
+                New Plan
               </button>
-            </fieldset>
-          </form>
-        )}
-        {copying && <CopyPlan plans={plans} screen={p} copied={accepted} />}
-        <div id="plans-controls">
-          <label className="sr-only" htmlFor="plan-search">
-            Find a Plan
-          </label>
-          <input
-            id="plan-search"
-            placeholder="Find a Plan…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") focus(".plan-open");
-            }}
-          />
-          <button type="button" className="text-button" onClick={showHelp}>
-            Keyboard shortcuts <kbd>?</kbd>
-          </button>
-        </div>
-        <div className="plans-table-scroll">
-          <table aria-label="Plans" onKeyDown={keys}>
-            <thead>
-              <tr>
-                <th>Plan</th>
-                <th>Draft updated</th>
-                <th>Latest saved version</th>
-                <th>Details</th>
-              </tr>
-            </thead>
-            <tbody>
+            </div>
+          </div>
+          {creating && (
+            <form
+              id="plan-create"
+              className="card pad plan-create"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!name.trim()) {
+                  setInvalid(true);
+                  return;
+                }
+                p.save(
+                  monthly.createPlan(p.entity.id, {
+                    name: name.trim(),
+                    incomes: [{ name: "Net income", amount: "0.00" }],
+                    fixed_costs: [],
+                    spending: "0.00",
+                    savings_funding: [],
+                    saving_goals: [],
+                    investments: [],
+                    giving: [],
+                  }),
+                  (result) => accepted(result.plan_id, result.draft),
+                );
+              }}
+            >
+              <fieldset disabled={p.busy}>
+                <div className="field">
+                  <label htmlFor="new-plan-name">Plan name</label>
+                  <input
+                    id="new-plan-name"
+                    maxLength={120}
+                    value={name}
+                    placeholder="For example, Everyday balance"
+                    aria-invalid={invalid}
+                    onChange={(event) => {
+                      setName(event.target.value);
+                      setInvalid(false);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape" && !composing(event)) {
+                        event.preventDefault();
+                        if (!name.trim()) setInvalid(true);
+                        else focus("#create-plan");
+                      }
+                    }}
+                  />
+                  {invalid && (
+                    <p role="alert" className="err">
+                      Enter a Plan name.
+                    </p>
+                  )}
+                  <small>
+                    The Plan starts with one Net income line; add the rest in its worksheet.
+                  </small>
+                </div>
+                <div className="actions">
+                  <button type="submit" id="create-plan" className="btn pri">
+                    Create and open
+                  </button>
+                  <button
+                    type="button"
+                    className="btn quiet"
+                    onClick={() => {
+                      setCreating(false);
+                      focus("#new-plan");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </fieldset>
+            </form>
+          )}
+          {state.kind === "loading" && (
+            <div className="stack" aria-busy="true" aria-label="Loading Plans">
+              {[1, 2].map((n) => (
+                <div key={n} className="card pad sk-card">
+                  <div className="sk" style={{ width: "40%", height: 18 }} />
+                  <div className="sk" style={{ height: 10 }} />
+                </div>
+              ))}
+            </div>
+          )}
+          {!ready && state.kind !== "loading" && (
+            <div className="card pad">
+              <LoadMessage state={state} retry={() => setReload((n) => n + 1)} />
+            </div>
+          )}
+          {plans.length > 0 && (
+            <div className="plans-controls">
+              <label className="sr-only" htmlFor="plan-search">
+                Find a Plan
+              </label>
+              <input
+                id="plan-search"
+                className="input"
+                placeholder="Find a Plan…"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") focus(".plan-open");
+                }}
+              />
+              <button type="button" className="btn quiet sm" onClick={showHelp}>
+                Keyboard shortcuts <span className="kbd">?</span>
+              </button>
+            </div>
+          )}
+          {visible.length > 0 && (
+            <ul className="stack plan-list" aria-label="Plans" onKeyDown={keys}>
               {visible.map((plan) => {
                 const versions = versionsOf(plan);
+                const latest = versions[versions.length - 1];
+                const { dirty, stats, amounts } = statsOf(plan);
+                const tone = balance(stats);
+                const band = allocationBand(amounts, stats.unassigned);
                 return (
-                  <Fragment key={plan.plan_id}>
-                    <tr>
-                      <td>
+                  <li key={plan.plan_id} className="card plan-card" data-keyrow>
+                    <div className="plan-card-main">
+                      <h2>
                         <button
                           type="button"
                           className="plan-open"
@@ -563,75 +508,99 @@ export function Plans(
                         >
                           {displayName(plan)}
                         </button>
-                      </td>
-                      <td>
-                        {changed(opened[plan.plan_id]) ? "Unsaved changes · " : ""}
-                        {updated(plan)}
-                      </td>
-                      <td>
-                        {versions.length
-                          ? versionLabel(
-                              versions[versions.length - 1],
-                              versions,
-                              p.entity.time_zone,
-                            )
-                          : "No saved versions"}
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="text-button"
-                          aria-label={`Details for ${displayName(plan)}`}
-                          aria-expanded={expanded === plan.plan_id}
-                          onClick={() =>
-                            setExpanded(expanded === plan.plan_id ? null : plan.plan_id)
-                          }
-                        >
-                          Details {expanded === plan.plan_id ? "−" : "+"}
-                        </button>
-                      </td>
-                    </tr>
-                    {expanded === plan.plan_id && (
-                      <tr className="plan-expanded">
-                        <td colSpan={4}>
-                          {versions.length} saved versions
-                          {versions.map((version) => (
-                            <p key={version.uuid}>
-                              {versionLabel(version, versions, p.entity.time_zone)} · {version.name}
-                            </p>
-                          ))}
-                        </td>
-                      </tr>
+                        <span className={`chip ${tone.tone}`}>{tone.text}</span>
+                        {dirty && <span className="chip warn">Unsaved changes</span>}
+                      </h2>
+                      <span className="note">
+                        {money(stats.funding)} a month. Updated {updated(plan)}.{" "}
+                        {latest
+                          ? `${versions.length === 1 ? "One saved version" : `${versions.length} saved versions`}, latest ${savedLabel(latest, p.entity.time_zone).replace("Version", "version")}.`
+                          : "No saved versions."}
+                      </span>
+                    </div>
+                    <div className="head-actions">
+                      <button
+                        type="button"
+                        className="btn sm quiet"
+                        aria-label={`Details for ${displayName(plan)}`}
+                        aria-expanded={expanded === plan.plan_id}
+                        onClick={() => setExpanded(expanded === plan.plan_id ? null : plan.plan_id)}
+                      >
+                        Versions
+                        <Icon name={expanded === plan.plan_id ? "down" : "right"} />
+                      </button>
+                    </div>
+                    {band && (stats.funding ?? 0) + (stats.allocated ?? 0) > 0 && (
+                      <div className="plan-card-band">
+                        <Band parts={band} label={`Allocation of ${displayName(plan)}`} />
+                      </div>
                     )}
-                  </Fragment>
+                    {expanded === plan.plan_id && (
+                      <div className="plan-versions">
+                        {versions.length ? (
+                          versions.map((version) => (
+                            <p key={version.uuid}>
+                              {savedLabel(version, p.entity.time_zone)}
+                              <span className="muted"> · {version.name}</span>
+                            </p>
+                          ))
+                        ) : (
+                          <p className="muted">
+                            No saved versions. Open the Plan and choose Save version.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </li>
                 );
               })}
-            </tbody>
-          </table>
+            </ul>
+          )}
+          {ready &&
+            !visible.length &&
+            (plans.length ? (
+              <Empty
+                title="No matching Plans"
+                action={
+                  <button type="button" className="btn" onClick={() => setQuery("")}>
+                    Clear search
+                  </button>
+                }
+              >
+                No Plan name contains “{query.trim()}”.
+              </Empty>
+            ) : (
+              !creating && (
+                <Empty
+                  title="No Plans yet"
+                  action={
+                    <button type="button" className="btn pri" onClick={newPlan}>
+                      Create your first Plan
+                    </button>
+                  }
+                >
+                  Start with what comes in each month, then assign it to fixed costs, guilt-free
+                  spending, saving, investing and giving.
+                </Empty>
+              )
+            ))}
         </div>
-        {(state.kind === "ready" || state.kind === "empty") && !visible.length && (
-          <div id="plans-empty">
-            <h2>{plans.length ? "No matching Plans" : "No Plans yet"}</h2>
-            <button type="button" onClick={plans.length ? () => setQuery("") : newPlan}>
-              {plans.length ? "Clear search" : "Create your first Plan"}
-            </button>
-          </div>
-        )}
-      </div>
+      )}
       {Object.entries(opened)
         .filter(([id]) => id === active)
         .map(([id, local]) => {
           const plan = plans.find((plan) => plan.plan_id === id);
           const current = plan && draftOf(plan);
           return (
-            <div key={id} data-plan={id} hidden={home || active !== id}>
+            <div key={id} data-plan={id} hidden={home || active !== id} className="plan-open-sheet">
               {current &&
                 (current.uuid !== local.revision.uuid ||
                   current.revision !== local.revision.revision) && (
-                  <div role="alert">
-                    <p>The stored draft changed. Your attempted input is retained.</p>
+                  <div role="alert" className="banner bad plan-alert">
+                    <span>The stored draft changed. Your attempted input is retained.</span>
                     <button
                       type="button"
+                      className="btn sm"
                       disabled={p.busy}
                       onClick={() => {
                         if (!changed(local) || confirmInAppNavigation(() => true))
@@ -652,8 +621,8 @@ export function Plans(
                 { name: "Loan accounts", state: loans },
               ].map((item) =>
                 item.state.kind === "ready" || item.state.kind === "empty" ? null : (
-                  <div key={item.name}>
-                    <p>{item.name}</p>
+                  <div key={item.name} className="plan-alert plan-catalog">
+                    <p className="cap">{item.name}</p>
                     <LoadMessage state={item.state} retry={() => setReload((n) => n + 1)} />
                   </div>
                 ),
@@ -677,6 +646,14 @@ export function Plans(
                 busy={p.busy}
                 timeZone={p.entity.time_zone}
                 onBack={() => setActive(null)}
+                onCopy={
+                  plan
+                    ? () => {
+                        setCopying({ from: draftOf(plan)?.uuid });
+                        setCreating(false);
+                      }
+                    : undefined
+                }
                 onChange={(input) => setOpened((all) => ({ ...all, [id]: { ...all[id], input } }))}
                 onSave={(title, lines) =>
                   p.save(
@@ -700,44 +677,42 @@ export function Plans(
             </div>
           );
         })}
-      {(home || !active) && (
-        <footer id="keyboard-status">
-          <span className="mode">{mode}</span>
-          <span className="key-hints">
-            <kbd>j k</kbd> move <kbd>Enter</kbd> open <kbd>A</kbd> new Plan
-          </span>
-          <button type="button" className="text-button" onClick={showHelp}>
-            Keyboard shortcuts <kbd>?</kbd>
-          </button>
-        </footer>
+      {copying && !home && (
+        <Dialog title="Copy a Plan" onClose={closeCopy} className="plan-copy-dlg">
+          <CopyPlan
+            plans={plans}
+            screen={p}
+            copied={accepted}
+            initial={copying.from}
+            onCancel={closeCopy}
+          />
+        </Dialog>
       )}
-      <dialog ref={help} onClose={() => helpOrigin.current?.focus()}>
-        <div className="dialog-heading">
-          <h2>Keyboard shortcuts</h2>
-          <button type="button" aria-label="Close shortcuts" onClick={() => help.current?.close()}>
-            ×
-          </button>
-        </div>
-        <dl className="shortcut-list">
-          {[
-            ["j / k · ↓ / ↑", "Move between rows"],
-            ["h / l · 0 / $", "First / last action"],
-            ["gg / G", "First / last row"],
-            ["Enter / i", "Open or expand"],
-            ["a / A", "New Plan"],
-            ["/", "Find a Plan"],
-            ["Escape", "Retain creation name / collapse details"],
-            ["Tab / Shift+Tab", "Leave table; native form navigation"],
-          ].map(([key, value]) => (
-            <div key={key}>
-              <dt>
-                <kbd>{key}</kbd>
-              </dt>
-              <dd>{value}</dd>
-            </div>
-          ))}
-        </dl>
-      </dialog>
+      {help && (
+        <Dialog title="Keyboard shortcuts" onClose={() => setHelp(false)}>
+          <div className="dlg-b">
+            <dl className="shortcut-list">
+              {[
+                ["j / k · ↓ / ↑", "Move between Plans"],
+                ["h / l · 0 / $", "First / last action"],
+                ["gg / G", "First / last Plan"],
+                ["Enter / i", "Open or expand"],
+                ["a / A", "New Plan"],
+                ["/", "Find a Plan"],
+                ["Escape", "Keep the new Plan name / collapse versions"],
+                ["Tab / Shift+Tab", "Leave the list; native form navigation"],
+              ].map(([key, value]) => (
+                <div key={key}>
+                  <dt>
+                    <span className="kbd">{key}</span>
+                  </dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }

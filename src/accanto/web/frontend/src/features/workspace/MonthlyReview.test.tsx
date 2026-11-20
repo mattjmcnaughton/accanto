@@ -75,9 +75,9 @@ it("preselects the previous calendar month version rather than a newer version",
   );
   const p = props();
   render(<MonthlyReview {...p} />);
-  const choice = (await screen.findByLabelText("Comparison version")) as HTMLSelectElement;
+  const choice = (await screen.findByLabelText("Compare with")) as HTMLSelectElement;
   await waitFor(() => expect(choice.value).toBe("v1"));
-  fireEvent.click(screen.getByRole("button", { name: "Create Review" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start Review" }));
   expect(p.save).toHaveBeenCalledWith(
     expect.objectContaining({ body: { month: "2026-11-01", version_id: "v1" } }),
     expect.any(Function),
@@ -93,14 +93,17 @@ it("edits an incomplete Review with same-Plan version, notes, and annotation", a
   );
   const p = props();
   render(<MonthlyReview {...p} />);
-  const target = (await screen.findByLabelText("Comparison version")) as HTMLSelectElement;
+  const target = (await screen.findByLabelText("Compared with")) as HTMLSelectElement;
   await waitFor(() => expect(target.value).toBe("v1"));
   fireEvent.change(target, { target: { value: "v2" } });
   fireEvent.change(screen.getByLabelText("Review note"), {
     target: { value: "Synthetic takeaway" },
   });
-  fireEvent.click(screen.getByLabelText("Mark reviewed"));
-  fireEvent.click(screen.getByRole("button", { name: "Save Review" }));
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: /^Mark reviewed with 2 unknown amounts?$|^Mark reviewed with 2 unknowns$/,
+    }),
+  );
   expect(p.save).toHaveBeenCalledWith(
     expect.objectContaining({
       body: {
@@ -136,18 +139,19 @@ it("requires explicit choice without a preceding Review and blocks creation afte
     .spyOn(globalThis, "fetch")
     .mockImplementation(async (path) => (String(path).endsWith("/plans") ? json(plans) : absent()));
   const { unmount } = render(<MonthlyReview {...props()} />);
-  const choice = (await screen.findByLabelText("Comparison version")) as HTMLSelectElement;
+  const choice = (await screen.findByLabelText("Compare with")) as HTMLSelectElement;
   expect(choice.value).toBe("");
-  expect(
-    (screen.getByRole("button", { name: "Create Review" }) as HTMLButtonElement).disabled,
-  ).toBe(true);
+  expect(screen.getByText(/October has no Review, so nothing is preselected/)).toBeDefined();
+  expect((screen.getByRole("button", { name: "Start Review" }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
   unmount();
   fetch.mockImplementation(async (path) =>
     String(path).endsWith("/plans") ? json(plans) : json({}, 503),
   );
   render(<MonthlyReview {...props()} />);
   await screen.findByRole("alert");
-  expect(screen.queryByLabelText("Comparison version")).toBeNull();
+  expect(screen.queryByLabelText("Compare with")).toBeNull();
 });
 it("shows unknown rather than zero, retaining incomplete recorded income", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
@@ -160,13 +164,16 @@ it("shows unknown rather than zero, retaining incomplete recorded income", async
         }),
   );
   render(<MonthlyReview {...props()} />);
-  const income = await screen.findByRole("row", { name: /Net income/ });
+  const income = await screen.findByRole("region", { name: "Net income" });
   expect(income.textContent).toContain("$0.00");
-  expect(income.textContent).toContain("Incomplete");
+  expect(within(income).getByLabelText("Not complete")).toBeDefined();
+  expect(
+    within(income).getByText("Salary has no entry. Unknown is not treated as $0.00."),
+  ).toBeDefined();
+  fireEvent.click(within(income).getByRole("button", { name: "1 line" }));
   expect(within(screen.getByRole("row", { name: /Salary/ })).getAllByText("Unknown")).toHaveLength(
     2,
   );
-  expect(screen.getByText("Salary")).toBeDefined();
   expect(screen.getByText("Destination comparison for this older version: Unknown")).toBeDefined();
 });
 it("shows saved destination expectations and category differences in Review", async () => {
@@ -234,14 +241,21 @@ it("shows saved destination expectations and category differences in Review", as
         }),
   );
   render(<MonthlyReview {...props()} />);
-  const laptop = await screen.findByRole("row", { name: /Laptop/ });
-  expect(laptop.textContent).toContain("$-50.00");
+  for (const name of ["Saving", "Investing", "Giving"])
+    fireEvent.click(
+      within(await screen.findByRole("region", { name })).getByRole("button", { name: /line/ }),
+    );
+  const laptop = screen.getByRole("row", { name: /Laptop/ });
+  expect(laptop.textContent).toContain("−$50.00");
   expect(screen.getByRole("row", { name: /Emergency fund/ }).textContent).toContain("$50.00");
   const retirement = screen.getByRole("row", { name: /Retirement/ });
-  expect(within(retirement).getAllByText("Unknown")).toHaveLength(3);
+  expect(within(retirement).getAllByText("Unknown")).toHaveLength(2);
+  expect(retirement.textContent).toContain("$100.00");
   expect(screen.getByRole("row", { name: /Community Fund/ }).textContent).toContain("$400.00");
+  // Destinations are recorded elsewhere, so their questions point there instead of writing.
+  expect(screen.getByText(/Retirement has no entry.*Investments and giving/)).toBeDefined();
   const funding = within(screen.getByLabelText("Planned funding"));
-  expect(funding.getByText("$1000.00")).toBeDefined();
+  expect(funding.getByText("$1,000.00")).toBeDefined();
 });
 it("saves the edited Review once with Ctrl+S", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
@@ -261,6 +275,38 @@ it("saves the edited Review once with Ctrl+S", async () => {
     expect.objectContaining({
       body: expect.objectContaining({ note: "Synthetic takeaway", expected_revision: 1 }),
     }),
+    expect.any(Function),
+  );
+});
+it("answers an unknown line with an explicit zero entry dated in the reviewed month", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/plans")
+      ? json(plans)
+      : String(path).endsWith("2026-10-01")
+        ? json({ ...review, review: { ...review.review, month: "2026-10-01" } })
+        : absent(),
+  );
+  const p = props();
+  render(<MonthlyReview {...p} />);
+  await screen.findByRole("button", { name: "Start Review" });
+  fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
+  const income = await screen.findByRole("region", { name: "Net income" });
+  fireEvent.click(within(income).getByRole("button", { name: "Record $4,000.00" }));
+  fireEvent.click(within(income).getByRole("button", { name: "Nothing this month" }));
+  expect(p.save).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      method: "POST",
+      body: expect.objectContaining({
+        category: "income",
+        source_id: "source",
+        amount: "0.00",
+        date: "2026-10-31",
+      }),
+    }),
+    expect.any(Function),
+  );
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({ body: expect.objectContaining({ amount: "4000.00" }) }),
     expect.any(Function),
   );
 });

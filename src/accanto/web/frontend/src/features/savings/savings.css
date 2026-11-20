@@ -1,5 +1,8 @@
-/* Savings-only layout on top of the shared worksheet-ui vocabulary. */
-.savings-workspace .sr-only {
+/* Savings: goal progress cards, the editing tables and the record dialogs. Colors come from ui/tokens.css. */
+.sv :is(button, input, select, td) {
+  scroll-margin-bottom: 80px;
+}
+.sv-sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -7,273 +10,396 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-/* Contain visually hidden header text inside the horizontally scrolling table. */
-.savings-workspace .data-table-scroll {
+
+/* Account sections and goal cards */
+.sv-account-head h2 {
+  font: inherit;
+}
+.sv-actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-self: center;
+}
+.sv-actions .btn {
+  margin-left: 0;
+}
+.sv-cards {
+  margin-bottom: 12px;
+}
+.sv-goal-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.sv-goal-top b {
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.sv-fig {
+  margin-top: 6px;
+}
+.sv-fig small {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--ink3);
+}
+.sv-meter {
+  margin: 9px 0 6px;
+}
+.sv-done {
+  margin-top: 8px;
+}
+.sv-disclose {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--ink3);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.sv-error {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  color: var(--bad);
+}
+
+/* Editing tables */
+.sv-table {
+  overflow-x: auto;
   position: relative;
 }
-.savings-workspace .savings-tables {
-  min-width: 0;
-  padding-bottom: 16px;
+.sv-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
 }
-.savings-workspace .savings-tables > [role="alert"],
-.savings-workspace .savings-tables > output,
-.savings-workspace .empty {
-  display: block;
-  padding: 12px 28px;
-  margin: 0;
-}
-.savings-workspace .table-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 20px 28px 8px;
-}
-.savings-workspace .table-title h3 {
-  margin: 0;
-  font-size: 13px;
+.sv-grid th {
+  text-align: left;
+  font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ui-muted);
-}
-.savings-workspace .table-title button {
-  padding: 3px 10px;
-  font-size: 12px;
-}
-.savings-workspace .data-grid td:first-child,
-.savings-workspace .data-grid th:first-child {
-  padding-left: 28px;
-}
-.savings-workspace .data-grid td {
+  color: var(--ink3);
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
-.savings-workspace .data-grid .note-cell {
+.sv-grid td {
+  padding: 7px 12px;
+  border-top: 1px solid var(--line);
+  white-space: nowrap;
+  cursor: default;
+}
+.sv-grid tbody tr:first-child td {
+  border-top: 0;
+}
+.sv-grid :is(th, td):first-child {
+  padding-left: 16px;
+}
+.sv-grid .num {
+  text-align: right;
+}
+.sv-grid td.sv-wrap {
+  white-space: normal;
+  min-width: 16ch;
+}
+.sv-grid:focus-within td[aria-selected="true"] {
+  background: var(--wash);
+}
+.sv-grid td:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.sv-grid .sv-account-row td {
+  background: var(--bg);
+}
+.sv-grid:focus-within .sv-account-row td[aria-selected="true"] {
+  background: var(--wash);
+}
+.sv-quiet-row td {
+  color: var(--ink3);
+}
+.sv-pending-row td:first-child {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.sv-unsaved {
+  margin-left: 8px;
+}
+.sv-note-cell {
   max-width: 28ch;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.savings-workspace .group-row td {
-  background: var(--ui-panel);
-  border-top: 1px solid var(--ui-border);
+.sv-grid td.sv-editing {
+  padding: 4px 8px;
 }
-.savings-workspace .group-row td:first-child {
-  padding-left: 14px;
-}
-.savings-workspace .data-grid .selected-cell {
-  background: var(--ui-selected);
-}
-.savings-workspace .unallocated-row td {
-  color: var(--ui-muted);
-}
-.savings-workspace .archived-row td {
-  color: var(--ui-muted);
-}
-.savings-workspace .pending-row td {
-  box-shadow: inset 3px 0 0 var(--ui-warning);
-}
-.savings-workspace .pending-row td + td {
-  box-shadow: none;
-}
-.savings-workspace .pending-badge {
-  margin-left: 8px;
-  color: var(--ui-warning);
-  border-color: #6b5a33;
-}
-.savings-workspace .negative {
-  color: var(--ui-danger);
-}
-.savings-workspace .data-toolbar h2 {
-  font-family: inherit;
-}
-.savings-workspace .status-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.savings-workspace .details-button {
-  margin-left: auto;
-}
-.savings-workspace .details-button,
-.savings-workspace .text-button {
-  border: 0;
-  background: none;
-  padding: 0 4px;
-  color: var(--ui-muted);
-}
-.savings-workspace .text-button {
-  font-size: 12px;
-}
-.savings-workspace .data-grid td input,
-.savings-workspace .data-grid td select {
+.sv-grid td input,
+.sv-grid td select {
   width: 100%;
-  min-width: 9ch;
+  min-width: 10ch;
+  border: 1px solid var(--focus);
+  border-radius: 7px;
+  background: var(--surface);
   padding: 3px 6px;
-  border-color: var(--ui-focus);
 }
-.savings-workspace .data-grid td .field-error {
+.sv-grid td .err {
   display: block;
-  font-size: 11px;
   white-space: normal;
 }
-.savings-workspace .savings-details {
-  position: relative;
+.sv-status {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  font-size: 13px;
-}
-.savings-workspace .savings-details h3 {
-  margin: 0;
-  padding-right: 28px;
-  font-size: 16px;
-}
-.savings-workspace .savings-details > .details-body {
-  display: contents;
-}
-.savings-workspace .close-details {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  border: 0;
-  background: none;
-  font-size: 18px;
-  padding: 0 6px;
-}
-.savings-workspace .savings-details label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  color: var(--ui-muted);
-  font-size: 12px;
-  font-weight: 400;
-}
-.savings-workspace .savings-details label.check {
-  flex-direction: row;
   align-items: center;
-  gap: 8px;
-  color: var(--ui-text);
+  gap: 6px;
 }
-.savings-workspace .savings-details label.check input {
-  width: auto;
+.sv-details-btn {
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
 }
-.savings-workspace .savings-details fieldset {
+
+/* Unsaved record bar */
+.sv-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 2;
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  box-shadow: var(--pop);
+}
+.sv-bar:empty {
+  display: none;
+}
+.sv-pending {
+  color: var(--warn);
+  font-weight: 600;
+}
+.sv-notice {
+  flex-basis: 100%;
+}
+.dlg-f .sv-notice {
+  text-align: right;
+}
+
+/* Dialogs */
+.sv-dlg {
+  width: min(520px, calc(100vw - 24px));
+  overflow: auto;
+}
+.sv-form {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+}
+.sv-form fieldset {
+  display: grid;
   gap: 10px;
+  min-width: 0;
   margin: 0;
   padding: 12px;
-  border: 1px solid var(--ui-border);
-  border-radius: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
 }
-.savings-workspace .savings-details legend {
-  margin: 0;
+.sv-form legend {
   padding: 0 4px;
-  font-family: inherit;
-  color: var(--ui-muted);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink2);
 }
-.savings-workspace .facts {
+.sv-facts {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px 12px;
   margin: 0;
 }
-.savings-workspace .facts dt {
-  color: var(--ui-muted);
-  font-size: 11px;
+.sv-facts dt {
+  font-size: 12.5px;
+  color: var(--ink3);
 }
-.savings-workspace .facts dd {
+.sv-facts dd {
   margin: 0;
-  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
-.savings-workspace .remainder {
-  font-variant-numeric: tabular-nums;
-}
-.savings-workspace .lifecycle {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--ui-border);
-}
-.savings-workspace .lifecycle-confirm p {
-  margin: 0;
-}
-.savings-workspace .button-row,
-.savings-workspace .pending-actions {
+.sv-check {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.savings-workspace .pending-actions {
-  color: var(--ui-warning);
+.sv-start {
+  justify-self: start;
 }
-.savings-workspace .pending-actions button {
-  padding: 2px 10px;
-  font-size: 12px;
+.sv-remainder {
+  font-weight: 600;
 }
-.savings-workspace .data-status {
-  position: sticky;
-  bottom: 0;
-  align-items: center;
-  background: var(--ui-bg);
-}
-.savings-workspace .mode {
-  min-width: 65px;
-  padding: 3px 8px;
-  border: 1px solid #4e6279;
-  border-radius: 4px;
-  color: #d0e2f7;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-align: center;
-}
-.savings-workspace .key-hints {
-  margin-left: auto;
-}
-.savings-workspace kbd {
-  padding: 1px 5px;
-  border: 1px solid var(--ui-border);
-  border-radius: 3px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-}
-.savings-workspace dialog h2 {
-  margin-top: 0;
-  font-family: inherit;
-  font-size: 16px;
-}
-.savings-workspace dialog {
-  width: min(560px, calc(100vw - 32px));
-  padding: 20px 24px;
-}
-.savings-workspace .savings-shortcuts {
+.sv-lifecycle {
   display: grid;
-  grid-template-columns: 1fr;
   gap: 8px;
-  margin: 0 0 16px;
+  justify-items: start;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
-.savings-workspace .savings-shortcuts div {
+.sv-lifecycle .sv-confirm {
+  justify-self: stretch;
+}
+.sv-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sv-keys {
+  margin: 0;
+}
+.sv-keys div {
   display: grid;
-  grid-template-columns: 200px 1fr;
+  grid-template-columns: 190px 1fr;
   gap: 12px;
 }
-.savings-workspace .savings-shortcuts dt,
-.savings-workspace .savings-shortcuts dd {
+.sv-keys dd {
   margin: 0;
 }
-@media (max-width: 680px) {
-  .savings-workspace .key-hints {
+@media (hover: none) {
+  .sv-keys-btn {
     display: none;
   }
-  .savings-workspace .data-grid td:first-child,
-  .savings-workspace .data-grid th:first-child,
-  .savings-workspace .table-title {
-    padding-left: 16px;
-  }
 }
-/* Keep focused or scrolled-to controls clear of the sticky status bar. */
-.savings-workspace :is(button, input, select, td, h3) {
-  scroll-margin-bottom: 72px;
+@media (max-width: 760px) {
+  /* Table rows reflow into short labeled stacks so amounts stay on screen. */
+  .sv-grid thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .sv-grid tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+    padding: 6px 0;
+    border-top: 1px solid var(--line);
+  }
+  .sv-grid tbody tr:first-child {
+    border-top: 0;
+  }
+  .sv-grid tbody td,
+  .sv-grid tbody td:first-child {
+    border-top: 0;
+    padding: 3px 16px;
+    white-space: normal;
+    min-width: 0;
+  }
+  .sv-grid tbody tr.sv-account-row {
+    background: var(--bg);
+  }
+  .sv-grid .sv-account-row td {
+    background: transparent;
+  }
+  .sv-grid tbody td:empty {
+    display: none;
+  }
+  .sv-goals tbody tr {
+    grid-template-areas: "name status" "type target" "opening saved" "contributed contributed";
+  }
+  .sv-goals td:nth-child(1) {
+    grid-area: name;
+  }
+  .sv-goals td:nth-child(2) {
+    grid-area: type;
+    color: var(--ink3);
+  }
+  .sv-goals td:nth-child(3) {
+    grid-area: target;
+  }
+  .sv-goals td:nth-child(4) {
+    grid-area: opening;
+    text-align: left;
+  }
+  .sv-goals td:nth-child(5) {
+    grid-area: saved;
+  }
+  .sv-goals td:nth-child(6) {
+    grid-area: contributed;
+    text-align: left;
+  }
+  .sv-goals td:nth-child(7) {
+    grid-area: status;
+  }
+  .sv-goals td:nth-child(3)::before {
+    content: "Target ";
+  }
+  .sv-goals td:nth-child(4)::before {
+    content: "Opening ";
+  }
+  .sv-goals td:nth-child(5)::before {
+    content: "Saved ";
+  }
+  .sv-goals td:nth-child(6)::before {
+    content: "Contributions ";
+  }
+  .sv-goals td:is(:nth-child(3), :nth-child(4), :nth-child(5), :nth-child(6))::before {
+    color: var(--ink3);
+    font-size: 12.5px;
+  }
+  .sv-moves tbody tr {
+    grid-template-areas: "from amount" "to remove" "date action" "note note";
+  }
+  .sv-moves td:nth-child(1) {
+    grid-area: date;
+    color: var(--ink3);
+  }
+  .sv-moves td:nth-child(2) {
+    grid-area: action;
+    text-align: right;
+    color: var(--ink3);
+  }
+  .sv-moves td:nth-child(3) {
+    grid-area: from;
+  }
+  .sv-moves td:nth-child(4) {
+    grid-area: to;
+  }
+  .sv-moves td:nth-child(4)::before {
+    content: "to ";
+    color: var(--ink3);
+  }
+  .sv-moves td:nth-child(5) {
+    grid-area: amount;
+    font-weight: 600;
+  }
+  .sv-moves td:nth-child(6) {
+    grid-area: note;
+  }
+  .sv-moves td:nth-child(7) {
+    grid-area: remove;
+    text-align: right;
+  }
+  .sv-moves td[colspan] {
+    grid-column: 1 / -1;
+  }
+  .sv-grid td.sv-wrap,
+  .sv-note-cell {
+    min-width: 0;
+    max-width: none;
+  }
+  .sv-keys div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .sv-actions {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
 }

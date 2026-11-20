@@ -3,8 +3,9 @@ import { RouterProvider, createHashHistory, createRouter } from "@tanstack/react
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { routeTree } from "./routeTree.gen";
+import "./ui/tokens.css";
+import "./ui/ui.css";
 import "./index.css";
-import "./features/workspace/worksheet-ui.css";
 
 const queryClient = new QueryClient();
 const router = createRouter({ routeTree, history: createHashHistory() });

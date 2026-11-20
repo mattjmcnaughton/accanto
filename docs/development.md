@@ -63,6 +63,34 @@ browser data and saved Plan versions are not migrated or cleared; browser storag
 is origin-bound, so moving between ports, hostnames, or the standalone file can
 change which data a browser can access.
 
+## Storybook
+
+Storybook renders each screen and each shared UI component on its own, with mocked API
+responses, so no backend or database is needed:
+
+```sh
+just storybook-fe        # http://localhost:6006
+just build-storybook-fe  # static build in src/accanto/web/frontend/storybook-static/ (ignored)
+```
+
+- The toolbar switches **Theme** (light, or dark through `<html data-theme="dark">`) and the
+  viewport; **Phone (390 px)** is the phone width.
+- Stories live in `src/stories/`: `kit/` for `src/ui`, `screens/` for the workspace screens,
+  `shared/` for smaller shared components and the shell.
+- MSW mocks every `/api` read from one module, `src/stories/mocks/api.ts`, over synthetic data in
+  `mocks/fixtures.ts`. Pick a state for all reads, or override some:
+
+  ```ts
+  export const Empty: Story = stateStory("empty"); // also "loaded", "loading", "failed"
+  export const NoPlans: Story = { parameters: { msw: mockApi("loaded", { plans: [] }) } };
+  ```
+
+- `fixtures.ts` came from the synthetic `managing-fixtures` workspace (seeded with
+  `--as-of 2026-11-10`) read through the real API. Keep every mock value invented.
+- Screens save through their `save` prop, so writes show in the Actions panel instead of
+  reaching a server. A request no handler matches falls through to the Vite `/api` proxy and
+  fails with a generic error.
+
 ## Real PostgreSQL API verification
 
 Use a separate, disposable **test** database; never point these tests at user data.

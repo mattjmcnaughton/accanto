@@ -1,51 +1,27 @@
-/* Compact recovery alert bar under the workspace header; overrides the legacy light notice. */
-.recovery-notice.recovery-bar {
+/* A save that needs attention, at the top of the screen it belongs to. */
+.recovery-notice {
+  max-width: 940px;
+  margin: 0 auto 20px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 16px;
-  max-width: none;
-  margin: 0;
-  padding: 8px 28px;
-  border: 0;
-  border-left: 3px solid var(--ui-warning, #f4d69e);
-  border-bottom: 1px solid var(--ui-border, #323a44);
-  border-radius: 0;
-  background: var(--ui-panel, #1b222a);
-  color: var(--ui-text, #e1e6ed);
-  font-size: 13px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: 10px;
+  background: var(--warn-bg);
+  color: var(--ink);
 }
-.recovery-notice.recovery-bar p {
-  margin: 0;
+.recovery-notice p {
   flex: 1 1 320px;
-  line-height: 1.4;
 }
-.recovery-bar .recovery-actions {
+.recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
-.recovery-bar .recovery-actions button {
-  min-height: 0;
-  padding: 5px 10px;
-  border: 1px solid var(--ui-border, #323a44);
-  border-radius: 4px;
-  background: var(--ui-raised, #222930);
-  color: var(--ui-text, #e1e6ed);
-}
-.recovery-bar .recovery-actions button:first-child {
-  background: #a0c8f0;
-  border-color: #a0c8f0;
-  color: #142337;
-  font-weight: 600;
-}
-.recovery-bar .recovery-actions button:hover {
-  filter: brightness(1.1);
-}
-.recovery-bar .recovery-actions button:focus-visible {
-  outline: 2px solid var(--ui-focus, #78b8ff);
-  outline-offset: 2px;
-}
-@media (max-width: 680px) {
-  .recovery-notice.recovery-bar {
-    padding: 8px 16px;
-  }
+/* Inside an open dialog, where the page behind it cannot be reached. */
+.dlg-slot .recovery-notice {
+  margin: 12px 12px 0;
 }

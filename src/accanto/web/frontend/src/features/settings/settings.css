@@ -1,239 +1,69 @@
-/* Settings and API keys: dense label/field grid and key table on the shared data-workspace tokens. */
-.settings-screen {
-  min-height: 100%;
+/* Settings and API keys, on the shared kit's rows and cards. */
+.set-sk {
+  display: block;
+  height: 34px;
+  width: 100%;
 }
-.settings-screen .settings-body {
-  display: grid;
-  gap: 28px;
-  padding: 20px 28px 32px;
-  max-width: 960px;
-}
-.settings-screen fieldset {
+.set-fields {
   border: 0;
   margin: 0;
   padding: 0;
   min-width: 0;
 }
-.settings-screen legend,
-.settings-screen h3 {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ui-muted);
-  margin: 0 0 10px;
-  padding: 0;
-}
-.settings-screen .settings-grid {
-  display: grid;
-  grid-template-columns: 140px minmax(0, 420px);
-  align-items: center;
-  gap: 8px 16px;
-}
-.settings-screen .settings-grid > label {
-  color: var(--ui-muted);
-}
-.settings-screen .settings-field {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-width: 0;
-}
-.settings-screen .settings-field > input {
-  flex: 1;
-}
-.settings-screen .settings-help {
-  position: relative;
-}
-.settings-screen .settings-help > summary {
-  list-style: none;
-  cursor: pointer;
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  margin-top: 6px;
-  border: 1px solid var(--ui-border);
-  border-radius: 50%;
-  color: var(--ui-muted);
-  font-size: 12px;
-}
-.settings-screen .settings-help > summary::-webkit-details-marker {
-  display: none;
-}
-.settings-screen .settings-help > summary:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
-}
-.settings-screen .settings-help[open] > p {
-  position: absolute;
-  z-index: 2;
-  top: 32px;
-  right: 0;
-  width: 280px;
+.set-screen fieldset.setting {
   margin: 0;
-  padding: 10px 12px;
-  background: var(--ui-panel);
-  border: 1px solid var(--ui-border);
-  border-radius: 4px;
-  color: var(--ui-text);
-  font-size: 12px;
-  line-height: 1.5;
+  min-width: 0;
+  border-width: 1px 0 0;
+  border-style: solid;
+  border-color: var(--line);
 }
-.settings-screen .settings-actions {
+.set-screen fieldset.setting:first-child {
+  border-top-width: 0;
+}
+.set-screen .setting label {
+  font-weight: 500;
+}
+.set-screen output.setting {
+  display: flex;
+}
+.set-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-top: 14px;
-  padding-left: 156px;
 }
-.settings-screen .settings-hint {
-  font-size: 12px;
-}
-.settings-screen kbd {
-  font: inherit;
-  font-size: 11px;
-  padding: 1px 4px;
-  border: 1px solid var(--ui-border);
-  border-radius: 3px;
-}
-.settings-screen .text-button {
-  background: none;
-  border-color: transparent;
-  color: #a0c8f0;
-  padding: 4px 6px;
-}
-.settings-screen .text-button:hover {
-  background: var(--ui-raised);
-}
-.settings-screen .danger-button {
-  border-color: var(--ui-danger);
-  color: var(--ui-danger);
-  background: none;
-}
-.settings-screen .api-keys-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.settings-screen .api-keys-heading h3 {
-  margin: 0;
-}
-.settings-screen .api-keys-heading .settings-help > summary {
-  margin-top: 0;
-}
-.settings-screen .api-keys-heading .settings-help[open] > p {
-  left: 0;
-  right: auto;
-}
-.settings-screen .api-keys-tools {
-  margin-left: auto;
-  display: flex;
-  gap: 4px;
-}
-.settings-screen .api-keys-message {
-  display: block;
-  margin: 10px 0 0;
-  color: var(--ui-warning);
-}
-.settings-screen .api-key-secret {
+.set-secret-body {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px 12px;
-  margin-top: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--ui-warning);
-  border-radius: 4px;
-  background: var(--ui-panel);
-}
-.settings-screen .api-key-secret input {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-.settings-screen .api-key-secret-actions {
-  display: flex;
-  gap: 6px;
-}
-.settings-screen .api-key-create fieldset {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  margin-top: 12px;
+  justify-items: start;
+  min-width: 0;
+  flex: 1 1 280px;
 }
-.settings-screen .api-key-create label {
-  color: var(--ui-muted);
+.set-screen .set-secret-body .input {
+  width: min(100%, 360px);
 }
-.settings-screen .api-key-create input {
-  width: 260px;
+.set-secret {
+  background: var(--warn-bg);
 }
-.settings-screen .api-key-table {
-  margin-top: 12px;
+.set-secret small {
+  color: var(--warn);
 }
-.settings-screen .api-key-table th[scope="row"] {
-  background: none;
-  font-weight: 500;
-  color: var(--ui-text);
+.set-screen .set-key-name {
+  width: 200px;
 }
-.settings-screen .api-key-table tr.muted th[scope="row"] {
-  color: var(--ui-muted);
+.set-screen fieldset.setting .set-actions {
+  flex-wrap: nowrap;
 }
-.settings-screen .api-key-table .action-cell {
-  text-align: right;
-  white-space: nowrap;
-}
-.settings-screen .api-key-table td,
-.settings-screen .api-key-table th {
-  padding-top: 4px;
-  padding-bottom: 4px;
-}
-.settings-screen .api-key-confirm {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.settings-screen .api-key-confirm button {
-  padding: 4px 10px;
-}
-.settings-screen .sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-@media (max-width: 680px) {
-  .settings-screen .settings-body {
-    padding: 16px;
-  }
-  .settings-screen .settings-grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
-  .settings-screen .settings-grid > label:not(:first-child) {
-    margin-top: 8px;
-  }
-  .settings-screen .settings-actions {
-    padding-left: 0;
-  }
-  .settings-screen .api-keys-heading {
-    flex-wrap: wrap;
-  }
-  .settings-screen .api-key-create fieldset {
-    flex-wrap: wrap;
-  }
-  .settings-screen .api-key-create input {
+@media (max-width: 760px) {
+  .set-screen .setting > .input,
+  .set-screen .set-secret-body .input {
     width: 100%;
   }
-  .settings-screen .api-key-secret {
-    grid-template-columns: minmax(0, 1fr);
+  .set-screen .set-key-name {
+    width: auto;
+    flex: 1 1 140px;
   }
-  .settings-screen .api-key-table th:nth-child(2),
-  .settings-screen .api-key-table td:nth-child(2) {
-    display: none;
-  }
+}
+.set-screen section > .banner {
+  margin-bottom: 12px;
 }
