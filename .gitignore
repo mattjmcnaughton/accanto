@@ -62,3 +62,7 @@ accanto-recovery.json
 /private-data/
 .env.*
 !.env.example
+
+# Amp Box build output
+box-release/
+.box-build/
