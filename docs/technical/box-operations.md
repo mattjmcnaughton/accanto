@@ -16,10 +16,10 @@ needs to read financial rows, and none should.
 | --- | --- | --- |
 | Build | The orb or machine running `amp boxes deploy` | `scripts/box-build.sh` builds a relocatable CPython 3.12, the locked dependencies and the accanto wheel with the SPA into `box-release/`. No source, tests or fixtures ship. |
 | Web service | Box `mattjmcnaughton/apps`, deployment `accanto`, service `web` | Defined in `.amp/box.yaml`. Runs as the deployment's own unprivileged account. Uvicorn access logs are off. |
-| Deploy target | `.amp/box-deploy.json` | Box, deployment name, branch and `private: true`. |
+| Deploy target | `.amp/box-deploy.json` | Box, deployment name and branch. |
 | Database | Neon project `accanto` | `accanto_owner` runs migrations and never reaches the Box. `accanto_app` is the restricted runtime login in the Box's `DATABASE_URL`. |
 | Sign-in | Auth0 application "Accanto" | Callback `<deployment URL>/api/auth/callback`. |
-| Access gate | Amp `--private` | Only the Box owner, signed in to Amp, can load the URL. Accanto's own sign-in still applies. |
+| Access | Public URL | Accanto's Auth0 sign-in, email allowlist and provisioned users are the only gate; only login and health endpoints answer without credentials. Amp `--private` was removed: when its access lapses it redirects API requests, which the app's `fetch` refuses. |
 
 Runtime configuration lives on the deployment, never in Git:
 
@@ -83,9 +83,8 @@ amp boxes exec mattjmcnaughton/apps --deployment accanto \
 - `/readyz` returning `"schema incompatible"` means the database is not at the
   pinned revision: run the migration.
 
-From outside, `curl -sI https://accanto--mattjmcnaughton.onamp.dev/` returns
-401 or a redirect to Amp sign-in; that is the private gate, not a failure. Only a
-signed-in browser can check the page itself.
+From outside, `curl -s https://accanto--mattjmcnaughton.onamp.dev/readyz` checks
+readiness directly, and `/api/auth/session` must return 401 without a session.
 
 ### Service logs
 
