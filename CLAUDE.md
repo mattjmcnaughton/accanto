@@ -76,6 +76,7 @@ tests/
 - `docs/architecture.md` — read before adding new modules or changing project structure
 - `docs/development.md` — read for environment setup, debugging, or common tasks
 - `docs/api.md` — API endpoint reference
+- `docs/technical/box-operations.md` — read before deploying or debugging the live Amp Box deployment
 
 ## Privacy and committing
 

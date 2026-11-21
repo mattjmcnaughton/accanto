@@ -1,7 +1,8 @@
 # Deployment, compatible rollback and recovery
 
-Preparation only: no deployment or provider configuration has been executed.
-Fly.io plus Neon is the agreed hosting direction in the [MVP TDD](../tdds/01-mvp.md).
+The personal alpha runs on an Amp Box with Neon and Auth0; see
+[Box operations](box-operations.md) for deploying and debugging it with Amp.
+Fly.io plus Neon was the original hosting direction in the [MVP TDD](../tdds/01-mvp.md).
 These instructions require a separate authorized release action. Local readiness
 results are in [MVP-023](work/MVP-023.md), with the [PRD matrix](release-readiness.md).
 No provider tier, backup window, recovery objective or hosted compatibility is
