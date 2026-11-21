@@ -11,5 +11,5 @@ services:
       PYTHONNOUSERSITE: "1"
       PGSSLROOTCERT: site/certifi/cacert.pem
     command: >-
-      sh -c 'BROWSER_ORIGIN="${AMP_DEPLOYMENT_URL%/}" exec python/bin/python3 -m uvicorn
+      sh -c 'BROWSER_ORIGIN="$AMP_DEPLOYMENT_URL" exec python/bin/python3 -m uvicorn
       accanto.app:app --host 0.0.0.0 --port "$PORT" --no-access-log'

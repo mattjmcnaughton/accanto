@@ -1,0 +1,10 @@
+{
+  "targets": {
+    "default": {
+      "on": "mattjmcnaughton/apps",
+      "name": "accanto",
+      "branch": "box-deploy",
+      "private": true
+    }
+  }
+}
