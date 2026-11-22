@@ -63,6 +63,9 @@ const resources = {
     empty: [],
   },
   incomeEstimates: { path: `${entity}/income-estimates`, loaded: data.incomeEstimates, empty: [] },
+  // Inbox stories put the stateful handlers of mocks/inbox.ts first; these cover other states.
+  inbox: { path: `${entity}/inbox`, loaded: [], empty: [] },
+  sources: { path: `${entity}/sources`, loaded: [], empty: [] },
 } satisfies Record<string, { path: string; loaded: unknown; empty: unknown }>;
 export type Resource = keyof typeof resources;
 

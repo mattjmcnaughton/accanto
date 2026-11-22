@@ -14,6 +14,7 @@ import { Dialog, Icon, useDialogSlot } from "../../ui";
 import { Balances } from "../balances/Balances";
 import { Destinations } from "../destinations/Destinations";
 import { IncomeEstimates } from "../estimates/IncomeEstimates";
+import { Inbox } from "../inbox/Inbox";
 import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice";
 import { Savings } from "../savings/Savings";
 import { Settings } from "../settings/Settings";
@@ -26,6 +27,7 @@ import { useTheme } from "./shared";
 export const SCREENS = [
   "home",
   "activity",
+  "inbox",
   "review",
   "plans",
   "estimates",
@@ -49,6 +51,7 @@ const NAV: { group: string; items: [Screen, string][] }[] = [
     items: [
       ["home", "Home"],
       ["activity", "Activity"],
+      ["inbox", "Transactions inbox"],
       ["review", "Review"],
     ],
   },
@@ -74,8 +77,14 @@ const TITLES = Object.fromEntries([
   ["settings", "Settings"],
   ["more", "More"],
 ]) as Record<Screen, string>;
-/** Sidebar order; keys 1 to 9 jump to the first nine. */
-const ORDER: Screen[] = [...NAV.flatMap((g) => g.items.map(([to]) => to)), "settings"];
+/**
+ * Sidebar order; keys 1 to 9 jump to the first nine. The inbox has no number: it uses 1 to 6
+ * itself for categories, and leaving it out keeps every other screen's number unchanged.
+ */
+const ORDER: Screen[] = [
+  ...NAV.flatMap((g) => g.items.map(([to]) => to)).filter((to) => to !== "inbox"),
+  "settings",
+];
 const TABBED: Screen[] = ["home", "activity", "review", "plans"];
 /** The screens that show one month, chosen in the top bar. */
 const MONTHLY: Screen[] = ["home", "activity", "review"];
@@ -358,7 +367,11 @@ export function Workspace({
     </a>
   );
   const commands: Command[] = [
-    ...ORDER.map((to) => ({ text: `Go to ${TITLES[to]}`, hint: "Screen", run: () => go(to) })),
+    ...[...ORDER, "inbox" as const].map((to) => ({
+      text: `Go to ${TITLES[to]}`,
+      hint: "Screen",
+      run: () => go(to),
+    })),
     { text: "Add activity", hint: "Action", run: addActivity },
     ...(month === thisMonth
       ? []
@@ -568,6 +581,7 @@ export function Workspace({
               {screen === "review" && (
                 <MonthlyReview key={month} {...props} month={month} go={(to) => go(to)} />
               )}
+              {screen === "inbox" && <Inbox {...props} credentials={credentials} />}
               {screen === "estimates" && <IncomeEstimates {...props} />}
               {screen === "savings" && <Savings {...props} />}
               {screen === "investments" && <Destinations {...props} kind="investment" />}
@@ -585,6 +599,7 @@ export function Workspace({
                   <div className="card">
                     {(
                       [
+                        "inbox",
                         "estimates",
                         "savings",
                         "investments",
