@@ -3,7 +3,8 @@
     "default": {
       "on": "mattjmcnaughton/apps",
       "name": "accanto",
-      "branch": "box-deploy"
+      "branch": "box-deploy",
+      "domain": "accanto.mattjmcnaughton.com"
     }
   }
 }
