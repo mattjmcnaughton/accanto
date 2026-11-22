@@ -1,35 +1,55 @@
 # Accanto
 
 A financial companion for planning a rich life: conscious spending, giving,
-experiences, consumption, saving, and financial independence.
+experiences, saving, and financial independence.
 
-The production frontend uses browser sign-in and the authenticated API for
-Plans with all delivered allocations, dated activity and funding origins, monthly
-Reviews, independent income estimates, savings lifecycle, refunds, destinations
-and loan observations with Postgres persistence.
-Plans have editable drafts and immutable saved versions; Reviews retain their chosen
-comparison. Failed writes preserve attempted input for explicit recovery in the same
-tab. Estimate results are entered into Plans manually; there is no live link.
-Coverage and outstanding release gates are recorded in the
-[readiness matrix](docs/technical/release-readiness.md).
-See [API usage](docs/api.md) and [browser configuration](docs/development.md#browser-identity-setup-manual-provider-configuration).
+Accanto helps you decide where each month's money should go, record where it
+actually went, and review the difference, without blurring what you intended,
+what you received, what you contributed and what you hold.
 
-## Screenshots
-
-Home shows where the month's money is going and what needs attention. Review
-compares the month's activity with its Plan. Both use synthetic fixture data;
-see [every screen in light, dark and at 390 px](docs/screenshots/README.md).
+- **Plan** each month: income, fixed costs, guilt-free spending, giving, savings
+  goals and investments. Saved versions never change, so you can compare scenarios.
+- **Record** dated activity once, with where the money came from. Refunds land in
+  their own month and restore their original funding.
+- **Review** the month against the Plan you chose, and see on Home what needs attention.
+- **Keep track** of savings goals, investments, giving recipients and loans.
 
 ![Home in the light theme](docs/screenshots/home-light.png)
 
 ![Review in the dark theme](docs/screenshots/review-dark.png)
 
-## Run the production workspace
+Both screenshots use synthetic fixture data. See
+[every screen in light, dark and at 390 px](docs/screenshots/README.md).
 
-Follow the full-stack setup below, configure browser authentication, and provision
-an admitted identity. The UI reports an unavailable backend or sign-in explicitly;
-it never falls back to browser-local financial data. A local signed provider fixture
-is available for isolated synthetic testing in the development guide.
+## Try it in two minutes
+
+Storybook renders every screen with the same synthetic data, with no backend,
+database or sign-in. It needs Node 22+, pnpm and just.
+
+```sh
+git clone https://github.com/mattjmcnaughton/accanto.git
+cd accanto
+pnpm --dir src/accanto/web/frontend install
+just storybook-fe
+```
+
+Open http://localhost:6006 and start with **Screens → Home**. The toolbar switches
+to the dark theme and the phone width. To run the real app with Postgres and
+sign-in, follow [full-stack local development](#full-stack-local-development).
+
+## Status
+
+Accanto is a personal alpha: one owner, one Entity, USD only, with no public sign-up.
+The production frontend uses browser sign-in and the authenticated API, with
+Postgres persistence. Estimate results are copied into Plans by hand; there is no
+live link. Coverage and outstanding release gates are recorded in the
+[readiness matrix](docs/technical/release-readiness.md).
+See [API usage](docs/api.md) and [browser configuration](docs/development.md#browser-identity-setup-manual-provider-configuration).
+
+Running the real workspace needs the full-stack setup below, configured browser
+authentication and a provisioned identity; the development guide has a local signed
+provider fixture for isolated synthetic testing. The UI reports an unavailable
+backend or sign-in explicitly; it never falls back to browser-local financial data.
 
 The accepted browser-local design
 [prototype remains available as standalone HTML](docs/product/daily-workspace-prototype.html),
@@ -103,10 +123,11 @@ The image builds React and runs FastAPI as a non-root user. It serves the produc
 workspace and API. Supply the browser authentication settings described in the
 development guide. Run migrations using
 `alembic upgrade head` inside the image against the same database before startup.
-No deployment, browser identity provider, hosted MCP, or AI provider is configured.
+The image configures no browser identity provider, hosted MCP, or AI provider.
 Use a separate restricted database runtime role as described in the API guide.
 [Deployment and recovery](docs/technical/deployment.md) records compatible rollback
-and provider evidence requirements; it does not authorize deployment.
+and provider evidence requirements; it does not authorize deployment. The personal
+alpha runs on an Amp Box, described in [Box operations](docs/technical/box-operations.md).
 
 ## Product and architecture
 
