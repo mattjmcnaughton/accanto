@@ -626,3 +626,66 @@ component amounts, percentage and an unavailable reason. Actual income-based
 ratios use only same-month recorded amounts. `planned_metrics` on Plan snapshots
 is derived presentation; it does not rewrite immutable saved results or inputs.
 Selected planned savings funding includes its saved account labels and amounts.
+
+## Transactions inbox and sources
+
+Read-only import from a Transaction source (YNAB first) into the Transactions
+inbox. Design: [TDD 02](tdds/02-transactions-inbox.md). Staged transactions are
+not actual entries and never contribute to totals; an entry exists only after an
+explicit record call. Any authenticated caller with Entity access (browser
+session, API key) can use every route below, including record. Writes take
+`Idempotency-Key` and `expected_revision` like other commands.
+
+The operator must set `SOURCE_SECRET_KEY` (a Fernet key) before connecting a
+source; access tokens are stored encrypted with it and never returned. Rotating
+the key makes stored tokens unreadable, so reconnect after a rotation.
+`YNAB_API_URL` defaults to `https://api.ynab.com/v1`; local development and tests
+point it at the fake server in `tests/fakes/ynab_server.py`.
+
+| Method | Suffix | Body / result |
+| --- | --- | --- |
+| GET | `/sources` | Connected sources with selected accounts, sync state and waiting count |
+| POST | `/sources/ynab/plans` | `{access_token}`; YNAB plans the token can read (stores nothing) |
+| POST | `/sources/ynab` | `{access_token, plan_id, start_date}`; connects a USD plan; transactions before `start_date` are never staged |
+| GET | `/sources/{source_id}/accounts` | The plan's accounts and which are selected |
+| PUT | `/sources/{source_id}/accounts` | `{account_ids, expected_revision}`; default is none; adding an account re-reads history |
+| DELETE | `/sources/{source_id}` | `{expected_revision}`; forgets the token; recorded entries and inbox history stay |
+| POST | `/sources/{source_id}/sync` | Fetch changes since the stored cursor and stage them; returns counts. Records nothing |
+| GET | `/inbox?status=&month=YYYY-MM-01&source=` | Staged transactions (default: all but removed), with source facts, proposal, rejections and revision |
+| GET | `/inbox/{item_id}` | One staged transaction |
+| PUT | `/inbox/{item_id}/proposal` | Set a proposal (replaces any earlier one) |
+| DELETE | `/inbox/{item_id}/proposal` | `{expected_revision}`; clear it |
+| PUT | `/inbox/proposals` | `{proposals: [{item_id, ...proposal}]}`; per-item outcomes |
+| POST | `/inbox/{item_id}/record` | `{expected_revision, completion?}`; records from the proposal, or from `completion`, which replaces it |
+| POST | `/inbox/record` | `{items: [{item_id, expected_revision, completion?}]}`; each in its own transaction; per-item outcomes |
+| POST | `/inbox/{item_id}/skip`, `/unskip` | `{expected_revision}` |
+| POST | `/inbox/{item_id}/undo` | `{expected_revision}`; soft-deletes the recorded entry through its normal delete command; the item waits again |
+| POST | `/inbox/{item_id}/resolve` | `{expected_revision, resolution: "keep" \| "delete"}` for a conflict |
+
+A **proposal** (and a record `completion`) is any subset of `category`
+(`income`, `fixed_cost`, `spending`, `saving`, `investing`, `giving`),
+`assignment` (an Income source, fixed cost, saving goal, investment or giving
+recipient UUID, or `"unassigned"`), `funding` (`"income"` or a saving goal UUID),
+`refund_of` (a purchase entry UUID), or `skip: true`, plus `rationale` and
+`expected_revision`. Setting a proposal checks its shape and that every reference
+exists in the Entity, then runs the record command's checks as a dry run and
+stores any rejection in `proposal_rejection` without failing the request. It never
+writes actual entries. `proposed_by` records the User, interface and time.
+
+Recording maps the staged transaction to the existing command: `POST /activity`
+for income, fixed costs, guilt-free spending and saving; the investment and giving
+contribution commands; or the linked refund command for `refund_of`. Those
+commands' rules, audit, and stale-edit checks apply unchanged; the audit
+interface is `inbox`. An inflow to an outflow category must be a refund. The entry
+note is the payee (and memo). A rejection leaves the item waiting with its reason
+in `rejection`. The record retry identity is the item and its expected revision,
+so repeating the same press returns the first outcome without a second entry.
+
+Statuses: `waiting`, `skipped`, `recorded`, `conflict` (recorded, then changed or
+deleted in the source; the entry is never edited by sync), and `removed`
+(deleted in the source before recording). A YNAB failure changes neither the
+cursor nor the inbox. YNAB milliunits convert to exact cents; an amount with
+partial cents fails the sync. `kind` is `ordinary`, `transfer_on_budget`,
+`transfer_tracking` or `card_payment`; how to treat each is the proposer's choice.
+`GET /reviews/{month}` reports `inbox_waiting`, the count of waiting staged
+transactions dated in that month.

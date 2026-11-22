@@ -16,9 +16,11 @@ from accanto.routers import (
     destinations,
     entities,
     health,
+    inbox,
     income_estimates,
     monthly,
     savings,
+    sources,
 )
 from accanto.services.access import RejectionError
 from accanto.web.serve import mount_frontend
@@ -83,6 +85,8 @@ def create_app() -> FastAPI:
     app.include_router(destinations.router)
     app.include_router(balances.router)
     app.include_router(api_keys.router)
+    app.include_router(inbox.router)
+    app.include_router(sources.router)
 
     # Mount frontend static files (only serves if dist/ exists)
     mount_frontend(app)
