@@ -250,9 +250,12 @@ No mandatory migration of prototype data into production is assumed.
 ## Intentional deferrals and unresolved policy
 
 Deferred: annual Plans/Reviews/rollups; tax liability and deduction engines; split
-funding; credit-card settlement; bank ingestion/payment execution; automated bank
-reconciliation; investment performance/FIRE; multiple-Entity UI/sharing; AI features;
+funding; credit-card settlement; automated bank reconciliation; investment performance/FIRE; multiple-Entity UI/sharing; AI features;
 advanced income matching; dedicated restoration UI; lump-sum spread helpers.
+
+Read-only import into the Transactions inbox, starting with YNAB, is in scope.
+Other bank ingestion, write-back to sources, and payment execution remain deferred.
+See the [Transactions inbox TDD](../tdds/02-transactions-inbox.md).
 
 Only cross-Plan income matching cardinality and later retarget behavior remain
 unresolved financial policy for that implementation. They do not block a Review
