@@ -23,6 +23,7 @@ dependencies = [
     "authlib==1.7.2",
     "httpx==0.28.1",
     "fastmcp==4.1.0",
+    "cryptography>=50",
 ]
 
 [project.urls]
@@ -37,6 +38,7 @@ dev = [
     "httpx>=0.28",
     "ruff>=0.8",
     "ty>=0.0.54",
+    "ynab>=5.0.0",
 ]
 
 [tool.ruff]

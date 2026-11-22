@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     mcp_introspection_client_secret: SecretStr = SecretStr("")
     mcp_allowed_emails: list[str] = []
 
+    # Fernet key that encrypts Transaction source tokens at rest (decision T1).
+    # Generate with `uv run python -c "from cryptography.fernet import Fernet;
+    # print(Fernet.generate_key().decode())"`. Without it, sources cannot connect.
+    source_secret_key: SecretStr = SecretStr("")
+    ynab_api_url: str = "https://api.ynab.com/v1"
+
     database_url: str = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/accanto"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
