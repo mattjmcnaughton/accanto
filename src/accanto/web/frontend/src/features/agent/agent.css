@@ -160,3 +160,17 @@
     width: 100vw;
   }
 }
+/* The file input stays focusable and labelled, drawn as the button around it. */
+.agent-attach {
+  position: relative;
+  overflow: hidden;
+}
+.agent-attach input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.agent-attach:focus-within {
+  outline: 2px solid var(--brand);
+}

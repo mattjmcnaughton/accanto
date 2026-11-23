@@ -8,13 +8,13 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Form, Header, Request
+from fastapi import APIRouter, File, Form, Header, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from accanto.db import async_session
 from accanto.dtos.agent import AgentSettingsInput, ApplyInput, DismissInput
 from accanto.routers.authentication import BrowserToken, Session
-from accanto.services import agent_settings, agent_writes, tools
+from accanto.services import agent_images, agent_settings, agent_writes, tools
 from accanto.services.agent import AgentTurns
 from accanto.services.openrouter import provider_label
 from accanto.services.sse import SSE_HEADERS, SSE_MEDIA_TYPE
@@ -134,9 +134,16 @@ async def send_message(
     content: Annotated[str, Form(max_length=4000)] = "",
     screen: Annotated[str | None, Form(max_length=40)] = None,
     month: Annotated[date | None, Form()] = None,
+    images: Annotated[list[UploadFile] | None, File()] = None,
 ):
     """Admit before the first byte, then stream SSE: delta, tool, pending_change,
-    done or error, with a ': ping' heartbeat."""
+    done or error, with a ': ping' heartbeat. Images are normalised in memory and
+    passed to this turn only."""
     service = turns(request)
-    turn = await service.admit(actor, entity_id, content, screen=screen, month=month)
+    # Read one byte past the limit so an oversized file is refused, not buffered whole.
+    raw = [await f.read(agent_images.MAX_IMAGE_BYTES + 1) for f in images or []]
+    normalised = agent_images.normalise_all(raw)
+    turn = await service.admit(
+        actor, entity_id, content, images=normalised, screen=screen, month=month
+    )
     return ReleasingStream(service.stream(turn), lambda: service.release(turn))

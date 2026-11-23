@@ -9,7 +9,8 @@ Behaviors, keyed on the owner's message (case-insensitive):
 - "categor"     list_inbox, then set_proposals for every waiting item.
 - "spend"       get_monthly_review for the named month (or the one in view)
                 and quote the recorded spending it returns.
-- "receipt" or an attached image: draft one save_activity entry.
+- "receipt" or an attached image: draft one save_activity entry dated by the
+                YYYY-MM-DD in the message, or ask for the date if there is none.
 - "[stub-fail]" fail mid-stream after a few deltas.
 - anything else: a short fixed reply.
 
@@ -212,12 +213,18 @@ def _next_step(messages: Sequence[ModelMessage], info: AgentInfo):
     if has_image or "receipt" in lowered:
         if "save_activity" not in called:
             found = re.search(r"\d{4}-\d{2}-\d{2}", text)
+            if not found:
+                # Never default a receipt's date to today: ask instead.
+                return "What date is on the receipt? I could not find one."
             draft = {
-                "date": found.group(0) if found else _today(info).isoformat(),
+                "date": found.group(0),
                 "category": "spending",
                 "amount": RECEIPT_AMOUNT,
                 "note": "Synthetic receipt (stub draft)",
             }
+            if has_image:
+                draft["uncertain_fields"] = ["note"]
+                draft["source_text"] = f"SYNTHETIC STORE TOTAL {RECEIPT_AMOUNT}"
             return _call(("save_activity", draft))
         return (
             f"I drafted a {RECEIPT_AMOUNT} spending entry from the receipt. "
