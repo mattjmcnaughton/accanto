@@ -309,7 +309,7 @@ def write_result(response) -> t.WriteResult:
 
 
 def gated(name):
-    async def run(ctx, entity_id, args, key):
+    async def run(ctx, entity_id, args, key, draft=None):
         build = TOOLS[name].build
         assert build is not None
         command, summary = build(args)
@@ -322,6 +322,7 @@ def gated(name):
             command,
             key,
             summary,
+            draft,
         )
         return write_result(response)
 
@@ -1002,6 +1003,7 @@ def rebuild(tool_name: str, tool_input: dict):
         raise RejectionError("unsupported_command", "Command is not implemented.", 404)
     from pydantic import ValidationError
 
+    tool_input = {k: v for k, v in tool_input.items() if k != "_draft"}
     try:
         args = tool.input.model_validate(tool_input)
     except ValidationError as error:

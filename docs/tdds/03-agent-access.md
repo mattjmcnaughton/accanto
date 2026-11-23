@@ -370,6 +370,24 @@ from the design above. None changes a financial rule.
   tests stay for the hosted-OAuth phase. `_meta["anthropic/requiresUserInteraction"]`
   is set on writes gated by the Agent mode, not on `sync_source` or
   `set_proposals`, which record nothing. FastMCP 4.1.0 accepts `meta=`.
+- **Built-in agent backend.** pydantic-ai 2.68 (the 2.x family aleph pins at
+  2.15; it resolves with `fastmcp==4.1.0`). The model is
+  `OpenRouterModel` with `openrouter_provider={"zdr": True, "data_collection":
+  "deny"}`. `AGENT_MODEL=stub` is refused when `BROWSER_ORIGIN` is a public HTTPS
+  origin, rather than by a separate production flag. Catalog tools are given to
+  the agent with `Tool.from_schema` from the same input models; an
+  `args_validator` turns input-model failures into `ModelRetry`. In pydantic-ai
+  2.68 the retry reaches the model as a `ToolReturnPart` with outcome `retried`.
+  Sidebar write tools also accept `uncertain_fields` and `source_text`; they are
+  stored with the Pending change as `input._draft` and stripped before apply.
+- **Turn limits.** The daily cap counts stored owner messages for the Entity in
+  the last 24 hours (a failed turn stores none). When both reply slots are busy
+  the send is refused with `429 agent_busy` rather than queued. Pending changes
+  drafted during a turn that later fails are kept (each tool call commits on its
+  own); only the turn's messages are discarded. Clearing the conversation does
+  not remove Pending changes.
+- **Conversation expiry.** `expires_at` is 30 days after the latest turn; an
+  expired conversation is hard-deleted when next read or admitted.
 - **Migration** `6b022` (additive). Agent settings changes are audited with
   `record_type = agent_settings`, as `edit_entity` audits Entity settings.
 

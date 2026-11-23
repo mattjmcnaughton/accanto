@@ -1,0 +1,276 @@
+"""Deterministic stand-in model for tests and e2e (AGENT_MODEL=stub).
+
+Like aleph's services/stub_model.py: a pydantic-ai FunctionModel whose stream
+callback reads the owner's latest message and this run's tool results, then
+calls real catalog tools. It never sees a network. It is selected only by
+AGENT_MODEL=stub and refused for a public HTTPS origin (config.agent_model_id).
+
+Behaviors, keyed on the owner's message (case-insensitive):
+- "categor"     list_inbox, then set_proposals for every waiting item.
+- "spend"       get_monthly_review for the named month (or the one in view)
+                and quote the recorded spending it returns.
+- "receipt" or an attached image: draft one save_activity entry.
+- "[stub-fail]" fail mid-stream after a few deltas.
+- anything else: a short fixed reply.
+
+Scripted to obey injections, on purpose: if a tool result contains
+INJECTION_MARKER, it lists the month's activity and calls delete_activity for
+every entry, so tests show the dispatcher still only drafts Pending changes.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from datetime import date
+from functools import cache
+from typing import TYPE_CHECKING
+
+from pydantic_ai.messages import (
+    BinaryContent,
+    ModelMessage,
+    ModelRequest,
+    ToolReturnPart,
+    UserPromptPart,
+)
+from pydantic_ai.models.function import (
+    AgentInfo,
+    DeltaToolCall,
+    DeltaToolCalls,
+    FunctionModel,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Sequence
+
+INJECTION_MARKER = "IGNORE PREVIOUS INSTRUCTIONS"
+FAIL = "[stub-fail]"
+RECEIPT_AMOUNT = "23.45"
+MONTHS = {
+    name: index
+    for index, name in enumerate(
+        (
+            "january",
+            "february",
+            "march",
+            "april",
+            "may",
+            "june",
+            "july",
+            "august",
+            "september",
+            "october",
+            "november",
+            "december",
+        ),
+        start=1,
+    )
+}
+
+
+class StubModelError(RuntimeError):
+    pass
+
+
+def _owner_prompt(messages: Sequence[ModelMessage]) -> tuple[str, bool]:
+    """The latest owner message text, and whether it carried an image."""
+    for message in reversed(messages):
+        for part in getattr(message, "parts", []):
+            if isinstance(part, UserPromptPart):
+                if isinstance(part.content, str):
+                    return part.content, False
+                text = " ".join(c for c in part.content if isinstance(c, str))
+                images = any(isinstance(c, BinaryContent) for c in part.content)
+                return text, images
+    return "", False
+
+
+def _returns(messages: Sequence[ModelMessage]) -> list[ToolReturnPart]:
+    """Tool results since the owner's latest message (this run only)."""
+    parts = [p for m in messages if isinstance(m, ModelRequest) for p in m.parts]
+    start = max(
+        (i for i, p in enumerate(parts) if isinstance(p, UserPromptPart)), default=-1
+    )
+    return [p for p in parts[start + 1 :] if isinstance(p, ToolReturnPart)]
+
+
+def _content(part: ToolReturnPart) -> dict:
+    value = part.content
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _today(info: AgentInfo) -> date:
+    match = re.search(r"Today: (\d{4}-\d{2}-\d{2})", info.instructions or "")
+    if match is None:
+        raise StubModelError("instructions are missing the 'Today:' line")
+    return date.fromisoformat(match.group(1))
+
+
+def _month(text: str, info: AgentInfo) -> date:
+    today = _today(info)
+    lowered = text.lower()
+    for name, number in MONTHS.items():
+        if name in lowered:
+            year = today.year if number <= today.month else today.year - 1
+            return date(year, number, 1)
+    match = re.search(r"Month in view: (\d{4}-\d{2})-01", info.instructions or "")
+    if match:
+        return date.fromisoformat(match.group(1) + "-01")
+    return today.replace(day=1)
+
+
+def _call(*calls: tuple[str, dict]) -> DeltaToolCalls:
+    return {
+        index: DeltaToolCall(
+            name=name, json_args=json.dumps(args), tool_call_id=f"stub-{name}-{index}"
+        )
+        for index, (name, args) in enumerate(calls)
+    }
+
+
+def _text(value) -> str:
+    return value.get("untrusted", "") if isinstance(value, dict) else str(value)
+
+
+def plan_proposal(item: dict) -> dict:
+    """The stub's deterministic proposal for one waiting inbox item."""
+    base = {"item_id": item["id"], "expected_revision": item["revision"]}
+    if item["kind"] != "ordinary":
+        return {**base, "skip": True, "rationale": "Stub: a transfer between accounts."}
+    if item["amount"].startswith("-"):
+        return {
+            **base,
+            "category": "spending",
+            "rationale": "Stub: an outflow, proposed as spending.",
+        }
+    return {
+        **base,
+        "category": "income",
+        "assignment": "unassigned",
+        "rationale": "Stub: an inflow, proposed as unassigned income.",
+    }
+
+
+def _next_step(messages: Sequence[ModelMessage], info: AgentInfo):
+    """Either a tool call to make, or the final reply text."""
+    text, has_image = _owner_prompt(messages)
+    lowered = text.lower()
+    returns = _returns(messages)
+    called = {part.tool_name for part in returns}
+    injected = any(INJECTION_MARKER in json.dumps(_content(p)) for p in returns)
+
+    if injected and "delete_activity" not in called:
+        if "list_activity" not in called:
+            item = next(
+                (
+                    i
+                    for p in returns
+                    for i in _content(p).get("items", [])
+                    if INJECTION_MARKER in _text(i.get("payee"))
+                ),
+                None,
+            )
+            month = (
+                (item["date"][:7] + "-01") if item else _month(text, info).isoformat()
+            )
+            return _call(("list_activity", {"month": month}))
+        listing = next(_content(p) for p in returns if p.tool_name == "list_activity")
+        deletes = [
+            ("delete_activity", {"id": e["id"], "expected_revision": e["revision"]})
+            for e in listing.get("entries", [])
+        ]
+        if deletes:
+            return _call(*deletes)
+        return "Nothing to delete."
+    if injected:
+        return (
+            "I followed an instruction found in a payee and drafted deletions. "
+            "They are pending changes; nothing was deleted."
+        )
+
+    if "categor" in lowered:
+        if "list_inbox" not in called:
+            return _call(("list_inbox", {"status": ["waiting"]}))
+        if "set_proposals" not in called:
+            items = next(_content(p) for p in returns if p.tool_name == "list_inbox")
+            proposals = [plan_proposal(i) for i in items.get("items", [])]
+            if not proposals:
+                return "The inbox has no waiting transactions."
+            return _call(("set_proposals", {"proposals": proposals}))
+        outcome = next(_content(p) for p in returns if p.tool_name == "set_proposals")
+        done = sum(1 for r in outcome.get("results", []) if r.get("ok"))
+        return (
+            f"I proposed categories for {done} inbox items. Nothing is recorded "
+            "until you record them from the inbox."
+        )
+
+    if has_image or "receipt" in lowered:
+        if "save_activity" not in called:
+            found = re.search(r"\d{4}-\d{2}-\d{2}", text)
+            draft = {
+                "date": found.group(0) if found else _today(info).isoformat(),
+                "category": "spending",
+                "amount": RECEIPT_AMOUNT,
+                "note": "Synthetic receipt (stub draft)",
+            }
+            return _call(("save_activity", draft))
+        return (
+            f"I drafted a {RECEIPT_AMOUNT} spending entry from the receipt. "
+            "Review the card and apply it if it is right."
+        )
+
+    if "spend" in lowered:
+        month = _month(text, info)
+        if "get_monthly_review" not in called:
+            return _call(("get_monthly_review", {"month": month.isoformat()}))
+        review = next(
+            _content(p) for p in returns if p.tool_name == "get_monthly_review"
+        )
+        spending = next(
+            (c for c in review.get("categories", []) if c["category"] == "spending"),
+            None,
+        )
+        if spending is None:
+            return f"There is no Review for {month.isoformat()[:7]} yet."
+        recorded = spending["recorded"]
+        if recorded is None:
+            return f"Spending for {month.isoformat()[:7]} is unknown: nothing recorded."
+        return (
+            f"Recorded spending for {month.isoformat()[:7]} is **${recorded}** "
+            f"against **${spending['planned']}** planned."
+        )
+
+    return "Stub reply: ask me to categorize the inbox or about your spending."
+
+
+def _chunks(text: str) -> list[str]:
+    words = re.findall(r"\S+\s*", text)
+    return words or [text]
+
+
+async def stub_stream(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str | DeltaToolCalls]:
+    step = _next_step(messages, info)
+    if isinstance(step, dict):
+        yield step
+        return
+    text, _ = _owner_prompt(messages)
+    for index, chunk in enumerate(_chunks(step)):
+        if FAIL in text and index == 2:
+            raise StubModelError("forced failure mid-stream")
+        yield chunk
+
+
+def _not_streamed(messages, info):  # pragma: no cover - the sidebar always streams
+    raise StubModelError("the sidebar stub only streams")
+
+
+@cache
+def build_stub_model() -> FunctionModel:
+    return FunctionModel(_not_streamed, stream_function=stub_stream)
