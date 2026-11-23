@@ -15,7 +15,7 @@ FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 # JSON error envelope (`errors.error_response`), not `200` + HTML, or every
 # client-side error handler sees a parse failure instead of the 404 it was
 # written for.
-BACKEND_PREFIXES = frozenset({"api", "auth", "healthz", "readyz"})
+BACKEND_PREFIXES = frozenset({"api", "auth", "healthz", "mcp", "readyz"})
 
 
 class SPAStaticFiles(StaticFiles):

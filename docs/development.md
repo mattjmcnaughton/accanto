@@ -295,62 +295,21 @@ metadata returns 503. It does not probe providers or establish runtime grants.
 behavior from pending Fly.io/Neon configuration, compatible rollback and credential
 revocation reconciliation. Never reset a populated database for readiness.
 
-## MCP resource server (MVP-022; hosted completion gated)
+## MCP v1 (TDD 03)
 
-The standalone `fastmcp==4.1.0` package is pinned in `uv.lock`. The separate ASGI
-factory exposes exactly four tools over Streamable HTTP: `list_entities`,
-`list_plan_versions`, `get_monthly_review`, `start_monthly_review`. The final tool
-starts a Review only; it cannot retarget one, record activity or move money.
-The [agreed contract](technical/mcp-contract-proposal.md) specifies every released
-field and provider requirement. Notes, raw entries, audit history, credentials and
-internal relational IDs are excluded. Money remains decimal strings; unknowns
-remain null. Financial names/labels returned to a client are data, not instructions.
+The main application serves MCP at `/mcp` on its own origin (Streamable HTTP,
+stateless, JSON responses, `Cache-Control: no-store`, no CORS). It offers the
+agent tool catalog in `services/tools.py`, not a mirror of the REST API, and
+authenticates with the owner's API keys as `Authorization: Bearer <key>`.
+Every call resolves the key again, so revocation denies the next call; browser
+cookies alone get 401. Writes are audited with interface `mcp`, and the Entity's
+Agent mode decides whether they run or become Pending changes. Client setup for
+Claude Code, Codex and Amp is in [MCP clients](technical/mcp-clients.md).
 
-After `uv sync --locked` and migrations, set `DATABASE_URL` to the intended database
-and all MCP settings from that contract, then run a separately isolated listener:
-
-```sh
-uv run uvicorn accanto.mcp_server:create_mcp_app --factory \
-  --host 127.0.0.1 --port 8022 --no-access-log
-```
-
-No MCP routes are mounted on the existing browser/API application or tailnet demo.
-The factory refuses incomplete/untrusted configuration. The initial resource URL
-must have path exactly `/mcp`. HTTPS is required except for loopback test fixtures.
-The metadata route is `/.well-known/oauth-protected-resource/mcp`; its resource and
-Bearer challenge must match `MCP_RESOURCE_URL`. No authorization-server endpoints
-are provided. Reverse-proxy/public-route/provider changes require separate approval.
-
-The external provider must issue RS256 JWT **access** tokens with `typ=at+jwt`,
-exact configured issuer, matching resource audience, finite `exp`, nonempty `sub`,
-verified allowlisted `email` and scopes. Reads require `accanto:read`; starting a
-Review also requires `accanto:review`. Browser ID tokens and API keys are rejected.
-Provision the User's exact `(issuer, subject)` first; email never links accounts.
-The RFC 7662 endpoint must return `active=true`, matching issuer/subject/resource
-audience, unexpired `exp` and required scopes. Configure confidential
-`client_secret_basic` introspection credentials through secret management.
-
-Signature/admission and uncached introspection run on every request and inside
-each application operation, again after an Entity lock wait. Replay still checks
-current credential and Entity ownership before retrieving an existing outcome.
-No tokens are persisted. JWKS is fetched each validation to honor current keys;
-provider outages/malformed responses fail closed. This intentionally adds provider
-latency, including while an Entity transaction is locked. External revocation is
-not atomically coordinated with our DB commit: revocation after the last accepted
-introspection may race that in-flight operation; subsequent requests are denied.
-
-Keep Uvicorn access logs disabled. Do not enable HTTP body/header debug logging,
-FastMCP argument/error tracing or external telemetry exporters; they may capture
-financial arguments or credentials. Reverse proxies must suppress Authorization,
-request/response bodies and query strings. Application tool errors use fixed
-validation/storage messages and permitted service rejection codes; protocol
-responses use `Cache-Control: no-store`.
-
-Local synthetic verification uses `tests/mcp_fixture.py` for ephemeral RSA/JWKS
-and introspection, plus an isolated migrated `_test` PostgreSQL database for
-`tests/integration/test_mcp.py`. The fixture provides no login/authorization-server
-flow and must never be exposed publicly. It cannot establish provider/ChatGPT/
-Claude compatibility. Real provider registration, PKCE/consent/client registration,
-key rotation/revocation and opt-in synthetic hosted interoperability remain manual
-gates. No external services/resources, credentials, cost or deployment are created
-by these local checks.
+Keep Uvicorn access logs disabled and do not enable FastMCP argument tracing or
+HTTP body logging: tool arguments carry financial values. Tool errors carry only
+fixed codes and messages, never input values. The earlier OAuth resource-server
+design ([MVP-022 contract](technical/mcp-contract-proposal.md)) is superseded for
+v1; `mcp_auth.MCPTokenVerifier` stays for the later hosted-OAuth phase but is not
+mounted. `tests/integration/test_mcp.py` exercises `/mcp` against real
+PostgreSQL; it does not establish compatibility with any hosted client.
