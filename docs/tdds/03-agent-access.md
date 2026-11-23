@@ -362,6 +362,14 @@ from the design above. None changes a financial rule.
   apply/dismiss do. Listing sources and syncing stay available to API keys. PR
   #39's inbox integration test now connects through a browser session.
 - **Dismiss** takes the Pending change's `expected_revision`.
+- **MCP mounting.** `/mcp` is dispatched by a small ASGI middleware
+  (`MountMCP`) ahead of routing, because a Starlette `Mount` would answer the bare
+  `/mcp` with a redirect; `mcp` is also in `BACKEND_PREFIXES`. The old
+  four-tool OAuth server factory (`create_mcp_app --factory`) is removed rather
+  than kept unmounted, since it duplicated tools; `MCPTokenVerifier` and its unit
+  tests stay for the hosted-OAuth phase. `_meta["anthropic/requiresUserInteraction"]`
+  is set on writes gated by the Agent mode, not on `sync_source` or
+  `set_proposals`, which record nothing. FastMCP 4.1.0 accepts `meta=`.
 - **Migration** `6b022` (additive). Agent settings changes are audited with
   `record_type = agent_settings`, as `edit_entity` audits Entity settings.
 

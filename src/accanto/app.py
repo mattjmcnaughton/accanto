@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from accanto.config import settings
 from accanto.logging import configure_logging
+from accanto.mcp_server import MountMCP, create_mcp_app
 from accanto.oidc import OIDCProvider
 from accanto.routers import (
     agent,
@@ -29,9 +30,11 @@ from accanto.web.serve import mount_frontend
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan handler."""
+    """Application lifespan handler; runs the MCP app's session manager too."""
     configure_logging()
-    yield
+    mcp = app.state.mcp_app
+    async with mcp.router.lifespan_context(mcp):
+        yield
 
 
 def create_app() -> FastAPI:
@@ -89,6 +92,11 @@ def create_app() -> FastAPI:
     app.include_router(inbox.router)
     app.include_router(sources.router)
     app.include_router(agent.router)
+
+    # MCP v1 at /mcp (TDD 03), dispatched before routing so the SPA never
+    # answers it. API keys only; see docs/technical/mcp-clients.md.
+    app.state.mcp_app = create_mcp_app(app.state)
+    app.add_middleware(MountMCP, mcp=app.state.mcp_app)
 
     # Mount frontend static files (only serves if dist/ exists)
     mount_frontend(app)
