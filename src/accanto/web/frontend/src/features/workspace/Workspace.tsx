@@ -11,6 +11,7 @@ import {
   reauthenticate,
 } from "../../lib/recoverableWrite";
 import { Dialog, Icon, useDialogSlot } from "../../ui";
+import { AgentPanel } from "../agent/AgentPanel";
 import { Balances } from "../balances/Balances";
 import { Destinations } from "../destinations/Destinations";
 import { IncomeEstimates } from "../estimates/IncomeEstimates";
@@ -119,6 +120,7 @@ export function Workspace({
   const [add, setAdd] = useState(0);
   const approved = useRef<{ to: Screen; month: string; keep: boolean } | null>(null);
   const [palette, setPalette] = useState(false);
+  const [assistant, setAssistant] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
   const [theme, setTheme] = useTheme();
   const [refresh, setRefresh] = useState(0);
@@ -306,6 +308,12 @@ export function Workspace({
 
   const onKey = (event: KeyboardEvent) => {
     if (concealed || !entity || event.defaultPrevented) return;
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "j") {
+      if (document.querySelector("dialog[open]")) return;
+      event.preventDefault();
+      setAssistant((open) => !open);
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
       if (!palette && document.querySelector("dialog[open]")) return;
       event.preventDefault();
@@ -412,7 +420,7 @@ export function Workspace({
   );
 
   return (
-    <div className="app">
+    <div className={assistant && entity && !concealed ? "app with-agent" : "app"}>
       <button
         type="button"
         className="btn skip"
@@ -507,6 +515,16 @@ export function Workspace({
                 <Icon name="search" />
                 <span>Search or jump</span>
                 <span className="kbd">Ctrl K</span>
+              </button>
+              <button
+                type="button"
+                className="btn"
+                aria-pressed={assistant}
+                aria-keyshortcuts="Control+J Meta+J"
+                onClick={() => setAssistant((open) => !open)}
+              >
+                <Icon name="chat" />
+                <span className="top-agent">Assistant</span>
               </button>
               <button type="button" className="btn pri" aria-keyshortcuts="N" onClick={addActivity}>
                 <Icon name="plus" />
@@ -636,6 +654,19 @@ export function Workspace({
           )}
         </main>
       </div>
+      {assistant && entity && !concealed && (
+        <AgentPanel
+          entity={entity}
+          busy={props.busy}
+          refresh={refresh}
+          screen={screen}
+          month={month}
+          credentials={credentials}
+          save={save}
+          close={() => setAssistant(false)}
+          openSettings={() => go("settings")}
+        />
+      )}
       {entity && (
         <nav className="tabs" aria-label="Sections" hidden={concealed}>
           {link("home", "Home")}
@@ -727,6 +758,7 @@ const Shortcuts = ({ close }: { close: () => void }) => (
       <div className="keys">
         {[
           ["Ctrl K or ⌘ K", "Search, jump to a screen, or run an action"],
+          ["Ctrl J or ⌘ J", "Open or close the assistant"],
           ["1 to 9", "Go to a screen, in sidebar order"],
           ["N", "Add activity"],
           ["[ and ]", "Previous and next month on Home, Activity and Review"],

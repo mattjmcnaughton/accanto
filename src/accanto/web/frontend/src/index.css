@@ -300,6 +300,15 @@
   .top {
     padding: 8px 12px;
   }
+  /* The Assistant button shows only its icon on phones; its name stays for assistive tech. */
+  .top-agent {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   .content {
     padding: 18px 12px 96px;
   }
@@ -307,8 +316,14 @@
     margin-top: 12px;
   }
 }
-/* The narrowest phones keep the month and the action: Add activity shows only its icon. */
+/* Phones keep the month and the actions: Add activity shows only its icon beside Assistant's. */
 @media (max-width: 383px) {
+  .top {
+    gap: 4px;
+    padding: 8px;
+  }
+}
+@media (max-width: 430px) {
   .top-add {
     position: absolute;
     width: 1px;

@@ -26,6 +26,11 @@ const resources = {
   session: { path: "/api/auth/session", loaded: data.session, empty: data.session },
   settings: { path: `${entity}/settings`, loaded: data.settings, empty: data.settings },
   apiKeys: { path: "/api/keys", loaded: data.apiKeys, empty: [] },
+  agentSettings: {
+    path: `${entity}/agent/settings`,
+    loaded: data.agentSettings,
+    empty: data.agentSettings,
+  },
   plans: { path: `${entity}/plans`, loaded: data.plans, empty: [] },
   activity: { path: `${entity}/activity`, loaded: data.activity, empty: [] },
   reviews: { path: `${entity}/reviews/:month`, loaded: data.reviews, empty: {} },

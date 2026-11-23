@@ -277,7 +277,12 @@ class AgentTurns:
             payload = result.model_dump(mode="json")
             for change in _pending_changes(payload):
                 pending.append(change["id"])
-                await queue.put(sse_event("pending_change", change))
+                summary = change["summary"]
+                if isinstance(summary, dict):
+                    summary = summary.get("untrusted", "")
+                await queue.put(
+                    sse_event("pending_change", {**change, "summary": summary})
+                )
             return payload
 
         deps = SidebarDeps(

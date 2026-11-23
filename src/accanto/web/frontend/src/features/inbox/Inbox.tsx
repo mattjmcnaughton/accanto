@@ -37,6 +37,7 @@ import {
   waitingLabel,
 } from "./inboxModel";
 import "./inbox.css";
+import { ConnectSource } from "./ConnectSource";
 
 type Picker = {
   kind: "line" | "funding" | "refund" | "resolve";
@@ -691,14 +692,19 @@ export function Inbox(
       <LoadProblem states={failed} retry={() => setReload((x) => x + 1)} />
       {items.kind === "loading" ? (
         <LoadingCard label="Loading the inbox" />
-      ) : sources.kind === "empty" && !all.length ? (
-        <div className="ix-empty card pad">
-          <b>No transaction source is connected</b>
-          <p>
-            Connect a YNAB plan through the API (<code>POST /sources/ynab</code>), choose its
-            accounts, then sync. Imported transactions wait here; none becomes an actual entry until
-            you record it.
+      ) : (sources.kind === "empty" && !all.length) || (source && !source.accounts.length) ? (
+        <div className="ix-empty">
+          <p className="note">
+            Imported transactions wait here; none becomes an actual entry until you record it.
           </p>
+          <ConnectSource
+            key={source?.id ?? "new"}
+            entityId={p.entity.id}
+            today={p.entity.today}
+            source={source}
+            credentials={p.credentials}
+            connected={() => setReload((x) => x + 1)}
+          />
         </div>
       ) : (
         <div className="ix-cols">
