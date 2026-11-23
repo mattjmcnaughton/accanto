@@ -57,7 +57,9 @@ Every core financial workflow must be available through a documented,
 authenticated API from the first usable production version. The UI uses that
 API; the user must also be able to operate Accanto through their own API calls.
 Direct API access uses user-owned, individually revocable API keys, shown once
-at creation and stored only as hashes. Hosted MCP access uses OAuth.
+at creation and stored only as hashes. MCP clients may authenticate with those
+user-owned API keys; hosted MCP access for clients that cannot hold a key
+(claude.ai, mobile connectors) uses OAuth in a later phase.
 
 All interfaces use the same application behavior and authorization rules.
 Authentication establishes the User; authorization enforces access to the
@@ -149,6 +151,10 @@ including in audit records with appropriate access controls. This does
 not permit credentials or tokens in diagnostic records, or turn database-backed
 operational logs into an exception. Any external service receiving financial data
 requires an explicit design decision about purpose and data scope.
+[PRD 02 — Agent access](docs/prd/02-agent-access.md) (AG-09) is that decision for
+model providers reached by the built-in agent and by MCP clients: what agent
+tools return may be sent; credentials, tokens, audit history and other Entities
+never are.
 
 ## 7. Make failures explicit and preserve data
 
@@ -191,6 +197,11 @@ verification gaps.
 
 ### Amendment notes
 
+- 2026-11-23: §2 allows MCP clients to authenticate with user-owned API keys;
+  hosted MCP OAuth follows later. §6 names PRD 02 as the explicit decision for
+  sending financial data to model providers. Rationale: let CLI agents (Claude
+  Code, Codex, Amp) and the built-in agent operate Accanto now, within an
+  enforced tool catalog and Agent mode.
 - 2026-10-16: Made domain rules an explicit architectural obligation: shared,
   independently testable financial rules; application-owned orchestration;
   persistence-backed atomicity/concurrency; and rule-to-verification coverage in

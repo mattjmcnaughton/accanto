@@ -89,6 +89,11 @@ acceptance criteria; this file defines their shared domain meanings.
 | Staged transaction | One transaction (or one split line) from a Transaction source, waiting in the Transactions inbox. It is not an actual entry and never contributes to totals. Its status is waiting, skipped, recorded, or conflict. |
 | Transactions inbox | The Entity's list of staged transactions. Each is recorded as an actual entry or skipped by an explicit action. |
 | Proposal | A partial completion of a staged transaction (category, assignment, funding origin, refund link, or skip) with a rationale and its proposer. It is not an actual entry and is never applied without an explicit record. |
+| Agent | A caller acting for the owner through the agent tool catalog: the built-in agent or an MCP client. Not a permission role; it has the owner's Entity access, narrowed by the catalog and Agent mode. |
+| Agent mode | Per Entity: `propose` (default) or `record`. Decides whether agent writes run or become Pending changes. Setting inbox Proposals and syncing are allowed in both modes. |
+| Pending change | A validated, not-yet-applied write drafted by an Agent. Not financial activity; never in totals. The owner applies or dismisses it in Accanto. Deletes that cannot be restored are always Pending changes. |
+| AGENT.md | The owner's standing instructions for the built-in agent, per Entity. Trusted instructions, below enforced rules: it cannot widen the catalog, Agent mode, or the Entity boundary. |
+| Untrusted data | Any text read from the Entity, a source, or an image (payees, memos, notes, names, rationales). Quoted to the model as data, never followed as instructions; an instruction found there is reported to the owner. |
 
 ## Actors and roles
 
@@ -98,6 +103,8 @@ of the same actor, not separate Planner, Recorder, or Reviewer permission roles.
 User remains the account identity; Entity remains the financial planning boundary.
 There is no separate approver or required approval handoff. Shared access and
 any future division of responsibilities require explicit later decisions.
+An Agent acts for that same person within one Entity at a time; it is not a
+separate actor with its own permissions ([PRD 02](docs/prd/02-agent-access.md)).
 
 ## Commands, events, and policies
 
