@@ -50,6 +50,7 @@ export function AgentPanel(p: AgentPanelProps) {
   const [pending, setPending] = useState<PendingChange[]>([]);
   const [tab, setTab] = useState<Tab>("chat");
   const [text, setText] = useState("");
+  const [images, setImages] = useState<File[]>([]);
   const [live, setLive] = useState<Live | null>(null);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
@@ -92,16 +93,18 @@ export function AgentPanel(p: AgentPanelProps) {
 
   async function send() {
     const content = text.trim();
-    if (!content || live) return;
+    if ((!content && !images.length) || live) return;
+    const attached = images;
     setError("");
     setText("");
+    setImages([]);
     setMessages((m) => [
       ...m,
       {
         id: `local-${Date.now()}`,
         role: "owner",
         content,
-        image_count: 0,
+        image_count: attached.length,
         pending_change_ids: [],
         created_at: new Date().toISOString(),
       },
@@ -130,6 +133,7 @@ export function AgentPanel(p: AgentPanelProps) {
     };
     const input = {
       content,
+      images: attached,
       screen: p.screen,
       month: `${p.month}-01`,
     };
@@ -150,6 +154,7 @@ export function AgentPanel(p: AgentPanelProps) {
       if (!controller.signal.aborted) {
         setError(issue instanceof AgentStreamError || issue instanceof Error ? issue.message : "");
         setText(content);
+        setImages(attached);
       }
     } finally {
       abort.current = null;
@@ -345,12 +350,31 @@ export function AgentPanel(p: AgentPanelProps) {
                 }
               }}
             />
+            <label className="btn agent-attach">
+              <span>{images.length ? `${images.length} image(s)` : "Attach"}</span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                aria-label="Attach receipt images"
+                disabled={Boolean(live)}
+                onChange={(event) => {
+                  const files = [...(event.target.files ?? [])];
+                  event.target.value = "";
+                  if (files.length > 4) return setError("Attach at most 4 images.");
+                  if (files.some((f) => f.size > 5 * 1024 * 1024))
+                    return setError("Each image must be 5 MB or smaller.");
+                  setError("");
+                  setImages(files);
+                }}
+              />
+            </label>
             {live ? (
               <button type="button" className="btn" onClick={() => abort.current?.abort()}>
                 Stop
               </button>
             ) : (
-              <button type="submit" className="btn pri" disabled={!text.trim()}>
+              <button type="submit" className="btn pri" disabled={!text.trim() && !images.length}>
                 Send
               </button>
             )}
