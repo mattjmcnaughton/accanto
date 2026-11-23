@@ -21,7 +21,9 @@ from accanto.config import settings
 from accanto.db import get_session
 from accanto.models import inbox as st
 from accanto.models import monthly as m
+from accanto.services.access import issue_session
 from accanto.services.api_keys import issue_key
+from accanto.services.browser_auth import csrf_token
 from tests.fakes import ynab_server as y
 
 URL = os.environ.get("ACCANTO_TEST_DATABASE_URL")
@@ -62,6 +64,8 @@ async def scenario():
         )
         entity, entity_id = entity_row.one()
         key = await issue_key(session, user, "Synthetic inbox test")
+        # Source setup needs a browser session; API keys cannot reach it (TDD 03).
+        browser = await issue_session(session, user)
 
     fake = y.FakeYnab(transactions=TRANSACTIONS)
     app = create_app()
@@ -69,6 +73,8 @@ async def scenario():
         update={
             "source_secret_key": SecretStr(Fernet.generate_key().decode()),
             "ynab_api_url": "http://fake-ynab/v1",
+            "browser_origin": "http://test",
+            "browser_csrf_secret": SecretStr("synthetic-inbox-csrf-secret-long-enough"),
         }
     )
     app.state.ynab_transport = httpx.ASGITransport(app=fake.app)
@@ -106,6 +112,26 @@ async def scenario():
                 json=body,
                 headers={"Idempotency-Key": request_key or str(uuid4())},
             )
+
+        async def setup(method, suffix, body=None):
+            """Source setup as the signed-in owner (cookie + CSRF, no API key)."""
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+                cookies={"accanto_session": browser["token"]},
+            ) as owner:
+                return await owner.request(
+                    method,
+                    prefix + suffix,
+                    json=body,
+                    headers={
+                        "Idempotency-Key": str(uuid4()),
+                        "Origin": "http://test",
+                        "X-CSRF-Token": csrf_token(
+                            browser["token"], app.state.auth_settings
+                        ),
+                    },
+                )
 
         async def item(ref):
             rows = (
@@ -165,7 +191,17 @@ async def scenario():
         assert review.status_code == 200, review.text
 
         # Connect: only a USD plan this token can read.
-        euro = await command(
+        keyed = await command(
+            "POST",
+            "/sources/ynab",
+            {
+                "access_token": y.FAKE_TOKEN,
+                "plan_id": y.PLAN,
+                "start_date": "2026-11-01",
+            },
+        )
+        assert keyed.status_code == 403
+        euro = await setup(
             "POST",
             "/sources/ynab",
             {
@@ -176,7 +212,7 @@ async def scenario():
         )
         assert euro.status_code == 422
         assert euro.json()["detail"]["code"] == "unsupported_currency"
-        connected = await command(
+        connected = await setup(
             "POST",
             "/sources/ynab",
             {
@@ -194,16 +230,14 @@ async def scenario():
         sync_path = f"/sources/{source['id']}/sync"
         unselected = await client.post(prefix + sync_path)
         assert unselected.status_code == 422
-        accounts = (
-            await client.get(prefix + f"/sources/{source['id']}/accounts")
-        ).json()
+        accounts = (await setup("GET", f"/sources/{source['id']}/accounts")).json()
         assert {a["id"] for a in accounts} == {
             y.CHECKING,
             y.CARD,
             y.SAVINGS,
             y.BROKERAGE,
         }
-        selected = await command(
+        selected = await setup(
             "PUT",
             f"/sources/{source['id']}/accounts",
             {"expected_revision": source["revision"], "account_ids": [y.CHECKING]},

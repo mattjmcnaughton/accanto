@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6a021`.
+   supported revision is `6b022`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -98,6 +98,9 @@ tables (`transaction_source`, `source_account_selection`, `staged_transaction`);
 `5l020` code never reads them, and entries recorded from the inbox are ordinary
 `actual_entry` rows that older code soft-deletes, so the new foreign key never
 blocks it. Grant the runtime role access to the three new tables after upgrading.
+`6b022` only adds the agent tables (`agent_settings`, `pending_change`,
+`agent_conversation`, `agent_message`); `6a021` code never reads them. Grant the
+runtime role access to these four tables after upgrading.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

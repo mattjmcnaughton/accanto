@@ -1,4 +1,9 @@
-"""Connect Transaction sources (YNAB), select their accounts, and sync them."""
+"""Connect Transaction sources (YNAB), select their accounts, and sync them.
+
+Source setup (plans, connect, accounts, disconnect) needs a browser session: the
+token never passes through an agent or API key (PRD AG-02, AG-05). Listing
+sources and syncing remain available to every caller.
+"""
 
 from typing import Annotated
 from uuid import UUID
@@ -13,7 +18,7 @@ from accanto.dtos.inbox import (
     SelectAccountsInput,
 )
 from accanto.integrations.ynab import SourceError, YnabClient, YnabSource
-from accanto.routers.authentication import Session, Token
+from accanto.routers.authentication import BrowserToken, Session, Token
 from accanto.services import inbox
 from accanto.services.access import RejectionError
 from accanto.services.monthly import authorize, write
@@ -51,7 +56,7 @@ async def list_ynab_plans(
     body: PlanListInput,
     request: Request,
     session: Session,
-    token: Token,
+    token: BrowserToken,
 ):
     """Plans this YNAB token can read, so the person can pick one. Stores nothing."""
     async with session.begin():
@@ -65,7 +70,7 @@ async def connect_ynab(
     body: ConnectYnabInput,
     request: Request,
     session: Session,
-    token: Token,
+    token: BrowserToken,
     request_key: RequestKey,
 ):
     key = request.app.state.auth_settings.source_secret_key
@@ -116,7 +121,7 @@ async def source_accounts(
     source_id: UUID,
     request: Request,
     session: Session,
-    token: Token,
+    token: BrowserToken,
 ):
     """The source's accounts, with which ones are selected for import."""
     key = request.app.state.auth_settings.source_secret_key
@@ -143,7 +148,7 @@ async def select_accounts(
     body: SelectAccountsInput,
     request: Request,
     session: Session,
-    token: Token,
+    token: BrowserToken,
     request_key: RequestKey,
 ):
     key = request.app.state.auth_settings.source_secret_key
@@ -175,7 +180,7 @@ async def disconnect(
     source_id: UUID,
     body: RevisionInput,
     session: Session,
-    token: Token,
+    token: BrowserToken,
     request_key: RequestKey,
 ):
     """Forget the token. Recorded entries and the inbox history stay."""

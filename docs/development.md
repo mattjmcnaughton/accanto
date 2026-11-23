@@ -289,7 +289,7 @@ storage, tokens or server logs are uploaded as CI artifacts.
 ## Readiness and deployment preparation
 
 `/healthz` checks process liveness. `/readyz` checks database connectivity and exactly
-the supported Alembic revision (`5l020`); empty, old, unknown or unreadable migration
+the supported Alembic revision (`6b022`); empty, old, unknown or unreadable migration
 metadata returns 503. It does not probe providers or establish runtime grants.
 [Deployment and recovery](technical/deployment.md) separates locally verified
 behavior from pending Fly.io/Neon configuration, compatible rollback and credential
