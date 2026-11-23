@@ -41,6 +41,13 @@ authenticate with an ephemeral API key, revoked on exit; no credentials are
 printed or written to fixture files. Verification may legitimately fail after
 manual edits; inspect those edits rather than changing expectations to match.
 
+Pass `--agent propose` or `--agent record` to `seed` or `reset` to turn the
+assistant on with that Agent mode and a short synthetic AGENT.md. The script uses
+a fixture browser session for this, since agent settings are browser-only, and
+revokes it before exiting. It never connects a transaction source: connect the
+fake YNAB server (`tests/fakes/ynab_server.py`) through the inbox's connect form,
+as `docs/development.md` describes, so tokens only travel through the real UI.
+
 By default, dates span the current UTC month and the preceding two months, with
 opening records one month earlier. Pass `--as-of YYYY-MM-DD` to `seed` or `reset`
 for reproducible calendar scenarios. Creation, audit, and saved-version timestamps

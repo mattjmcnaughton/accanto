@@ -68,8 +68,10 @@ provider configuration and hosted compatibility verification remain manual.
 The UI must use the same application behavior as direct API access.
 
 Advanced income matching, dedicated restoration UI, annual Plans/Reviews,
-credit-card settlement, split funding, tax estimation, automated bank ingestion,
-FIRE projections and AI features remain deferred. Earlier household-loop and
+credit-card settlement, split funding, tax estimation, FIRE projections and AI
+features remain deferred. Read-only import into the Transactions inbox, starting
+with YNAB, is in scope. Other bank ingestion, write-back to sources, and payment
+execution remain deferred. Earlier household-loop and
 information-architecture experiments are superseded; the daily-workspace prototype
 is the single current interaction reference. No additional workflow interview is
 a prerequisite for core work.

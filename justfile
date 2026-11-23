@@ -81,6 +81,14 @@ test-e2e:
 test-external:
     uv run pytest -m external
 
+# Live built-in agent evals (needs OPENROUTER_API_KEY and ACCANTO_TEST_DATABASE_URL)
+eval-agent:
+    uv run pytest tests/external/test_agent_evals.py -m external -s -q
+
+# Serve the seeded synthetic YNAB plan on loopback for local development and demos
+fake-ynab seed="7" port="8105":
+    uv run python -m tests.fakes.ynab_server --seed {{seed}} --port {{port}}
+
 # Fast pre-push check (backend + frontend)
 gate: gate-be gate-fe
 

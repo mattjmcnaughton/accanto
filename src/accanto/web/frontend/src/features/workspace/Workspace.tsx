@@ -11,9 +11,11 @@ import {
   reauthenticate,
 } from "../../lib/recoverableWrite";
 import { Dialog, Icon, useDialogSlot } from "../../ui";
+import { AgentPanel } from "../agent/AgentPanel";
 import { Balances } from "../balances/Balances";
 import { Destinations } from "../destinations/Destinations";
 import { IncomeEstimates } from "../estimates/IncomeEstimates";
+import { Inbox } from "../inbox/Inbox";
 import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice";
 import { Savings } from "../savings/Savings";
 import { Settings } from "../settings/Settings";
@@ -26,6 +28,7 @@ import { useTheme } from "./shared";
 export const SCREENS = [
   "home",
   "activity",
+  "inbox",
   "review",
   "plans",
   "estimates",
@@ -49,6 +52,7 @@ const NAV: { group: string; items: [Screen, string][] }[] = [
     items: [
       ["home", "Home"],
       ["activity", "Activity"],
+      ["inbox", "Transactions inbox"],
       ["review", "Review"],
     ],
   },
@@ -74,8 +78,14 @@ const TITLES = Object.fromEntries([
   ["settings", "Settings"],
   ["more", "More"],
 ]) as Record<Screen, string>;
-/** Sidebar order; keys 1 to 9 jump to the first nine. */
-const ORDER: Screen[] = [...NAV.flatMap((g) => g.items.map(([to]) => to)), "settings"];
+/**
+ * Sidebar order; keys 1 to 9 jump to the first nine. The inbox has no number: it uses 1 to 6
+ * itself for categories, and leaving it out keeps every other screen's number unchanged.
+ */
+const ORDER: Screen[] = [
+  ...NAV.flatMap((g) => g.items.map(([to]) => to)).filter((to) => to !== "inbox"),
+  "settings",
+];
 const TABBED: Screen[] = ["home", "activity", "review", "plans"];
 /** The screens that show one month, chosen in the top bar. */
 const MONTHLY: Screen[] = ["home", "activity", "review"];
@@ -110,6 +120,7 @@ export function Workspace({
   const [add, setAdd] = useState(0);
   const approved = useRef<{ to: Screen; month: string; keep: boolean } | null>(null);
   const [palette, setPalette] = useState(false);
+  const [assistant, setAssistant] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
   const [theme, setTheme] = useTheme();
   const [refresh, setRefresh] = useState(0);
@@ -297,6 +308,12 @@ export function Workspace({
 
   const onKey = (event: KeyboardEvent) => {
     if (concealed || !entity || event.defaultPrevented) return;
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "j") {
+      if (document.querySelector("dialog[open]")) return;
+      event.preventDefault();
+      setAssistant((open) => !open);
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
       if (!palette && document.querySelector("dialog[open]")) return;
       event.preventDefault();
@@ -358,7 +375,11 @@ export function Workspace({
     </a>
   );
   const commands: Command[] = [
-    ...ORDER.map((to) => ({ text: `Go to ${TITLES[to]}`, hint: "Screen", run: () => go(to) })),
+    ...[...ORDER, "inbox" as const].map((to) => ({
+      text: `Go to ${TITLES[to]}`,
+      hint: "Screen",
+      run: () => go(to),
+    })),
     { text: "Add activity", hint: "Action", run: addActivity },
     ...(month === thisMonth
       ? []
@@ -399,7 +420,7 @@ export function Workspace({
   );
 
   return (
-    <div className="app">
+    <div className={assistant && entity && !concealed ? "app with-agent" : "app"}>
       <button
         type="button"
         className="btn skip"
@@ -495,6 +516,16 @@ export function Workspace({
                 <span>Search or jump</span>
                 <span className="kbd">Ctrl K</span>
               </button>
+              <button
+                type="button"
+                className="btn"
+                aria-pressed={assistant}
+                aria-keyshortcuts="Control+J Meta+J"
+                onClick={() => setAssistant((open) => !open)}
+              >
+                <Icon name="chat" />
+                <span className="top-agent">Assistant</span>
+              </button>
               <button type="button" className="btn pri" aria-keyshortcuts="N" onClick={addActivity}>
                 <Icon name="plus" />
                 <span className="top-add">Add activity</span>
@@ -568,6 +599,7 @@ export function Workspace({
               {screen === "review" && (
                 <MonthlyReview key={month} {...props} month={month} go={(to) => go(to)} />
               )}
+              {screen === "inbox" && <Inbox {...props} credentials={credentials} />}
               {screen === "estimates" && <IncomeEstimates {...props} />}
               {screen === "savings" && <Savings {...props} />}
               {screen === "investments" && <Destinations {...props} kind="investment" />}
@@ -585,6 +617,7 @@ export function Workspace({
                   <div className="card">
                     {(
                       [
+                        "inbox",
                         "estimates",
                         "savings",
                         "investments",
@@ -621,6 +654,20 @@ export function Workspace({
           )}
         </main>
       </div>
+      {assistant && entity && !concealed && (
+        <AgentPanel
+          entity={entity}
+          busy={props.busy}
+          refresh={refresh}
+          screen={screen}
+          month={month}
+          credentials={credentials}
+          save={save}
+          close={() => setAssistant(false)}
+          openSettings={() => go("settings")}
+          changed={() => setRefresh((x) => x + 1)}
+        />
+      )}
       {entity && (
         <nav className="tabs" aria-label="Sections" hidden={concealed}>
           {link("home", "Home")}
@@ -712,6 +759,7 @@ const Shortcuts = ({ close }: { close: () => void }) => (
       <div className="keys">
         {[
           ["Ctrl K or ⌘ K", "Search, jump to a screen, or run an action"],
+          ["Ctrl J or ⌘ J", "Open or close the assistant"],
           ["1 to 9", "Go to a screen, in sidebar order"],
           ["N", "Add activity"],
           ["[ and ]", "Previous and next month on Home, Activity and Review"],

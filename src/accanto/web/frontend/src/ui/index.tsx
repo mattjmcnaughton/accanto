@@ -14,6 +14,7 @@ import { fmtDate, fmtShort, inputMoney, money, parseMoney } from "../lib/format"
 const PATHS: Record<string, string> = {
   home: "M2.5 7 8 2.5 13.5 7v6.5h-11z M6.5 13.5v-4h3v4",
   activity: "M3 4h10M3 8h10M3 12h6",
+  inbox: "M2.5 9.5 4.5 3h7l2 6.5v3.5h-11z M2.5 9.5h3.2l.8 1.5h3l.8-1.5h3.2",
   review: "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11z M5.5 8l2 2 3-3.5",
   plans:
     "M4.5 2.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z M2.5 6.5h11M6.5 6.5v7",
@@ -33,6 +34,7 @@ const PATHS: Record<string, string> = {
   more: "M3.5 8h.01M8 8h.01M12.5 8h.01",
   trash: "M3 4.5h10M6.5 4.5v-2h3v2M4.5 4.5l.5 9h6l.5-9",
   copy: "M5.5 5.5h8v8h-8z M2.5 10.5v-8h8",
+  chat: "M2.5 3.5h11v7.5H7l-3 2.5V11H2.5z M5 6.5h6M5 8.5h4",
 };
 export const Icon = ({ name }: { name: string }) => (
   <svg className="ico" viewBox="0 0 16 16" aria-hidden="true">

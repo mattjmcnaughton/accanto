@@ -85,6 +85,15 @@ acceptance criteria; this file defines their shared domain meanings.
 | Review | An Entity's editable record of what actually happened in one Period: net income per Income source, spending, giving, contributions, and notes. Its actuals are always rollups of dated entries, including adjustments. It targets one saved Plan version and covers one calendar month. The target may be changed explicitly. A Plan version may be targeted by many Reviews. |
 | Projection | An illustrative future result calculated from explicit assumptions, distinct from recorded balances and activity. |
 | FIRE target | Estimated assets needed to support selected spending at the chosen withdrawal rate. |
+| Transaction source | An outside system connected to an Entity that supplies transactions, such as a YNAB plan. Accanto reads from it; it is not an authority over Accanto's records. |
+| Staged transaction | One transaction (or one split line) from a Transaction source, waiting in the Transactions inbox. It is not an actual entry and never contributes to totals. Its status is waiting, skipped, recorded, or conflict. |
+| Transactions inbox | The Entity's list of staged transactions. Each is recorded as an actual entry or skipped by an explicit action. |
+| Proposal | A partial completion of a staged transaction (category, assignment, funding origin, refund link, or skip) with a rationale and its proposer. It is not an actual entry and is never applied without an explicit record. |
+| Agent | A caller acting for the owner through the agent tool catalog: the built-in agent or an MCP client. Not a permission role; it has the owner's Entity access, narrowed by the catalog and Agent mode. |
+| Agent mode | Per Entity: `propose` (default) or `record`. Decides whether agent writes run or become Pending changes. Setting inbox Proposals and syncing are allowed in both modes. |
+| Pending change | A validated, not-yet-applied write drafted by an Agent. Not financial activity; never in totals. The owner applies or dismisses it in Accanto. Deletes that cannot be restored are always Pending changes. |
+| AGENT.md | The owner's standing instructions for the built-in agent, per Entity. Trusted instructions, below enforced rules: it cannot widen the catalog, Agent mode, or the Entity boundary. |
+| Untrusted data | Any text read from the Entity, a source, or an image (payees, memos, notes, names, rationales). Quoted to the model as data, never followed as instructions; an instruction found there is reported to the owner. |
 
 ## Actors and roles
 
@@ -94,6 +103,8 @@ of the same actor, not separate Planner, Recorder, or Reviewer permission roles.
 User remains the account identity; Entity remains the financial planning boundary.
 There is no separate approver or required approval handoff. Shared access and
 any future division of responsibilities require explicit later decisions.
+An Agent acts for that same person within one Entity at a time; it is not a
+separate actor with its own permissions ([PRD 02](docs/prd/02-agent-access.md)).
 
 ## Commands, events, and policies
 
@@ -253,7 +264,7 @@ ubiquitous language and rules. Account access is an application responsibility;
 we are not introducing a separate bounded context for it at this stage. These
 responsibilities do not require separate services or databases.
 
-Future ingestion from YNAB should use an **anti-corruption layer**: an explicit
+Ingestion from YNAB uses an **anti-corruption layer**: an explicit
 translation boundary between YNAB's external concepts and Accanto's domain.
 External terminology, categories, transaction semantics, and identifiers must be
 mapped deliberately rather than becoming Accanto's domain model by default.
@@ -261,8 +272,11 @@ Imported activity must satisfy Accanto's financial rules just as manually
 recorded activity does. The mapping and handling of ambiguous or unsupported
 records require decisions when ingestion is in scope.
 
-YNAB ingestion and this translation layer are deferred. Do not introduce an
-integration framework or additional bounded contexts ahead of that workflow.
+Read-only YNAB import is in scope through the Transactions inbox
+([TDD](docs/tdds/02-transactions-inbox.md)). The YNAB adapter maps YNAB payloads to
+a provider-neutral staged transaction; nothing becomes an actual entry until a
+person (or a caller they allow) records it through the normal entry commands. A
+second source would add one adapter module, not an integration framework.
 
 ## Domain boundaries
 

@@ -21,6 +21,14 @@ from accanto.repositories.monthly import plan_allocations, plan_fixed_costs, pla
 from accanto.services.access import AuthenticatedActor, RejectionError, revalidate_actor
 
 
+class DryRun(Exception):  # noqa: N818 - control flow, not an error
+    """Raised inside write() to roll back a command whose checks all passed."""
+
+    def __init__(self, response):
+        self.response = response
+        super().__init__("dry run")
+
+
 def json_values(value):
     return json.loads(json.dumps(value, default=str))
 
@@ -100,11 +108,29 @@ async def write(
     request_key: str,
     payload: dict,
     target: UUID | date | None = None,
+    *,
+    hook=None,
+    scope: str | None = None,
+    dry_run: bool = False,
+    guard=None,
+    finish=None,
 ):
-    """One commit includes financial records, snapshots and recorded retry response."""
+    """One commit includes financial records, snapshots and recorded retry response.
+
+    hook (Transactions inbox): before(session, entity, actor) runs under the Entity
+    lock after the retry lookup and returns the (operation, payload, target) to
+    dispatch; after(session, entity, actor, response, audit) runs in the same
+    transaction and returns the response to record. dry_run performs every check
+    and write, then rolls back by raising DryRun.
+
+    Agent writes (TDD 03): guard(session, entity) runs under the Entity lock after
+    the retry lookup and may reject (the Agent mode check); finish(session, entity,
+    response) runs in the same transaction before the outcome is recorded (a
+    Pending change marks itself applied).
+    """
     async with session.begin():
         actor, entity = await authorize(session, token, entity_uuid, lock=True)
-        scope = f"{operation}:{target or ''}"
+        scope = scope or f"{operation}:{target or ''}"
         digest = hashlib.sha256(
             json.dumps(
                 json_values(payload), sort_keys=True, separators=(",", ":")
@@ -131,7 +157,11 @@ async def write(
                     "Request identity was already used with different input.",
                 )
             return previous["response"]
+        if guard:
+            await guard(session, entity)
         operation_uuid = uuid4()
+        if hook:
+            operation, payload, target = await hook.before(session, entity, actor)
 
         async def audit(table, record_uuid, before, after, action=operation):
             await session.execute(
@@ -144,7 +174,11 @@ async def write(
                     session_uuid=actor.credential_uuid
                     if actor.credential_kind == "session"
                     else None,
-                    interface=actor.interface,
+                    # An agent's interface wins over the inbox's own label, so
+                    # inbox records drafted by agents audit as mcp or agent.
+                    interface=actor.interface_override
+                    or getattr(hook, "interface", None)
+                    or actor.interface,
                     operation_uuid=operation_uuid,
                     record_type=table.name,
                     record_uuid=record_uuid,
@@ -1149,10 +1183,31 @@ async def write(
             response = await write_contribution(
                 session, entity, operation, payload, target, audit
             )
+        elif operation.startswith("inbox_") or operation.endswith("_source"):
+            from accanto.services.inbox import write_inbox
+
+            response = await write_inbox(
+                session, entity, actor, operation, payload, target, audit
+            )
+        elif operation == "edit_agent_settings":
+            from accanto.services.agent_settings import write_agent_settings
+
+            response = await write_agent_settings(session, entity, payload, audit)
+        elif operation == "draft_pending_change":
+            # Not financial activity: no audit row, only the retry outcome.
+            from accanto.services.agent_writes import store_pending
+
+            response = await store_pending(session, entity, actor, payload)
         else:
             raise RejectionError(
                 "unsupported_command", "Command is not implemented.", 404
             )
+        if hook:
+            response = await hook.after(session, entity, actor, response, audit)
+        if dry_run:
+            raise DryRun(response)
+        if finish:
+            await finish(session, entity, response)
         response = json_values(response)
         await session.execute(
             insert(m.outcomes).values(
@@ -1510,6 +1565,9 @@ async def read_review(session, token, entity_uuid, month: date):
                     else await destination_comparisons(session, version, entries)
                 ),
                 "actual": actual,
+                # Staged transactions never enter totals; the count keeps a short
+                # total from being mistaken for a complete one.
+                "inbox_waiting": await inbox_waiting(session, entity["id"], month),
                 "entries": entry_views,
                 "income_difference": None
                 if actual["income_incomplete"]
@@ -1524,6 +1582,12 @@ async def read_review(session, token, entity_uuid, month: date):
                 ),
             }
         )
+
+
+async def inbox_waiting(session, entity_id, month):
+    from accanto.services.inbox import waiting_count
+
+    return await waiting_count(session, entity_id, month)
 
 
 async def read_plans(session, token, entity_uuid):

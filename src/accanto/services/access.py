@@ -3,7 +3,7 @@
 import hashlib
 import secrets
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
@@ -28,12 +28,23 @@ class AuthenticatedActor:
     verify_identity: Callable[[], Awaitable[tuple[str, str]]] | None = field(
         default=None, repr=False, compare=False
     )
+    # Agent adapters (TDD 03): "mcp" for MCP over an API key, "agent" for the
+    # built-in agent and applied Pending changes. Not part of credential identity.
+    interface_override: str | None = field(default=None, compare=False)
 
     @property
     def interface(self):
-        return {"session": "browser", "api_key": "direct_api", "oauth": "mcp"}[
-            self.credential_kind
-        ]
+        return (
+            self.interface_override
+            or {
+                "session": "browser",
+                "api_key": "direct_api",
+                "oauth": "mcp",
+            }[self.credential_kind]
+        )
+
+    def acting_as(self, interface: str) -> "AuthenticatedActor":
+        return replace(self, interface_override=interface)
 
 
 def invalid_credential():
@@ -81,7 +92,7 @@ async def revalidate_actor(session, actor: str | AuthenticatedActor, *, lock):
     )
     if current != actor:
         raise invalid_credential()
-    return current
+    return replace(current, interface_override=actor.interface_override)
 
 
 async def resolve_oauth_actor(session, verify_identity):

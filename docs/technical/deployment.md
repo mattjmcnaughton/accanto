@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `5l020`.
+   supported revision is `6b022`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -93,7 +93,15 @@ session/MCP audit attribution, retry outcomes and revocation state. Demonstrate
 compatibility against synthetic populated current-schema data before switching.
 `5l020` only adds the nullable `plan_revision.updated_at` column and the triggers
 that maintain it; application code from `5k019` ignores the column, so it can run on
-a `5l020` database without a downgrade. That is a compatibility prerequisite, not
+a `5l020` database without a downgrade. `6a021` only adds the Transactions inbox
+tables (`transaction_source`, `source_account_selection`, `staged_transaction`);
+`5l020` code never reads them, and entries recorded from the inbox are ordinary
+`actual_entry` rows that older code soft-deletes, so the new foreign key never
+blocks it. Grant the runtime role access to the three new tables after upgrading.
+`6b022` only adds the agent tables (`agent_settings`, `pending_change`,
+`agent_conversation`, `agent_message`); `6a021` code never reads them. Grant the
+runtime role access to these four tables after upgrading.
+These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility
 decision.

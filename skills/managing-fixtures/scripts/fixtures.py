@@ -538,6 +538,8 @@ async def run(args):
 
                 if args.command in {"seed", "reset"}:
                     await populate(command, args.as_of)
+                    if args.agent != "off":
+                        await enable_agent(sessions, owner, entity, args.agent)
                 plans = await command("GET", "/plans")
                 accounts = await command("GET", "/savings-accounts")
                 activity = await command("GET", "/activity")
@@ -618,6 +620,52 @@ async def run(args):
         await engine.dispose()
 
 
+async def enable_agent(sessions, owner, entity, mode):
+    """Turn the assistant on through its service, as a short-lived browser session.
+
+    Agent settings are browser-only over HTTP, so fixture tooling uses a fixture
+    session that is revoked before returning. AGENT.md is synthetic guidance.
+    """
+    import hashlib
+
+    from accanto.models import monthly as m
+    from accanto.services import agent_settings
+    from accanto.services.access import AuthenticatedActor, issue_session
+
+    async with sessions() as session, session.begin():
+        issued = await issue_session(session, owner)
+    actor = AuthenticatedActor(
+        owner,
+        "session",
+        UUID(issued["id"]),
+        hashlib.sha256(issued["token"].encode()).hexdigest(),
+    )
+    try:
+        async with sessions() as session:
+            await agent_settings.update_settings(
+                session,
+                actor,
+                entity,
+                str(uuid4()),
+                {
+                    "enabled": True,
+                    "mode": mode,
+                    "instructions": (
+                        "Sample Warehouse Club is groceries unless over $300.\n"
+                        "Transfers between my own accounts are skipped."
+                    ),
+                    "expected_revision": 0,
+                },
+            )
+    finally:
+        async with sessions() as session, session.begin():
+            await session.execute(
+                update(m.sessions)
+                .where(m.sessions.c.uuid == UUID(issued["id"]))
+                .values(revoked_at=datetime.now(UTC))
+            )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("seed", "inspect", "verify", "reset"))
@@ -627,6 +675,12 @@ def main():
     parser.add_argument("--issuer", default="http://127.0.0.1:8104")
     parser.add_argument("--subject", default="synthetic-user")
     parser.add_argument("--confirm-reset", action="store_true")
+    parser.add_argument(
+        "--agent",
+        choices=("off", "propose", "record"),
+        default="off",
+        help="Turn the assistant on in this Agent mode when seeding.",
+    )
     args = parser.parse_args()
     try:
         asyncio.run(run(args))

@@ -1,4 +1,8 @@
-"""External OAuth resource verification; no token issuance or financial authority."""
+"""MCP credential verification: API keys (v1) and the later hosted-OAuth verifier.
+
+MCPTokenVerifier (external OAuth resource verification) is kept for the hosted
+OAuth phase but is not mounted in v1 (TDD 03).
+"""
 
 import math
 import time
@@ -151,3 +155,33 @@ class MCPTokenVerifier(TokenVerifier):
         if access is None:
             raise invalid_credential()
         return access.claims["iss"], access.subject
+
+
+class APIKeyVerifier(TokenVerifier):
+    """MCP v1: the owner's API key as a Bearer token, checked on every request.
+
+    Resolution reads current revocation from the database, so a revoked key is
+    denied on its next call. Browser sessions and OAuth tokens are not accepted.
+    """
+
+    def __init__(self, state):
+        super().__init__()
+        self.state = state
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        from accanto.db import async_session
+        from accanto.services.access import resolve_actor
+
+        sessions = getattr(self.state, "sessions", None) or async_session
+        try:
+            async with sessions() as session, session.begin():
+                actor = await resolve_actor(session, token, "api_key")
+        except Exception:
+            # Unknown, revoked, malformed or unavailable: never echo the cause.
+            return None
+        return AccessToken(
+            token=token,
+            client_id=str(actor.credential_uuid),
+            scopes=[],
+            claims={},
+        )

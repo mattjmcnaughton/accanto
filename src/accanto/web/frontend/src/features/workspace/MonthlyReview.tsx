@@ -188,6 +188,19 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
           </>
         )}
       </div>
+      {state.kind === "ready" && Boolean(state.data.inbox_waiting) && (
+        <output className="ar-banner">
+          <span>
+            {plural(state.data.inbox_waiting ?? 0, "transaction")} waiting in the inbox. Staged
+            transactions are not in these totals until they are recorded.
+          </span>
+          {p.go && (
+            <button type="button" className="btn sm" onClick={() => p.go?.("inbox")}>
+              Open the inbox
+            </button>
+          )}
+        </output>
+      )}
       <LoadProblem
         states={state.kind === "empty" ? [state, previous, plans] : [state]}
         retry={retry}

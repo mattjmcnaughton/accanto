@@ -3,6 +3,7 @@ import { type BrowserSession, loadResource } from "../../lib/api";
 import { Head } from "../../ui";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 import "./settings.css";
+import { AgentSettings } from "../agent/AgentSettings";
 import { ApiKeys } from "./ApiKeys";
 
 interface EntitySettings {
@@ -162,6 +163,7 @@ export function Settings(p: SettingsProps) {
           </form>
         </section>
       )}
+      <AgentSettings {...p} />
       <ApiKeys credentials={p.credentials} disabled={p.busy} />
     </section>
   );

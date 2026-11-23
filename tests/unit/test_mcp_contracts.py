@@ -3,7 +3,7 @@
 from datetime import date
 from uuid import UUID
 
-from accanto.dtos.mcp import project_entities, project_review, project_versions
+from accanto.dtos.tools import project_entities, project_review, project_versions
 
 ENTITY = "00000000-0000-0000-0000-000000000101"
 PLAN = "00000000-0000-0000-0000-000000000102"

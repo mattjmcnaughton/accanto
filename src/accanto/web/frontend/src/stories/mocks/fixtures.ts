@@ -5414,3 +5414,14 @@ export const apiKeys: Array<{
     revoked_at: "2026-09-01T12:00:00+00:00",
   },
 ] as Array<{ id: string; name: string; created_at: string; revoked_at: string | null }>;
+
+/** The assistant is off until the owner turns it on in Settings. */
+export const agentSettings = {
+  enabled: false,
+  mode: "propose",
+  instructions: "",
+  revision: 0,
+  provider: "OpenRouter (zero data retention)",
+  retention_days: 30,
+  daily_message_cap: 200,
+};

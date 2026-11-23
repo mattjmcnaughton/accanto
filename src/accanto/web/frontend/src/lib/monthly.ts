@@ -184,6 +184,8 @@ export interface ReviewResult {
     reviewed_at: string | null;
   };
   checkpoint_changed: boolean;
+  /** Staged transactions dated in this month still waiting in the Transactions inbox. */
+  inbox_waiting?: number;
   version: PlanRevision;
   entries: ReviewEntry[];
   actual: {
