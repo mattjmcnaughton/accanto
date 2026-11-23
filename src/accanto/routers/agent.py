@@ -4,6 +4,7 @@ API keys are refused here, so no agent (MCP or built-in) can change its own
 mode, AGENT.md or enablement, or apply the changes it drafted.
 """
 
+import asyncio
 from datetime import date
 from typing import Annotated
 from uuid import UUID
@@ -142,7 +143,7 @@ async def send_message(
     service = turns(request)
     # Read one byte past the limit so an oversized file is refused, not buffered whole.
     raw = [await f.read(agent_images.MAX_IMAGE_BYTES + 1) for f in images or []]
-    normalised = agent_images.normalise_all(raw)
+    normalised = await asyncio.to_thread(agent_images.normalise_all, raw)
     turn = await service.admit(
         actor, entity_id, content, images=normalised, screen=screen, month=month
     )

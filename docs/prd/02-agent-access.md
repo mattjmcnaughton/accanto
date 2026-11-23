@@ -129,6 +129,11 @@ Each Entity has an agent mode, enforced by the server:
 In both modes, deletes that cannot be restored (savings movements and balance
 observations) always become pending changes applied in Accanto.
 
+Agent mode governs the agent surfaces (`/mcp` and the sidebar). It does not
+restrict the REST API, and in v1 an MCP client's key is a full-access REST key
+(AG-03), so a client that also has a shell can bypass the mode. Keys limited to
+`/mcp` are the planned follow-up.
+
 Acceptance: in propose-only mode, an MCP `save_activity` call records nothing and
 returns a pending change that appears in the sidebar; applying it records one
 entry with one audit row. A retry of the same apply returns the same entry.
@@ -136,7 +141,7 @@ entry with one audit row. A retry of the same apply returns the same entry.
 ### AG-07 — AGENT.md
 
 Settings has an editable AGENT.md per Entity: the owner's standing instructions
-for the built-in agent, such as "Costco is groceries unless over $300". It is
+for the built-in agent, such as "Sample Warehouse Club is groceries unless over $300". It is
 added to the built-in agent's instructions on every turn. It is not served to MCP
 clients in this release. It cannot widen what the agent may do: the catalog,
 exclusions, agent mode, and Entity boundary are enforced in code.
@@ -155,8 +160,10 @@ them:
 
 An instruction found in untrusted data is reported to the owner, not obeyed.
 Because the agent cannot change its own settings, keys, or sources, the worst a
-hostile payee or receipt can cause is a proposed change the owner sees first
-(or, in record-with-approval mode over MCP, one the client asks about).
+hostile payee or receipt can cause through the agent tools is a proposed change
+the owner sees first (or, in record-with-approval mode over MCP, one the client
+asks about). The sidebar holds no credential, so this holds for it fully. An MCP
+client that also has a shell and the key can reach REST (see AG-06).
 
 ### AG-09 — Data release
 

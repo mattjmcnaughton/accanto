@@ -215,7 +215,7 @@ zone, today, screen, month, mode, AGENT.md), model injected at run time,
   the deterministic FunctionModel and is rejected at startup in production.
   Local development reads the key from `~/.config/accanto/openrouter-local-accanto.key`
   into the environment; it is never committed or logged.
-- **Limits:** `UsageLimits(request_limit=8)`, 90 s reply timeout, 2 concurrent
+- **Limits:** `UsageLimits(request_limit=12)` (8 proved too few for inbox triage), 90 s reply timeout, 2 concurrent
   replies, one reply in flight per conversation (409), daily cap 200 (429).
 - **Streaming:** `POST /api/entities/{id}/agent/conversation/messages`, SSE as in
   aleph: `delta`, `tool` (name and status only), `pending_change`, `done`,

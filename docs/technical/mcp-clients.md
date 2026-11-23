@@ -20,10 +20,15 @@ Accanto API keys sent as `Authorization: Bearer <key>`
    approval prompt allows them. Deleting a savings movement or a balance
    observation is always a Pending change.
 
-The key has your full Entity access through the agent tool catalog. It cannot
-list, issue or revoke keys, set up sources, or change agent or Entity settings:
-no tool exists for them. Revoke the key in Settings to cut a client off; its
-next call is denied.
+Through `/mcp`, the key reaches only the agent tool catalog: no tool lists,
+issues or revokes keys, sets up sources, or changes agent or Entity settings,
+and Agent mode applies. **The same key is still a full-access REST key.** An
+agent that holds it and has a shell (Claude Code, Codex and Amp all do) can
+call the REST API directly, where Agent mode and the catalog exclusions do not
+apply, including key management and irreversible deletes. Use a dedicated key
+per client, keep it out of shared config, and revoke it in Settings to cut a
+client off; its next call is denied. Keys that only work at `/mcp` are a
+planned follow-up.
 
 Everything a tool returns is sent to the model provider your client uses (PRD
 02, AG-09). Free text (payees, memos, notes, names) arrives as

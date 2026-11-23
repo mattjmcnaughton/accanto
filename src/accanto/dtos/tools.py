@@ -77,7 +77,7 @@ class PlanVersionList(Output):
 
 class IdentityComparison(Output):
     id: UUID
-    name: str
+    name: "Untrusted"
     planned: Amount
     recorded: Amount | None
     difference: Amount | None
@@ -103,7 +103,7 @@ class Summary(Output):
 
 
 class Component(Output):
-    name: str
+    name: "Untrusted"
     amount: Amount | None
 
 
@@ -476,7 +476,8 @@ class PendingChange(Output):
     summary: Untrusted
     status: Literal["pending", "applied", "dismissed"]
     created_by_interface: str
-    input: dict
+    # JSON text of the drafted input: names, notes and image text are untrusted.
+    input: Untrusted
     created_at: str
 
 

@@ -77,7 +77,11 @@ and syncing a source record nothing and take effect directly.
 - Edits and deletes need the record's current revision from a tool result.
 - Inbox items: propose categories with set_proposals; transfers and card \
 payments between the owner's own accounts are usually skipped. Spending inflows \
-are refunds only when linked to a purchase.
+are refunds only when linked to a purchase. Income, fixed costs, saving, \
+investing and giving need an assignment id: read it first (get_plan for Income \
+sources and Fixed costs, list_savings for goals, list_destinations for \
+investments and giving recipients). Guilt-free spending needs none. Use item \
+ids exactly as list_inbox returns them; split lines are separate items.
 - Receipts, statements and bills in images: draft one entry per purchase with \
 save_activity. Use the date printed on the document; if no date is legible, ask \
 instead of guessing, and never default to today. An unpaid bill is not \
