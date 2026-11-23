@@ -82,9 +82,11 @@ class AgentHook(Hook):
 
     interface = None
 
-    def __init__(self, tool, tool_input, command: Command, summary, *, run=False):
+    def __init__(
+        self, tool, tool_input, command: Command, summary, *, run=False, draft=None
+    ):
         self.tool, self.tool_input, self.command = tool, tool_input, command
-        self.summary, self.force_run = summary, run
+        self.summary, self.force_run, self.draft = summary, run, draft
         self.inner: Hook | None = None
         self.pended = False
 
@@ -103,7 +105,11 @@ class AgentHook(Hook):
                 "draft_pending_change",
                 {
                     "tool": self.tool,
-                    "input": self.tool_input,
+                    # Sidebar draft notes (uncertain fields, source text) ride
+                    # with the input for the card; rebuild() strips them.
+                    "input": {**self.tool_input, "_draft": self.draft}
+                    if self.draft
+                    else self.tool_input,
                     "operation": self.command.operation,
                     "target": str(self.command.target) if self.command.target else None,
                     "expected_revision": self.tool_input.get("expected_revision"),
@@ -139,6 +145,7 @@ async def dispatch(
     command: Command,
     request_key: str,
     summary: str,
+    draft: dict | None = None,
 ):
     """Run or draft one catalog write; returns {"status", ...} (JSON values)."""
     tool_input = json_values(tool_input)
@@ -169,7 +176,7 @@ async def dispatch(
                 )
             except DryRun:
                 pass
-        hook = AgentHook(tool, tool_input, command, summary)
+        hook = AgentHook(tool, tool_input, command, summary, draft=draft)
         try:
             return await write(
                 session,

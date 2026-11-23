@@ -24,6 +24,8 @@ dependencies = [
     "httpx==0.28.1",
     "fastmcp==4.1.0",
     "cryptography>=50",
+    "pydantic-ai-slim[openrouter]>=2.15,<3",
+    "pillow>=11",
 ]
 
 [project.urls]

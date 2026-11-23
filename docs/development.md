@@ -313,3 +313,26 @@ design ([MVP-022 contract](technical/mcp-contract-proposal.md)) is superseded fo
 v1; `mcp_auth.MCPTokenVerifier` stays for the later hosted-OAuth phase but is not
 mounted. `tests/integration/test_mcp.py` exercises `/mcp` against real
 PostgreSQL; it does not establish compatibility with any hosted client.
+
+## Built-in agent (TDD 03)
+
+The sidebar assistant is off until an Entity opts in from **Settings → Agent**.
+Its backend needs `AGENT_MODEL` and, for a real model, `OPENROUTER_API_KEY`:
+
+- `AGENT_MODEL=stub` selects the deterministic test model
+  (`services/stub_model.py`): no network, nothing leaves Accanto. It is refused
+  when `BROWSER_ORIGIN` is a public HTTPS origin. Tests and e2e use it.
+- A real model is an OpenRouter id, for example `AGENT_MODEL=openai/gpt-6-luna`,
+  routed only to zero-data-retention endpoints. For local development load the
+  key into the environment without printing it:
+  `OPENROUTER_API_KEY=$(cat ~/.config/accanto/openrouter-local-accanto.key)`.
+  Never commit, log or paste the key, and use only synthetic data with it.
+
+Turns stream SSE from `POST /api/entities/{id}/agent/conversation/messages`
+(`delta`, `tool`, `pending_change`, `done`, `error`, and `: ping`). Limits:
+8 model requests and 90 s per reply, 2 replies at once, one per conversation,
+`AGENT_DAILY_MESSAGE_CAP` (default 200) owner messages per Entity per 24 hours.
+Conversations keep plain text only and expire 30 days after the last turn. Logs
+carry operation and tool names, timings, token counts and error codes; never
+prompts, replies, tool results or images. `tests/conftest.py` sets
+`ALLOW_MODEL_REQUESTS = False`, so no test reaches a provider by accident.
