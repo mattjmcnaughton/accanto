@@ -13,6 +13,7 @@ Never prompts, replies, tool results or images.
 
 import asyncio
 import contextlib
+import json
 import os
 import time
 from collections.abc import AsyncIterator
@@ -54,7 +55,7 @@ from accanto.services.tools import TOOLS, ToolContext
 # pydantic-ai prints a start-up banner; keep diagnostics to our own events.
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 log = structlog.get_logger(__name__)
-REQUEST_LIMIT = 8
+REQUEST_LIMIT = 12  # inbox triage reads Plans, goals and destinations first
 MAX_MESSAGE = 4000
 # Rejections the model can fix by changing its arguments.
 RETRYABLE = {
@@ -280,8 +281,12 @@ class AgentTurns:
                 summary = change["summary"]
                 if isinstance(summary, dict):
                     summary = summary.get("untrusted", "")
+                drafted = json.loads(change["input"]["untrusted"])
                 await queue.put(
-                    sse_event("pending_change", {**change, "summary": summary})
+                    sse_event(
+                        "pending_change",
+                        {**change, "summary": summary, "input": drafted},
+                    )
                 )
             return payload
 

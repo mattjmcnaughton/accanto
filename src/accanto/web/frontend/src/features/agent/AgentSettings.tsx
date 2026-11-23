@@ -120,8 +120,9 @@ export function AgentSettings(p: ScreenProps) {
               <div>
                 <label htmlFor="agent-md">AGENT.md</label>
                 <small id="agent-md-help">
-                  Standing instructions for the assistant, such as “Costco is groceries unless over
-                  $300”. They cannot change what it may do, the mode, or the Entity.
+                  Standing instructions for the assistant, such as “Sample Warehouse Club is
+                  groceries unless over $300”. They cannot change what it may do, the mode, or the
+                  Entity.
                 </small>
               </div>
               <textarea

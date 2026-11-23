@@ -8,6 +8,7 @@ setup, agent settings, Entity settings, sign-in and health. No tool here
 reaches them, and tests assert the exact tool list.
 """
 
+import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date
@@ -88,6 +89,9 @@ async def get_context(ctx, entity_id, args, key):
         metadata = await account_metadata(session, ctx.actor)
     entities = [t.EntityContext(**e) for e in metadata["entities"]]
     current = next((e for e in entities if e.id == entity_id), None)
+    if ctx.actor.interface == "agent":
+        # The sidebar serves one Entity; others never reach its model provider.
+        entities = [current] if current else []
     if entity_id is not None and current is None:
         raise RejectionError("entity_not_found", "Entity is unavailable.", 404)
     mode = None
@@ -209,7 +213,9 @@ async def list_pending_changes(ctx, entity_id, args, key):
 
 
 def _pending(row) -> dict:
-    return {key: row[key] for key in t.PendingChange.model_fields}
+    values = {key: row[key] for key in t.PendingChange.model_fields}
+    values["input"] = json.dumps(values["input"], sort_keys=True)
+    return values
 
 
 # Inbox writes that always run (propose mode allows them) ------------------------

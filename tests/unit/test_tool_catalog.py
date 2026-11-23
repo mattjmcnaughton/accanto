@@ -1,5 +1,6 @@
 """The agent tool catalog: exact contents, exclusions and untrusted text."""
 
+import json
 from uuid import uuid4
 
 from accanto.dtos import tools as t
@@ -96,6 +97,26 @@ def test_free_text_is_marked_untrusted_and_round_trips():
     assert t.Source.model_validate(dumped) == source
     schema = t.Source.model_json_schema()
     assert schema["properties"]["name"]["required"] == ["untrusted"]
+
+    line = t.IdentityComparison(
+        id=uuid4(), name=payee, planned="1.00", recorded=None, difference=None
+    )
+    assert line.model_dump(mode="json")["name"] == {"untrusted": payee}
+    assert t.Component(name=payee, amount=None).model_dump(mode="json")["name"] == {
+        "untrusted": payee
+    }
+    drafted = {"note": payee, "_draft": {"source_text": payee}}
+    change = t.PendingChange(
+        id=uuid4(),
+        tool="save_activity",
+        summary="Draft entry",
+        status="pending",
+        created_by_interface="agent",
+        input=json.dumps(drafted),
+        created_at="2026-11-23T00:00:00Z",
+    )
+    wrapped = change.model_dump(mode="json")["input"]
+    assert json.loads(wrapped["untrusted"]) == drafted
 
 
 def test_projections_select_fields_explicitly():

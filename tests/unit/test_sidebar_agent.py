@@ -28,7 +28,7 @@ def deps(call, **extra):
         time_zone="UTC",
         today=date(2026, 11, 23),
         mode="propose",
-        agent_md="Costco is groceries unless over $300.",
+        agent_md="Sample Warehouse Club is groceries unless over $300.",
         call=call,
         **extra,
     )
@@ -72,7 +72,7 @@ def test_context_block_carries_agent_md_after_the_rules():
     block = render_context(deps(fake_call, month=date(2026, 10, 1)))
     assert "Today: 2026-11-23" in block and "Month in view: 2026-10-01" in block
     assert block.index("<agent_md>") > block.index("</context>")
-    assert "Costco is groceries" in block
+    assert "Sample Warehouse Club is groceries" in block
     assert "<agent_md>" not in render_context(
         SidebarDeps("E", "UTC", date(2026, 1, 1), "propose", "", call=fake_call)
     )
