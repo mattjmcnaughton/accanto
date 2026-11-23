@@ -112,6 +112,8 @@ async def write(
     hook=None,
     scope: str | None = None,
     dry_run: bool = False,
+    guard=None,
+    finish=None,
 ):
     """One commit includes financial records, snapshots and recorded retry response.
 
@@ -120,6 +122,11 @@ async def write(
     dispatch; after(session, entity, actor, response, audit) runs in the same
     transaction and returns the response to record. dry_run performs every check
     and write, then rolls back by raising DryRun.
+
+    Agent writes (TDD 03): guard(session, entity) runs under the Entity lock after
+    the retry lookup and may reject (the Agent mode check); finish(session, entity,
+    response) runs in the same transaction before the outcome is recorded (a
+    Pending change marks itself applied).
     """
     async with session.begin():
         actor, entity = await authorize(session, token, entity_uuid, lock=True)
@@ -150,6 +157,8 @@ async def write(
                     "Request identity was already used with different input.",
                 )
             return previous["response"]
+        if guard:
+            await guard(session, entity)
         operation_uuid = uuid4()
         if hook:
             operation, payload, target = await hook.before(session, entity, actor)
@@ -165,7 +174,11 @@ async def write(
                     session_uuid=actor.credential_uuid
                     if actor.credential_kind == "session"
                     else None,
-                    interface=getattr(hook, "interface", None) or actor.interface,
+                    # An agent's interface wins over the inbox's own label, so
+                    # inbox records drafted by agents audit as mcp or agent.
+                    interface=actor.interface_override
+                    or getattr(hook, "interface", None)
+                    or actor.interface,
                     operation_uuid=operation_uuid,
                     record_type=table.name,
                     record_uuid=record_uuid,
@@ -1176,6 +1189,15 @@ async def write(
             response = await write_inbox(
                 session, entity, actor, operation, payload, target, audit
             )
+        elif operation == "edit_agent_settings":
+            from accanto.services.agent_settings import write_agent_settings
+
+            response = await write_agent_settings(session, entity, payload, audit)
+        elif operation == "draft_pending_change":
+            # Not financial activity: no audit row, only the retry outcome.
+            from accanto.services.agent_writes import store_pending
+
+            response = await store_pending(session, entity, actor, payload)
         else:
             raise RejectionError(
                 "unsupported_command", "Command is not implemented.", 404
@@ -1184,6 +1206,8 @@ async def write(
             response = await hook.after(session, entity, actor, response, audit)
         if dry_run:
             raise DryRun(response)
+        if finish:
+            await finish(session, entity, response)
         response = json_values(response)
         await session.execute(
             insert(m.outcomes).values(

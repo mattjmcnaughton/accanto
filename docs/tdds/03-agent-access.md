@@ -326,6 +326,45 @@ Deployment (separately authorized): generate `SOURCE_SECRET_KEY`, create the
 connects YNAB through the connect form. Verify SSE is not buffered by the Box
 proxy with the stub model before enabling a real model.
 
+## Implementation notes and deviations
+
+Recorded during implementation (2026-11-23) where the code's real shape differed
+from the design above. None changes a financial rule.
+
+- **Catalog size.** 44 tools, exactly the list in *Catalog*. `set_proposals`
+  takes a per-item `clear` flag instead of a separate clear tool.
+- **Pending change storage.** `pending_change` stores the tool name and the
+  validated tool `input` (plus `operation`, `target`, `expected_revision` and
+  `summary` for display), not a raw `write()` payload. Apply re-validates the
+  input, possibly edited by the owner, with the same tool input model and builds
+  the command again, so an edited draft gets every DTO and domain check. Applying
+  uses retry scope `apply_pending:{id}` with key `agent:{id}`; reusing it with a
+  different edited input is `key_reuse`.
+- **Expected revision at draft time.** Instead of a separate service read, the
+  draft runs the real command as a rolled-back dry run (`write(..., dry_run=True)`)
+  inside the Entity lock. A model-supplied `expected_revision` that is not current
+  is rejected with `stale_revision` before anything is stored, so the stored value
+  is always the current revision at draft time. A draft that fails any domain
+  check stores nothing.
+- **`write()` extension.** `write()` gained `guard` (runs under the Entity lock
+  after the retry lookup; the apply path checks the draft is still pending) and
+  `finish` (runs in the same transaction before the outcome; marks the draft
+  applied). Mode dispatch is a `Hook` around the existing command, so the mode
+  check, the change, its audit and the outcome commit together.
+- **Audit interface precedence.** An agent interface (`mcp`, `agent`) wins over
+  the inbox hook's `inbox` label, so inbox records drafted by an agent audit as
+  the agent's interface. The `audit_log.interface` column has no constraint.
+- **Built-in agent tools always pend**, in both modes. The dispatcher checks
+  `actor.interface == "agent"` rather than relying on the caller.
+- **Source setup is browser-session only.** Listing YNAB plans, connecting,
+  listing and selecting accounts, and disconnecting reject API keys with
+  `403 browser_session_required`, as agent settings and Pending change
+  apply/dismiss do. Listing sources and syncing stay available to API keys. PR
+  #39's inbox integration test now connects through a browser session.
+- **Dismiss** takes the Pending change's `expected_revision`.
+- **Migration** `6b022` (additive). Agent settings changes are audited with
+  `record_type = agent_settings`, as `edit_entity` audits Entity settings.
+
 ## Open decisions
 
 Non-blocking, with defaults used unless changed:

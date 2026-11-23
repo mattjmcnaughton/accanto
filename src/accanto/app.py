@@ -10,6 +10,7 @@ from accanto.config import settings
 from accanto.logging import configure_logging
 from accanto.oidc import OIDCProvider
 from accanto.routers import (
+    agent,
     api_keys,
     balances,
     browser_auth,
@@ -87,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(api_keys.router)
     app.include_router(inbox.router)
     app.include_router(sources.router)
+    app.include_router(agent.router)
 
     # Mount frontend static files (only serves if dist/ exists)
     mount_frontend(app)

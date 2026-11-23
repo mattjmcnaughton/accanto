@@ -43,3 +43,22 @@ async def credential(request: Request, session: Session) -> str | AuthenticatedA
 
 
 Token = Annotated[str | AuthenticatedActor, Depends(credential)]
+
+
+async def browser_credential(request: Request, session: Session) -> AuthenticatedActor:
+    """A signed-in browser session only: API keys (and so agents) are refused.
+
+    Used for agent settings, Pending change apply/dismiss and source setup, which
+    PRD 02 keeps out of every agent surface.
+    """
+    actor = await credential(request, session)
+    if not isinstance(actor, AuthenticatedActor) or actor.credential_kind != "session":
+        raise RejectionError(
+            "browser_session_required",
+            "Sign in to Accanto in the browser for this action.",
+            403,
+        )
+    return actor
+
+
+BrowserToken = Annotated[AuthenticatedActor, Depends(browser_credential)]

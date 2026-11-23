@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 
 from accanto.config import Settings
 from accanto.db import async_session
-from accanto.dtos.mcp import (
+from accanto.dtos.tools import (
     EntityList,
     MonthlyReview,
     PlanVersionList,

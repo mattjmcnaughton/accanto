@@ -676,8 +676,11 @@ class RemoveEntryHook(Hook):
         return {"item": after, "entry": response}
 
 
-async def record(session, token, entity_uuid, item_uuid, request_key, body):
-    """Record one staged transaction; a domain rejection is kept as its reason."""
+async def record(session, token, entity_uuid, item_uuid, request_key, body, **extra):
+    """Record one staged transaction; a domain rejection is kept as its reason.
+
+    extra passes write()'s agent guard/finish callbacks through unchanged.
+    """
     body = json_values(body)
     completion = body.get("completion")
     hook = RecordHook(
@@ -698,6 +701,7 @@ async def record(session, token, entity_uuid, item_uuid, request_key, body):
             item_uuid,
             hook=hook,
             scope=f"inbox_record:{item_uuid}",
+            **extra,
         )
     except RejectionError as error:
         if hook.checked:
@@ -720,7 +724,7 @@ async def keep_rejection(session, token, entity_uuid, item_uuid, error):
 
 
 async def remove_entry(
-    session, token, entity_uuid, item_uuid, request_key, body, action
+    session, token, entity_uuid, item_uuid, request_key, body, action, **extra
 ):
     return await write(
         session,
@@ -732,6 +736,7 @@ async def remove_entry(
         item_uuid,
         hook=RemoveEntryHook(item_uuid, body["expected_revision"], action),
         scope=f"inbox_{action}:{item_uuid}",
+        **extra,
     )
 
 
