@@ -34,6 +34,7 @@ const PATHS: Record<string, string> = {
   more: "M3.5 8h.01M8 8h.01M12.5 8h.01",
   trash: "M3 4.5h10M6.5 4.5v-2h3v2M4.5 4.5l.5 9h6l.5-9",
   copy: "M5.5 5.5h8v8h-8z M2.5 10.5v-8h8",
+  chat: "M2.5 3.5h11v7.5H7l-3 2.5V11H2.5z M5 6.5h6M5 8.5h4",
 };
 export const Icon = ({ name }: { name: string }) => (
   <svg className="ico" viewBox="0 0 16 16" aria-hidden="true">
