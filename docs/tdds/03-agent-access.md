@@ -246,8 +246,8 @@ mockup (splits, transfers, card payments, refunds, inflows, unapproved,
 uncleared, deleted, edited after recording). Shapes follow YNAB's published API;
 the existing contract test parses every generated response with the official
 `ynab` package. Delta sync (`server_knowledge`) is exercised by generating a
-second batch. The `managing-fixtures` workspace gains a connected synthetic
-source and agent settings. No real data, and no YNAB token in fixtures.
+second batch. The `managing-fixtures` workspace gains agent settings; the
+synthetic source is connected through the UI (see deviations). No real data, and no YNAB token in fixtures.
 
 ## Atomicity, concurrency, and retries
 
@@ -390,6 +390,62 @@ from the design above. None changes a financial rule.
   expired conversation is hard-deleted when next read or admitted.
 - **Migration** `6b022` (additive). Agent settings changes are audited with
   `record_type = agent_settings`, as `edit_entity` audits Entity settings.
+- **Sidebar UI.** The assistant opens from a top-bar Assistant button or
+  `Ctrl/⌘ J` as a third grid column at desktop widths, an overlay below 1100 px
+  and a full-screen sheet below 760 px. On phones the Assistant and Add activity
+  buttons show only their icons so the 320 px top bar does not scroll sideways.
+  Pending change cards in the conversation show Apply only in record mode; the
+  *Pending changes* tab applies drafts in either mode, which is where propose mode
+  sends the owner (AG-06). Editable fields cover `save_activity` drafts only
+  (date, category, amount, note); other drafts show their input read-only. There
+  is no context chip: the screen and month in view are sent with each message
+  and shown to the model in its context block. After each turn the workspace
+  reloads its screens, so new inbox proposals appear without a manual reload.
+- **Images.** `services/agent_images.py` validates in the router before admit:
+  at most 4 files, each read to 5 MB + 1 byte, JPEG/PNG/WebP by magic bytes,
+  decoded only if width × height ≤ 40 million pixels, then re-encoded as a fresh
+  quality-85 JPEG at most 1568 px on the long side. Any failure is
+  `422 image_rejected` and nothing is stored. The stub model asks for a date
+  rather than drafting when the message has none.
+- **Synthetic YNAB data.** `tests/fakes/ynab_server.py` gains `generate(seed,
+  today)` (one month of every inbox case, dated on or before today) and
+  `FakeYnab.advance()`, the second delta batch: an edited bill, a deleted
+  duplicate, an approved previously unapproved item and two new purchases. The
+  standalone runner (`python -m tests.fakes.ynab_server --seed 7`) adds two
+  loopback-only routes outside YNAB's API, `POST /fake/advance` and
+  `GET /fake/ready`. `--hostile` adds a payee carrying an instruction, for
+  demonstrating AG-08. The handwritten fixtures stay for PR #39's tests.
+- **Fixtures.** `managing-fixtures` gains `--agent propose|record`, which turns the
+  assistant on with a short synthetic AGENT.md through the agent settings
+  service, as a fixture browser session revoked before exit. It deliberately does
+  **not** pre-connect a source: connecting is shown through the inbox's connect
+  form, so a YNAB token never sits in fixture code or the fixture database
+  outside the encrypted source row the app writes.
+- **End to end.** `tests/e2e/test_agent_browser.py` is a separate journey with
+  its own processes (OIDC fixture, fake YNAB server, app with `AGENT_MODEL=stub`),
+  leaving the monthly journey unchanged. It covers opt-in from the panel, the
+  connect form, Sync, categorize, recording one item with Enter, a receipt image
+  drafted in propose mode with no Apply on its conversation card, applying it
+  from *Pending changes*, and the entry in Activity. It does not switch to
+  record mode; unit and integration tests cover the record-mode dispatch.
+- **Evals.** `tests/external/test_agent_evals.py` (`just eval-agent`) runs the
+  real turn service over HTTP against the isolated test database, so tool
+  results have their real projections; it needs `ACCANTO_TEST_DATABASE_URL` as
+  well as `OPENROUTER_API_KEY`. Each model gets a fresh synthetic Entity in
+  propose mode and 25 cases, with the conversation cleared between cases. Token
+  counts come from the service's `agent_turn` log event. First run (2026-11-23,
+  synthetic data, about $0.33 in total):
+
+  | Model | Passed | Input tokens per turn | Output tokens per turn | Requests per turn |
+  | ----- | ------ | --------------------- | ---------------------- | ----------------- |
+  | `openai/gpt-6-luna` | 24/25 | 24,218 | 293 | 3.4 |
+  | `anthropic/claude-haiku-5.5` | 24/25 | 44,706 | 534 | 2.4 |
+  | `openai/gpt-6.1-terra` | 25/25 | 21,234 | 165 | 3.1 |
+
+  Luna's miss (a month without a Review) passed on rerun; Haiku's was a
+  miscount of waiting inbox items (6 for 5). All three reported the injected
+  payee without drafting deletes. A single read request costs about 6,300 input
+  tokens, mostly the catalog's 44 tool schemas.
 
 ## Open decisions
 
@@ -398,5 +454,7 @@ Non-blocking, with defaults used unless changed:
 - Daily cap: 200 messages.
 - Receipt fixtures: generate synthetic images in tests rather than committing
   files.
-- Model: chosen by the eval; default `openai/gpt-6-luna`.
+- Model: `openai/gpt-6-luna` (eval 24/25 at $0.10 per million input tokens,
+  about $0.003 a turn). `openai/gpt-6.1-terra` scored 25/25 with fewer tokens but
+  costs ten times as much per token; revisit if Luna's misses matter in use.
 - TDD 02 F6–F8 keep their current defaults.

@@ -336,3 +336,88 @@ Conversations keep plain text only and expire 30 days after the last turn. Logs
 carry operation and tool names, timings, token counts and error codes; never
 prompts, replies, tool results or images. `tests/conftest.py` sets
 `ALLOW_MODEL_REQUESTS = False`, so no test reaches a provider by accident.
+
+## Demo: synthetic YNAB data and the assistant
+
+Everything below is loopback-only and synthetic: a fixture workspace, the fake
+YNAB server, the local OIDC fixture and either the stub model or a real model
+used only on this synthetic data. Record videos in an isolated browser profile,
+never one signed in to a real workspace. Run each long-lived command in its own
+terminal from the repository root, with PostgreSQL running (in an orb:
+`127.0.0.1:5433`, user and password `postgres`).
+
+1. Seed a synthetic Entity for the fixture identity, with the assistant on in
+   propose mode (omit `--agent` to show the opt-in in Settings instead):
+
+   ```sh
+   export ACCANTO_FIXTURE_DATABASE_URL=postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/accanto_fixture_test
+   uv run python skills/managing-fixtures/scripts/fixtures.py seed \
+     --issuer http://127.0.0.1:55439 --agent propose
+   ```
+
+   An existing fixture database is refused; reset it only if its synthetic edits
+   may be lost (`... reset --confirm-reset --issuer http://127.0.0.1:55439`).
+
+2. Build the frontend once: `pnpm --dir src/accanto/web/frontend build`.
+
+3. Serve the seeded YNAB plan (`--hostile` adds a payee carrying an injected
+   instruction, to show it reported rather than obeyed):
+
+   ```sh
+   just fake-ynab            # = uv run python -m tests.fakes.ynab_server --seed 7 --port 8105
+   ```
+
+4. Start the sign-in fixture:
+
+   ```sh
+   ACCANTO_TEST_OIDC_ISSUER=http://127.0.0.1:55439 \
+   ACCANTO_TEST_BROWSER_ORIGIN=http://127.0.0.1:55438 \
+   uv run uvicorn tests.oidc_fixture:app --host 127.0.0.1 --port 55439 --no-access-log
+   ```
+
+5. Start Accanto pointed at the fake server, with the stub model:
+
+   ```sh
+   export DATABASE_URL=$ACCANTO_FIXTURE_DATABASE_URL
+   export BROWSER_ORIGIN=http://127.0.0.1:55438
+   export BROWSER_CSRF_SECRET=synthetic-demo-csrf-secret-not-for-production
+   export OIDC_ISSUER=http://127.0.0.1:55439 OIDC_CLIENT_ID=synthetic-client
+   export OIDC_CLIENT_SECRET=synthetic-client-secret
+   export OIDC_ALLOWED_EMAILS='["synthetic@example.test"]'
+   export YNAB_API_URL=http://127.0.0.1:8105/v1
+   export SOURCE_SECRET_KEY=$(uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
+   export AGENT_MODEL=stub
+   uv run uvicorn accanto.app:app --host 127.0.0.1 --port 55438 --no-access-log
+   ```
+
+   For a real model instead, replace the last two lines with:
+
+   ```sh
+   export AGENT_MODEL=openai/gpt-6-luna
+   export OPENROUTER_API_KEY=$(cat ~/.config/accanto/openrouter-local-accanto.key)
+   uv run uvicorn accanto.app:app --host 127.0.0.1 --port 55438 --no-access-log
+   ```
+
+   Keep `SOURCE_SECRET_KEY` for the life of the database: a source connected
+   under one key cannot be synced under another. Never echo either key.
+
+6. Open `http://127.0.0.1:55438` and choose **Sign in**; the fixture approves
+   `synthetic@example.test` automatically.
+
+7. Connect the synthetic plan: **Transactions inbox** → paste the token
+   `synthetic-ynab-token-not-real` → **Find plans** → *Fixture household plan* →
+   **Connect this plan** → check *Example Checking* and *Sample Rewards Card* →
+   **Import these accounts** → **Sync now**. Seed 7 stages 19 waiting items:
+   purchases, a split, a refund, payroll, transfers, a card payment, an
+   unapproved and uncleared dinner, a bill and a duplicate charge.
+
+8. Open the assistant with **Assistant** or `Ctrl/⌘ J`. With the stub model,
+   messages containing "categorize" propose categories for the inbox, "spend"
+   quotes the month's Review, and "receipt" with a `YYYY-MM-DD` date (or an
+   attached image plus a date) drafts an entry; apply drafts from **Pending
+   changes**. A real model answers freely within the same tools and rules.
+
+9. To show delta sync, apply the second batch and sync again:
+   `curl -X POST http://127.0.0.1:8105/fake/advance`, then **Sync now**: an edited
+   bill, a deleted duplicate, an approval and two new purchases. Restart the fake
+   server to start the plan over; the inbox keeps what Accanto already staged.
