@@ -651,8 +651,10 @@ stores one amount/date/order shared by both derived effects.
 
 ### AI framework
 
-Pydantic AI remains selected for later approved AI features, not a dependency of
-this slice. No AI feature or transmission of financial data is authorized here.
+Pydantic AI remains selected for approved AI features. AI features are
+authorized within [PRD 02 — Agent access](../prd/02-agent-access.md) and
+implemented by [TDD 03](03-agent-access.md); that PRD is also the decision on
+which financial data may reach a model provider. Nothing beyond it is authorized.
 
 ### Authentication and API
 

@@ -1,5 +1,12 @@
 # MVP-022 local MCP contract
 
+> **Superseded for v1 (2026-11-23).** [TDD 03 — Agent access](../tdds/03-agent-access.md)
+> replaces this contract for the MCP server mounted at `/mcp`: it authenticates
+> with user-owned API keys, offers the wider agent tool catalog, and releases
+> notes and other free text as untrusted data. This document remains the record
+> of the earlier OAuth resource-server design, which a later hosted-OAuth TDD
+> will revisit.
+
 Status: D1 and D2 accepted by the user on 2026-10-19; local scope implemented,
 reviewed and verified. See work/MVP-022.md for exact evidence and limits.
 This contract does not establish hosted compatibility. Current issue #22 governs scope. No provider configuration,
