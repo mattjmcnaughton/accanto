@@ -25,6 +25,8 @@ export interface AgentPanelProps {
   save: <T>(spec: WriteSpec<T>, confirmed: (data: T) => void) => void;
   close: () => void;
   openSettings: () => void;
+  /** After a turn or a dismissal: screens reload, so new inbox proposals show. */
+  changed: () => void;
 }
 type Tab = "chat" | "pending";
 interface Live {
@@ -160,6 +162,7 @@ export function AgentPanel(p: AgentPanelProps) {
       abort.current = null;
       setLive(null);
       setReload((x) => x + 1);
+      p.changed();
     }
   }
 
@@ -190,6 +193,7 @@ export function AgentPanel(p: AgentPanelProps) {
       setError(issue instanceof Error ? issue.message : "Not dismissed.");
     }
     setReload((x) => x + 1);
+    p.changed();
   }
 
   const open = new Map(pending.map((c) => [c.id, c]));

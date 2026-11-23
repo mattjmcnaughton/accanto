@@ -665,6 +665,7 @@ export function Workspace({
           save={save}
           close={() => setAssistant(false)}
           openSettings={() => go("settings")}
+          changed={() => setRefresh((x) => x + 1)}
         />
       )}
       {entity && (
