@@ -1,17 +1,26 @@
-"""Current Entity settings through the shared transaction and retry boundary."""
+"""Create Entity and current Entity settings, through the shared retry boundary."""
 
 from uuid import UUID
 
 from fastapi import APIRouter
 
-from accanto.dtos.entities import EntitySettingsInput
+from accanto.dtos.entities import EntityInput, EntitySettingsInput
 from accanto.routers.authentication import Session, Token
 from accanto.routers.monthly import RequestKey, command
-from accanto.services.entity_settings import read_settings
+from accanto.services.entity_settings import create_entity, read_settings
 
+collection = APIRouter(prefix="/api/entities", tags=["Entity settings"])
 router = APIRouter(
     prefix="/api/entities/{entity_id}/settings", tags=["Entity settings"]
 )
+
+
+@collection.post("")
+async def create(
+    body: EntityInput, session: Session, token: Token, request_key: RequestKey
+):
+    """A new, empty Entity owned by the caller; retry with the same key and input."""
+    return await create_entity(session, token, request_key, body.model_dump())
 
 
 @router.get("")

@@ -124,7 +124,7 @@ export const stateStory = (state: State) => ({ parameters: { msw: mockApi(state)
 
 /** The props Workspace passes every screen, with callbacks recorded in the Actions panel. */
 export const screenArgs = (): ScreenProps => ({
-  entity: data.session.entities[0],
+  entity: data.entity,
   concealed: false,
   busy: false,
   refresh: 0,

@@ -10,7 +10,7 @@ reaches them, and tests assert the exact tool list.
 
 import json
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any, Literal
 from uuid import UUID
@@ -998,6 +998,28 @@ CATALOG: tuple[CatalogTool, ...] = (
         t.DuplicateEstimate,
         build_duplicate_estimate,
     ),
+)
+
+
+async def entity_ref(ctx: ToolContext, entity_id) -> t.EntityRef:
+    async with ctx.sessions() as session, session.begin():
+        _, entity = await authorize(session, ctx.actor, entity_id, lock=False)
+    return t.EntityRef(id=entity["uuid"], name=entity["name"])
+
+
+def named(run: Run) -> Run:
+    """Every write result names its Entity, so confirmations can say which one."""
+
+    async def run_named(ctx, entity_id, args, key, **extra):
+        result = await run(ctx, entity_id, args, key, **extra)
+        return result.model_copy(update={"entity": await entity_ref(ctx, entity_id)})
+
+    return run_named
+
+
+CATALOG = tuple(
+    tool if tool.kind == "read" else replace(tool, run=named(tool.run))
+    for tool in CATALOG
 )
 TOOLS = {tool.name: tool for tool in CATALOG}
 

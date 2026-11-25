@@ -129,7 +129,7 @@ class AgentTurns:
                 )
             day_start = datetime.now(UTC) - timedelta(days=1)
             sent = await conversations.owner_messages_since(
-                session, entity["id"], day_start
+                session, actor.user_id, day_start
             )
             if sent >= self.config.agent_daily_message_cap:
                 raise RejectionError(

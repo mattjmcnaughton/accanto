@@ -245,6 +245,13 @@ class EntityContext(Output):
     today: date
 
 
+class EntityRef(Output):
+    """The Entity a write was for, so confirmations can name it."""
+
+    id: UUID
+    name: Untrusted
+
+
 class Context(Output):
     entity: EntityContext | None
     entities: list[EntityContext]
@@ -493,6 +500,7 @@ class WriteResult(Output):
     revision: int | None = None
     pending_change: PendingChange | None = None
     detail: dict | None = None
+    entity: EntityRef | None = None
 
 
 def _id(value):
@@ -750,6 +758,7 @@ class SyncResult(Output):
     source_id: UUID
     counts: dict[str, int]
     waiting: int
+    entity: EntityRef | None = None
 
 
 class ItemOutcome(Output):
@@ -763,6 +772,7 @@ class ItemOutcome(Output):
 
 class ItemOutcomes(Output):
     results: list[ItemOutcome]
+    entity: EntityRef | None = None
 
 
 # --- Catalog inputs: existing command DTOs plus the record they target ----------

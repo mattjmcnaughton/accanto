@@ -80,6 +80,7 @@ def create_app() -> FastAPI:
             },
         )
 
+    app.include_router(entities.collection)
     app.include_router(entities.router)
     app.include_router(browser_auth.router)
     app.include_router(health.router)

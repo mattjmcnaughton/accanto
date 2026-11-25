@@ -49,13 +49,14 @@ async def messages(session, conversation_id, limit=None):
     return list(reversed(rows))
 
 
-async def owner_messages_since(session, entity_id, since):
+async def owner_messages_since(session, user_id, since):
+    """The owner's messages across all their Entities: the daily cap is per User."""
     return await session.scalar(
         select(func.count())
         .select_from(a.messages)
         .join(a.conversations, a.conversations.c.id == a.messages.c.conversation_id)
         .where(
-            a.conversations.c.entity_id == entity_id,
+            a.conversations.c.user_id == user_id,
             a.messages.c.role == "owner",
             a.messages.c.created_at >= since,
         )

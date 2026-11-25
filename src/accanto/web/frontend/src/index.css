@@ -101,6 +101,14 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  container-type: inline-size;
+}
+/* The open Assistant narrows the main column, so the top bar compacts by its width. */
+@container (max-width: 780px) {
+  .day,
+  .jump span {
+    display: none;
+  }
 }
 .top {
   position: sticky;
@@ -133,6 +141,18 @@
   font-size: 13px;
   white-space: nowrap;
   margin-left: 6px;
+}
+/* The current Entity, prominent, and the switch to the User's other Entities. */
+.entity-switch select {
+  font-weight: 600;
+  min-width: 8.5rem;
+  max-width: 220px;
+  padding-block: 6px;
+}
+fieldset.dlg-b {
+  border: 0;
+  margin: 0;
+  min-width: 0;
 }
 .jump {
   display: flex;
@@ -300,6 +320,9 @@
   .top {
     padding: 8px 12px;
   }
+  .entity-switch select {
+    max-width: 120px;
+  }
   /* The Assistant button shows only its icon on phones; its name stays for assistive tech. */
   .top-agent {
     position: absolute;
@@ -323,7 +346,17 @@
     padding: 8px;
   }
 }
+/* Phones switch Entities from More (and Ctrl/⌘ K); the top bar keeps the month. */
+.more-entity {
+  display: none;
+}
 @media (max-width: 430px) {
+  .top-entity {
+    display: none;
+  }
+  .more-entity {
+    display: block;
+  }
   .top-add {
     position: absolute;
     width: 1px;

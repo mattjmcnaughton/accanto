@@ -53,7 +53,9 @@ Review; Planning: Plans, Income estimates; Balances: Savings, Investments, Givin
 Loans; then Settings) and, below 760 px, five tabs with More for the rest. Every
 screen has its own hash address, such as `#/giving`. Home, Activity and Review share
 the month chosen in the top bar, kept in the address as `?m=YYYY-MM` when it is not
-the Entity's current month. Add activity in the top bar opens the entry dialog from
+the Entity's current month. With several Entities the address also carries
+`?e=<Entity UUID>`; the top bar's Entity menu (and Ctrl/⌘ K) switches Entities or
+creates one, and the last-used Entity ID is kept in browser storage. Add activity in the top bar opens the entry dialog from
 any screen. Keys: Ctrl/⌘ K searches and jumps, 1 to 9 open the first nine screens in
 sidebar order, N adds activity, [ and ] change the month, J and K move through rows,
 and ? lists the shortcuts. Edit forms open in dialogs; a failed save's recovery
@@ -331,7 +333,8 @@ Its backend needs `AGENT_MODEL` and, for a real model, `OPENROUTER_API_KEY`:
 Turns stream SSE from `POST /api/entities/{id}/agent/conversation/messages`
 (`delta`, `tool`, `pending_change`, `done`, `error`, and `: ping`). Limits:
 8 model requests and 90 s per reply, 2 replies at once, one per conversation,
-`AGENT_DAILY_MESSAGE_CAP` (default 200) owner messages per Entity per 24 hours.
+`AGENT_DAILY_MESSAGE_CAP` (default 200) owner messages per User, across all their
+Entities, per 24 hours.
 Conversations keep plain text only and expire 30 days after the last turn. Logs
 carry operation and tool names, timings, token counts and error codes; never
 prompts, replies, tool results or images. `tests/conftest.py` sets

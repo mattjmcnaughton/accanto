@@ -19,6 +19,14 @@
   align-items: center;
   gap: 8px;
 }
+.agent-entity {
+  font-weight: 600;
+  color: var(--ink2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .agent-mode {
   font-size: 12px;
   border-radius: 99px;
