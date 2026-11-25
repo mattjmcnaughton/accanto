@@ -20,6 +20,10 @@ uv export --frozen --no-dev --no-emit-project --no-header -o .box-build/requirem
 uv pip install --python "$python" --target "$out/site" --require-hashes -r .box-build/requirements.txt
 uv build --wheel --out-dir .box-build/dist
 uv pip install --python "$python" --target "$out/site" --no-deps .box-build/dist/accanto-*.whl
+# The service cannot write __pycache__ into a release, so without these every
+# start compiles everything again and can outlast the deploy's port wait.
+# Hash-based pycs stay valid whatever timestamps the unpacked release has.
+"$python" -m compileall -q -j 0 --invalidation-mode unchecked-hash "$out/site" "$out/python/lib"
 
 test -f "$out/site/accanto/web/frontend/dist/index.html"
 test -f "$out/site/certifi/cacert.pem"
