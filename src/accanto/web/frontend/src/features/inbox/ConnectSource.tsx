@@ -1,6 +1,12 @@
-import { useState } from "react";
-import { ApiError, type BrowserSession, type UUID, fetchJson } from "../../lib/api";
-import type { TransactionSource } from "../../lib/inbox";
+import { useEffect, useState } from "react";
+import { type BrowserSession, type UUID, loadResource } from "../../lib/api";
+import {
+  type TransactionProvider,
+  type TransactionSource,
+  browserCall,
+  inbox,
+} from "../../lib/inbox";
+import { useLoad } from "../workspace/shared";
 
 interface Plan {
   id: string;
@@ -17,8 +23,8 @@ interface SourceAccount {
 }
 
 /**
- * Connect a YNAB plan and choose its accounts. The access token lives only in this form's state
- * and is posted once; it is never shown again, echoed by the server, or passed to an agent.
+ * Connect a YNAB plan through the token saved in Settings, then choose its accounts. The token
+ * never reaches this screen; the server reads it to list plans and accounts.
  */
 export function ConnectSource({
   entityId,
@@ -26,92 +32,122 @@ export function ConnectSource({
   source,
   credentials,
   connected,
+  openSettings,
 }: {
   entityId: UUID;
   today: string;
   source?: TransactionSource;
   credentials: (signIn?: boolean) => Promise<BrowserSession>;
-  connected: () => void;
+  /** Called with the source once its accounts are chosen. */
+  connected: (source: TransactionSource) => void;
+  openSettings?: () => void;
 }) {
-  const [token, setToken] = useState("");
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [plan, setPlan] = useState("");
   const [start, setStart] = useState(`${today.slice(0, 7)}-01`);
   const [accounts, setAccounts] = useState<SourceAccount[] | null>(null);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [pendingSource, setPendingSource] = useState<TransactionSource | undefined>(source);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string>("");
   const [error, setError] = useState("");
   const root = `/api/entities/${encodeURIComponent(entityId)}/sources`;
+  const provider = useLoad(
+    () => loadResource<TransactionProvider>(inbox.providerPath(entityId), () => false),
+    [entityId],
+  );
+  const ready = provider.kind === "ready" && provider.data.configured;
 
-  async function call<T>(path: string, method: string, body?: object): Promise<T> {
-    const session = await credentials();
-    const init = (s: BrowserSession): RequestInit => ({
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRF-Token": s.csrf_token,
-        "Idempotency-Key": crypto.randomUUID(),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    try {
-      return await fetchJson<T>(path, method === "GET" ? {} : init(session));
-    } catch (issue) {
-      if (!(issue instanceof ApiError) || issue.kind !== "unauthenticated") throw issue;
-      const again = await credentials(true);
-      return await fetchJson<T>(path, method === "GET" ? {} : init(again));
-    }
-  }
-  async function step(run: () => Promise<void>) {
-    setBusy(true);
+  async function step(label: string, run: () => Promise<void>) {
+    setBusy(label);
     setError("");
     try {
       await run();
     } catch (issue) {
       setError(issue instanceof Error ? issue.message : "That did not work. Try again.");
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   }
   const loadAccounts = (target: TransactionSource) =>
-    step(async () => {
-      const rows = await call<SourceAccount[]>(`${root}/${target.id}/accounts`, "GET");
+    step("Loading accounts…", async () => {
+      const rows = await browserCall<SourceAccount[]>(
+        credentials,
+        `${root}/${target.id}/accounts`,
+        "GET",
+      );
       setAccounts(rows.filter((a) => !a.closed));
       setChosen(new Set(rows.filter((a) => a.selected).map((a) => a.id)));
     });
+  const loadPlans = () =>
+    step("Finding plans…", async () => {
+      const found = await browserCall<Plan[]>(credentials, `${root}/ynab/plans`, "GET");
+      setPlans(found);
+      setPlan(found.find((p) => p.currency === "USD")?.id ?? "");
+    });
+  // Each step loads what it needs on arrival, so setup is choose-and-continue.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Load once when the step opens.
+  useEffect(() => {
+    if (!ready) return;
+    if (pendingSource) void loadAccounts(pendingSource);
+    else void loadPlans();
+  }, [ready]);
+
+  const problem = error && (
+    <p role="alert" className="bad-text">
+      {error}
+    </p>
+  );
+  const progress = busy && (
+    <output className="note ix-busy">
+      <span className="ix-spin" aria-hidden="true" /> {busy}
+    </output>
+  );
+
+  if (provider.kind === "loading") return <output className="note">Loading…</output>;
+  if (!ready) {
+    return (
+      <div className="ix-connect card pad">
+        <b>Connect YNAB</b>
+        <p className="note">
+          {"error" in provider
+            ? `Could not check transaction settings. ${provider.error.message}`
+            : "Add your YNAB personal access token in Settings → Transactions. Then come back here to choose a plan and its accounts."}
+        </p>
+        {openSettings && (
+          <button type="button" className="btn pri sm" onClick={openSettings}>
+            Open Settings
+          </button>
+        )}
+      </div>
+    );
+  }
 
   if (pendingSource) {
+    const open = accounts ?? [];
     return (
       <div className="ix-connect card pad">
         <b>Choose which {pendingSource.name} accounts to import</b>
-        {accounts === null ? (
-          <button
-            type="button"
-            className="btn sm"
-            disabled={busy}
-            onClick={() => void loadAccounts(pendingSource)}
-          >
-            Load accounts
-          </button>
-        ) : (
+        {progress}
+        {accounts && (
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              void step(async () => {
-                await call(`${root}/${pendingSource.id}/accounts`, "PUT", {
-                  expected_revision: pendingSource.revision,
-                  account_ids: [...chosen],
-                });
-                connected();
+              void step("Saving accounts…", async () => {
+                const saved = await browserCall<TransactionSource>(
+                  credentials,
+                  `${root}/${pendingSource.id}/accounts`,
+                  "PUT",
+                  { expected_revision: pendingSource.revision, account_ids: [...chosen] },
+                );
+                connected(saved);
               });
             }}
           >
-            <fieldset disabled={busy} className="ix-accounts">
+            <fieldset disabled={Boolean(busy)} className="ix-accounts">
               <legend className="note">
                 Nothing is imported from accounts you leave unchecked.
               </legend>
-              {accounts.map((a) => (
+              {open.map((a) => (
                 <label key={a.id}>
                   <input
                     type="checkbox"
@@ -132,10 +168,11 @@ export function ConnectSource({
             </fieldset>
           </form>
         )}
-        {error && (
-          <p role="alert" className="bad-text">
-            {error}
-          </p>
+        {problem}
+        {!accounts && !busy && (
+          <button type="button" className="btn sm" onClick={() => void loadAccounts(pendingSource)}>
+            Load accounts again
+          </button>
         )}
       </div>
     );
@@ -146,92 +183,67 @@ export function ConnectSource({
       className="ix-connect card pad"
       onSubmit={(event) => {
         event.preventDefault();
-        if (plans === null) {
-          void step(async () => {
-            const found = await call<Plan[]>(`${root}/ynab/plans`, "POST", {
-              access_token: token,
-            });
-            setPlans(found);
-            setPlan(found.find((p) => p.currency === "USD")?.id ?? "");
-          });
-          return;
-        }
-        void step(async () => {
-          const created = await call<TransactionSource>(`${root}/ynab`, "POST", {
-            access_token: token,
-            plan_id: plan,
-            start_date: start,
-          });
-          setToken("");
-          setPlans(null);
+        void step("Connecting…", async () => {
+          const created = await browserCall<TransactionSource>(
+            credentials,
+            `${root}/ynab`,
+            "POST",
+            {
+              plan_id: plan,
+              start_date: start,
+            },
+          );
           setPendingSource(created);
           await loadAccounts(created);
         });
       }}
     >
-      <b>Connect YNAB</b>
+      <b>Connect a YNAB plan</b>
       <p className="note">
-        Paste a YNAB personal access token. Accanto stores it encrypted, only reads transactions,
-        and never shows it again or gives it to an assistant.
+        Uses the YNAB token saved in Settings. Accanto only reads transactions.
       </p>
-      <fieldset disabled={busy} className="ix-connect-fields">
-        <label>
-          <span>YNAB access token</span>
-          <input
-            className="input"
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            required
-            minLength={10}
-            value={token}
-            onChange={(event) => {
-              setToken(event.target.value);
-              setPlans(null);
-            }}
-          />
-        </label>
-        {plans && (
-          <>
-            <label>
-              <span>Plan</span>
-              <select
-                className="input"
-                required
-                value={plan}
-                onChange={(event) => setPlan(event.target.value)}
-              >
-                <option value="">Choose a plan</option>
-                {plans.map((p) => (
-                  <option key={p.id} value={p.id} disabled={p.currency !== "USD"}>
-                    {p.name}
-                    {p.currency !== "USD"
-                      ? ` (${p.currency ?? "unknown currency"}, not supported)`
-                      : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Import transactions from</span>
-              <input
-                className="input"
-                type="date"
-                required
-                value={start}
-                onChange={(event) => setStart(event.target.value)}
-              />
-            </label>
-          </>
-        )}
-        <button type="submit" className="btn pri sm">
-          {plans ? "Connect this plan" : "Find plans"}
+      {progress}
+      {plans && (
+        <fieldset disabled={Boolean(busy)} className="ix-connect-fields">
+          <label>
+            <span>Plan</span>
+            <select
+              className="input"
+              required
+              value={plan}
+              onChange={(event) => setPlan(event.target.value)}
+            >
+              <option value="">Choose a plan</option>
+              {plans.map((p) => (
+                <option key={p.id} value={p.id} disabled={p.currency !== "USD"}>
+                  {p.name}
+                  {p.currency !== "USD"
+                    ? ` (${p.currency ?? "unknown currency"}, not supported)`
+                    : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Import transactions from</span>
+            <input
+              className="input"
+              type="date"
+              required
+              value={start}
+              onChange={(event) => setStart(event.target.value)}
+            />
+          </label>
+          <button type="submit" className="btn pri sm">
+            Connect this plan
+          </button>
+        </fieldset>
+      )}
+      {problem}
+      {!plans && !busy && (
+        <button type="button" className="btn sm" onClick={() => void loadPlans()}>
+          Find plans again
         </button>
-      </fieldset>
-      {error && (
-        <p role="alert" className="bad-text">
-          {error}
-        </p>
       )}
     </form>
   );

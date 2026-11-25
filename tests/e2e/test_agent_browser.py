@@ -1,6 +1,6 @@
 """Agent access journey in the production UI with AGENT_MODEL=stub.
 
-Connects the seeded fake YNAB server through the inbox's connect form, syncs,
+Saves the fake YNAB token in Settings, connects a plan from the inbox, syncs,
 asks the assistant to categorize, records from the inbox, and applies a
 receipt draft from an attached synthetic image. Everything is synthetic and
 loopback-only; the stub model never reaches a network.
@@ -220,12 +220,15 @@ def test_agent_journey(tmp_path):
         until("/Saved/.test(document.querySelector('.toast')?.textContent ?? '')")
         until("!!document.querySelector('.agent textarea')")
 
-        # Connect the synthetic plan through the inbox's form; the token is
-        # posted once and is not left in the page.
-        go("Transactions inbox")
-        until("!!document.querySelector('.ix-connect input[type=password]')")
-        browser("find", "label", "YNAB access token", "fill", FAKE_TOKEN)
-        button("Find plans")
+        # The token is saved once in Settings and is not left in the page.
+        browser("select", "#provider-kind", "YNAB")
+        browser("find", "label", "YNAB personal access token", "fill", FAKE_TOKEN)
+        button("Save token")
+        until("/token saved/.test(document.querySelector('#main').textContent)")
+        assert FAKE_TOKEN not in browser("get", "html", "body")
+
+        # Connect the synthetic plan from the inbox, then sync it.
+        button("Open Transactions inbox")
         until("document.querySelector('.ix-connect select')?.options.length > 1")
         browser("select", ".ix-connect select", "Fixture household plan")
         button("Connect this plan")

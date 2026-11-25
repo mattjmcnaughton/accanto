@@ -75,7 +75,10 @@ function useSettled<T>(state: LoadState<T>): LoadState<T> {
  * Every write is an explicit inbox command; the server re-runs every check when recording.
  */
 export function Inbox(
-  p: ScreenProps & { credentials: (signIn?: boolean) => Promise<BrowserSession> },
+  p: ScreenProps & {
+    credentials: (signIn?: boolean) => Promise<BrowserSession>;
+    openSettings?: () => void;
+  },
 ) {
   const [reload, setReload] = useState(0);
   const deps = [p.entity.id, p.refresh, reload];
@@ -703,6 +706,7 @@ export function Inbox(
             today={p.entity.today}
             source={source}
             credentials={p.credentials}
+            openSettings={p.openSettings}
             connected={() => setReload((x) => x + 1)}
           />
         </div>

@@ -5,6 +5,7 @@ import { type ScreenProps, useLoad } from "../workspace/shared";
 import "./settings.css";
 import { AgentSettings } from "../agent/AgentSettings";
 import { ApiKeys } from "./ApiKeys";
+import { TransactionProviderSettings } from "./TransactionProviderSettings";
 
 interface EntitySettings {
   id: string;
@@ -16,6 +17,7 @@ interface EntitySettings {
 export interface SettingsProps extends ScreenProps {
   credentials: (signIn?: boolean) => Promise<BrowserSession>;
   saved: () => void;
+  openInbox?: () => void;
 }
 // Suggestions only; the server remains the time zone validator.
 const zones =
@@ -164,6 +166,7 @@ export function Settings(p: SettingsProps) {
         </section>
       )}
       <AgentSettings {...p} />
+      <TransactionProviderSettings {...p} />
       <ApiKeys credentials={p.credentials} disabled={p.busy} />
     </section>
   );

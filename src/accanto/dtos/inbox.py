@@ -77,13 +77,17 @@ class ResolveInput(Input):
 
 
 class ConnectYnabInput(Input):
-    access_token: str = Field(min_length=10, max_length=400, repr=False)
     plan_id: str = Field(min_length=1, max_length=120)
     start_date: date
 
 
-class PlanListInput(Input):
+class ProviderInput(Input):
+    """The Settings-level Transaction provider credential."""
+
+    kind: Literal["ynab"]
     access_token: str = Field(min_length=10, max_length=400, repr=False)
+    # 0 before a provider was first saved.
+    expected_revision: int = Field(ge=0)
 
 
 class SourceAccount(Input):

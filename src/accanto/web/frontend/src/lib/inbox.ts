@@ -1,5 +1,6 @@
 /** Contracts for the Transactions inbox API. Money is transported as decimal strings. */
 import {
+  ApiError,
   type BrowserSession,
   type DecimalString,
   type IsoDate,
@@ -96,6 +97,16 @@ export interface TransactionSource {
   revision: number;
 }
 
+/** Supported Transaction providers, in the order Settings offers them. */
+export const PROVIDERS = [{ kind: "ynab", name: "YNAB" }] as const;
+export type ProviderKind = (typeof PROVIDERS)[number]["kind"];
+/** The Entity's provider credential; the token itself is never returned. */
+export interface TransactionProvider {
+  kind: ProviderKind | null;
+  configured: boolean;
+  revision: number;
+}
+
 const root = (entityId: UUID) => `/api/entities/${encodeURIComponent(entityId)}`;
 const item = (entityId: UUID, id: UUID) => `${root(entityId)}/inbox/${encodeURIComponent(id)}`;
 
@@ -106,6 +117,7 @@ export interface InboxWrite {
 }
 
 export const inbox = {
+  providerPath: (entityId: UUID) => `${root(entityId)}/transaction-provider`,
   list: (entityId: UUID): Promise<LoadState<StagedTransaction[]>> =>
     loadResource(`${root(entityId)}/inbox`, () => false),
   sources: (entityId: UUID): Promise<LoadState<TransactionSource[]>> =>
@@ -164,4 +176,35 @@ export function send<T>(session: BrowserSession, spec: InboxWrite, key: string):
     },
     body: JSON.stringify(spec.body),
   });
+}
+
+/**
+ * A browser-session call for source and provider setup, with a fresh retry identity and one
+ * sign-in retry. Tokens sent this way stay in the caller's state, never in a recoverable write.
+ */
+export async function browserCall<T>(
+  credentials: (signIn?: boolean) => Promise<BrowserSession>,
+  path: string,
+  method: "GET" | "POST" | "PUT" | "DELETE",
+  body?: object,
+): Promise<T> {
+  const key = crypto.randomUUID();
+  const init = (s: BrowserSession): RequestInit =>
+    method === "GET"
+      ? {}
+      : {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": s.csrf_token,
+            "Idempotency-Key": key,
+          },
+          body: body ? JSON.stringify(body) : undefined,
+        };
+  try {
+    return await fetchJson<T>(path, init(await credentials()));
+  } catch (issue) {
+    if (!(issue instanceof ApiError) || issue.kind !== "unauthenticated") throw issue;
+    return await fetchJson<T>(path, init(await credentials(true)));
+  }
 }

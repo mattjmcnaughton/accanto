@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6b022`.
+   supported revision is `6c023`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -101,6 +101,11 @@ blocks it. Grant the runtime role access to the three new tables after upgrading
 `6b022` only adds the agent tables (`agent_settings`, `pending_change`,
 `agent_conversation`, `agent_message`); `6a021` code never reads them. Grant the
 runtime role access to these four tables after upgrading.
+`6c023` adds `transaction_provider` and moves each Entity's newest connected YNAB
+token into it, emptying `transaction_source.secret_ciphertext` (which keeps a `''`
+default). `6b022` code still starts and serves everything except syncing, which
+asks the person to reconnect the source. Grant the runtime role access to the new
+table after upgrading.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

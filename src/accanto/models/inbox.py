@@ -20,13 +20,25 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from accanto.models.monthly import table
 
+# One Transaction provider credential per Entity, set in Settings. Every source of
+# that kind reads through it; removing it keeps the row so revisions stay monotonic.
+providers = table(
+    "transaction_provider",
+    Column("entity_id", ForeignKey("entity.id"), nullable=False, unique=True),
+    Column("kind", String),
+    Column("secret_ciphertext", Text),
+    Column("revision", Integer, nullable=False, server_default="1"),
+    CheckConstraint("kind IN ('ynab')"),
+    CheckConstraint("(kind IS NULL) = (secret_ciphertext IS NULL)"),
+)
 sources = table(
     "transaction_source",
     Column("entity_id", ForeignKey("entity.id"), nullable=False),
     Column("kind", String, nullable=False),
     Column("external_ref", String(120), nullable=False),
     Column("name", String(200), nullable=False),
-    Column("secret_ciphertext", Text, nullable=False),
+    # Legacy, always '': the token now lives in transaction_provider (6c023).
+    Column("secret_ciphertext", Text, nullable=False, server_default=""),
     Column("start_date", Date, nullable=False),
     Column("cursor", String(64)),
     Column("revision", Integer, nullable=False, server_default="1"),
