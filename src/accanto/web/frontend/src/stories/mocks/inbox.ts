@@ -287,7 +287,21 @@ const reject = (status: number, code: string, message: string) =>
 const usd = (n: number) => `$${n.toFixed(2)}`;
 
 /** Handlers over one in-memory inbox; pass items to start from another state. */
-export function inboxApi(items: StagedTransaction[] = seedInbox(), sources = [source]) {
+/** Synthetic YNAB accounts for setup stories; more than fit on one screen. */
+export const manyAccounts = Array.from({ length: 28 }, (_, i) => ({
+  id: `acc-${i}`,
+  name: `${["Example Checking", "Sample Card", "Fixture Savings", "Mock Brokerage"][i % 4]} ${i + 1}`,
+  type: ["checking", "creditCard", "savings", "otherAsset"][i % 4],
+  on_budget: i % 4 !== 3,
+  closed: false,
+  selected: false,
+}));
+
+export function inboxApi(
+  items: StagedTransaction[] = seedInbox(),
+  sources = [source],
+  { syncDelay = 400 }: { syncDelay?: number | "infinite" } = {},
+) {
   const state = {
     items: structuredClone(items),
     activity: seedActivity() as Array<Activity & { deleted_at?: string | null }>,
@@ -393,8 +407,25 @@ export function inboxApi(items: StagedTransaction[] = seedInbox(), sources = [so
       } else bump(it, { status: "recorded" });
       return HttpResponse.json(action === "undo" ? { item: it } : it);
     }),
+    http.get(`${entity}/sources/ynab/plans`, () =>
+      HttpResponse.json([{ id: "plan-fixture", name: "Fixture household plan", currency: "USD" }]),
+    ),
+    http.post(`${entity}/sources/ynab`, () =>
+      HttpResponse.json({
+        ...source,
+        synced: false,
+        last_synced_at: null,
+        accounts: [],
+        revision: 1,
+      }),
+    ),
+    http.get(`${entity}/sources/:source/accounts`, () => HttpResponse.json(manyAccounts)),
+    http.put(`${entity}/sources/:source/accounts`, async () => {
+      await delay(300);
+      return HttpResponse.json({ ...source, synced: false, last_synced_at: null });
+    }),
     http.post(`${entity}/sources/:source/sync`, async () => {
-      await delay(400);
+      await delay(syncDelay);
       return HttpResponse.json({
         source: sources[0],
         counts: { added: 0, changed: 0, removed: 0, conflicts: 0, unchanged: 0, ignored: 0 },

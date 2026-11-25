@@ -38,7 +38,7 @@ export function ConnectSource({
   today: string;
   source?: TransactionSource;
   credentials: (signIn?: boolean) => Promise<BrowserSession>;
-  /** Called with the source once its accounts are chosen. */
+  /** Called with the source once its accounts are chosen, so the inbox can sync it. */
   connected: (source: TransactionSource) => void;
   openSettings?: () => void;
 }) {
@@ -145,26 +145,43 @@ export function ConnectSource({
           >
             <fieldset disabled={Boolean(busy)} className="ix-accounts">
               <legend className="note">
-                Nothing is imported from accounts you leave unchecked.
+                Nothing is imported from accounts you leave unchecked. {chosen.size} of{" "}
+                {open.length} chosen.
               </legend>
-              {open.map((a) => (
-                <label key={a.id}>
-                  <input
-                    type="checkbox"
-                    checked={chosen.has(a.id)}
-                    onChange={(event) => {
-                      const next = new Set(chosen);
-                      if (event.target.checked) next.add(a.id);
-                      else next.delete(a.id);
-                      setChosen(next);
-                    }}
-                  />{" "}
-                  {a.name} <small className="note">{a.on_budget ? a.type : "tracking"}</small>
-                </label>
-              ))}
-              <button type="submit" className="btn pri sm" disabled={!chosen.size}>
-                Import these accounts
-              </button>
+              <div className="ix-accounts-tools">
+                <button
+                  type="button"
+                  className="btn quiet sm"
+                  onClick={() => setChosen(new Set(open.map((a) => a.id)))}
+                >
+                  Choose all
+                </button>
+                <button type="button" className="btn quiet sm" onClick={() => setChosen(new Set())}>
+                  Clear
+                </button>
+              </div>
+              <div className="ix-accounts-list">
+                {open.map((a) => (
+                  <label key={a.id}>
+                    <input
+                      type="checkbox"
+                      checked={chosen.has(a.id)}
+                      onChange={(event) => {
+                        const next = new Set(chosen);
+                        if (event.target.checked) next.add(a.id);
+                        else next.delete(a.id);
+                        setChosen(next);
+                      }}
+                    />{" "}
+                    {a.name} <small className="note">{a.on_budget ? a.type : "tracking"}</small>
+                  </label>
+                ))}
+              </div>
+              <div className="ix-accounts-do">
+                <button type="submit" className="btn pri sm" disabled={!chosen.size}>
+                  Import these accounts and sync
+                </button>
+              </div>
             </fieldset>
           </form>
         )}
