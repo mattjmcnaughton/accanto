@@ -1,6 +1,6 @@
 """Agent access journey in the production UI with AGENT_MODEL=stub.
 
-Saves the fake YNAB token in Settings, connects a plan from the inbox, syncs,
+Saves the fake YNAB token in Settings, connects a plan from the inbox (which syncs),
 asks the assistant to categorize, records from the inbox, and applies a
 receipt draft from an attached synthetic image. Everything is synthetic and
 loopback-only; the stub model never reaches a network.
@@ -227,7 +227,7 @@ def test_agent_journey(tmp_path):
         until("/token saved/.test(document.querySelector('#main').textContent)")
         assert FAKE_TOKEN not in browser("get", "html", "body")
 
-        # Connect the synthetic plan from the inbox, then sync it.
+        # Connect the synthetic plan from the inbox; choosing accounts syncs.
         button("Open Transactions inbox")
         until("document.querySelector('.ix-connect select')?.options.length > 1")
         browser("select", ".ix-connect select", "Fixture household plan")
@@ -235,8 +235,7 @@ def test_agent_journey(tmp_path):
         until("!!document.querySelector('.ix-accounts')")
         for name in ("Example Checking", "Sample Rewards Card"):
             browser("find", "label", name, "check")
-        button("Import these accounts")
-        button("Sync now")
+        button("Import these accounts and sync")
         until("/Synced/.test(document.querySelector('.ix-toast')?.textContent ?? '')")
         assert FAKE_TOKEN not in browser("get", "html", "body")
         before = waiting()

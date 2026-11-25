@@ -199,9 +199,10 @@ it("connects a plan with the saved token and hands the chosen source back to syn
   await screen.findByLabelText("Plan");
   expect(screen.queryByLabelText(/access token/i)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Connect this plan" }));
+  // Every account, including the last of many, is reachable in the list.
   fireEvent.click(await screen.findByLabelText(/Example Account 29/));
   fireEvent.click(screen.getByLabelText(/Example Account 0\b/));
-  fireEvent.click(screen.getByRole("button", { name: "Import these accounts" }));
+  fireEvent.click(screen.getByRole("button", { name: "Import these accounts and sync" }));
   await waitFor(() =>
     expect(connected).toHaveBeenCalledWith(expect.objectContaining({ revision: 2 })),
   );
