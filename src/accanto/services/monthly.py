@@ -1189,6 +1189,10 @@ async def write(
             response = await write_inbox(
                 session, entity, actor, operation, payload, target, audit
             )
+        elif operation == "edit_transaction_provider":
+            from accanto.services.inbox import write_provider
+
+            response = await write_provider(session, entity, payload, audit)
         elif operation == "edit_agent_settings":
             from accanto.services.agent_settings import write_agent_settings
 

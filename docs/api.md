@@ -645,11 +645,14 @@ point it at the fake server in `tests/fakes/ynab_server.py`.
 | Method | Suffix | Body / result |
 | --- | --- | --- |
 | GET | `/sources` | Connected sources with selected accounts, sync state and waiting count |
-| POST | `/sources/ynab/plans` | `{access_token}`; YNAB plans the token can read (stores nothing) |
-| POST | `/sources/ynab` | `{access_token, plan_id, start_date}`; connects a USD plan; transactions before `start_date` are never staged |
+| GET | `/transaction-provider` | `{kind, configured, revision}`; the Settings-level provider (`ynab`); never returns the token |
+| PUT | `/transaction-provider` | `{kind, access_token, expected_revision}`; checks the token with the provider, then stores it encrypted |
+| DELETE | `/transaction-provider` | `{expected_revision}`; forgets the token; connected sources stay but cannot sync until one is saved |
+| GET | `/sources/ynab/plans` | YNAB plans the saved token can read |
+| POST | `/sources/ynab` | `{plan_id, start_date}`; connects a USD plan through the saved token; transactions before `start_date` are never staged |
 | GET | `/sources/{source_id}/accounts` | The plan's accounts and which are selected |
 | PUT | `/sources/{source_id}/accounts` | `{account_ids, expected_revision}`; default is none; adding an account re-reads history |
-| DELETE | `/sources/{source_id}` | `{expected_revision}`; forgets the token; recorded entries and inbox history stay |
+| DELETE | `/sources/{source_id}` | `{expected_revision}`; stops importing the plan; recorded entries and inbox history stay |
 | POST | `/sources/{source_id}/sync` | Fetch changes since the stored cursor and stage them; returns counts. Records nothing |
 | GET | `/inbox?status=&month=YYYY-MM-01&source=` | Staged transactions (default: all but removed), with source facts, proposal, rejections and revision |
 | GET | `/inbox/{item_id}` | One staged transaction |

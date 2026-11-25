@@ -190,43 +190,68 @@ async def scenario():
         )
         assert review.status_code == 200, review.text
 
-        # Connect: only a USD plan this token can read.
+        # The token lives in Settings; sources cannot be set up before it.
+        missing = await setup("GET", "/sources/ynab/plans")
+        assert missing.status_code == 409
+        assert missing.json()["detail"]["code"] == "provider_not_configured"
         keyed = await command(
-            "POST",
-            "/sources/ynab",
+            "PUT",
+            "/transaction-provider",
+            {"kind": "ynab", "access_token": y.FAKE_TOKEN, "expected_revision": 0},
+        )
+        assert keyed.status_code == 403
+        wrong = await setup(
+            "PUT",
+            "/transaction-provider",
             {
-                "access_token": y.FAKE_TOKEN,
-                "plan_id": y.PLAN,
-                "start_date": "2026-11-01",
+                "kind": "ynab",
+                "access_token": "synthetic-wrong-token",
+                "expected_revision": 0,
             },
+        )
+        assert wrong.json()["detail"]["code"] == "source_unauthorized"
+        assert (await setup("GET", "/transaction-provider")).json() == {
+            "kind": None,
+            "configured": False,
+            "revision": 0,
+        }
+        saved = await setup(
+            "PUT",
+            "/transaction-provider",
+            {"kind": "ynab", "access_token": y.FAKE_TOKEN, "expected_revision": 0},
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json() == {"kind": "ynab", "configured": True, "revision": 1}
+        assert y.FAKE_TOKEN not in (await setup("GET", "/transaction-provider")).text
+        async with sessions() as session:
+            stored = await session.scalar(
+                select(st.providers.c.secret_ciphertext).where(
+                    st.providers.c.entity_id == entity_id
+                )
+            )
+        assert stored and y.FAKE_TOKEN not in stored
+        plans = await setup("GET", "/sources/ynab/plans")
+        assert {p["id"] for p in plans.json()} >= {y.PLAN, y.EURO_PLAN}
+
+        # Connect: only a USD plan the saved token can read.
+        keyed = await command(
+            "POST", "/sources/ynab", {"plan_id": y.PLAN, "start_date": "2026-11-01"}
         )
         assert keyed.status_code == 403
         euro = await setup(
             "POST",
             "/sources/ynab",
-            {
-                "access_token": y.FAKE_TOKEN,
-                "plan_id": y.EURO_PLAN,
-                "start_date": "2026-11-01",
-            },
+            {"plan_id": y.EURO_PLAN, "start_date": "2026-11-01"},
         )
         assert euro.status_code == 422
         assert euro.json()["detail"]["code"] == "unsupported_currency"
         connected = await setup(
             "POST",
             "/sources/ynab",
-            {
-                "access_token": y.FAKE_TOKEN,
-                "plan_id": y.PLAN,
-                "start_date": "2026-11-01",
-            },
+            {"plan_id": y.PLAN, "start_date": "2026-11-01"},
         )
         assert connected.status_code == 200, connected.text
         source = connected.json()
-        assert "secret" not in connected.text and y.FAKE_TOKEN not in connected.text
-        async with sessions() as session:
-            stored = await session.scalar(select(st.sources.c.secret_ciphertext))
-        assert y.FAKE_TOKEN not in stored
         sync_path = f"/sources/{source['id']}/sync"
         unselected = await client.post(prefix + sync_path)
         assert unselected.status_code == 422
@@ -478,4 +503,13 @@ async def scenario():
         assert (await client.get(prefix + "/reviews/2026-11-01")).json()[
             "inbox_waiting"
         ] == 1
+
+        # Removing the Settings token stops syncing; the source stays connected.
+        removed = await setup(
+            "DELETE", "/transaction-provider", {"expected_revision": 1}
+        )
+        assert removed.json() == {"kind": None, "configured": False, "revision": 2}
+        orphaned = await client.post(prefix + sync_path)
+        assert orphaned.json()["detail"]["code"] == "provider_not_configured"
+        assert (await client.get(prefix + "/sources")).json()[0]["connected"]
     await engine.dispose()

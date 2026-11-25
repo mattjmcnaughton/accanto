@@ -262,14 +262,16 @@ async def scenario():
                 f"/agent/pending-changes/{correction.pending_change.id}/apply",
                 {},
             ),
-            ("POST", "/sources/ynab/plans", {"access_token": "synthetic-token-x"}),
+            ("GET", "/sources/ynab/plans", None),
+            ("POST", "/sources/ynab", {"plan_id": "p", "start_date": "2026-11-01"}),
+            ("GET", "/transaction-provider", None),
             (
-                "POST",
-                "/sources/ynab",
+                "PUT",
+                "/transaction-provider",
                 {
+                    "kind": "ynab",
                     "access_token": "synthetic-token-x",
-                    "plan_id": "p",
-                    "start_date": "2026-11-01",
+                    "expected_revision": 0,
                 },
             ),
         ):

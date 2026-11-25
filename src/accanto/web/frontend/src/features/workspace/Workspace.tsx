@@ -599,7 +599,9 @@ export function Workspace({
               {screen === "review" && (
                 <MonthlyReview key={month} {...props} month={month} go={(to) => go(to)} />
               )}
-              {screen === "inbox" && <Inbox {...props} credentials={credentials} />}
+              {screen === "inbox" && (
+                <Inbox {...props} credentials={credentials} openSettings={() => go("settings")} />
+              )}
               {screen === "estimates" && <IncomeEstimates {...props} />}
               {screen === "savings" && <Savings {...props} />}
               {screen === "investments" && <Destinations {...props} kind="investment" />}
@@ -610,6 +612,7 @@ export function Workspace({
                   {...props}
                   credentials={credentials}
                   saved={() => void refreshMetadata()}
+                  openInbox={() => go("inbox")}
                 />
               )}
               {screen === "more" && !concealed && (

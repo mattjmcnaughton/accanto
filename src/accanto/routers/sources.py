@@ -1,8 +1,9 @@
-"""Connect Transaction sources (YNAB), select their accounts, and sync them.
+"""The Transaction provider token, and the sources (YNAB plans) that read through it.
 
-Source setup (plans, connect, accounts, disconnect) needs a browser session: the
-token never passes through an agent or API key (PRD AG-02, AG-05). Listing
-sources and syncing remain available to every caller.
+The token is saved once per Entity in Settings. Provider settings and source setup
+(plans, connect, accounts, disconnect) need a browser session: the token never
+passes through an agent or API key (PRD AG-02, AG-05). Listing sources and syncing
+remain available to every caller.
 """
 
 from typing import Annotated
@@ -13,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from accanto.dtos.inbox import (
     ConnectYnabInput,
-    PlanListInput,
+    ProviderInput,
     RevisionInput,
     SelectAccountsInput,
 )
@@ -24,6 +25,9 @@ from accanto.services.access import RejectionError
 from accanto.services.monthly import authorize, write
 
 router = APIRouter(prefix="/api/entities/{entity_id}/sources", tags=["inbox"])
+provider_router = APIRouter(
+    prefix="/api/entities/{entity_id}/transaction-provider", tags=["inbox"]
+)
 RequestKey = Annotated[
     str, Header(alias="Idempotency-Key", min_length=1, max_length=120)
 ]
@@ -45,23 +49,76 @@ async def outside(call):
         raise inbox.source_rejection(error) from None
 
 
+@provider_router.get("")
+async def get_provider(entity_id: UUID, session: Session, token: BrowserToken):
+    """Which provider is set up; the token itself is never returned."""
+    return await inbox.read_provider(session, token, entity_id)
+
+
+@provider_router.put("")
+async def save_provider(
+    entity_id: UUID,
+    body: ProviderInput,
+    request: Request,
+    session: Session,
+    token: BrowserToken,
+    request_key: RequestKey,
+):
+    """Check the token can read YNAB, then store it encrypted."""
+    fernet = inbox.cipher(request.app.state.auth_settings.source_secret_key)
+    async with session.begin():
+        await authorize(session, token, entity_id, lock=False)
+    await outside(client(request, body.access_token).plans())
+    # The retry identity covers the choice, never the token itself.
+    hook = inbox.Payload(
+        "edit_transaction_provider",
+        None,
+        {"ciphertext": fernet.encrypt(body.access_token.encode()).decode()},
+    )
+    hook.payload = {"kind": body.kind, "expected_revision": body.expected_revision}
+    return await write(
+        session,
+        token,
+        entity_id,
+        "edit_transaction_provider",
+        request_key,
+        hook.payload,
+        hook=hook,
+    )
+
+
+@provider_router.delete("")
+async def remove_provider(
+    entity_id: UUID,
+    body: RevisionInput,
+    session: Session,
+    token: BrowserToken,
+    request_key: RequestKey,
+):
+    """Forget the token. Sources stay connected but cannot sync until one is saved."""
+    return await write(
+        session,
+        token,
+        entity_id,
+        "edit_transaction_provider",
+        request_key,
+        {"kind": None, "expected_revision": body.expected_revision},
+    )
+
+
 @router.get("")
 async def list_sources(entity_id: UUID, session: Session, token: Token):
     return await inbox.read_sources(session, token, entity_id)
 
 
-@router.post("/ynab/plans")
+@router.get("/ynab/plans")
 async def list_ynab_plans(
-    entity_id: UUID,
-    body: PlanListInput,
-    request: Request,
-    session: Session,
-    token: BrowserToken,
+    entity_id: UUID, request: Request, session: Session, token: BrowserToken
 ):
-    """Plans this YNAB token can read, so the person can pick one. Stores nothing."""
-    async with session.begin():
-        await authorize(session, token, entity_id, lock=False)
-    return await outside(client(request, body.access_token).plans())
+    """Plans the saved YNAB token can read, so the person can pick one."""
+    key = request.app.state.auth_settings.source_secret_key
+    _, secret = await inbox.source_secret(session, token, entity_id, None, key)
+    return await outside(client(request, secret).plans())
 
 
 @router.post("/ynab")
@@ -74,10 +131,8 @@ async def connect_ynab(
     request_key: RequestKey,
 ):
     key = request.app.state.auth_settings.source_secret_key
-    fernet = inbox.cipher(key)
-    async with session.begin():
-        await authorize(session, token, entity_id, lock=False)
-    plans = await outside(client(request, body.access_token).plans())
+    _, secret = await inbox.source_secret(session, token, entity_id, None, key)
+    plans = await outside(client(request, secret).plans())
     plan = next((p for p in plans if p["id"] == body.plan_id), None)
     if plan is None:
         raise RejectionError(
@@ -87,13 +142,7 @@ async def connect_ynab(
         raise RejectionError(
             "unsupported_currency", "Accanto imports only USD YNAB plans.", 422
         )
-    # The retry identity covers the choice, never the token itself.
-    hook = inbox.Payload(
-        "connect_source",
-        None,
-        {"ciphertext": fernet.encrypt(body.access_token.encode()).decode()},
-    )
-    hook.payload = {
+    payload = {
         "kind": "ynab",
         "plan_id": body.plan_id,
         "name": plan["name"][:200],
@@ -101,13 +150,7 @@ async def connect_ynab(
     }
     try:
         return await write(
-            session,
-            token,
-            entity_id,
-            "connect_source",
-            request_key,
-            hook.payload,
-            hook=hook,
+            session, token, entity_id, "connect_source", request_key, payload
         )
     except IntegrityError:
         raise RejectionError(
@@ -183,7 +226,7 @@ async def disconnect(
     token: BrowserToken,
     request_key: RequestKey,
 ):
-    """Forget the token. Recorded entries and the inbox history stay."""
+    """Stop importing this plan. Recorded entries and the inbox history stay."""
     return await write(
         session,
         token,

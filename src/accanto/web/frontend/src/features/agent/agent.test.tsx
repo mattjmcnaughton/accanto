@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentStreamError, type PendingChange, readFrames } from "../../lib/agentStream";
 import { ConnectSource } from "../inbox/ConnectSource";
+import { TransactionProviderSettings } from "../settings/TransactionProviderSettings";
 import { PendingCard, plain } from "./AgentPanel";
 import { AgentSettings } from "./AgentSettings";
 import { Markdown } from "./Markdown";
@@ -126,25 +127,63 @@ it("hides Apply when the change cannot be applied, and applies owner edits", () 
   expect(apply.mock.calls[0][0]).not.toHaveProperty("_draft");
 });
 
-it("posts the YNAB token once and drops it from the form after connecting", async () => {
+it("saves the YNAB token from Settings once and never shows it again", async () => {
   const token = "synthetic-ynab-token-000";
+  let saved = false;
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (_path, init) => {
+    if (init?.method === "PUT") saved = true;
+    return json({ kind: saved ? "ynab" : null, configured: saved, revision: saved ? 1 : 0 });
+  });
+  render(
+    <TransactionProviderSettings
+      entity={entity}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={vi.fn()}
+      save={vi.fn()}
+      credentials={vi.fn().mockResolvedValue(session)}
+    />,
+  );
+  fireEvent.change(await screen.findByLabelText("Transaction provider"), {
+    target: { value: "ynab" },
+  });
+  fireEvent.change(screen.getByLabelText("YNAB personal access token"), {
+    target: { value: token },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save token" }));
+  await screen.findByText("YNAB token saved.");
+  expect(document.body.innerHTML).not.toContain(token);
+  const puts = fetch.mock.calls.filter(([, init]) => init?.method === "PUT");
+  expect(puts.map(([path]) => String(path))).toEqual(["/api/entities/entity/transaction-provider"]);
+  expect(JSON.parse(String(puts[0][1]?.body))).toEqual({
+    kind: "ynab",
+    access_token: token,
+    expected_revision: 0,
+  });
+});
+
+it("connects a plan with the saved token and hands the chosen source back to sync", async () => {
+  const many = Array.from({ length: 30 }, (_, i) => ({
+    id: `acct-${i}`,
+    name: `Example Account ${i}`,
+    type: "checking",
+    on_budget: true,
+    closed: false,
+    selected: false,
+  }));
   const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
     const url = String(path);
+    if (url.endsWith("/transaction-provider"))
+      return json({ kind: "ynab", configured: true, revision: 1 });
     if (url.endsWith("/ynab/plans"))
       return json([{ id: "plan", name: "Example Plan", currency: "USD" }]);
     if (url.endsWith("/sources/ynab"))
       return json({ id: "src", name: "Example Plan", revision: 1 }, 201);
-    if (url.endsWith("/accounts") && init?.method !== "PUT")
-      return json([
-        {
-          id: "acct",
-          name: "Example Checking",
-          type: "checking",
-          on_budget: true,
-          closed: false,
-          selected: false,
-        },
-      ]);
+    if (url.endsWith("/accounts") && init?.method === "PUT")
+      return json({ id: "src", name: "Example Plan", revision: 2 });
+    if (url.endsWith("/accounts")) return json(many);
     return json({});
   });
   const connected = vi.fn();
@@ -156,25 +195,24 @@ it("posts the YNAB token once and drops it from the form after connecting", asyn
       connected={connected}
     />,
   );
-  fireEvent.change(screen.getByLabelText("YNAB access token"), { target: { value: token } });
-  fireEvent.submit(screen.getByLabelText("YNAB access token").closest("form") as HTMLFormElement);
+  // Plans load on arrival; no token field exists on this screen.
   await screen.findByLabelText("Plan");
-  fireEvent.submit(screen.getByLabelText("YNAB access token").closest("form") as HTMLFormElement);
-  fireEvent.click(await screen.findByLabelText(/Example Checking/));
-  expect(screen.queryByLabelText("YNAB access token")).toBeNull();
-  expect(document.body.innerHTML).not.toContain(token);
+  expect(screen.queryByLabelText(/access token/i)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Connect this plan" }));
+  fireEvent.click(await screen.findByLabelText(/Example Account 29/));
+  fireEvent.click(screen.getByLabelText(/Example Account 0\b/));
   fireEvent.click(screen.getByRole("button", { name: "Import these accounts" }));
-  await waitFor(() => expect(connected).toHaveBeenCalled());
-  const posts = fetch.mock.calls.filter(([, init]) => String(init?.body ?? "").includes(token));
-  expect(posts.map(([path]) => String(path))).toEqual([
-    "/api/entities/entity/sources/ynab/plans",
-    "/api/entities/entity/sources/ynab",
-  ]);
+  await waitFor(() =>
+    expect(connected).toHaveBeenCalledWith(expect.objectContaining({ revision: 2 })),
+  );
   const put = fetch.mock.calls.find(([, init]) => init?.method === "PUT");
   expect(JSON.parse(String(put?.[1]?.body))).toEqual({
     expected_revision: 1,
-    account_ids: ["acct"],
+    account_ids: ["acct-29", "acct-0"],
   });
+  expect(
+    fetch.mock.calls.some(([, init]) => String(init?.body ?? "").includes("access_token")),
+  ).toBe(false);
 });
 
 it("discloses what the assistant sends before the owner turns it on", async () => {
