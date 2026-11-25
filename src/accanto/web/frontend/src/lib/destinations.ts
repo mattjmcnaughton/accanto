@@ -24,21 +24,29 @@ export interface Contribution {
   note: string;
   is_adjustment: boolean;
   revision: number;
-  destination_id: string | null;
+  investment_id?: string | null;
+  giving_recipient_id?: string | null;
+  /** Read-only: "savings" exactly when funding_goal_id is set. */
   funding_origin?: "income" | "savings";
-  saving_goal_id?: string | null;
+  funding_goal_id?: string | null;
   is_refund?: boolean;
 }
 export interface ContributionInput {
   date: string;
   amount: string;
-  destination_id: string | null;
+  investment_id?: string | null;
+  giving_recipient_id?: string | null;
   note: string;
   is_adjustment: boolean;
   expected_revision?: number;
-  funding_origin?: "income" | "savings";
-  saving_goal_id?: string | null;
+  /** The saving goal that funds this contribution; null is current income. */
+  funding_goal_id?: string | null;
 }
+/** The entry field naming a contribution's assignment for each kind. */
+export const assignmentField = (kind: DestinationKind) =>
+  kind === "investment" ? "investment_id" : "giving_recipient_id";
+export const assignmentOf = (kind: DestinationKind, entry: Contribution) =>
+  entry[assignmentField(kind)] ?? null;
 const root = (entity: string, kind: DestinationKind) =>
   `/api/entities/${encodeURIComponent(entity)}/${kind === "investment" ? "investments" : "giving-recipients"}`;
 const activity = (entity: string, kind: DestinationKind) =>

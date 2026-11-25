@@ -183,8 +183,7 @@ export function Inbox(
       ? { refund_of: entry.refund_of }
       : {
           category: entry?.category ?? null,
-          funding:
-            entry?.saving_goal_id && entry.category !== "saving" ? entry.saving_goal_id : null,
+          funding: entry?.funding_goal_id ?? null,
         };
   };
   const shown = rows(all, view);

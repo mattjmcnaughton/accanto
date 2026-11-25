@@ -946,8 +946,7 @@ async def write(
                     previous_link,
                     payload.get("saving_goal_id")
                     if payload["category"] == "saving"
-                    or payload.get("funding_origin") == "savings"
-                    else None,
+                    else payload.get("funding_goal_id"),
                     audit,
                     old["category"] if old else None,
                 )
@@ -1304,14 +1303,15 @@ async def entry_snapshot(session, record):
             )
         )
         remaining_refundable = record["amount"] - linked_total
-    destination_uuid = None
+    investment_uuid = recipient_uuid = None
     if record["category"] in {"investing", "giving"}:
         from accanto.services.destinations import entry_snapshot as destination_snapshot
 
         kind = "investment" if record["category"] == "investing" else "giving"
-        destination_uuid = (await destination_snapshot(session, kind, record))[
-            "destination_id"
-        ]
+        view = await destination_snapshot(session, kind, record)
+        investment_uuid = view.get("investment_id")
+        recipient_uuid = view.get("giving_recipient_id")
+    outflow = record["category"] in {"spending", "fixed_cost", "giving", "investing"}
     return json_values(
         {
             **dict(record),
@@ -1323,12 +1323,11 @@ async def entry_snapshot(session, record):
             "fixed_cost_name": fixed_assignment["fixed_cost_name"]
             if fixed_assignment
             else None,
-            "saving_goal_id": goal_uuid,
-            "destination_id": destination_uuid,
-            "funding_origin": "savings"
-            if record["category"] in {"spending", "fixed_cost", "giving", "investing"}
-            and link
-            else "income",
+            "saving_goal_id": goal_uuid if record["category"] == "saving" else None,
+            "funding_goal_id": goal_uuid if outflow else None,
+            "investment_id": investment_uuid,
+            "giving_recipient_id": recipient_uuid,
+            "funding_origin": "savings" if outflow and link else "income",
             "refund_of": original_uuid,
             "remaining_refundable": remaining_refundable,
         }

@@ -321,11 +321,13 @@ class Entry(Output):
     note: Untrusted
     is_adjustment: bool
     funding_origin: str
+    funding_goal_id: UUID | None
     source_id: UUID | None
     fixed_cost_id: UUID | None
     debt_account_id: UUID | None
     saving_goal_id: UUID | None
-    destination_id: UUID | None
+    investment_id: UUID | None
+    giving_recipient_id: UUID | None
     refund_of: UUID | None
     remaining_refundable: Money | None
     revision: int
@@ -596,11 +598,13 @@ def project_entry(row) -> Entry:
         note=row["note"] or "",
         is_adjustment=row["is_adjustment"],
         funding_origin=row["funding_origin"],
+        funding_goal_id=_id(row["funding_goal_id"]),
         source_id=_id(row["source_id"]),
         fixed_cost_id=_id(row["fixed_cost_id"]),
         debt_account_id=_id(row["debt_account_id"]),
         saving_goal_id=_id(row["saving_goal_id"]),
-        destination_id=_id(row["destination_id"]),
+        investment_id=_id(row["investment_id"]),
+        giving_recipient_id=_id(row["giving_recipient_id"]),
         refund_of=_id(row["refund_of"]),
         remaining_refundable=row["remaining_refundable"],
         revision=row["revision"],

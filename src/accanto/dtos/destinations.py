@@ -5,8 +5,10 @@ from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from accanto.domains.monthly import money
+from accanto.dtos.monthly import LegacyOrigin, funding_goal
 
 Name = Annotated[str, Field(min_length=1, max_length=120)]
 
@@ -70,14 +72,21 @@ class DestinationResult(BaseModel):
 
 
 class ContributionInput(Input):
+    """investment_id on investment routes, giving_recipient_id on giving routes."""
+
     date: date
     amount: str
-    destination_id: UUID | None = None
+    investment_id: UUID | None = None
+    giving_recipient_id: UUID | None = None
+    funding_goal_id: UUID | None = None
     note: str = Field(default="", max_length=2000)
     is_adjustment: bool = False
     expected_revision: int | None = Field(default=None, ge=1)
-    funding_origin: str = "income"
-    saving_goal_id: UUID | None = None
+    # Transition only (see dtos.monthly.LegacyOrigin); the service resolves
+    # destination_id by the route's kind.
+    destination_id: SkipJsonSchema[UUID | None] = None
+    funding_origin: LegacyOrigin = Field(default=None, exclude=True)
+    saving_goal_id: SkipJsonSchema[UUID | None] = Field(default=None, exclude=True)
 
     @field_validator("amount")
     @classmethod
@@ -88,11 +97,17 @@ class ContributionInput(Input):
     def ordinary_amount(self):
         if not self.is_adjustment:
             money(self.amount)
-        if self.funding_origin not in {"income", "savings"}:
-            raise ValueError("Choose current income or savings as funding origin.")
-        if (self.funding_origin == "savings") != (self.saving_goal_id is not None):
-            raise ValueError("Savings funding requires exactly one saving goal.")
-        if self.funding_origin == "savings" and self.amount.startswith("-"):
+        self.funding_goal_id = funding_goal(
+            self.funding_origin, self.saving_goal_id, self.funding_goal_id
+        )
+        self.funding_origin = self.saving_goal_id = None
+        if self.investment_id is not None and self.giving_recipient_id is not None:
+            raise ValueError("Name an investment or a giving recipient, not both.")
+        if self.destination_id is not None and (
+            self.investment_id is not None or self.giving_recipient_id is not None
+        ):
+            raise ValueError("destination_id is replaced; send only the new field.")
+        if self.funding_goal_id is not None and self.amount.startswith("-"):
             raise ValueError(
                 "Use a linked refund for returned savings-funded payments."
             )
@@ -108,6 +123,7 @@ class ContributionResult(BaseModel):
     is_adjustment: bool
     is_refund: bool = False
     revision: int
-    destination_id: UUID | None
+    investment_id: UUID | None = None
+    giving_recipient_id: UUID | None = None
     funding_origin: str = "income"
-    saving_goal_id: UUID | None = None
+    funding_goal_id: UUID | None = None

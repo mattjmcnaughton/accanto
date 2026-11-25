@@ -189,7 +189,11 @@ export function ActivityScreen(
     const fallback =
       entry.category === "investing" ? "Historical investment" : "Historical recipient";
     return state.kind === "ready"
-      ? (state.data.find((row) => row.uuid === entry.destination_id)?.name ?? fallback)
+      ? (state.data.find(
+          (row) =>
+            row.uuid ===
+            (entry.category === "investing" ? entry.investment_id : entry.giving_recipient_id),
+        )?.name ?? fallback)
       : fallback;
   };
   /** What an entry was: the note for guilt-free spending, otherwise the line it belongs to. */
@@ -204,7 +208,8 @@ export function ActivityScreen(
         ? (entry.fixed_cost_name ?? "Unassigned fixed cost")
         : entry.category === "saving" && entry.saving_goal_id
           ? goalLabel(entry.saving_goal_id)
-          : entry.destination_id && (entry.category === "investing" || entry.category === "giving")
+          : (entry.category === "investing" && entry.investment_id) ||
+              (entry.category === "giving" && entry.giving_recipient_id)
             ? destinationLabel(entry)
             : entry.source_id
               ? sources.find((s) => s.id === entry.source_id)?.label || "Historical Income source"
@@ -223,7 +228,7 @@ export function ActivityScreen(
       entry.category !== "income" &&
       entry.category !== "saving" &&
       entry.funding_origin === "savings"
-        ? `from ${entry.saving_goal_id ? goalLabel(entry.saving_goal_id) : "saved money"}`
+        ? `from ${entry.funding_goal_id ? goalLabel(entry.funding_goal_id) : "saved money"}`
         : "",
       entry.refund_of ? `refund of the purchase on ${refundedDate(entry)}` : "",
       entry.category === "spending" ? "" : entry.note,
@@ -250,6 +255,7 @@ export function ActivityScreen(
         is_adjustment: false,
         funding_origin: "income",
         saving_goal_id: null,
+        funding_goal_id: null,
       };
       const f = draft.form;
       return {
@@ -267,8 +273,9 @@ export function ActivityScreen(
           debt_account_id: f.debt_account_id ?? null,
           note: f.note ?? "",
           is_adjustment: Boolean(f.is_adjustment),
-          funding_origin: f.funding_origin ?? "income",
+          funding_origin: f.funding_goal_id ? "savings" : "income",
           saving_goal_id: f.saving_goal_id ?? null,
+          funding_goal_id: f.funding_goal_id ?? null,
         },
       };
     }
@@ -430,8 +437,8 @@ export function ActivityScreen(
             note: entry.note,
             expected_revision: entry.revision,
             is_adjustment: entry.is_adjustment,
-            funding_origin: entry.funding_origin,
             saving_goal_id: entry.saving_goal_id,
+            funding_goal_id: entry.funding_goal_id,
           },
         },
         false,
@@ -465,8 +472,8 @@ export function ActivityScreen(
           fixed_cost_id: null,
           debt_account_id: null,
           note: prefill?.note ?? "",
-          funding_origin: "income",
           saving_goal_id: null,
+          funding_goal_id: null,
         },
       },
       true,
@@ -591,8 +598,8 @@ export function ActivityScreen(
         fixed_cost_id: null,
         debt_account_id: null,
         note: note.slice(0, 2000),
-        funding_origin: "income",
         saving_goal_id: null,
+        funding_goal_id: null,
       }),
       () => setQuick(""),
     );
@@ -920,9 +927,7 @@ export function ActivityScreen(
                   <dd>{formatMoney(info.amount)}</dd>
                   <dt>Paid from</dt>
                   <dd>
-                    {info.funding_origin === "savings" && info.saving_goal_id
-                      ? goalLabel(info.saving_goal_id)
-                      : "Current income"}
+                    {info.funding_goal_id ? goalLabel(info.funding_goal_id) : "Current income"}
                   </dd>
                   {info.note && (
                     <>
@@ -1158,8 +1163,8 @@ function ActivityFields({
                 source_id: null,
                 fixed_cost_id: null,
                 debt_account_id: null,
-                funding_origin: "income",
                 saving_goal_id: null,
+                funding_goal_id: null,
               })
             }
           >
@@ -1276,19 +1281,15 @@ function ActivityFields({
           <select
             name="funding-origin"
             required
-            value={form.funding_origin === "savings" ? (form.saving_goal_id ?? "") : "income"}
+            value={form.funding_goal_id ?? "income"}
             onChange={(e) =>
               update({
                 ...form,
-                funding_origin: e.target.value === "income" ? "income" : "savings",
-                saving_goal_id: e.target.value === "income" ? null : e.target.value || null,
+                funding_goal_id: e.target.value === "income" ? null : e.target.value || null,
               })
             }
           >
             <option value="income">Current income</option>
-            {form.funding_origin === "savings" && !form.saving_goal_id && (
-              <option value="">Saved money: choose a goal</option>
-            )}
             {openGoals.map(({ goal, label }) => (
               <option key={goal.uuid} value={goal.uuid}>
                 Saved money: {label}

@@ -94,7 +94,7 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | DELETE | `/savings-accounts/movements/{movement_id}` | Soft delete with `{kind, expected_revision}`; replay later history |
 | GET/POST | `/investments`, `/giving-recipients` | List/create named destinations with optional positive cumulative target; investments may have an optional dated opening observation |
 | PUT | `/investments/{destination_id}`, `/giving-recipients/{destination_id}` | Name, target, active state and `expected_revision` |
-| GET/POST | `/investment-activity`, `/giving-activity` | Current history or create contribution/adjustment with optional `destination_id` |
+| GET/POST | `/investment-activity`, `/giving-activity` | Current history or create contribution/adjustment with optional `investment_id` or `giving_recipient_id` |
 | PUT/DELETE | `/investment-activity/{entry_id}`, `/giving-activity/{entry_id}` | Correct entry or soft delete with `expected_revision` |
 | POST | `/activity/{purchase_id}/refunds` | Record a linked refund using positive `amount`, `date`, and optional `note` |
 | PUT/DELETE | `/activity/refunds/{refund_id}` | Correct a linked refund's date, amount or note, or soft delete it; both require `expected_revision` |
@@ -107,10 +107,11 @@ JSON values reject.
 Zero is explicit, absence is unknown. Dates are `YYYY-MM-DD`; there is no implicit
 today. Month selection uses dates, independently of UTC recording timestamps.
 
-Investment and giving contribution commands take `date`, `amount`, optional
-`destination_id`, `note`, `is_adjustment`, `funding_origin`, and
-`saving_goal_id` when savings funded; corrections also take
-`expected_revision`. An omitted destination is Unassigned. Ordinary investment
+Investment and giving contribution commands take `date`, `amount`, an optional
+assignment (`investment_id` on investment routes, `giving_recipient_id` on
+giving routes; the other field rejects), `note`, `is_adjustment`, and
+`funding_goal_id` when savings funded; corrections also take
+`expected_revision`. An omitted assignment is Unassigned. Ordinary investment
 contributions are nonnegative; signed adjustments can correct recorded totals.
 Giving refunds use the linked purchase refund command. Inactive destinations reject new assigned entries
 but permit correction of their existing assigned entries. Soft deletion removes
@@ -167,12 +168,22 @@ independent edit or lifecycle command. All writes require the shared
 reusing the key with different input conflicts. Financial change, complete audit
 snapshot and retry outcome commit together under the Entity lock.
 
+**Field transition (2026-11-25).** Entry inputs and responses use
+`funding_goal_id` for an outflow's funding goal, and `investment_id` /
+`giving_recipient_id` for contribution assignments. Requests in the earlier form,
+`funding_origin: "savings"` plus `saving_goal_id` on an outflow, or the shared
+`destination_id` on a contribution, are still accepted and mapped during a
+transition period. They are not in the published schema. A request that sends
+both forms with different goals rejects. Responses use only the new names.
+
 Saving contributions and savings-funded outflows use `/activity`. Each saving
-entry, including a zero or signed adjustment, supplies `saving_goal_id`. An
-outflow uses `funding_origin: "income"` by default. Spending, fixed costs,
-debt payments, giving, and investing can use previously saved money by sending
-`funding_origin: "savings"` and one `saving_goal_id`; the
-goal determines its account. For example, with a synthetic Laptop goal holding
+entry, including a zero or signed adjustment, supplies `saving_goal_id`: the goal
+the money goes to. Only saving entries take `saving_goal_id`. An outflow is funded
+from current income unless it sends `funding_goal_id`. Spending, fixed costs,
+debt payments, giving, and investing use previously saved money by sending one
+`funding_goal_id`, including an account's Unallocated goal; the goal determines
+its account. Responses include `funding_goal_id` and a read-only
+`funding_origin` (`"income"` or `"savings"`) derived from it. For example, with a synthetic Laptop goal holding
 `800.00`, a `1000.00` savings-funded purchase rejects. Record a `200.00` saving
 contribution on the same date first, then the purchase succeeds. The month has
 `200.00` new saving and `1000.00` spending; the purchase also appears as

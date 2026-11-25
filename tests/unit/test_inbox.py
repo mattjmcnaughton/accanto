@@ -73,8 +73,7 @@ def test_outflow_with_savings_funding_maps_to_entry_command():
         "amount": "640.00",
         "note": "Sample Plumbing Co",
         "category": "spending",
-        "funding_origin": "savings",
-        "saving_goal_id": GOAL,
+        "funding_goal_id": GOAL,
     }
 
 
@@ -86,12 +85,13 @@ def test_each_category_maps_to_its_existing_command():
         == LINE
     )
     giving = command_for(OUT, Completion(category="giving", assignment="unassigned"))
-    assert (giving.kind, giving.fields["destination_id"]) == ("giving", None)
+    assert (giving.kind, giving.fields["giving_recipient_id"]) == ("giving", None)
     invest = command_for(OUT, Completion(category="investing", assignment=LINE))
-    assert (invest.kind, invest.fields["funding_origin"]) == ("investment", "income")
+    assert (invest.kind, invest.fields["investment_id"]) == ("investment", LINE)
+    assert invest.fields["funding_goal_id"] is None
     saving = command_for(OUT, Completion(category="saving", assignment=GOAL))
     assert saving.fields["saving_goal_id"] == GOAL
-    assert "funding_origin" not in saving.fields
+    assert "funding_goal_id" not in saving.fields
     refund = command_for(IN, Completion(refund_of=LINE))
     assert refund.kind == "refund"
     assert refund.fields == {

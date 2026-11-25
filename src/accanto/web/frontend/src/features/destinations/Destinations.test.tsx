@@ -23,7 +23,7 @@ const entry = {
   note: "",
   is_adjustment: false,
   revision: 3,
-  destination_id: destination.uuid,
+  investment_id: destination.uuid,
 };
 const observation = (uuid: string, date: string, amount: string, is_opening: boolean) => ({
   uuid,
@@ -182,13 +182,16 @@ it("records an investment contribution from one saving goal", async () => {
     expect.objectContaining({
       method: "POST",
       body: expect.objectContaining({
-        funding_origin: "savings",
-        saving_goal_id: "goal-1",
+        funding_goal_id: "goal-1",
         amount: "100.00",
       }),
     }),
     expect.any(Function),
   );
+  // The retired pair is never sent; funding_goal_id alone names the origin.
+  const body = vi.mocked(p.save).mock.calls[0][0].body;
+  expect(body).not.toHaveProperty("funding_origin");
+  expect(body).not.toHaveProperty("saving_goal_id");
 });
 
 it("shows net donations and leaves linked refunds to Activity", async () => {
@@ -209,7 +212,7 @@ it("shows net donations and leaves linked refunds to Activity", async () => {
         uuid: "gift",
         category: "giving",
         amount: "500.00",
-        destination_id: "recipient-1",
+        giving_recipient_id: "recipient-1",
       },
       {
         ...entry,
@@ -217,7 +220,7 @@ it("shows net donations and leaves linked refunds to Activity", async () => {
         category: "giving",
         financial_date: "2026-02-09",
         amount: "-50.00",
-        destination_id: "recipient-1",
+        giving_recipient_id: "recipient-1",
         is_refund: true,
       },
     ],

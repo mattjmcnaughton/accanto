@@ -187,15 +187,11 @@ def command_for(facts: StagedFacts, c: Completion) -> EntryCommand:
         )
     line = None if c.assignment in (None, UNASSIGNED) else c.assignment
     goal = None if c.funding in (None, "income") else c.funding
-    funding = {
-        "funding_origin": "savings" if goal else "income",
-        "saving_goal_id": goal,
-    }
-    if c.category in {"investing", "giving"}:
-        return EntryCommand(
-            "investment" if c.category == "investing" else "giving",
-            {**base, "destination_id": line, **funding},
-        )
+    funding = {"funding_goal_id": goal}
+    if c.category == "investing":
+        return EntryCommand("investment", {**base, "investment_id": line, **funding})
+    if c.category == "giving":
+        return EntryCommand("giving", {**base, "giving_recipient_id": line, **funding})
     fields = {**base, "category": c.category}
     if c.category == "income":
         fields["source_id"] = line

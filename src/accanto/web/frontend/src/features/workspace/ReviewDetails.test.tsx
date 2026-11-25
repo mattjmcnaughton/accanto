@@ -94,6 +94,7 @@ it("keeps missing identities unknown and exposes unplanned contributors and alre
     is_adjustment: true,
     funding_origin: "income",
     saving_goal_id: null,
+    funding_goal_id: null,
   };
   const empty: ComparisonGroup = {
     planned: "0.00",
@@ -200,6 +201,7 @@ it("renders older contracts from missing-source ids and month entries without in
             is_adjustment: false,
             funding_origin: "income",
             saving_goal_id: null,
+            funding_goal_id: null,
           },
         ],
       }}

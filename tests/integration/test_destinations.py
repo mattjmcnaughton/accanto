@@ -141,7 +141,7 @@ async def scenario():
         before = {
             "date": "2025-12-31",
             "amount": "100.00",
-            "destination_id": investment["uuid"],
+            "investment_id": investment["uuid"],
             "note": "",
             "is_adjustment": False,
         }
@@ -152,7 +152,7 @@ async def scenario():
         contribution = await command("POST", "/investment-activity", body)
         assert contribution.status_code == 200, contribution.text
         entry = contribution.json()
-        assert entry["destination_id"] == investment["uuid"]
+        assert entry["investment_id"] == investment["uuid"]
         assert (await client.get(path + "/investments")).json()[0][
             "contribution_progress"
         ] == "1000.00"
@@ -160,7 +160,7 @@ async def scenario():
             "uuid"
         ] == entry["uuid"]
         assert (await client.get(path + "/activity")).json()[0][
-            "destination_id"
+            "investment_id"
         ] == investment["uuid"]
         generic = await command(
             "PUT",
@@ -279,7 +279,7 @@ async def scenario():
             {
                 "date": "2026-02-01",
                 "amount": "100.00",
-                "destination_id": recipient["uuid"],
+                "giving_recipient_id": recipient["uuid"],
                 "note": "",
                 "is_adjustment": False,
             },
@@ -291,12 +291,23 @@ async def scenario():
             {
                 "date": "2026-02-02",
                 "amount": "-25.00",
-                "destination_id": recipient["uuid"],
+                "giving_recipient_id": recipient["uuid"],
                 "note": "Correction",
                 "is_adjustment": True,
             },
         )
         assert adjustment.status_code == 200, adjustment.text
+        assert adjustment.json()["giving_recipient_id"] == recipient["uuid"]
+        wrong_field = await command(
+            "POST",
+            "/giving-activity",
+            {
+                "date": "2026-02-02",
+                "amount": "5.00",
+                "investment_id": recipient["uuid"],
+            },
+        )
+        assert wrong_field.status_code == 422, wrong_field.text
         assert (await client.get(path + "/giving-recipients")).json()[0][
             "contribution_progress"
         ] == "75.00"
@@ -307,7 +318,7 @@ async def scenario():
                 {
                     "date": "2026-02-02",
                     "amount": "-1.00",
-                    "destination_id": None,
+                    "investment_id": None,
                     "note": "",
                     "is_adjustment": False,
                 },
@@ -319,7 +330,7 @@ async def scenario():
             {
                 "date": "2026-02-02",
                 "amount": "40.00",
-                "destination_id": None,
+                "investment_id": None,
                 "note": "",
                 "is_adjustment": False,
             },
