@@ -61,6 +61,13 @@ at creation and stored only as hashes. MCP clients may authenticate with those
 user-owned API keys; hosted MCP access for clients that cannot hold a key
 (claude.ai, mobile connectors) uses OAuth in a later phase.
 
+A data model change reaches every interface in the same change: the database
+and migration, domain rules and services, the documented API, the agent tool
+catalog and MCP, the UI, and CONTEXT.md for any new or changed domain meaning.
+A field or record that only some interfaces can read or set is an incomplete
+change. Leaving an interface out requires an explicit decision recorded in the
+technical design.
+
 All interfaces use the same application behavior and authorization rules.
 Authentication establishes the User; authorization enforces access to the
 Entity and its records on every request, including retries. Credentials must
@@ -197,6 +204,11 @@ verification gaps.
 
 ### Amendment notes
 
+- 2026-11-25: §2 requires a data model change to reach every interface (database,
+  domain and services, API, agent tool catalog and MCP, UI, CONTEXT.md) in the
+  same change, unless the technical design records an explicit exclusion.
+  Rationale: the owner operates Accanto through the UI, the API, and agents, so a
+  field that one interface cannot reach silently diverges the others.
 - 2026-11-23: §2 allows MCP clients to authenticate with user-owned API keys;
   hosted MCP OAuth follows later. §6 names PRD 02 as the explicit decision for
   sending financial data to model providers. Rationale: let CLI agents (Claude
