@@ -11,16 +11,25 @@ import type { EstimateResult } from "../../lib/incomeEstimates";
 import type { Activity, PlanGroup, ReviewResult } from "../../lib/monthly";
 import type { SavingsAccount, SavingsMovement } from "../../lib/savings";
 
+/** The Entity the screens show. */
+export const entity: BrowserSession["entities"][number] = {
+  id: "e22db039-37c5-4fcc-b002-8b6ca44f2d35",
+  name: "Synthetic fixture workspace",
+  time_zone: "UTC",
+  today: "2026-11-10",
+};
 export const session: BrowserSession = {
   user: {
     id: "synthetic-user",
   },
   csrf_token: "synthetic-csrf",
   entities: [
+    entity,
+    // An invented second Entity of the same User, for the Entity switcher.
     {
-      id: "e22db039-37c5-4fcc-b002-8b6ca44f2d35",
-      name: "Synthetic fixture workspace",
-      time_zone: "UTC",
+      id: "0b6f3c1e-5d2a-4e8f-9a47-3c1d2e5f6a7b",
+      name: "Synthetic personal workspace",
+      time_zone: "America/Chicago",
       today: "2026-11-10",
     },
   ],

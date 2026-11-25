@@ -3,11 +3,17 @@ import { fn, userEvent, within } from "storybook/test";
 import { Workspace } from "../../features/workspace/Workspace";
 import { data } from "../mocks/api";
 
-// The shell keeps its own screen and month here; the app keeps both in the address.
+// The shell keeps its own screen and month here; the app keeps both, and the Entity, in the
+// address. Switching Entities is recorded in the Actions panel.
 const meta = {
   title: "Shell/Workspace",
   component: Workspace,
-  args: { initial: data.session, signedOut: fn() },
+  args: {
+    initial: data.session,
+    entityId: data.entity.id,
+    signedOut: fn(),
+    switchEntity: fn().mockName("switchEntity"),
+  },
 } satisfies Meta<typeof Workspace>;
 export default meta;
 type Story = StoryObj<typeof meta>;

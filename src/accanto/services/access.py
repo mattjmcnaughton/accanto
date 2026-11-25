@@ -95,6 +95,20 @@ async def revalidate_actor(session, actor: str | AuthenticatedActor, *, lock):
     return replace(current, interface_override=actor.interface_override)
 
 
+async def lock_user(session, user_id: int) -> None:
+    """Serialize one User's cross-Entity commands (Create Entity, connect a source).
+
+    FOR NO KEY UPDATE leaves the foreign-key share locks that other writes take on
+    the User row unblocked. Lock order: credential, then any Entity, then the User.
+    The caller owns the transaction.
+    """
+    await session.execute(
+        select(m.users.c.id)
+        .where(m.users.c.id == user_id)
+        .with_for_update(key_share=True)
+    )
+
+
 async def resolve_oauth_actor(session, verify_identity):
     """Revalidate the external token and resolve only a provisioned exact identity.
 

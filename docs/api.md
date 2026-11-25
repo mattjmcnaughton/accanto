@@ -500,6 +500,24 @@ or `identity_setup_required`; 503 for unconfigured/unavailable sign-in. API
 responses are `no-store`. An unknown `(issuer, subject)` requires operator setup;
 a matching verified email never merges accounts.
 
+## Create Entity
+
+`POST /api/entities` with `Idempotency-Key` and `{"name": "Personal", "time_zone":
+"America/Chicago"}` creates an empty Entity owned by the caller (browser session or
+API key) and returns `{id, name, time_zone, revision}`. The name is trimmed and
+must be 1–120 characters; a valid IANA zone is required (422 otherwise). The Entity
+and its `create_entity` audit record (`before: null`) and retry outcome commit
+together. The retry identity is per User: the same key and input returns the first
+result, the same key with other input returns `409 key_reuse`. Nothing is copied
+from another Entity; there is no delete, archive or copy. A new Entity appears in
+`GET /api/auth/session`; other Users get 404 for it like any unowned Entity.
+
+Each Entity is a separate boundary: a record UUID from another Entity of the same
+User is `404 record_not_found`, exactly like a foreign one. A YNAB plan can be
+connected to only one of the User's Entities at a time: connecting a plan that is
+connected (not disconnected) in another of them returns `409
+source_connected_elsewhere` naming that Entity. Disconnect it there first.
+
 ## Entity settings and API key metadata
 
 `GET /api/entities/{id}/settings` returns `id`, `name`, `time_zone`, `revision`
@@ -649,7 +667,7 @@ point it at the fake server in `tests/fakes/ynab_server.py`.
 | PUT | `/transaction-provider` | `{kind, access_token, expected_revision}`; checks the token with the provider, then stores it encrypted |
 | DELETE | `/transaction-provider` | `{expected_revision}`; forgets the token; connected sources stay but cannot sync until one is saved |
 | GET | `/sources/ynab/plans` | YNAB plans the saved token can read |
-| POST | `/sources/ynab` | `{plan_id, start_date}`; connects a USD plan through the saved token; transactions before `start_date` are never staged |
+| POST | `/sources/ynab` | `{plan_id, start_date}`; connects a USD plan through the saved token; transactions before `start_date` are never staged; `409 source_connected_elsewhere` if another of the User's Entities has it connected |
 | GET | `/sources/{source_id}/accounts` | The plan's accounts and which are selected |
 | PUT | `/sources/{source_id}/accounts` | `{account_ids, expected_revision}`; default is none; adding an account re-reads history |
 | DELETE | `/sources/{source_id}` | `{expected_revision}`; stops importing the plan; recorded entries and inbox history stay |

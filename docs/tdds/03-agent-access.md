@@ -380,8 +380,8 @@ from the design above. None changes a financial rule.
   2.68 the retry reaches the model as a `ToolReturnPart` with outcome `retried`.
   Sidebar write tools also accept `uncertain_fields` and `source_text`; they are
   stored with the Pending change as `input._draft` and stripped before apply.
-- **Turn limits.** The daily cap counts stored owner messages for the Entity in
-  the last 24 hours (a failed turn stores none). When both reply slots are busy
+- **Turn limits.** The daily cap counts the User's stored owner messages across
+  all their Entities in the last 24 hours ([TDD 04](04-multiple-entities.md)) (a failed turn stores none). When both reply slots are busy
   the send is refused with `429 agent_busy` rather than queued. Pending changes
   drafted during a turn that later fails are kept (each tool call commits on its
   own); only the turn's messages are discarded. Clearing the conversation does

@@ -87,6 +87,11 @@ save_activity. Use the date printed on the document; if no date is legible, ask 
 instead of guessing, and never default to today. An unpaid bill is not \
 activity. List fields you are unsure of under uncertain_fields and copy the \
 text you relied on into source_text.
+- This conversation serves only the Entity named in the context block. The owner \
+may have other Entities, but you cannot see or change them. If the owner refers \
+to another Entity, say this conversation is limited to the current Entity and \
+that they can switch Entities in Accanto's top bar; never guess its figures.
+- When you draft or make a change, name the Entity it is for.
 - You cannot see or change API keys, transaction source setup, your own \
 settings (enablement, mode, AGENT.md) or the Entity's settings. If asked, say \
 the owner can do it in Settings.

@@ -28,8 +28,14 @@ Accanto is a financial companion. These tools read and change one Entity's \
 Plans, activity, Reviews, savings, investments, giving, loans, income estimates \
 and Transactions inbox for the owner who issued your API key.
 
-- Call get_context first. Pass the same entity_id to every other tool; never \
-combine Entities.
+- Call get_context first; without entity_id it lists the owner's Entities. If \
+there is more than one and the request does not name one, ask the owner which \
+Entity to use; never pick one yourself. Pass that entity_id to every other tool.
+- Each Entity is a separate set of finances. You may show figures from several \
+Entities side by side, each labeled with its Entity, but never add them into a \
+combined total or move money between Entities.
+- Every write result names its Entity (entity.name); say which Entity a change \
+was made or drafted for.
 - Money is a decimal string. null means unknown, never zero; an incomplete \
 subtotal is not a complete total. Quote figures from tool results instead of \
 computing them.

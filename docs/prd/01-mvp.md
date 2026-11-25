@@ -13,8 +13,9 @@ prototype experiments. [The TDD](../tdds/01-mvp.md) owns implementation choices.
 
 The actor is the person using Accanto. User is the identity; Entity is the
 financial workspace. Planning, recording and reviewing are not permission roles.
-Initial scope is one owner, one Entity and USD. All financial references stay
-within that Entity. Starts empty; test/demo fixtures never populate ordinary work.
+Initial scope is one owner and USD. The owner may create several Entities (such
+as Family and Personal, [TDD 04](../tdds/04-multiple-entities.md)) and works in one
+at a time. All financial references stay within one Entity. Starts empty; test/demo fixtures never populate ordinary work.
 
 ## Agreed requirements and acceptance
 
@@ -250,7 +251,8 @@ No mandatory migration of prototype data into production is assumed.
 ## Intentional deferrals and unresolved policy
 
 Deferred: annual Plans/Reviews/rollups; tax liability and deduction engines; split
-funding; credit-card settlement; automated bank reconciliation; investment performance/FIRE; multiple-Entity UI/sharing;
+funding; credit-card settlement; automated bank reconciliation; investment performance/FIRE; Entity sharing/membership, deletion, archival and
+copying; cross-Entity links, transfers and combined totals; per-Entity API keys;
 advanced income matching; dedicated restoration UI; lump-sum spread helpers.
 
 Read-only import into the Transactions inbox, starting with YNAB, is in scope.

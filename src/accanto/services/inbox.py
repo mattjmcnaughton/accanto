@@ -33,7 +33,7 @@ from accanto.models import destinations as d
 from accanto.models import inbox as st
 from accanto.models import monthly as m
 from accanto.models import savings as s
-from accanto.services.access import RejectionError
+from accanto.services.access import RejectionError, lock_user
 from accanto.services.monthly import (
     DryRun,
     authorize,
@@ -500,6 +500,29 @@ async def check_references(session, entity_id, proposal):
 
 async def write_source(session, entity, operation, payload, target, audit):
     if operation == "connect_source":
+        # One YNAB plan feeds one of the owner's Entities at a time, so the same
+        # transactions are never staged into two Entities. The User lock makes
+        # concurrent connects from different Entities check and insert in turn.
+        await lock_user(session, entity["owner_id"])
+        elsewhere = await session.scalar(
+            select(m.entities.c.name)
+            .join(st.sources, st.sources.c.entity_id == m.entities.c.id)
+            .where(
+                m.entities.c.owner_id == entity["owner_id"],
+                m.entities.c.id != entity["id"],
+                st.sources.c.kind == payload["kind"],
+                st.sources.c.external_ref == payload["plan_id"],
+                st.sources.c.disconnected_at.is_(None),
+            )
+            .limit(1)
+        )
+        if elsewhere is not None:
+            raise RejectionError(
+                "source_connected_elsewhere",
+                f"This plan is already connected to your Entity {elsewhere}. "
+                "Disconnect it there before connecting it here.",
+                409,
+            )
         record = (
             (
                 await session.execute(

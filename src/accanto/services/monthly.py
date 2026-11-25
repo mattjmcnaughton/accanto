@@ -33,6 +33,13 @@ def json_values(value):
     return json.loads(json.dumps(value, default=str))
 
 
+def request_digest(payload) -> str:
+    """The retry identity's input hash: the same key with other input is rejected."""
+    return hashlib.sha256(
+        json.dumps(json_values(payload), sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 async def authorize(
     session: AsyncSession,
     token: str | AuthenticatedActor,
@@ -131,11 +138,7 @@ async def write(
     async with session.begin():
         actor, entity = await authorize(session, token, entity_uuid, lock=True)
         scope = scope or f"{operation}:{target or ''}"
-        digest = hashlib.sha256(
-            json.dumps(
-                json_values(payload), sort_keys=True, separators=(",", ":")
-            ).encode()
-        ).hexdigest()
+        digest = request_digest(payload)
         previous = (
             (
                 await session.execute(

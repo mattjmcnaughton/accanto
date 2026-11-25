@@ -27,6 +27,8 @@ export interface AgentPanelProps {
   openSettings: () => void;
   /** After a turn or a dismissal: screens reload, so new inbox proposals show. */
   changed: () => void;
+  /** Whether a reply is streaming; the workspace blocks switching Entities meanwhile. */
+  streaming?: (on: boolean) => void;
 }
 type Tab = "chat" | "pending";
 interface Live {
@@ -87,6 +89,12 @@ export function AgentPanel(p: AgentPanelProps) {
     };
   }, [p.entity.id, p.refresh, reload]);
   useEffect(() => () => abort.current?.abort(), []);
+  const reportStreaming = useRef(p.streaming);
+  reportStreaming.current = p.streaming;
+  useEffect(() => {
+    reportStreaming.current?.(live !== null);
+  }, [live]);
+  useEffect(() => () => reportStreaming.current?.(false), []);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Scroll whenever the transcript grows.
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight });
@@ -207,6 +215,7 @@ export function AgentPanel(p: AgentPanelProps) {
           key={c.id}
           change={c}
           canApply={recordMode}
+          entityName={p.entity.name}
           disabled={p.busy}
           apply={(edited) => apply(c, edited)}
           dismiss={() => void dismiss(c)}
@@ -217,6 +226,9 @@ export function AgentPanel(p: AgentPanelProps) {
     <aside className="agent" aria-label="Assistant">
       <header className="agent-h">
         <b>Assistant</b>
+        <span className="agent-entity" title="This conversation is limited to this Entity">
+          {p.entity.name}
+        </span>
         {settings?.enabled && (
           <span className={`agent-mode ${settings.mode}`}>
             {recordMode ? "Record with approval" : "Propose only"}
@@ -275,6 +287,7 @@ export function AgentPanel(p: AgentPanelProps) {
                   key={c.id}
                   change={c}
                   canApply
+                  entityName={p.entity.name}
                   disabled={p.busy}
                   apply={(edited) => apply(c, edited)}
                   dismiss={() => void dismiss(c)}
@@ -315,6 +328,7 @@ export function AgentPanel(p: AgentPanelProps) {
                   {live.changes.map((c) => (
                     <div key={c.id} className="agent-card card pad">
                       <b>Drafted: {c.summary}</b>
+                      <small className="note">For {p.entity.name}</small>
                     </div>
                   ))}
                 </div>
@@ -395,12 +409,15 @@ const ACTIVITY_FIELDS = ["date", "category", "amount", "note"] as const;
 export function PendingCard({
   change,
   canApply,
+  entityName,
   disabled,
   apply,
   dismiss,
 }: {
   change: PendingChange;
   canApply: boolean;
+  /** The Entity the change is for: a card never applies anywhere else. */
+  entityName: string;
   disabled: boolean;
   apply: (edited?: Record<string, unknown>) => void;
   dismiss: () => void;
@@ -416,7 +433,8 @@ export function PendingCard({
     <div className="agent-card card pad" data-pending={change.id}>
       <b>{change.summary}</b>
       <small className="note">
-        Drafted by {change.created_by_interface === "mcp" ? "an MCP client" : "the assistant"} ·{" "}
+        For {entityName} · Drafted by{" "}
+        {change.created_by_interface === "mcp" ? "an MCP client" : "the assistant"} ·{" "}
         {TOOL_LABEL(change.tool)}
       </small>
       {editable ? (

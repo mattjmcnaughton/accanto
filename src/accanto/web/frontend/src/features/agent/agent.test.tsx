@@ -107,17 +107,26 @@ it("hides Apply when the change cannot be applied, and applies owner edits", () 
     <PendingCard
       change={change()}
       canApply={false}
+      entityName="Synthetic Personal"
       disabled={false}
       apply={apply}
       dismiss={vi.fn()}
     />,
   );
+  expect(screen.getByText(/For Synthetic Personal/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
   expect(screen.getByRole("button", { name: "Dismiss" })).toBeEnabled();
   expect(screen.getByText("date (check this)")).toBeInTheDocument();
   expect(screen.getByText("EXAMPLE GROCER TOTAL 65.50")).toBeInTheDocument();
   view.rerender(
-    <PendingCard change={change()} canApply disabled={false} apply={apply} dismiss={vi.fn()} />,
+    <PendingCard
+      change={change()}
+      canApply
+      entityName="Synthetic Personal"
+      disabled={false}
+      apply={apply}
+      dismiss={vi.fn()}
+    />,
   );
   fireEvent.change(screen.getByLabelText(/^date/), { target: { value: "2026-11-10" } });
   fireEvent.click(screen.getByRole("button", { name: "Apply" }));

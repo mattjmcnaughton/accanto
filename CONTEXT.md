@@ -14,7 +14,7 @@ acceptance criteria; this file defines their shared domain meanings.
 
 | Term | Meaning |
 | --- | --- |
-| User | The account identity used for sign-in and account management. A User may eventually have multiple Entities. A User is not itself the financial planning boundary; authentication implementation is deferred. |
+| User | The account identity used for sign-in and account management. A User owns one or more Entities and works in one at a time. A User is not itself the financial planning boundary. |
 | Entity | A User’s named financial workspace and the planning boundary for Income sources, Plans, Reviews, saving goals, savings accounts, investments, debt accounts, giving recipients, cash-account tags, and recorded activity. Its finances are viewed and totaled together. Income sources belong to individual Plans within the Entity, not to a shared Entity source catalog. |
 | Entity time zone | The time zone used for defaults such as today and this month across browser, API, and MCP. Financial activity belongs to the calendar date selected for it, not the date of entry or a time-zone conversion. Changing the time zone does not move existing activity between dates or Periods. |
 | Currency | All monetary amounts use U.S. dollars (USD): Plan inputs and results, actual entries and adjustments, funding origins, saving goals, contribution targets, investment balance observations, and projections. Mixed-currency records and currency conversion are outside current scope. |
@@ -280,12 +280,16 @@ second source would add one adapter module, not an integration framework.
 
 ## Domain boundaries
 
-A User is the account boundary. An Entity is the financial boundary. The intended
-relationship is one User to potentially many Entities; the current prototype
-operates on one Entity and does not implement User accounts or Entity switching.
+A User is the account boundary. An Entity is the financial boundary. One User
+owns each Entity and may own several, such as Family and Personal; there is no
+sharing or membership. The User works in one Entity at a time and switches
+explicitly. Records never link across Entities: a funding origin, assignment or
+transfer names only records of the same Entity, and there are no cross-Entity
+transfers. A Transaction source's plan feeds one of the User's Entities at a time.
 All Plans, Reviews, Income sources, activity, goals, savings accounts, investments,
 debt accounts, giving recipients, and balance observations are scoped to their Entity. Totals never combine different
-Entities implicitly. A household can be represented by an Entity, but Household
+Entities: figures from several Entities may be shown side by side, each labeled
+with its Entity, but never added into a combined total. A household can be represented by an Entity, but Household
 is not a separate domain type or the name of the account owner.
 
 
@@ -434,10 +438,10 @@ establish a match. Fixed-cost identity behavior is unchanged by this income deci
 These conventions describe the current prototype and agreed product direction.
 They define behavior without prescribing production storage or architecture:
 
-- One named Entity in the prototype. A User is the account holder and may
-  eventually have multiple Entities. Account implementation, Entity creation and
-  switching, and any sharing permissions are deferred; the User/Entity distinction
-  is settled domain language, not an unresolved ownership model.
+- A User can Create Entity (a name and Entity time zone; it starts empty) and
+  switch between their Entities in the web app; the API and MCP name the Entity on
+  every call. Deleting, archiving or copying an Entity and any sharing permissions
+  are deferred ([TDD 04](docs/tdds/04-multiple-entities.md)).
 - Activity can be recorded before a Review is created. Income and fixed-cost
   entries can select a stable source/category or remain Unassigned for unplanned
   activity, with a descriptive note. Recording them never requires a Plan change.

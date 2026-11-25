@@ -20,6 +20,7 @@ import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice"
 import { Savings } from "../savings/Savings";
 import { Settings } from "../settings/Settings";
 import { ActivityScreen } from "./Activity";
+import { CreateEntityDialog, EntitySwitcher, createEntity } from "./Entities";
 import { MonthlyReview } from "./MonthlyReview";
 import { Plans } from "./Plans";
 import { useTheme } from "./shared";
@@ -42,8 +43,15 @@ export const SCREENS = [
 export type Screen = (typeof SCREENS)[number];
 /** A month in the address, YYYY-MM; without one the screens show the Entity's current month. */
 export const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
-export const hrefFor = (screen: Screen, month?: string) =>
-  `${screen === "home" ? "#/" : `#/${screen}`}${month ? `?m=${month}` : ""}`;
+/** An Entity's UUID in the address, ?e=…; it is there only when the User has several. */
+export const ENTITY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const hrefFor = (screen: Screen, month?: string, entity?: string) => {
+  const search = new URLSearchParams();
+  if (month) search.set("m", month);
+  if (entity) search.set("e", entity);
+  const query = search.toString();
+  return `${screen === "home" ? "#/" : `#/${screen}`}${query ? `?${query}` : ""}`;
+};
 
 // Destinations grouped by job instead of nine numbered tabs.
 const NAV: { group: string; items: [Screen, string][] }[] = [
@@ -99,6 +107,9 @@ export function Workspace({
   screen: requested,
   month: requestedMonth,
   navigate,
+  entityId,
+  requestedEntity,
+  switchEntity,
 }: {
   initial: BrowserSession;
   signedOut: (message?: string) => void;
@@ -108,9 +119,19 @@ export function Workspace({
   month?: string;
   /** month: undefined leaves the address without a month. */
   navigate?: (to: Screen, replace?: boolean, month?: string) => void;
+  /** The Entity this workspace serves for its whole life; without it, the first one. */
+  entityId?: string;
+  /** The Entity in the address; a different one is a switch, guarded like any navigation. */
+  requestedEntity?: string;
+  /**
+   * Remount the workspace for another Entity with the latest session. fromAddress: the
+   * address already names it (Back or Forward), so there is nothing to navigate.
+   */
+  switchEntity?: (id: string, session: BrowserSession, fromAddress: boolean) => void;
 }) {
   const [session, setSession] = useState(initial);
-  const thisMonth = initial.entities[0]?.today.slice(0, 7) ?? "";
+  const own = (s: BrowserSession) => s.entities.find((e) => e.id === entityId) ?? s.entities[0];
+  const thisMonth = own(initial)?.today.slice(0, 7) ?? "";
   const [local, setLocal] = useState<{ screen: Screen; month?: string }>({ screen: "home" });
   const target = requested ?? local.screen;
   const targetMonth = (navigate ? requestedMonth : local.month) ?? thisMonth;
@@ -135,7 +156,11 @@ export function Workspace({
   const pending = useRef(new RecoverableWrite<unknown>());
   const afterSave = useRef<(data: unknown) => void>(() => {});
   const [concealed, setConcealed] = useState(false);
-  const entity = session.entities[0];
+  const [creating, setCreating] = useState(false);
+  const streaming = useRef(false);
+  const entity = own(session);
+  // Several Entities: links carry the Entity so a copied or new-tab address opens the same one.
+  const linkEntity = session.entities.length > 1 ? entity?.id : undefined;
   useEffect(() => {
     live.current = true;
     const remove = guardUnsavedNavigation(
@@ -279,6 +304,58 @@ export function Workspace({
     if (screen === "activity") setAdd((x) => x + 1);
     else if (go("activity")) setAdd(1);
   }
+  /**
+   * Switching Entities drops this workspace's tab memory: retained Plan drafts, an unconfirmed
+   * write and the month. It waits for an in-flight save or assistant reply instead of cutting
+   * them off, and asks before discarding unsaved input.
+   */
+  function canSwitch(): boolean {
+    if (concealed) return false;
+    if (busy || metadataStale) {
+      setMessage("Wait for the current save to finish before switching Entities.");
+      return false;
+    }
+    if (streaming.current) {
+      setMessage("Wait for the assistant's reply to finish before switching Entities.");
+      return false;
+    }
+    return confirmInAppNavigation(
+      () => dirty.current || planDirty.current || pending.current.hasPending(),
+    );
+  }
+  function leaveFor(id: string, next: BrowserSession, fromAddress: boolean) {
+    pending.current.clear();
+    dirty.current = false;
+    planDirty.current = false;
+    switchEntity?.(id, next, fromAddress);
+  }
+  function switchTo(id: string, next = session): boolean {
+    if (!switchEntity || id === entity?.id || !canSwitch()) return false;
+    leaveFor(id, next, false);
+    return true;
+  }
+  function create(body: { name: string; time_zone: string }) {
+    save(createEntity(body), (created) => {
+      setCreating(false);
+      void credentials()
+        .then((next) => {
+          if (!live.current) return;
+          setSession(next);
+          if (!switchTo(created.id, next))
+            setMessage(`Created ${created.name}. Switch to it from the Entity menu.`);
+        })
+        .catch(() => {
+          if (live.current) setMessage(`Created ${created.name}. Reload to switch to it.`);
+        });
+    });
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Only a change of address is a switch.
+  useEffect(() => {
+    if (!requestedEntity || !entity || requestedEntity === entity.id) return;
+    if (!session.entities.some((e) => e.id === requestedEntity)) return;
+    if (canSwitch()) leaveFor(requestedEntity, session, true);
+    else move(screen, true);
+  }, [requestedEntity]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Only a change of address is a navigation.
   useEffect(() => {
     if (target === screen && targetMonth === month) return;
@@ -358,7 +435,7 @@ export function Workspace({
     <a
       key={to}
       className="nav"
-      href={hrefFor(to, month === thisMonth ? undefined : month)}
+      href={hrefFor(to, month === thisMonth ? undefined : month, linkEntity)}
       aria-current={(to === "more" ? !TABBED.includes(screen) : screen === to) ? "page" : undefined}
       aria-keyshortcuts={
         ORDER.indexOf(to) >= 0 && ORDER.indexOf(to) < 9 ? String(ORDER.indexOf(to) + 1) : undefined
@@ -381,6 +458,18 @@ export function Workspace({
       run: () => go(to),
     })),
     { text: "Add activity", hint: "Action", run: addActivity },
+    ...(switchEntity
+      ? [
+          ...session.entities
+            .filter((e) => e.id !== entity?.id)
+            .map((e) => ({
+              text: `Switch to ${e.name}`,
+              hint: "Entity",
+              run: () => void switchTo(e.id),
+            })),
+          { text: "Create Entity", hint: "Entity", run: () => setCreating(true) },
+        ]
+      : []),
     ...(month === thisMonth
       ? []
       : [
@@ -431,7 +520,7 @@ export function Workspace({
       <aside className="side">
         <a
           className="logo"
-          href={hrefFor("home")}
+          href={hrefFor("home", undefined, linkEntity)}
           onClick={(e) => {
             e.preventDefault();
             go("home");
@@ -460,6 +549,16 @@ export function Workspace({
       </aside>
       <div className="main">
         <header className="top">
+          {entity && !concealed && switchEntity && (
+            <EntitySwitcher
+              className="top-entity"
+              entities={session.entities}
+              current={entity}
+              disabled={props.busy}
+              choose={(id) => void switchTo(id)}
+              create={() => setCreating(true)}
+            />
+          )}
           {!concealed &&
             (entity && MONTHLY.includes(screen) ? (
               <div className="month">
@@ -632,7 +731,7 @@ export function Workspace({
                       <a
                         key={to}
                         className="row"
-                        href={hrefFor(to)}
+                        href={hrefFor(to, undefined, linkEntity)}
                         data-row
                         onClick={(e) => {
                           e.preventDefault();
@@ -647,6 +746,16 @@ export function Workspace({
                   </div>
                   <div className="more-user">
                     <span className="note">Signed in to {entity.name}</span>
+                    {switchEntity && (
+                      <EntitySwitcher
+                        className="more-entity"
+                        entities={session.entities}
+                        current={entity}
+                        disabled={props.busy}
+                        choose={(id) => void switchTo(id)}
+                        create={() => setCreating(true)}
+                      />
+                    )}
                     <button type="button" className="btn" onClick={() => void signOut()}>
                       Sign out
                     </button>
@@ -667,6 +776,9 @@ export function Workspace({
           credentials={credentials}
           save={save}
           close={() => setAssistant(false)}
+          streaming={(on) => {
+            streaming.current = on;
+          }}
           openSettings={() => go("settings")}
           changed={() => setRefresh((x) => x + 1)}
         />
@@ -683,6 +795,16 @@ export function Workspace({
       {dialogSlot && notice && createPortal(notice, dialogSlot)}
       {palette && !concealed && <Palette commands={commands} close={() => setPalette(false)} />}
       {shortcuts && !concealed && <Shortcuts close={() => setShortcuts(false)} />}
+      {creating && entity && !concealed && (
+        <CreateEntityDialog
+          zone={entity.time_zone}
+          busy={props.busy}
+          submit={create}
+          close={() => {
+            if (!busy) setCreating(false);
+          }}
+        />
+      )}
       {message && !concealed && (
         <output className="toast">
           {message}
