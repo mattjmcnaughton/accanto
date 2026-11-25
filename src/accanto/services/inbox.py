@@ -300,19 +300,83 @@ async def read_sources(session, token, entity_uuid):
         return [await source_view(session, row) for row in rows]
 
 
-async def source_secret(session, token, entity_uuid, source_uuid, key):
-    """The decrypted token for an outside call; never returned to callers."""
+async def provider_row(session, entity_id):
+    return (
+        (
+            await session.execute(
+                select(st.providers).where(st.providers.c.entity_id == entity_id)
+            )
+        )
+        .mappings()
+        .first()
+    )
+
+
+def provider_view(row) -> dict:
+    """Never includes the token: only whether one is saved."""
+    if row is None:
+        return {"kind": None, "configured": False, "revision": 0}
+    return {
+        "kind": row["kind"],
+        "configured": row["secret_ciphertext"] is not None,
+        "revision": row["revision"],
+    }
+
+
+async def read_provider(session, token, entity_uuid):
     async with session.begin():
         _, entity = await authorize(session, token, entity_uuid, lock=False)
-        row = await scoped(session, st.sources, entity["id"], source_uuid)
-    if row["disconnected_at"] is not None:
+        return provider_view(await provider_row(session, entity["id"]))
+
+
+async def write_provider(session, entity, payload, audit):
+    """Save or remove the Entity's provider token; dispatched by monthly.write()."""
+    row = await provider_row(session, entity["id"])
+    before = provider_view(row)
+    check_revision(before, payload["expected_revision"])
+    values = {
+        "kind": payload["kind"],
+        "secret_ciphertext": payload.get("ciphertext"),
+        "revision": before["revision"] + 1,
+    }
+    if row is None:
+        statement = insert(st.providers).values(entity_id=entity["id"], **values)
+    else:
+        statement = update(st.providers).where(st.providers.c.id == row["id"])
+        statement = statement.values(**values)
+    record = (await session.execute(statement.returning(st.providers))).mappings().one()
+    after = provider_view(record)
+    await audit(st.providers, record["uuid"], before, after)
+    return after
+
+
+async def source_secret(session, token, entity_uuid, source_uuid, key, kind="ynab"):
+    """The Settings token for an outside call; never returned to callers.
+
+    With a source_uuid, also returns that connected source's row.
+    """
+    async with session.begin():
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
+        row = None
+        if source_uuid is not None:
+            row = await scoped(session, st.sources, entity["id"], source_uuid)
+            kind = row["kind"]
+        provider = await provider_row(session, entity["id"])
+    if row is not None and row["disconnected_at"] is not None:
         raise RejectionError("source_disconnected", "Reconnect this source first.", 409)
+    if provider is None or provider["kind"] != kind:
+        raise RejectionError(
+            "provider_not_configured",
+            "Add a YNAB access token in Settings first.",
+            409,
+        )
     try:
-        secret = cipher(key).decrypt(row["secret_ciphertext"].encode()).decode()
+        secret = cipher(key).decrypt(provider["secret_ciphertext"].encode()).decode()
     except InvalidToken:
         raise RejectionError(
             "source_secret_unreadable",
-            "The stored token cannot be decrypted with the current key. Reconnect.",
+            "The saved token cannot be decrypted with the current key. "
+            "Save it again in Settings.",
             409,
         ) from None
     return row, secret
@@ -435,9 +499,6 @@ async def check_references(session, entity_id, proposal):
 
 
 async def write_source(session, entity, operation, payload, target, audit):
-    def public(row):
-        return {k: v for k, v in dict(row).items() if k != "secret_ciphertext"}
-
     if operation == "connect_source":
         record = (
             (
@@ -448,7 +509,6 @@ async def write_source(session, entity, operation, payload, target, audit):
                         kind=payload["kind"],
                         external_ref=payload["plan_id"],
                         name=payload["name"],
-                        secret_ciphertext=payload["ciphertext"],
                         start_date=date.fromisoformat(payload["start_date"]),
                     )
                     .returning(st.sources)
@@ -457,7 +517,7 @@ async def write_source(session, entity, operation, payload, target, audit):
             .mappings()
             .one()
         )
-        await audit(st.sources, record["uuid"], None, public(record))
+        await audit(st.sources, record["uuid"], None, dict(record))
         return await source_view(session, record)
     row = await scoped(session, st.sources, entity["id"], target)
     check_revision(row, payload["expected_revision"])
@@ -490,7 +550,7 @@ async def write_source(session, entity, operation, payload, target, audit):
             # A delta cursor already passed the new account's history; read it again.
             values["cursor"] = None
     else:
-        values.update(disconnected_at=datetime.now(UTC), secret_ciphertext="")
+        values.update(disconnected_at=datetime.now(UTC))
     record = (
         (
             await session.execute(
@@ -503,7 +563,7 @@ async def write_source(session, entity, operation, payload, target, audit):
         .mappings()
         .one()
     )
-    await audit(st.sources, record["uuid"], public(row), public(record))
+    await audit(st.sources, record["uuid"], dict(row), dict(record))
     return await source_view(session, record)
 
 

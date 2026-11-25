@@ -75,7 +75,10 @@ function useSettled<T>(state: LoadState<T>): LoadState<T> {
  * Every write is an explicit inbox command; the server re-runs every check when recording.
  */
 export function Inbox(
-  p: ScreenProps & { credentials: (signIn?: boolean) => Promise<BrowserSession> },
+  p: ScreenProps & {
+    credentials: (signIn?: boolean) => Promise<BrowserSession>;
+    openSettings?: () => void;
+  },
 ) {
   const [reload, setReload] = useState(0);
   const deps = [p.entity.id, p.refresh, reload];
@@ -95,6 +98,8 @@ export function Inbox(
   const [help, setHelp] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [busy, setBusy] = useState(false);
+  /** The source being synced, so the inbox can say so while YNAB is read. */
+  const [syncing, setSyncing] = useState<string | null>(null);
   const undo = useRef<Undo[]>([]);
   const list = useRef<HTMLDivElement>(null);
 
@@ -635,14 +640,15 @@ export function Inbox(
   if (p.concealed) return null;
   const source = sources.kind === "ready" ? sources.data.find((s) => s.connected) : undefined;
   const failed = [items, sources, plans, accounts, activity, investments, recipients];
-  async function sync() {
-    if (!source) return;
+  async function sync(target = source) {
+    if (!target || syncing) return;
+    setSyncing(target.name);
     const result = await run<{ counts: Record<string, number> }>(
-      inbox.sync(p.entity.id, source.id),
-    );
+      inbox.sync(p.entity.id, target.id),
+    ).finally(() => setSyncing(null));
     if (result)
       setToast({
-        text: `Synced ${source.name}: ${result.counts.added} new, ${result.counts.changed} changed, ${result.counts.removed + result.counts.conflicts} removed or in conflict.`,
+        text: `Synced ${target.name}: ${result.counts.added} new, ${result.counts.changed} changed, ${result.counts.removed + result.counts.conflicts} removed or in conflict.`,
       });
   }
 
@@ -662,8 +668,20 @@ export function Inbox(
         </div>
         <span className="spacer" />
         {source && (
-          <button type="button" className="btn sm" disabled={busy} onClick={() => void sync()}>
-            Sync now
+          <button
+            type="button"
+            className="btn sm"
+            disabled={busy || Boolean(syncing)}
+            aria-busy={Boolean(syncing)}
+            onClick={() => void sync()}
+          >
+            {syncing ? (
+              <>
+                <span className="ix-spin" aria-hidden="true" /> Syncing…
+              </>
+            ) : (
+              "Sync now"
+            )}
           </button>
         )}
         {/* biome-ignore lint/a11y/useSemanticElements: The kit's segmented control is a button group. */}
@@ -684,14 +702,37 @@ export function Inbox(
         </div>
         <Key k="v" />
       </header>
+      {syncing && (
+        <output className="ix-syncing">
+          <span className="ix-bar" aria-hidden="true" />
+          <span>
+            <span className="ix-spin" aria-hidden="true" /> Syncing {syncing} — reading new, changed
+            and deleted transactions from YNAB. Nothing is recorded.
+          </span>
+        </output>
+      )}
       <div className="ix-strip">
         <b>Review {fmtMonth(month)}</b>
         {waitingLabel(monthWaiting)}
         <span>as this month's Review shows it</span>
       </div>
       <LoadProblem states={failed} retry={() => setReload((x) => x + 1)} />
-      {items.kind === "loading" ? (
+      {items.kind === "loading" && !syncing ? (
         <LoadingCard label="Loading the inbox" />
+      ) : syncing && !all.length ? (
+        <LoadingCard label={`Syncing ${syncing}`} />
+      ) : source && !source.synced && source.accounts.length && !all.length ? (
+        <div className="ix-empty">
+          <b>Ready to sync {source.name}</b>
+          <p className="note">
+            {source.accounts.length} account{source.accounts.length === 1 ? "" : "s"} chosen. Sync
+            to bring their transactions into this inbox; none becomes an actual entry until you
+            record it.
+          </p>
+          <button type="button" className="btn pri sm" disabled={busy} onClick={() => void sync()}>
+            Sync {source.name} now
+          </button>
+        </div>
       ) : (sources.kind === "empty" && !all.length) || (source && !source.accounts.length) ? (
         <div className="ix-empty">
           <p className="note">
@@ -703,7 +744,8 @@ export function Inbox(
             today={p.entity.today}
             source={source}
             credentials={p.credentials}
-            connected={() => setReload((x) => x + 1)}
+            openSettings={p.openSettings}
+            connected={(saved) => void sync(saved)}
           />
         </div>
       ) : (

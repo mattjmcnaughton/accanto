@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent } from "storybook/test";
 import { Inbox } from "../../features/inbox/Inbox";
 import { data, mockApi, screenArgs } from "../mocks/api";
-import { inboxApi, seedInbox } from "../mocks/inbox";
+import { inboxApi, seedInbox, source } from "../mocks/inbox";
 
 /**
  * The Transactions inbox over a stateful synthetic inbox: the keys in the legend really record,
@@ -14,6 +14,7 @@ const meta = {
   args: {
     ...screenArgs(),
     credentials: fn(async () => data.session).mockName("credentials"),
+    openSettings: fn().mockName("openSettings"),
   },
   parameters: { layout: "padded", msw: [...inboxApi(), ...mockApi()] },
 } satisfies Meta<typeof Inbox>;
@@ -97,6 +98,37 @@ export const NothingWaiting: Story = {
 
 export const NoSource: Story = {
   parameters: { msw: [...inboxApi([], []), ...mockApi()] },
+};
+
+/** No token in Settings yet: the inbox points there instead of asking for one. */
+export const NoToken: Story = {
+  parameters: {
+    msw: [...inboxApi([], []), ...mockApi("loaded", { transactionProvider: "empty" })],
+  },
+};
+
+const unsynced = { ...source, synced: false, last_synced_at: null };
+
+/** A plan with more accounts than fit on screen: the list scrolls inside the panel. */
+export const ChooseManyAccounts: Story = {
+  parameters: { msw: [...inboxApi([], [{ ...unsynced, accounts: [] }]), ...mockApi()] },
+};
+
+/** Accounts chosen but never synced: the inbox prompts for the first sync. */
+export const ReadyToSync: Story = {
+  parameters: {
+    msw: [...inboxApi([], [unsynced], { syncDelay: "infinite" }), ...mockApi()],
+  },
+};
+
+/** A sync in progress: the header button spins and a strip says what is being read. */
+export const Syncing: Story = {
+  parameters: {
+    msw: [...inboxApi(seedInbox(), [source], { syncDelay: "infinite" }), ...mockApi()],
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: "Sync now" }));
+  },
 };
 
 export const Loading: Story = { parameters: { msw: mockApi("loading") } };

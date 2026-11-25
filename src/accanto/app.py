@@ -91,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(api_keys.router)
     app.include_router(inbox.router)
     app.include_router(sources.router)
+    app.include_router(sources.provider_router)
     app.include_router(agent.router)
 
     # MCP v1 at /mcp (TDD 03), dispatched before routing so the SPA never

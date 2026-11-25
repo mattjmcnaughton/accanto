@@ -227,7 +227,6 @@ async def scenario():
                     kind="ynab",
                     external_ref=f"synthetic-{uuid4()}",
                     name="Synthetic source",
-                    secret_ciphertext="",
                     start_date=datetime(year, 10, 1).date(),
                 )
                 .returning(st.sources.c.id)

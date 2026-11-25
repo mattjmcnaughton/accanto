@@ -71,6 +71,11 @@ const resources = {
   // Inbox stories put the stateful handlers of mocks/inbox.ts first; these cover other states.
   inbox: { path: `${entity}/inbox`, loaded: [], empty: [] },
   sources: { path: `${entity}/sources`, loaded: [], empty: [] },
+  transactionProvider: {
+    path: `${entity}/transaction-provider`,
+    loaded: { kind: "ynab", configured: true, revision: 1 },
+    empty: { kind: null, configured: false, revision: 0 },
+  },
 } satisfies Record<string, { path: string; loaded: unknown; empty: unknown }>;
 export type Resource = keyof typeof resources;
 
@@ -96,6 +101,10 @@ function reader(resource: Resource, choice: State | unknown) {
 const writes = [
   http.post("/api/keys", () => HttpResponse.json({ key: "acc_synthetic_storybook_key" })),
   http.delete("/api/keys/:id", () => new HttpResponse(null, { status: 204 })),
+  http.put(`${entity}/transaction-provider`, async () => {
+    await delay(600);
+    return HttpResponse.json({ kind: "ynab", configured: true, revision: 1 });
+  }),
 ];
 
 export function mockApi(

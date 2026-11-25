@@ -616,7 +616,6 @@ async def seed(keyed, sessions, entity_id) -> World:
                 kind="ynab",
                 external_ref=f"synthetic-{uuid4()}",
                 name="Synthetic eval source",
-                secret_ciphertext="",
                 start_date=TODAY.replace(day=1),
             )
             .returning(st.sources.c.id)
