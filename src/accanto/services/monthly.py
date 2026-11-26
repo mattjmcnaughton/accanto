@@ -1403,78 +1403,6 @@ async def review_fingerprint(session, entity_id, month, version_uuid, note):
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-async def destination_comparisons(session, version, entries):
-    """Compare matching recorded destinations; missing entries remain unknown."""
-    from accanto.models import destinations as d
-    from accanto.models import savings as s
-
-    planned = await plan_allocations(session, version["id"])
-    entry_ids = [row["id"] for row in entries]
-    recorded = {}
-    if entry_ids:
-        for category, entry_category, assignment, target, column, extra_filter in (
-            (
-                "saving_goals",
-                "saving",
-                s.linked_activity,
-                s.goals,
-                "goal_id",
-                s.linked_activity.c.deleted_at.is_(None),
-            ),
-            (
-                "investments",
-                "investing",
-                d.investment_entries,
-                d.investments,
-                "investment_id",
-                True,
-            ),
-            (
-                "giving",
-                "giving",
-                d.giving_entries,
-                d.recipients,
-                "giving_recipient_id",
-                True,
-            ),
-        ):
-            rows = (
-                await session.execute(
-                    select(target.c.uuid, m.entries.c.amount)
-                    .select_from(m.entries)
-                    .join(assignment, assignment.c.actual_entry_id == m.entries.c.id)
-                    .join(target, target.c.id == assignment.c[column])
-                    .where(
-                        m.entries.c.id.in_(entry_ids),
-                        m.entries.c.category == entry_category,
-                        extra_filter,
-                    )
-                )
-            ).all()
-            amounts = {}
-            for uuid, amount in rows:
-                amounts[uuid] = amounts.get(uuid, Decimal("0.00")) + amount
-            recorded[category] = amounts
-    result = {}
-    for category, id_key in (
-        ("saving_goals", "goal_id"),
-        ("investments", "destination_id"),
-        ("giving", "destination_id"),
-    ):
-        result[category] = []
-        for line in planned[category]:
-            amount = recorded.get(category, {}).get(line[id_key])
-            result[category].append(
-                {
-                    **line,
-                    "planned": line["amount"],
-                    "recorded": amount,
-                    "difference": None if amount is None else amount - line["amount"],
-                }
-            )
-    return result
-
-
 async def read_review(session, token, entity_uuid, month: date):
     async with read_snapshot(session):
         _, entity = await authorize(session, token, entity_uuid, lock=False)
@@ -1613,11 +1541,6 @@ async def read_review(session, token, entity_uuid, month: date):
                         ("giving", "giving_total"),
                     )
                 },
-                "destination_comparisons": (
-                    None
-                    if version["saving_total"] is None
-                    else await destination_comparisons(session, version, entries)
-                ),
                 "actual": actual,
                 # Staged transactions never enter totals; the count keeps a short
                 # total from being mistaken for a complete one.

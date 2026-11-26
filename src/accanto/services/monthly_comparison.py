@@ -45,6 +45,7 @@ def explain_review(version, entries):
         ),
     )
     comparisons = {}
+    destinations = {} if version["saving_total"] is not None else None
     for category, collection, identity, label, amount, total_key in specification:
         source_key = {
             "saving": "goal_id",
@@ -65,6 +66,16 @@ def explain_review(version, entries):
             identity,
             version[total_key],
         )
+        if destinations is not None and category in {"saving", "investing", "giving"}:
+            destinations[collection] = [
+                {
+                    **line,
+                    **{key: item[key] for key in ("planned", "recorded", "difference")},
+                }
+                for line, item in zip(
+                    version[collection], comparisons[category]["items"], strict=True
+                )
+            ]
     # Spending subcategories have no planned lines (TDD 07): every spending entry
     # is unplanned, grouped by subcategory in a breakdown that sums to the total.
     spending = [e for e in entries if e["category"] == "spending"]
@@ -79,6 +90,7 @@ def explain_review(version, entries):
     amounts = summary(comparisons, entries)
     return {
         "comparison": comparisons,
+        "destination_comparisons": destinations,
         "summary": amounts,
         "metrics": [*version["planned_metrics"], *actual_metrics(comparisons, amounts)],
     }
