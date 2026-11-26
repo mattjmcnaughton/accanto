@@ -384,7 +384,7 @@ async def get_position(ctx, entity_id, args: t.PositionQuery, key):
         entries = await read_activity(session, ctx.actor, entity_id)
     today = entity_today(datetime.now(UTC), entity["time_zone"])
 
-    def lines(kind, records, entry_key, category):
+    def lines(kind, records, entry_key, category, returns=False):
         return [
             position.account_line(
                 {"id": r["uuid"], "name": r["name"], "active": r["active"]},
@@ -397,11 +397,14 @@ async def get_position(ctx, entity_id, args: t.PositionQuery, key):
                 today=today,
                 since=args.since,
                 stale_after_days=args.stale_after_days,
+                returns=returns,
             )
             for r in records
         ]
 
-    investments = lines("investment", destinations, "investment_id", "investing")
+    investments = lines(
+        "investment", destinations, "investment_id", "investing", returns=True
+    )
     loans = lines("debt", debts, "debt_account_id", "fixed_cost")
     savings = sum((Decimal(a["balance"]) for a in accounts), Decimal("0.00"))
     net = position.net_position(savings, investments, loans)
@@ -1118,7 +1121,8 @@ CATALOG: tuple[CatalogTool, ...] = (
         "observation for each investment and loan with staleness, totals and "
         "savings + investments - loans (unknown if an active account has no "
         "observation). With since: each investment and loan's balance change "
-        "next to contributions or payments recorded in between.",
+        "next to contributions or payments recorded in between, and for "
+        "investments the money-weighted annual return.",
         t.PositionQuery,
         t.Position,
         get_position,

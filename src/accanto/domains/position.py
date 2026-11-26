@@ -9,7 +9,7 @@ contributions recorded between them; neither is inferred from the other
 """
 
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal, localcontext
 from typing import Any
 
 ZERO = Decimal("0.00")
@@ -40,10 +40,13 @@ def account_line(
     today: date,
     since: date | None,
     stale_after_days: int,
+    returns: bool = False,
 ) -> dict:
     """One investment or loan: latest balance, staleness and optional change.
 
     recorded holds the account's dated entries (contributions or loan payments).
+    With returns, the change also carries the money-weighted annual return of
+    the start balance, the contributions and the end balance.
     """
     latest = _latest(observations, today)
     line: dict[str, Any] = {
@@ -71,11 +74,14 @@ def account_line(
         start = _baseline(observations, since)
         if start is not None and start["financial_date"] < latest["financial_date"]:
             begin = date.fromisoformat(start["financial_date"])
-            in_between = [
-                Decimal(e["amount"])
+            dated = [
+                (date.fromisoformat(e["financial_date"]), Decimal(e["amount"]))
                 for e in recorded
                 if begin < date.fromisoformat(e["financial_date"]) <= end
             ]
+            in_between = [amount for _, amount in dated]
+            flows = [(begin, -Decimal(start["amount"]))]
+            flows += [(day, -amount) for day, amount in dated] + [(end, balance)]
             line["change"] = {
                 "from_date": begin,
                 "to_date": end,
@@ -84,6 +90,9 @@ def account_line(
                 "balance_change": balance - Decimal(start["amount"]),
                 "recorded_total": sum(in_between, ZERO),
                 "recorded_entries": len(in_between),
+                "money_weighted_return_percent": money_weighted_return(flows)
+                if returns
+                else None,
             }
     return line
 
@@ -100,3 +109,43 @@ def net_position(savings: Decimal, investments: list[dict], debts: list[dict]):
     invested = sum((i["balance"] or ZERO for i in investments), ZERO)
     owed = sum((d["balance"] or ZERO for d in debts), ZERO)
     return savings + invested - owed
+
+
+def money_weighted_return(flows: list[tuple[date, Decimal]]) -> Decimal | None:
+    """Annual rate x (as a percent, 2 places) where the dated flows net to zero.
+
+    flows are from the holder's side: money in is negative, the final balance
+    positive. Solved by bisection between -99% and 1000%; None when the flows
+    have no sign change or no root in that range.
+    """
+    if len(flows) < 2 or not (
+        any(a < 0 for _, a in flows) and any(a > 0 for _, a in flows)
+    ):
+        return None
+    first = min(day for day, _ in flows)
+    with localcontext() as context:
+        context.prec = 34
+
+        def value(rate: Decimal) -> Decimal:
+            return sum(
+                (
+                    amount / (1 + rate) ** (Decimal((day - first).days) / 365)
+                    for day, amount in flows
+                ),
+                Decimal(0),
+            )
+
+        low, high = Decimal("-0.99"), Decimal("10")
+        if value(low) * value(high) > 0:
+            return None
+        for _ in range(200):
+            middle = (low + high) / 2
+            if value(low) * value(middle) <= 0:
+                high = middle
+            else:
+                low = middle
+            if high - low < Decimal("1e-10"):
+                break
+        return ((low + high) / 2 * 100).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_EVEN
+        )

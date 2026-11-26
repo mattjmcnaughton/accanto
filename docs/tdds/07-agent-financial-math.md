@@ -1,6 +1,6 @@
 # 07 — Agent financial math: calculator, summaries and projections
 
-Status: In progress (all but investment returns implemented)
+Status: Implemented (tool groups for context size pending)
 Updated: 2026-11-26
 
 ## Purpose and scope
@@ -36,7 +36,7 @@ pure functions in `domains/`.
 | Target-gap fields on `list_savings` and `list_destinations` | T3 remaining to target and percent of target | Existing reads | 2, done |
 | `project(operation, …)` | T4 months to target; P1 loan payment and schedule; P2 FIRE target; P3 growth and months to FIRE; P4 coast and required contribution; P5 prepay versus invest | None (pure) | 3, done |
 | `get_position(since?)` | T5 position snapshot and net position; T6 change between observations versus recorded payments or contributions | Savings, investments, debts | 4, done |
-| `investment_returns(investment_id?)` | P6 money-weighted return (XIRR) from contributions and observations | Investments | 5 |
+| `money_weighted_return_percent` on `get_position(since)` investment changes | P6 money-weighted return (XIRR) from contributions and observations | Investments | 5, done |
 
 Grouping thirteen functions into five tools keeps the catalog's schema small
 (it is already about 12k tokens on the sidebar). Pure tools take no Entity: MCP
@@ -49,7 +49,7 @@ omits `entity_id` from their schema (`CatalogTool.pure`).
 | Exact money | Constitution §1 | All | `Decimal` throughout; calculator literals parsed from source text, never through a float; 34 significant digits | Unit: `0.1 + 0.2` is `0.3`; `1000.10 * 3 - 0.30` is `3000.00` |
 | Half-even at monetary results | Constitution §1 | All | Carry full precision; round half-even only where a figure is reported as money (`cents`, schedule rows) | Unit: `round(2.665, 2)` is `2.66` |
 | Unknown is not zero | Constitution §1 | Summaries, position | A month or account without data is reported as unknown and excluded from averages with a count; the calculator has no `null` | Unit and integration per chunk |
-| Projection | CONTEXT.md | `project`, `investment_returns` | Results echo their assumptions and are never stored as activity or observations | Unit: assumptions round-trip |
+| Projection | CONTEXT.md | `project`, `get_position` returns | Results echo their assumptions and are never stored as activity or observations | Unit: assumptions round-trip |
 | No arithmetic in the model's head | This TDD | Prompt, catalog rules, MCP instructions | Instruction text; the calculator gives the agent a way to comply | Eval (live) |
 | Bounded work | This TDD | `calculate` | Allowlisted AST nodes only; 2000 characters, 250 levels of nesting, exponents within ±1200, results within ±10^30 | Unit: escape and size cases refused |
 | No figures in errors | TDD 03 | `calculate` | Fixed rejection messages; MCP errors carry code and message only | Unit and MCP integration |
@@ -155,6 +155,13 @@ destinations, debts, their observations and activity. Pure rules are in
   the contributions (investing entries) or loan payments (fixed costs linked to
   the debt) recorded after the first date and on or before the second. Neither
   figure is inferred from the other: a payment does not prove a balance fell.
+- For investments the change also carries `money_weighted_return_percent`: the
+  annual rate at which the start balance (out), each contribution (out) and the
+  latest balance (in) net to zero, on actual days ÷ 365, solved by bisection
+  between −99% and 1000% and rounded half-even to two places. Unknown when there
+  is no sign change or no root. It reflects only recorded contributions between
+  two observations, so short or sparse periods give noisy results; it is
+  carried on the change rather than as a separate tool to keep the catalog small.
 
 ## Interfaces
 

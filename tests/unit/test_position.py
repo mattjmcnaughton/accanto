@@ -3,7 +3,7 @@
 from datetime import date
 from decimal import Decimal
 
-from accanto.domains.position import account_line, net_position
+from accanto.domains.position import account_line, money_weighted_return, net_position
 
 TODAY = date(2026, 11, 26)
 
@@ -90,3 +90,33 @@ def test_net_position_is_unknown_when_an_active_balance_is():
     ) == Decimal("-200000.00")
     assert net_position(savings, [line(None)], [line("243500.00")]) is None
     assert net_position(savings, [line(None, active=False)], []) == savings
+
+
+def test_money_weighted_return_matches_spreadsheet_xirr():
+    # Microsoft's XIRR documentation example: 37.34%.
+    flows = [
+        (date(2008, 1, 1), Decimal("-10000")),
+        (date(2008, 3, 1), Decimal("2750")),
+        (date(2008, 10, 30), Decimal("4250")),
+        (date(2009, 2, 15), Decimal("3250")),
+        (date(2009, 4, 1), Decimal("2750")),
+    ]
+    assert money_weighted_return(flows) == Decimal("37.34")
+    # 1,000 in for exactly 365 days growing to 1,100 is 10%.
+    year = [(date(2025, 1, 1), Decimal("-1000")), (date(2026, 1, 1), Decimal("1100"))]
+    assert money_weighted_return(year) == Decimal("10.00")
+    assert money_weighted_return(year[:1]) is None
+
+
+def test_investment_change_carries_its_return():
+    fund = {"id": "f", "name": "Synthetic fund", "active": True}
+    line = account_line(
+        fund,
+        [obs("2025-01-01", "1000.00", opening=True), obs("2026-01-01", "1100.00")],
+        [],
+        today=date(2026, 1, 10),
+        since=date(2025, 1, 1),
+        stale_after_days=45,
+        returns=True,
+    )
+    assert line["change"]["money_weighted_return_percent"] == Decimal("10.00")

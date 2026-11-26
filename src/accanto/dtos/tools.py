@@ -1130,6 +1130,10 @@ class BalanceChange(Output):
     balance_change: Money
     recorded_total: Money
     recorded_entries: int
+    money_weighted_return_percent: Amount | None = Field(
+        description="Investments only: annualized return (XIRR) of the start "
+        "balance, contributions and end balance. Noisy over short periods."
+    )
 
 
 class PositionLine(Output):
@@ -1178,7 +1182,10 @@ def _position_line(line) -> PositionLine:
         change=None
         if change is None
         else BalanceChange(
-            **{k: v if isinstance(v, date | int) else str(v) for k, v in change.items()}
+            **{
+                k: v if isinstance(v, date | int) or v is None else str(v)
+                for k, v in change.items()
+            }
         ),
     )
 
