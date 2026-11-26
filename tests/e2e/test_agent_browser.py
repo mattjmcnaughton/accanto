@@ -160,7 +160,7 @@ def test_agent_journey(tmp_path):
 
     def last_reply():
         return value(
-            "Array.from(document.querySelectorAll('.agent .agent-msg.agent'))"
+            "Array.from(document.querySelectorAll('.agent .agent-msg.reply'))"
             ".at(-1)?.textContent ?? ''"
         )
 
