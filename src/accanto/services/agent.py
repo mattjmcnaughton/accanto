@@ -66,6 +66,14 @@ RETRYABLE = {
 }
 
 
+# admit/read/archive: the latest active conversation (the TDD 03 routes).
+LATEST = "latest"
+
+
+def not_found() -> RejectionError:
+    return RejectionError("conversation_not_found", "That conversation is gone.", 404)
+
+
 class TurnError(Exception):
     def __init__(self, code: str, message: str):
         self.code, self.message = code, message
@@ -88,6 +96,8 @@ class Turn:
     deps_values: dict = field(default_factory=dict)
     prior: list = field(default_factory=list)
     claim: tuple = ()
+    # None starts a conversation with this turn (TDD 08).
+    conversation_id: int | None = None
 
 
 @dataclass
@@ -107,8 +117,18 @@ class AgentTurns:
         self.agent = build_sidebar_agent(sidebar_specs())
 
     async def admit(
-        self, actor, entity_uuid, content, *, images=(), screen=None, month=None
+        self,
+        actor,
+        entity_uuid,
+        content,
+        *,
+        images=(),
+        screen=None,
+        month=None,
+        conversation: UUID | None | str = LATEST,
     ) -> Turn:
+        """conversation: a UUID to continue, LATEST for the latest active one
+        (or a new one when there is none), or None to start a new one."""
         content = content.strip()
         if not content and not images:
             raise RejectionError("empty_message", "Write a message first.", 422)
@@ -137,7 +157,18 @@ class AgentTurns:
                     "The assistant's daily message limit is reached. Try tomorrow.",
                     429,
                 )
-            row = await conversations.conversation(session, actor.user_id, entity["id"])
+            row = (
+                None
+                if conversation is None
+                else await conversations.find(
+                    session,
+                    actor.user_id,
+                    entity["id"],
+                    None if conversation == LATEST else conversation,
+                )
+            )
+            if row is None and conversation not in (None, LATEST):
+                raise not_found()
             prior = (
                 await conversations.messages(
                     session, row["id"], self.config.agent_history_turns * 2
@@ -173,6 +204,7 @@ class AgentTurns:
             },
             prior=history(prior),
             claim=claim,
+            conversation_id=row["id"] if row else None,
         )
 
     def release(self, turn: Turn) -> None:
@@ -209,8 +241,9 @@ class AgentTurns:
                 sse_event(
                     "done",
                     {
-                        "owner_message_id": str(ids[0]),
-                        "agent_message_id": str(ids[1]),
+                        "conversation_id": str(ids[0]),
+                        "owner_message_id": str(ids[1]),
+                        "agent_message_id": str(ids[2]),
                         "pending_change_ids": reply.pending_ids,
                     },
                 )
@@ -360,6 +393,7 @@ class AgentTurns:
                 session,
                 turn.user_id,
                 turn.entity_id,
+                turn.conversation_id,
                 {
                     "role": "owner",
                     "content": turn.content,
@@ -373,10 +407,34 @@ class AgentTurns:
                 retention_days=self.config.agent_retention_days,
             )
 
-    async def read(self, actor, entity_uuid) -> list[dict]:
+    async def conversations(self, actor, entity_uuid) -> list[dict]:
+        """The Entity's active conversations, latest turn first."""
         async with self.sessions() as session, session.begin():
             _, entity = await authorize(session, actor, entity_uuid, lock=False)
-            row = await conversations.conversation(session, actor.user_id, entity["id"])
+            rows = await conversations.active(session, actor.user_id, entity["id"])
+        return [
+            {
+                "id": str(r["uuid"]),
+                "title": conversations.title(r["first_question"]),
+                "message_count": r["message_count"],
+                "created_at": r["created_at"].isoformat(),
+                "updated_at": r["updated_at"].isoformat(),
+            }
+            for r in rows
+        ]
+
+    async def read(self, actor, entity_uuid, conversation=LATEST) -> list[dict]:
+        """One conversation's messages; LATEST with none yet is empty."""
+        async with self.sessions() as session, session.begin():
+            _, entity = await authorize(session, actor, entity_uuid, lock=False)
+            row = await conversations.find(
+                session,
+                actor.user_id,
+                entity["id"],
+                None if conversation == LATEST else conversation,
+            )
+            if row is None and conversation != LATEST:
+                raise not_found()
             rows = await conversations.messages(session, row["id"]) if row else []
         return [
             {
@@ -390,10 +448,23 @@ class AgentTurns:
             for r in rows
         ]
 
-    async def clear(self, actor, entity_uuid) -> None:
+    async def archive(self, actor, entity_uuid, conversation=LATEST) -> bool:
+        """Hides a conversation; its messages stay until retention removes them.
+        Returns whether one was archived (LATEST with none is not an error)."""
         async with self.sessions() as session, session.begin():
             _, entity = await authorize(session, actor, entity_uuid, lock=True)
-            await conversations.clear(session, actor.user_id, entity["id"])
+            row = await conversations.find(
+                session,
+                actor.user_id,
+                entity["id"],
+                None if conversation == LATEST else conversation,
+            )
+            if row is None:
+                if conversation == LATEST:
+                    return False
+                raise not_found()
+            await conversations.archive(session, row["id"])
+            return True
 
 
 def _pending_changes(payload) -> list[dict]:

@@ -3,7 +3,9 @@ import { ApiError, type BrowserSession, type UUID } from "../../lib/api";
 import {
   type AgentMessage,
   type AgentSettings,
+  type ConversationSummary,
   type PendingChange,
+  type StreamDone,
   type ToolLine,
   agent,
   streamReply,
@@ -29,7 +31,7 @@ export interface AgentPanelProps {
   /** Whether a reply is streaming; the workspace blocks switching Entities meanwhile. */
   streaming?: (on: boolean) => void;
 }
-type Tab = "chat" | "pending";
+type Tab = "chat" | "pending" | "history";
 /** A reply as it streamed, in the order things happened: text, tool steps and drafts. */
 type Part =
   | { kind: "text"; text: string }
@@ -83,6 +85,7 @@ const thinking = (parts: Part[]) => {
     !last || (last.kind !== "text" && !(last.kind === "tool" && last.line.status === "started"))
   );
 };
+const WHEN = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 /** Within this many pixels of the end, the log counts as read to the end. */
 const NEAR = 48;
 /** Free text from tools may arrive as {"untrusted": "..."}; show it as plain text. */
@@ -165,8 +168,32 @@ export function AgentPanel(p: AgentPanelProps) {
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
-  const loadConversation = () =>
-    Promise.all([agent.conversation(p.entity.id), agent.pending(p.entity.id)]);
+  const [list, setList] = useState<ConversationSummary[]>([]);
+  /** The open conversation: null is a new one, undefined the latest until loaded. */
+  const [current, setCurrent] = useState<UUID | null | undefined>(undefined);
+  const currentRef = useRef(current);
+  const choose = (id: UUID | null) => {
+    currentRef.current = id;
+    setCurrent(id);
+  };
+  /** The history, pending changes and the open conversation, which falls back to a new one
+   * when it was archived or expired meanwhile. */
+  const loadConversation = async (id = currentRef.current) => {
+    const [summaries, changes] = await Promise.all([
+      agent.conversations(p.entity.id),
+      agent.pending(p.entity.id),
+    ]);
+    const wanted = id === undefined ? summaries[0]?.id : id;
+    const chosen = summaries.some((c) => c.id === wanted) ? (wanted as UUID) : null;
+    const conversation = chosen ? await agent.conversation(p.entity.id, chosen) : [];
+    return { summaries, changes, chosen, conversation };
+  };
+  const show = (loaded: Awaited<ReturnType<typeof loadConversation>>) => {
+    setList(loaded.summaries);
+    setPending(loaded.changes);
+    choose(loaded.chosen);
+    setMessages(loaded.conversation);
+  };
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reload on Entity, saves and explicit retries.
   useEffect(() => {
     let disposed = false;
@@ -177,10 +204,9 @@ export function AgentPanel(p: AgentPanelProps) {
         if (disposed) return;
         setSettings(next);
         if (!next.enabled) return;
-        const [conversation, changes] = await loadConversation();
+        const loaded = await loadConversation();
         if (disposed) return;
-        setMessages(conversation);
-        setPending(changes);
+        show(loaded);
       } catch (issue) {
         if (!disposed)
           setLoadError(issue instanceof Error ? issue.message : "Could not load the assistant.");
@@ -237,6 +263,7 @@ export function AgentPanel(p: AgentPanelProps) {
     setText("");
     setImages([]);
     setEnded(null);
+    setTab("chat");
     anchor.current = String(messages.length);
     follow.current = true;
     setMessages((m) => [
@@ -283,17 +310,25 @@ export function AgentPanel(p: AgentPanelProps) {
         update([...turn.parts, { kind: "change", change }]),
     };
     const input = {
+      conversation: currentRef.current ?? null,
       content,
       images: attached,
       screen: p.screen,
       month: `${p.month}-01`,
     };
+    let done: StreamDone | null = null;
     try {
       try {
-        await streamReply(await p.credentials(), p.entity.id, input, handlers, controller.signal);
+        done = await streamReply(
+          await p.credentials(),
+          p.entity.id,
+          input,
+          handlers,
+          controller.signal,
+        );
       } catch (issue) {
         if (!(issue instanceof ApiError) || issue.kind !== "unauthenticated") throw issue;
-        await streamReply(
+        done = await streamReply(
           await p.credentials(true),
           p.entity.id,
           input,
@@ -321,9 +356,8 @@ export function AgentPanel(p: AgentPanelProps) {
       abort.current = null;
       // The reply stays on screen until the stored copy replaces it, so nothing flashes away.
       try {
-        const [conversation, changes] = await loadConversation();
-        setMessages(conversation);
-        setPending(changes);
+        // A new conversation exists once its first turn is stored.
+        show(await loadConversation(done?.conversation_id ?? currentRef.current));
       } catch {
         // The next reload shows it.
       }
@@ -339,22 +373,39 @@ export function AgentPanel(p: AgentPanelProps) {
     }
   }
 
-  /** Starts over: the backend keeps one conversation per Entity, so this replaces it. */
-  async function startNew() {
+  /** Starts an empty conversation; the current one stays in History. */
+  function startNew() {
     if (live) return;
-    if (
-      messages.length &&
-      !window.confirm("Start a new conversation? This one is deleted; pending changes stay listed.")
-    )
-      return;
+    choose(null);
+    setMessages([]);
+    setEnded(null);
+    setError("");
+    setTab("chat");
+    input.current?.focus();
+  }
+  function reopen(id: UUID) {
+    if (live) return;
+    choose(id);
+    setEnded(null);
+    setError("");
+    anchor.current = null;
+    follow.current = true;
+    setTab("chat");
+    setReload((x) => x + 1);
+  }
+  /** Hides a conversation from History; its messages stay until retention removes them. */
+  async function archive(id: UUID) {
     try {
-      if (messages.length) await agent.clear(await p.credentials(), p.entity.id);
-      setMessages([]);
-      setEnded(null);
-      setError("");
-      setTab("chat");
+      await agent.archive(await p.credentials(), p.entity.id, id);
+      setList((all) => all.filter((c) => c.id !== id));
+      if (currentRef.current === id) {
+        choose(null);
+        setMessages([]);
+        setEnded(null);
+      }
+      setAnnounce("Conversation archived.");
     } catch (issue) {
-      setError(issue instanceof Error ? issue.message : "A new conversation was not started.");
+      setError(issue instanceof Error ? issue.message : "The conversation was not archived.");
     }
   }
 
@@ -485,6 +536,18 @@ export function AgentPanel(p: AgentPanelProps) {
           <button
             type="button"
             className="icon-btn"
+            aria-label="History"
+            title="Earlier conversations"
+            aria-pressed={tab === "history"}
+            onClick={() => setTab(tab === "history" ? "chat" : "history")}
+          >
+            <Icon name="history" />
+          </button>
+        )}
+        {settings?.enabled && (
+          <button
+            type="button"
+            className="icon-btn"
             aria-label="New conversation"
             title="New conversation"
             disabled={live !== null}
@@ -553,7 +616,39 @@ export function AgentPanel(p: AgentPanelProps) {
               {recordMode ? "Record with approval" : "Propose only"}
             </span>
           </div>
-          {tab === "pending" ? (
+          {tab === "history" ? (
+            <div className="agent-log agent-history">
+              {list.length === 0 && (
+                <p className="note">No conversations yet. Archived ones are not listed.</p>
+              )}
+              {list.map((c) => (
+                <div key={c.id} className="agent-conv">
+                  <button
+                    type="button"
+                    className="agent-conv-open"
+                    aria-current={c.id === current ? "true" : undefined}
+                    disabled={Boolean(live)}
+                    onClick={() => reopen(c.id)}
+                  >
+                    <span className="agent-conv-title">{c.title}</span>
+                    <small className="note">
+                      {WHEN.format(new Date(c.updated_at))} · {c.message_count} messages
+                    </small>
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={`Archive "${c.title}"`}
+                    title="Archive: hide it from History"
+                    disabled={Boolean(live) && c.id === current}
+                    onClick={() => void archive(c.id)}
+                  >
+                    <Icon name="archive" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : tab === "pending" ? (
             <div className="agent-log">
               {pending.length === 0 && <p className="note">No pending changes.</p>}
               {pending.map((c) => (

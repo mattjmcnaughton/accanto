@@ -358,3 +358,41 @@
 .agent-attach:focus-within {
   outline: 2px solid var(--brand);
 }
+
+/* History: one row per active conversation, newest first. */
+.agent-history {
+  gap: 4px;
+}
+.agent-conv {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 10px;
+}
+.agent-conv:hover,
+.agent-conv:focus-within {
+  background: var(--wash);
+}
+.agent-conv-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  border-radius: 10px;
+}
+.agent-conv-open[aria-current="true"] {
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+.agent-conv-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -11,6 +11,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -60,7 +61,9 @@ conversations = table(
         "created_at", DateTime(timezone=True), server_default=func.now(), nullable=False
     ),
     Column("expires_at", DateTime(timezone=True), nullable=False),
-    UniqueConstraint("user_id", "entity_id"),
+    # Archive hides a conversation; retention deletes it (TDD 08).
+    Column("archived_at", DateTime(timezone=True)),
+    Index("agent_conversation_owner", "user_id", "entity_id"),
 )
 
 messages = table(

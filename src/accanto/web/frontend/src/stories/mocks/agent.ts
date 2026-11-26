@@ -76,21 +76,50 @@ const frame = (event: string, data: unknown) =>
   `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 const words = (text: string) => text.match(/\S+\s*/g) ?? [];
 
-/** Handlers for one story; `seed` is the stored conversation it starts from. */
+/** Earlier conversations listed in History behind the story's own. */
+const EARLIER: [string, Message[]][] = [
+  ["c-dining", turn(91, topics[0][0], topics[0][1])],
+  ["c-fixed", turn(92, topics[2][0], topics[2][1])],
+];
+
+const root = "/api/entities/:entity/agent";
+/** Handlers for one story; `seed` is the latest stored conversation it starts from. */
 export function agentApi(seed: Message[], { wordMs = 70 } = {}) {
-  let stored = [...seed];
+  let stored = new Map<string, Message[]>();
+  let order: string[] = [];
+  const reset = () => {
+    stored = new Map<string, Message[]>([
+      ["c-latest", [...seed]],
+      ...EARLIER.map(([id, m]): [string, Message[]] => [id, [...m]]),
+    ]);
+    order = [...stored.keys()];
+  };
+  reset();
+  let serial = 0;
   return {
-    reset: () => {
-      stored = [...seed];
-    },
+    reset,
     handlers: [
-      http.get("/api/entities/:entity/agent/conversation", () => HttpResponse.json(stored)),
-      http.get("/api/entities/:entity/agent/pending-changes", () => HttpResponse.json([])),
-      http.delete("/api/entities/:entity/agent/conversation", () => {
-        stored = [];
-        return HttpResponse.json({ cleared: true });
+      http.get(`${root}/conversations`, () =>
+        HttpResponse.json(
+          order.map((id, i) => ({
+            id,
+            title: stored.get(id)?.[0]?.content ?? "",
+            message_count: stored.get(id)?.length ?? 0,
+            created_at: at,
+            updated_at: new Date(Date.UTC(2026, 10, 20, 9 - i * 3)).toISOString(),
+          })),
+        ),
+      ),
+      http.get(`${root}/conversations/:id`, ({ params }) =>
+        HttpResponse.json(stored.get(String(params.id)) ?? []),
+      ),
+      http.post(`${root}/conversations/:id/archive`, ({ params }) => {
+        order = order.filter((id) => id !== params.id);
+        return HttpResponse.json({ archived: true });
       }),
-      http.post("/api/entities/:entity/agent/conversation/messages", async ({ request }) => {
+      http.get(`${root}/pending-changes`, () => HttpResponse.json([])),
+      http.post(`${root}/conversations/:id?/messages`, async ({ request, params }) => {
+        const id = params.id ? String(params.id) : `c-new-${++serial}`;
         const content = String((await request.formData()).get("content") ?? "");
         const encoder = new TextEncoder();
         const body = new ReadableStream<Uint8Array>({
@@ -108,15 +137,19 @@ export function agentApi(seed: Message[], { wordMs = 70 } = {}) {
               }
               for (const [i, w] of words(AFTER).entries())
                 await send(frame("delta", { text: i === 0 ? `\n\n${w}` : w }));
-              stored = [
-                ...stored,
-                ...turn(stored.length, content, `${BEFORE}\n\n${AFTER}`).map((m) => ({
+              // Stored only once the reply finishes, as on the server.
+              const before = stored.get(id) ?? [];
+              stored.set(id, [
+                ...before,
+                ...turn(before.length, content, `${BEFORE}\n\n${AFTER}`).map((m) => ({
                   ...m,
-                  id: `${m.id}-${stored.length}`,
+                  id: `${m.id}-${id}-${before.length}`,
                 })),
-              ];
+              ]);
+              order = [id, ...order.filter((o) => o !== id)];
               await send(
                 frame("done", {
+                  conversation_id: id,
                   owner_message_id: "o",
                   agent_message_id: "a",
                   pending_change_ids: [],

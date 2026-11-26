@@ -360,3 +360,58 @@ it("keeps the partial reply and puts the question back when the owner stops a re
   expect(screen.getByText("Partial answer")).toBeInTheDocument();
   expect(box).toHaveValue("Where did November go?");
 });
+
+it("opens the latest conversation, reopens an older one from History, and archives", async () => {
+  const summary = (id: string, title: string) => ({
+    id,
+    title,
+    message_count: 2,
+    created_at: "2026-11-20T09:00:00Z",
+    updated_at: "2026-11-20T09:00:00Z",
+  });
+  const message = (id: string, content: string) => ({
+    id,
+    role: "owner",
+    content,
+    image_count: 0,
+    pending_change_ids: [],
+    created_at: "2026-11-20T09:00:00Z",
+  });
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (url.endsWith("/settings"))
+      return json({ enabled: true, mode: "propose", instructions: "", revision: 1 });
+    if (url.endsWith("/conversations"))
+      return json([summary("c-new", "Newer question"), summary("c-old", "Older question")]);
+    if (url.endsWith("/conversations/c-new")) return json([message("m1", "Newer question")]);
+    if (url.endsWith("/conversations/c-old")) return json([message("m2", "Older question")]);
+    if (init?.method === "POST") return json({ archived: true });
+    return json([]);
+  });
+  render(
+    <AgentPanel
+      entity={entity}
+      busy={false}
+      refresh={0}
+      screen="home"
+      month="2026-11"
+      credentials={async () => session}
+      save={vi.fn()}
+      close={vi.fn()}
+      openSettings={vi.fn()}
+      changed={vi.fn()}
+    />,
+  );
+  // The latest conversation opens first.
+  expect(await screen.findByText("Newer question")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "History" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Older question/ }));
+  expect(await screen.findByText("Older question")).toBeInTheDocument();
+  expect(screen.queryByText("Newer question")).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "History" }));
+  fireEvent.click(screen.getByRole("button", { name: 'Archive "Newer question"' }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: /^Newer question/ })).toBeNull());
+  const archived = fetch.mock.calls.find(([, init]) => init?.method === "POST");
+  expect(String(archived?.[0])).toMatch(/\/conversations\/c-new\/archive$/);
+});

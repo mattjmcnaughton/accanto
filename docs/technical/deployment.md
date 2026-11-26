@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6f026`.
+   supported revision is `6g027`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -123,6 +123,12 @@ key never blocks it. Older code keeps an entry's subcategory when it edits that
 entry, but does not copy it to a new refund and does not clear it when it changes
 an entry's category from guilt-free spending. The next edit under `6f026` clears
 such a stale link. Grant the runtime role access to the two new tables after upgrading.
+`6g027` drops the one-conversation-per-Entity constraint on `agent_conversation`
+and adds `archived_at` ([TDD 08](../tdds/08-assistant-conversation-history.md)).
+`6f026` code reads one conversation per Entity and ignores `archived_at`, so after
+anyone starts a second conversation it shows an arbitrary one and its Clear deletes
+only that one; roll back before relying on history. The downgrade keeps only each
+User and Entity's latest conversation. No new table, so the grants are unchanged.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

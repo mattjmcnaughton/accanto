@@ -39,6 +39,8 @@ const PATHS: Record<string, string> = {
   clip: "M10.5 5 6 9.5a1.4 1.4 0 0 0 2 2L12.6 7a2.8 2.8 0 0 0-4-4L4 7.6a4.2 4.2 0 0 0 6 6L13.5 10",
   send: "M8 13V3M3.5 7.5 8 3l4.5 4.5",
   stop: "M4.5 4.5h7v7h-7z",
+  history: "M3.2 6.5A5 5 0 1 1 3 9 M3 3.5v3h3 M8 5.5V8l2 1.5",
+  archive: "M2.5 3.5h11v3h-11z M3.5 6.5v6h9v-6 M6.5 9h3",
   shrink: "M13.5 2.5 9.5 6.5M9.5 3v3.5H13M2.5 13.5l4-4M3 9.5h3.5V13",
 };
 export const Icon = ({ name }: { name: string }) => (

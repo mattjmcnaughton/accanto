@@ -725,6 +725,25 @@ ratios use only same-month recorded amounts. `planned_metrics` on Plan snapshots
 is derived presentation; it does not rewrite immutable saved results or inputs.
 Selected planned savings funding includes its saved account labels and amounts.
 
+## Assistant conversations
+
+Browser session only, like every `/agent` route: API keys are refused. Each User
+has several conversations per Entity ([TDD 08](tdds/08-assistant-conversation-history.md)).
+Archiving hides a conversation and keeps its messages; any conversation, archived
+or not, is deleted 30 days after its latest turn. Pending changes are never
+affected.
+
+| Method | Suffix | Body / result |
+| --- | --- | --- |
+| GET | `/agent/conversations` | Active conversations, latest turn first: `id`, `title` (first question), `message_count`, `created_at`, `updated_at` |
+| GET | `/agent/conversations/{conversation_id}` | Its messages; `404 conversation_not_found` once archived or expired |
+| POST | `/agent/conversations/messages` | Multipart `content`, `screen`, `month`, `images[]`; starts a conversation and streams SSE; `done` carries `conversation_id` |
+| POST | `/agent/conversations/{conversation_id}/messages` | Same, continuing that conversation |
+| POST | `/agent/conversations/{conversation_id}/archive` | `{"archived": true}` |
+| GET | `/agent/conversation` | Messages of the latest active conversation (`[]` when none) |
+| POST | `/agent/conversation/messages` | Continues the latest active conversation, or starts one |
+| DELETE | `/agent/conversation` | Archives the latest active conversation; `{"cleared": false}` when none |
+
 ## Transactions inbox and sources
 
 Read-only import from a Transaction source (YNAB first) into the Transactions

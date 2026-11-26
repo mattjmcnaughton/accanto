@@ -236,8 +236,8 @@ zone, today, screen, month, mode, AGENT.md), model injected at run time,
   carry `source_text`, never default a missing date to today, and treat an
   unpaid bill as not activity.
 - **History:** last N turns as plain text; tool results never stored or
-  replayed; conversations hard-deleted on clear and expired after 30 days on
-  read or admit.
+  replayed; conversations expired after 30 days on read or admit; several per Entity
+  and archive instead of clear since [TDD 08](08-assistant-conversation-history.md).
 - **Telemetry:** operation names, tool names, timings, token counts, error codes
   only. No prompt, reply, tool-result, or image content anywhere.
 - **UI:** right-hand panel from the top bar (`⌘J`), full-screen sheet on phones,
