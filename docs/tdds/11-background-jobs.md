@@ -171,21 +171,25 @@ jobs:
     PYTHONNOUSERSITE: "1"
     PGSSLROOTCERT: site/certifi/cacert.pem
   command: >-
-    sh -c 'python/bin/python3 -m accanto.jobs.tick; exec sleep 3600'
+    sh -c 'sleep 60; python/bin/python3 -m accanto.jobs.tick; exec sleep 3600'
 ```
 
 - Each Box service is a systemd unit that restarts when it exits. The command
   runs one tick and then sleeps an hour, so the restart makes it hourly, and a
   failing tick still waits an hour instead of restarting in a tight loop.
-- Every deploy restarts the unit, so a tick runs right after each deploy.
+- Every deploy restarts the unit, so a tick runs about a minute after each
+  deploy. The 60 s wait comes first because a deploy starts `web` and `jobs`
+  together on a freshly unpacked release: both import the app cold on the
+  b1.small's one sustained vCPU, and `web` took 10 s against the deploy's
+  ~12 s port wait (3 s when it started alone). Waiting leaves `web` the CPU.
 - It shares the release, the deployment's secrets and the restricted runtime
   `DATABASE_URL`, and runs as the same sandboxed account as `web`.
 - Each tick is a fresh process, so a leaked connection or a hung library
   cannot build up across ticks.
 - The deploy waits only for the deployment's `PORT`, which `web` serves; `jobs`
   never listens.
-- The interval is not a fixed hour: it drifts by each tick's duration and
-  restarts at each deploy. That is enough for retention, and scheduled sync
+- The interval is not a fixed hour: it is about 61 minutes plus each tick's
+  duration, and restarts at each deploy. That is enough for retention, and scheduled sync
   decides in its own TDD whether it needs more.
 
 Alternatives considered: a GitHub Actions `schedule` calling `amp boxes exec
@@ -267,8 +271,9 @@ layers, and records why:
   credential columns and is now the pinned revision.
 - `.amp/box.yaml` declares the `jobs` service; it starts on the next
   `amp boxes deploy`. Its command was checked in a locally built release
-  against a test database. It has not run on the Box yet: after the first
-  deploy, read its unit log (`...-svc-jobs.service`) for `job_tick_finished`.
+  against a test database, and it has run on the Box since 2026-11-26: after a
+  deploy, read its unit log (`...-svc-jobs.service`) for `job_tick_finished`
+  about a minute later.
 
 ## Open decisions
 
