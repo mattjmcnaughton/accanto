@@ -48,6 +48,8 @@ class EditDestination(Input):
     target: str | None = None
     active: bool
     expected_revision: int = Field(ge=1)
+    # Investments only: moves the opening observation's date; omit to keep it.
+    opening_date: date | None = None
 
     @field_validator("target")
     @classmethod

@@ -94,6 +94,7 @@ function problem(form: Form): string {
       return "Enter the target as USD with up to two decimals.";
     if (d.openingAmount && (!validMoney(d.openingAmount) || !d.openingDate))
       return "Enter an opening date and a USD opening value with up to two decimals.";
+    if (form.record?.opening && !d.openingDate) return "Enter an opening date.";
     return "";
   }
   if (!form.value.date) return "Enter a date.";
@@ -202,7 +203,9 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
   }
   function editObservation(row: Observation | null, account: string | null = null) {
     if (row?.is_opening) {
-      setNotice("An opening value is set when the investment is added and cannot be corrected.");
+      setNotice(
+        "An opening value cannot be corrected; move its date from the investment's Edit dialog.",
+      );
       return;
     }
     editor.start(`observation:${row?.uuid ?? "new"}`, {
@@ -262,6 +265,9 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
               target,
               active: v.active,
               expected_revision: form.record.revision,
+              ...(form.record.opening && v.openingDate !== form.record.opening.date
+                ? { opening_date: v.openingDate }
+                : {}),
             })
           : destinations.create(p.entity.id, form.kind, {
               name: v.name.trim(),
@@ -858,10 +864,20 @@ function DestinationFields({
         </>
       )}
       {record?.opening && (
-        <p className="note">
-          Opening observed value {formatMoney(record.opening.amount)} on{" "}
-          {fmtDate(record.opening.date)}; excluded from contribution progress.
-        </p>
+        <>
+          <Field label="Opening date">
+            <input
+              type="date"
+              value={value.openingDate}
+              aria-invalid={!value.openingDate}
+              onChange={(event) => set({ openingDate: event.target.value })}
+            />
+          </Field>
+          <p className="note">
+            Opening observed value {formatMoney(record.opening.amount)}, excluded from contribution
+            progress. The date can move no later than the first contribution or observation.
+          </p>
+        </>
       )}
       {record && (
         <label className="rec-check">

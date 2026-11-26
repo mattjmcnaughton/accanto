@@ -32,3 +32,12 @@ def require_new_destination(active: bool) -> None:
 def opening_date_allowed(opening_date, activity_date) -> None:
     if opening_date is not None and activity_date < opening_date:
         raise ValueError("Investment activity cannot predate its opening observation.")
+
+
+def opening_move_allowed(new_date, earliest_activity) -> None:
+    """An opening may move to any date on or before its earliest current activity."""
+    if earliest_activity is not None and earliest_activity < new_date:
+        raise ValueError(
+            "Contributions or observations for this investment predate the new "
+            "opening date; correct or delete them first."
+        )

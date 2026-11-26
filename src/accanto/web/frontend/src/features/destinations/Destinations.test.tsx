@@ -155,6 +155,31 @@ it("permits a destination without a target or opening", async () => {
   );
 });
 
+it("moves an investment's opening date only when it changed", async () => {
+  mock();
+  const p = props();
+  render(<Destinations {...p} />);
+  const investments = await grid("Investments");
+  fireEvent.click(within(investments).getByRole("button", { name: "Edit Example fund" }));
+  const opening = screen.getByLabelText("Opening date");
+  expect(opening).toHaveValue("2026-01-01");
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed fund" } });
+  fireEvent.keyDown(opening, { key: "s", ctrlKey: true });
+  expect(vi.mocked(p.save).mock.calls[0][0].body).not.toHaveProperty("opening_date");
+
+  fireEvent.click(within(investments).getByRole("button", { name: "Edit Example fund" }));
+  fireEvent.change(screen.getByLabelText("Opening date"), { target: { value: "2025-12-01" } });
+  fireEvent.keyDown(screen.getByLabelText("Opening date"), { key: "s", ctrlKey: true });
+  expect(p.save).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      method: "PUT",
+      path: "/api/entities/entity/investments/investment-1",
+      body: expect.objectContaining({ opening_date: "2025-12-01", expected_revision: 1 }),
+    }),
+    expect.any(Function),
+  );
+});
+
 it("records an investment contribution from one saving goal", async () => {
   mock({
     "/savings-accounts": [

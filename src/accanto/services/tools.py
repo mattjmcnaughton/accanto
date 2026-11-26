@@ -971,7 +971,13 @@ def build_destination(args: t.SaveDestination):
         _kind_of(args.values, t.EditDestination, "edit (with active)")
         return (
             Command(f"edit_{args.kind}", _json(args.values), args.id),
-            f"Edit {args.kind} destination {args.values.name}",
+            f"Edit {args.kind} destination {args.values.name}"
+            + (
+                f" (opening date {args.values.opening_date})"
+                if isinstance(args.values, t.EditDestination)
+                and args.values.opening_date
+                else ""
+            ),
         )
     _kind_of(args.values, t.CreateDestination, "create")
     return (
@@ -1460,7 +1466,9 @@ CATALOG: tuple[CatalogTool, ...] = (
     ),
     _write(
         "save_destination",
-        "Add or edit an investment or giving destination.",
+        "Add or edit an investment or giving destination. An investment edit "
+        "may move opening_date when no current contribution or observation "
+        "would then predate it.",
         t.SaveDestination,
         build_destination,
     ),
