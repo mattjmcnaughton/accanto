@@ -594,6 +594,8 @@ export function AgentPanel(p: AgentPanelProps) {
     <aside
       ref={sheet}
       className={full ? "agent full" : "agent"}
+      // The panel owns its keys: screen shortcuts never act on what is behind it.
+      data-own-keys=""
       onKeyDown={(event) => {
         if (event.key !== "Escape" || event.defaultPrevented) return;
         // Esc stops a streaming reply first; it closes only when nothing typed would be lost.

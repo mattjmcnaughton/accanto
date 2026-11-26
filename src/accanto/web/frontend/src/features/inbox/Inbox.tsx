@@ -17,7 +17,7 @@ import { spendingSubcategories } from "../../lib/spendingSubcategories";
 import { tags } from "../../lib/tags";
 import { tint } from "../../ui";
 import { LoadProblem, LoadingCard } from "../workspace/Activity";
-import { type ScreenProps, sourceChoices, useLoad } from "../workspace/shared";
+import { type ScreenProps, keysBelongElsewhere, sourceChoices, useLoad } from "../workspace/shared";
 import {
   CATEGORIES,
   CATEGORY,
@@ -928,7 +928,7 @@ export function Inbox(
     // Capture runs before the workspace's own shortcuts, which skip handled events.
     const listener = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
-      if (document.querySelector("dialog[open]")) return;
+      if (keysBelongElsewhere(e.target)) return;
       if (
         e.key.length > 1 &&
         !["Enter", "Escape", "ArrowUp", "ArrowDown", "ArrowRight", "Backspace"].includes(e.key)

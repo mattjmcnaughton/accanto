@@ -23,7 +23,7 @@ import { ActivityScreen } from "./Activity";
 import { CreateEntityDialog, EntitySwitcher, createEntity } from "./Entities";
 import { MonthlyReview } from "./MonthlyReview";
 import { Plans } from "./Plans";
-import { WorkspaceReads, useTheme } from "./shared";
+import { WorkspaceReads, keysBelongElsewhere, useTheme } from "./shared";
 
 /** Every screen has its own address; "more" is the phone's list of the screens without a tab. */
 export const SCREENS = [
@@ -407,7 +407,7 @@ export function Workspace({
       event.metaKey ||
       event.altKey ||
       typing(event.target) ||
-      document.querySelector("dialog[open]")
+      keysBelongElsewhere(event.target)
     )
       return;
     if (/^[1-9]$/.test(event.key)) {
