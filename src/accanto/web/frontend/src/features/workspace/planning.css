@@ -380,9 +380,10 @@
 .group-toggle,
 .group-name {
   display: inline-flex;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  text-align: left;
   align-items: center;
-  gap: 8px;
+  gap: 0 8px;
   border: 0;
   background: none;
   padding: 0;
@@ -401,14 +402,16 @@
 .line-name {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 2px 8px;
   min-width: 0;
   color: var(--ink2);
 }
-.line-name .nm {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.line-name .nm,
+.line-name .chip {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .frequency {
   display: inline-flex;
@@ -655,19 +658,6 @@
   .plan-grid tr:not([data-group="fixed"]) .c1:not(.editing),
   .plan-grid .group-row .c1:not(.editing) {
     display: none;
-  }
-  .group-toggle,
-  .group-name {
-    flex-wrap: wrap;
-    row-gap: 0;
-    text-align: left;
-  }
-  .line-name {
-    flex-wrap: wrap;
-    row-gap: 2px;
-  }
-  .line-name .nm {
-    white-space: normal;
   }
   .plan-grid td:empty,
   .plan-grid .c2:has(> .muted) {
