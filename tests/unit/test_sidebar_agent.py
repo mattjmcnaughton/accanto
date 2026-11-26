@@ -27,7 +27,7 @@ def deps(call, **extra):
         entity_name="Synthetic household",
         time_zone="UTC",
         today=date(2026, 11, 23),
-        mode="propose",
+        mode="ask_first",
         agent_md="Sample Warehouse Club is groceries unless over $300.",
         call=call,
         **extra,
@@ -74,7 +74,7 @@ def test_context_block_carries_agent_md_after_the_rules():
     assert block.index("<agent_md>") > block.index("</context>")
     assert "Sample Warehouse Club is groceries" in block
     assert "<agent_md>" not in render_context(
-        SidebarDeps("E", "UTC", date(2026, 1, 1), "propose", "", call=fake_call)
+        SidebarDeps("E", "UTC", date(2026, 1, 1), "ask_first", "", call=fake_call)
     )
 
 

@@ -677,7 +677,7 @@ def main():
     parser.add_argument("--confirm-reset", action="store_true")
     parser.add_argument(
         "--agent",
-        choices=("off", "propose", "record"),
+        choices=("off", "read_only", "ask_first", "apply_directly"),
         default="off",
         help="Turn the assistant on in this Agent mode when seeding.",
     )

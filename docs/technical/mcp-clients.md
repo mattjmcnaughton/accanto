@@ -14,11 +14,12 @@ Accanto API keys sent as `Authorization: Bearer <key>`
    export ACCANTO_KEY='…'   # e.g. read from your password manager
    ```
 
-2. Choose the Entity's **Agent mode** in **Settings → Agent**. In *Propose
-   only* (the default) every write the client makes becomes a Pending change you
-   apply in Accanto. In *Record with approval*, writes run once your client's
-   approval prompt allows them. Deleting a savings movement or a balance
-   observation is always a Pending change.
+2. Choose the Entity's **Agent mode** in **Settings → Agent**. In *Read only*
+   every write the client tries is rejected (`read_only`). In *Ask first* (the
+   default) every write becomes a Pending change you apply in Accanto. In
+   *Apply directly*, writes run once your client's approval prompt allows them.
+   Deleting a savings movement, a balance observation or a tag is a Pending
+   change in Ask first and Apply directly.
 
 Through `/mcp`, the key reaches only the agent tool catalog: no tool lists,
 issues or revokes keys, sets up sources, or changes agent or Entity settings,

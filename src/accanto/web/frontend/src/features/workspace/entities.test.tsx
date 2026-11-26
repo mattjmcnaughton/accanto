@@ -45,7 +45,7 @@ function serve(write: (path: string) => Promise<Response> = () => new Promise(()
       return new Response(
         JSON.stringify({
           enabled: true,
-          mode: "propose",
+          mode: "ask_first",
           instructions: "",
           revision: 1,
           provider: "stub",

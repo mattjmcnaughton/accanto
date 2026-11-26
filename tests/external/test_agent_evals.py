@@ -1,7 +1,7 @@
 """Live evals of the built-in agent against real models (TDD 03, Evals).
 
 Runs the real turn service over HTTP against an isolated PostgreSQL database,
-with a seeded synthetic Entity in propose mode, and scores each reply in code:
+with a seeded synthetic Entity in Ask first, and scores each reply in code:
 figures quoted exactly, unknown not zero, inbox categorization with an AGENT.md
 rule, receipt drafting from generated images, refusal of excluded actions, and
 the injection case. Every value is invented; expected figures are worked out by
@@ -480,7 +480,7 @@ async def evaluate(model: str) -> dict:
             prefix + "/agent/settings",
             json={
                 "enabled": True,
-                "mode": "propose",
+                "mode": "ask_first",
                 "instructions": AGENT_MD,
                 "expected_revision": 0,
             },

@@ -10,7 +10,10 @@ from accanto.models import agent as a
 from accanto.services.access import RejectionError
 from accanto.services.monthly import authorize, check_revision, write
 
-DEFAULTS = {"enabled": False, "mode": "propose", "instructions": "", "revision": 0}
+# read_only rejects every agent write; ask_first drafts each as a Pending
+# change; apply_directly runs them (irreversible deletes still pend).
+MODES = ("read_only", "ask_first", "apply_directly")
+DEFAULTS = {"enabled": False, "mode": "ask_first", "instructions": "", "revision": 0}
 MAX_INSTRUCTIONS = 20_000
 
 
@@ -48,8 +51,10 @@ async def update_settings(session, actor, entity_uuid, request_key, payload):
 
 async def write_agent_settings(session, entity, payload, audit):
     """Dispatched by monthly.write() under the Entity lock; audited like edits."""
-    if payload["mode"] not in {"propose", "record"}:
-        raise RejectionError("invalid_settings", "Choose propose or record.", 422)
+    if payload["mode"] not in MODES:
+        raise RejectionError(
+            "invalid_settings", "Choose read_only, ask_first or apply_directly.", 422
+        )
     if len(payload["instructions"]) > MAX_INSTRUCTIONS:
         raise RejectionError(
             "invalid_settings", "AGENT.md is limited to 20,000 characters.", 422

@@ -5445,7 +5445,7 @@ export const apiKeys: Array<{
 /** The assistant is off until the owner turns it on in Settings. */
 export const agentSettings = {
   enabled: false,
-  mode: "propose",
+  mode: "ask_first",
   instructions: "",
   revision: 0,
   provider: "OpenRouter (zero data retention)",

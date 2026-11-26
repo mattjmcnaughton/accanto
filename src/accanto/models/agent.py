@@ -26,10 +26,10 @@ settings = table(
     "agent_settings",
     Column("entity_id", ForeignKey("entity.id"), nullable=False, unique=True),
     Column("enabled", Boolean, nullable=False, server_default="false"),
-    Column("mode", String, nullable=False, server_default="propose"),
+    Column("mode", String, nullable=False, server_default="ask_first"),
     Column("instructions", Text, nullable=False, server_default=""),
     Column("revision", Integer, nullable=False, server_default="1"),
-    CheckConstraint("mode IN ('propose', 'record')"),
+    CheckConstraint("mode IN ('read_only', 'ask_first', 'apply_directly')"),
     CheckConstraint("char_length(instructions) <= 20000"),
 )
 

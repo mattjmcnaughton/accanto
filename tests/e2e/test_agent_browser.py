@@ -215,7 +215,9 @@ def test_agent_journey(tmp_path):
         idle()
         browser("click", "#agent-enabled")
         until("document.querySelector('#agent-enabled').checked")
-        assert value("document.querySelector('input[value=propose]').checked") == "true"
+        assert (
+            value("document.querySelector('input[value=ask_first]').checked") == "true"
+        )
         button("Save assistant settings")
         until("/Saved/.test(document.querySelector('.toast')?.textContent ?? '')")
         until("!!document.querySelector('.agent textarea')")
@@ -274,8 +276,8 @@ def test_agent_journey(tmp_path):
         )
         assert waiting() == before - 1
 
-        # Two receipt images: in propose mode their draft cards have no Apply in
-        # the conversation; Pending changes applies both at once after a
+        # Two receipt images in Ask first: their drafts wait as cards and
+        # nothing is recorded; Pending changes applies both at once after a
         # confirmation, and Activity shows them.
         for drafted in (1, 2):
             browser("upload", ".agent-attach input", str(receipt))
@@ -286,7 +288,8 @@ def test_agent_journey(tmp_path):
                 f" === {drafted}"
             )
         card = ".agent-msg .agent-card"
-        assert "Apply" not in text(card)
+        assert "Ask first" in text(".agent-mode")
+        assert "Apply" in text(card)
         assert "SYNTHETIC STORE TOTAL 23.45" in browser("get", "html", card)
         assert "1 image(s) sent, not kept" in text(".agent-log")
         browser("find", "role", "button", "click", "--name", "Pending changes 2")
@@ -306,6 +309,35 @@ def test_agent_journey(tmp_path):
             ".split('Synthetic receipt (stub draft)').length === 3"
         )
         assert "$23.45" in text("#main")
+
+        def choose_mode(mode, label):
+            go("Settings")
+            until(f"!!document.querySelector('input[value={mode}]')")
+            idle()
+            browser("check", f"input[value={mode}]")
+            until(f"document.querySelector('input[value={mode}]').checked")
+            button("Save assistant settings")
+            until(f"/{label}/.test(document.querySelector('.agent-mode')?.textContent)")
+
+        # Apply directly: the same receipt request records, with no card.
+        choose_mode("apply_directly", "Apply directly")
+        cards = int(value("document.querySelectorAll('.agent-card').length"))
+        ask(f"Here is a receipt from {today}")
+        assert "I recorded a 23.45 spending entry" in last_reply()
+        assert int(value("document.querySelectorAll('.agent-card').length")) == cards
+        go("Activity")
+        until(
+            "document.querySelector('#main').textContent.split('$23.45').length === 4"
+        )
+
+        # Read only: the agent's proposals are refused; the inbox is unchanged.
+        choose_mode("read_only", "Read only")
+        assert "Agent mode: Read only" in text(".agent-mode")
+        go("Transactions inbox")
+        before = waiting()
+        ask("Please categorize my inbox")
+        assert "Read only" in last_reply()
+        assert waiting() == before
     finally:
         try:
             browser("close", check=False)

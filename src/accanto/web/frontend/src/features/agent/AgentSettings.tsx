@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { loadResource } from "../../lib/api";
-import { type AgentMode, type AgentSettings as Settings, agent } from "../../lib/agentStream";
+import {
+  AGENT_MODES,
+  type AgentMode,
+  type AgentSettings as Settings,
+  agent,
+} from "../../lib/agentStream";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 
 /**
@@ -83,21 +88,14 @@ export function AgentSettings(p: ScreenProps) {
               <div>
                 <legend>Agent mode</legend>
                 <small>
-                  Applies to the assistant and to MCP clients using your API keys. Setting inbox
-                  proposals and syncing are always allowed; they record nothing.
+                  Applies to the assistant and to MCP clients using your API keys. Applying or
+                  dismissing a pending change yourself works in every mode.
                 </small>
               </div>
               <div>
                 {(
-                  [
-                    ["propose", "Propose only", "Every change becomes a pending change you apply."],
-                    [
-                      "record",
-                      "Record with approval",
-                      "You apply the assistant's changes from their cards; MCP clients write after their approval prompt.",
-                    ],
-                  ] as Array<[AgentMode, string, string]>
-                ).map(([mode, label, help]) => (
+                  Object.entries(AGENT_MODES) as Array<[AgentMode, { label: string; help: string }]>
+                ).map(([mode, { label, help }]) => (
                   <label key={mode} className="agent-radio">
                     <input
                       type="radio"

@@ -333,7 +333,7 @@ async def scenario():
                 root + "/agent/settings",
                 {
                     "enabled": True,
-                    "mode": "propose",
+                    "mode": "ask_first",
                     "instructions": "",
                     "expected_revision": 0,
                 },
@@ -369,7 +369,7 @@ async def scenario():
         "Synthetic Personal",
         "Synthetic Spare",
     ]
-    # Write results name their Entity (propose mode drafts a Pending change).
+    # Write results name their Entity (Ask first drafts a Pending change).
     drafted = await TOOLS["save_activity"].run(
         mcp,
         UUID(personal["id"]),

@@ -10,7 +10,7 @@ from accanto.dtos.monthly import Input
 
 class AgentSettingsInput(Input):
     enabled: bool
-    mode: Literal["propose", "record"]
+    mode: Literal["read_only", "ask_first", "apply_directly"]
     instructions: str = Field(default="", max_length=20_000)
     # 0 before the settings were first saved.
     expected_revision: int = Field(ge=0)

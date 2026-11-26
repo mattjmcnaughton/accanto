@@ -47,9 +47,11 @@ RULES = [
     "Edits and deletes need the record's current expected_revision; on "
     "stale_revision, read it again.",
     "Reuse the same idempotency key and input when retrying a write.",
-    "In propose mode, writes become pending changes the owner applies in "
-    "Accanto. Deleting a savings movement, a balance observation or a tag "
-    "always does.",
+    "The Agent mode decides what writes do: read_only rejects every write "
+    "(including sync and proposals); ask_first makes each write a pending "
+    "change the owner applies in Accanto; apply_directly records it. Deleting "
+    "a savings movement, a balance observation or a tag is always a pending "
+    "change.",
 ]
 
 
@@ -234,7 +236,7 @@ def _pending(row) -> dict:
     return values
 
 
-# Inbox writes that always run (propose mode allows them) ------------------------
+# Inbox writes that run in Ask first and Apply directly ---------------------------
 
 
 async def sync_source(ctx, entity_id, args: t.SourceRef, key):
@@ -352,7 +354,7 @@ def gated(name):
 
 
 async def record_inbox_items(ctx, entity_id, args: t.RecordItems, key):
-    """Each item is its own write (and, in propose mode, its own Pending change)."""
+    """Each item is its own write (and, in Ask first, its own Pending change)."""
     from accanto.routers.inbox import item_key
 
     results = []
@@ -897,7 +899,7 @@ CATALOG: tuple[CatalogTool, ...] = (
         "Set (or, with clear, remove) proposals on inbox items: category, "
         "assignment (for guilt-free spending, a spending subcategory or none), "
         "funding, tag_ids, refund_of or skip, with a rationale. Records nothing; "
-        "allowed in every Agent mode.",
+        "allowed unless the Agent mode is read_only.",
         t.SetProposals,
         t.ItemOutcomes,
         "write",
@@ -1118,8 +1120,19 @@ def named(run: Run) -> Run:
     return run_named
 
 
+def writable(run: Run) -> Run:
+    """Read only rejects every write tool before it runs, on both surfaces."""
+
+    async def run_writable(ctx, entity_id, args, key, **extra):
+        if await entity_mode(ctx, entity_id) == "read_only":
+            raise agent_writes.read_only()
+        return await run(ctx, entity_id, args, key, **extra)
+
+    return run_writable
+
+
 CATALOG = tuple(
-    tool if tool.kind == "read" else replace(tool, run=named(tool.run))
+    tool if tool.kind == "read" else replace(tool, run=named(writable(tool.run)))
     for tool in CATALOG
 )
 TOOLS = {tool.name: tool for tool in CATALOG}

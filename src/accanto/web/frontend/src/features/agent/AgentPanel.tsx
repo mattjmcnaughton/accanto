@@ -7,6 +7,7 @@ import {
   type ConversationSummary,
   type PendingChange,
   type StreamDone,
+  AGENT_MODES,
   type ToolLine,
   agent,
   streamReply,
@@ -468,7 +469,6 @@ export function AgentPanel(p: AgentPanelProps) {
   }
 
   const open = new Map(pending.map((c) => [c.id, c]));
-  const recordMode = settings?.mode === "record";
   const cards = (ids: UUID[]) =>
     ids
       .map((id) => open.get(id))
@@ -477,7 +477,7 @@ export function AgentPanel(p: AgentPanelProps) {
         <PendingCard
           key={c.id}
           change={c}
-          canApply={recordMode}
+          canApply
           entityName={p.entity.name}
           disabled={p.busy}
           edited={edits[c.id] ?? null}
@@ -505,7 +505,7 @@ export function AgentPanel(p: AgentPanelProps) {
         <PendingCard
           key={part.change.id}
           change={part.change}
-          canApply={recordMode}
+          canApply
           entityName={p.entity.name}
           disabled
           edited={null}
@@ -657,7 +657,8 @@ export function AgentPanel(p: AgentPanelProps) {
               </button>
             </div>
             <span className={`agent-mode ${settings.mode}`}>
-              {recordMode ? "Record with approval" : "Propose only"}
+              <span className="sr-only">Agent mode: </span>
+              {AGENT_MODES[settings.mode].label}
             </span>
           </div>
           {tab === "history" ? (
@@ -786,8 +787,11 @@ export function AgentPanel(p: AgentPanelProps) {
               >
                 {messages.length === 0 && !live && !ended && (
                   <p className="note">
-                    Ask about your finances, or ask me to categorize the inbox. Changes I draft wait
-                    for you as cards; nothing is recorded until you apply it.
+                    {settings.mode === "read_only"
+                      ? "Ask about your finances. Read only: I can read but not change anything."
+                      : settings.mode === "ask_first"
+                        ? "Ask about your finances, or ask me to categorize the inbox. Ask first: changes I draft wait for you as cards; nothing is recorded until you apply it."
+                        : "Ask about your finances, or ask me to categorize the inbox. Apply directly: I record changes myself; deletes that cannot be restored still wait for you."}
                   </p>
                 )}
                 {messages.map((m, i) => (
@@ -836,11 +840,6 @@ export function AgentPanel(p: AgentPanelProps) {
                     {parts(live.parts, true)}
                     {thinking(live.parts) && <span className="note agent-thinking">Thinking…</span>}
                   </div>
-                )}
-                {!recordMode && pending.length > 0 && (
-                  <p className="note">
-                    Propose only: apply drafted changes from <b>Pending changes</b>.
-                  </p>
                 )}
               </div>
               {below && (

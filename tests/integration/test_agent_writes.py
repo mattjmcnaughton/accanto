@@ -119,7 +119,7 @@ async def scenario():
 
     coffee = {"date": "2026-11-05", "category": "spending", "amount": "12.34"}
 
-    # Propose mode is the default: an MCP save_activity records nothing.
+    # Ask first is the default: an MCP save_activity records nothing.
     baseline = await audits()
     drafted = await call(mcp, "save_activity", coffee, "mcp-key-1")
     assert drafted.status == "pending" and drafted.pending_change
@@ -168,8 +168,8 @@ async def scenario():
     activity = await call(mcp, "list_activity", {"month": "2026-11-01"})
     assert [e.amount for e in activity.entries] == ["12.34"]
 
-    # Record mode: MCP writes run once, audited as mcp.
-    await set_mode("record")
+    # Apply directly: MCP writes run once, audited as mcp.
+    await set_mode("apply_directly")
     lunch = {"date": "2026-11-06", "category": "spending", "amount": "20.00"}
     recorded = await call(mcp, "save_activity", lunch, "mcp-key-2")
     assert recorded.status == "recorded"
@@ -178,12 +178,20 @@ async def scenario():
     assert replay.record_id == recorded.record_id
     assert await entries() == 2 and await audits("mcp") == 1
 
-    # The built-in agent never writes from a model run, even in record mode.
+    # The built-in agent records directly too, audited as agent (October, so
+    # November's worked example below is unchanged).
+    october_lunch = {**lunch, "date": "2026-10-06"}
+    sidebar_recorded = await call(sidebar, "save_activity", october_lunch)
+    assert sidebar_recorded.status == "recorded"
+    assert await entries() == 3 and await audits("agent") == 2
+
+    # Ask first: the built-in agent's writes become Pending changes too.
+    await set_mode("ask_first")
     sidebar_draft = await call(sidebar, "save_activity", lunch)
     assert sidebar_draft.status == "pending"
     assert sidebar_draft.pending_change
     assert sidebar_draft.pending_change.created_by_interface == "agent"
-    assert await entries() == 2
+    assert await entries() == 3
 
     # Stale: draft a correction, change the entry, then apply.
     entry_id = recorded.record_id
@@ -211,7 +219,7 @@ async def scenario():
     activity = await call(mcp, "list_activity", {"month": "2026-11-01"})
     assert sorted(e.amount for e in activity.entries) == ["12.34", "22.00"]
 
-    # Irreversible deletes pend in both modes, even for MCP in record mode.
+    # Irreversible deletes pend in Ask first and in Apply directly.
     observation = await call(
         mcp,
         "save_observation",
@@ -220,13 +228,57 @@ async def scenario():
             "values": {"date": "2026-11-01", "amount": "17.00", "account_id": None},
         },
     )
-    assert observation.status == "recorded" and observation.record_id
+    assert observation.status == "pending" and observation.pending_change
+    observation = await apply_pending(owner_ctx, entity, observation.pending_change.id)
+    assert observation.record_id
     delete = {"kind": "investment", "id": observation.record_id, "expected_revision": 1}
-    for mode in ("record", "propose"):
+    for mode in ("apply_directly", "ask_first"):
         await set_mode(mode)
         pended = await call(mcp, "delete_observation", delete)
         assert pended.status == "pending", mode
         assert len((await call(mcp, "list_investment_observations", {})).observations)
+
+    # Read only: every write tool is refused on both surfaces, before it runs,
+    # including sync_source and set_proposals. Reads still work.
+    await set_mode("read_only")
+    writes = [name for name, spec in TOOLS.items() if spec.kind != "read"]
+    assert {"sync_source", "set_proposals", "delete_tag"} <= set(writes)
+    before = (
+        await entries(),
+        await audits(),
+        await count(a.pending, a.pending.c.entity_id == entity_id),
+    )
+    for ctx in (mcp, sidebar):
+        for name in writes:
+            with pytest.raises(RejectionError) as refused:
+                await TOOLS[name].run(ctx, entity, None, str(uuid4()))
+            assert (refused.value.code, refused.value.status) == ("read_only", 403)
+        # The dispatcher also refuses under the Entity lock (no mode race).
+        with pytest.raises(RejectionError) as locked:
+            await agent_writes.dispatch(
+                sessions,
+                ctx.actor,
+                entity,
+                "save_activity",
+                coffee,
+                agent_writes.Command(
+                    "create_entry", ActivityInput.model_validate(coffee).model_dump()
+                ),
+                str(uuid4()),
+                "Synthetic",
+            )
+        assert locked.value.code == "read_only"
+    assert (
+        await entries(),
+        await audits(),
+        await count(a.pending, a.pending.c.entity_id == entity_id),
+    ) == before
+    assert (await call(mcp, "get_context", {})).agent_mode == "read_only"
+    # The owner still applies Pending changes drafted earlier.
+    applied_delete = await apply_pending(owner_ctx, entity, pended.pending_change.id)
+    assert applied_delete.status == "recorded"
+    assert (await call(mcp, "list_investment_observations", {})).observations == []
+    await set_mode("ask_first")
 
     # Goal creates drafted together apply in a row: each create bumps the
     # account revision, so applying rebases onto it. Edits stay strict.
@@ -363,7 +415,7 @@ async def scenario():
             (
                 "PUT",
                 "/agent/settings",
-                {"enabled": True, "mode": "record", "expected_revision": 3},
+                {"enabled": True, "mode": "apply_directly", "expected_revision": 3},
             ),
             ("GET", "/agent/pending-changes", None),
             (
@@ -401,7 +453,7 @@ async def scenario():
         client.cookies.update(cookie)
         settings = await client.get(prefix + "/agent/settings")
         assert settings.status_code == 200
-        assert settings.json()["mode"] == "propose"
+        assert settings.json()["mode"] == "ask_first"
         pending = await client.get(prefix + "/agent/pending-changes")
         assert {p["tool"] for p in pending.json()} == {
             "save_activity",

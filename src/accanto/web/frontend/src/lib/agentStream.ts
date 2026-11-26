@@ -4,7 +4,22 @@
  */
 import { ApiError, type BrowserSession, type UUID, fetchJson } from "./api";
 
-export type AgentMode = "propose" | "record";
+export type AgentMode = "read_only" | "ask_first" | "apply_directly";
+/** One name per Agent mode; the server enforces each. */
+export const AGENT_MODES: Record<AgentMode, { label: string; help: string }> = {
+  read_only: {
+    label: "Read only",
+    help: "Agents can read and answer, but every change is refused, including syncing and inbox proposals.",
+  },
+  ask_first: {
+    label: "Ask first",
+    help: "Each change waits in Pending changes until you apply it. Syncing and inbox proposals run.",
+  },
+  apply_directly: {
+    label: "Apply directly",
+    help: "Changes are recorded as soon as the assistant or an MCP client makes them.",
+  },
+};
 export interface AgentSettings {
   enabled: boolean;
   mode: AgentMode;
