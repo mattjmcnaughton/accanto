@@ -125,6 +125,14 @@ accepts the proposal, `l` or → leaves the item for later (nothing saved), `s`
 ignores it (status `skipped`, shown as Ignored), `e` edits it in place with the
 keys above and returns to the flow, `z` undoes, `Esc` leaves.
 
+Search: `/` focuses the search box, which filters as you type by payee, memo,
+source category, amount (a number matches that exact amount, signed only when
+typed with a sign) and the shown proposal or record, including the agent's
+rationale or question. Every word must match. It narrows the current view, its
+counts and the proposals filter, and `X` selects only matching rows. `Enter`
+returns the keys to the list; `Esc` clears the search. Every staged item is
+already loaded for the screen, so search filters in the browser with no request.
+
 ## Staged-transaction shape (the adapter boundary)
 
 The only thing the inbox and services know about a source:

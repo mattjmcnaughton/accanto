@@ -327,6 +327,75 @@ it("filters to items with a proposal with p, keeping the Review's waiting count"
   await waitFor(() => expect(waiting()).toBe("Waiting 2"));
 });
 
+it("searches every field as you type, inside the views and filters, and X selects only matches", async () => {
+  const unsure = { rationale: "Is this a gift for the office party?" } as unknown as Proposal;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    if (String(path).endsWith("/inbox"))
+      return new Response(
+        JSON.stringify([
+          item({ memo: "Oat latte" }),
+          item({
+            id: "i2",
+            source_ref: "tx-2",
+            payee: "Sample Hardware",
+            amount: "-1234.50",
+            proposal: { category: "spending", rationale: "Synthetic" },
+          }),
+          item({ id: "i3", source_ref: "tx-3", payee: "Example Bakery", proposal: unsure }),
+          item({ id: "i4", source_ref: "tx-4", payee: "Example Bakery", status: "skipped" }),
+        ]),
+      );
+    return new Response("[]");
+  });
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+    />,
+  );
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  const input = screen.getByRole("searchbox", { name: "Search the inbox" }) as HTMLInputElement;
+  fireEvent.keyDown(document.body, { key: "/" });
+  expect(document.activeElement).toBe(input);
+  const rows = () =>
+    screen.queryAllByRole("option").map((o) => o.querySelector(".tt span")?.textContent);
+  const count = (view: string) => screen.getByRole("button", { name: new RegExp(`^${view}`) });
+  const search = (value: string) => fireEvent.change(input, { target: { value } });
+
+  search("latte"); // memo
+  expect(rows()).toEqual(["Example Coffee Cart"]);
+  search("$1,234.5"); // amount as typed, with "$" and a thousands separator
+  expect(rows()).toEqual(["Sample Hardware"]);
+  search("guilt-free"); // the proposal's category
+  expect(rows()).toEqual(["Sample Hardware"]);
+  search("party office"); // the agent's question; every word, in any order
+  expect(rows()).toEqual(["Example Bakery"]);
+  search("dining -12"); // source category and signed amount
+  expect(rows()).toEqual(["Example Coffee Cart", "Example Bakery"]);
+
+  // The view counts follow the search, and Select all takes only the matching rows.
+  search("example");
+  expect(count("Waiting").textContent).toBe("Waiting 2");
+  expect(count("Ignored").textContent).toBe("Ignored 1");
+  fireEvent.keyDown(document.body, { key: "X" });
+  expect(await screen.findByText("2 selected", { selector: ".ix-d-t" })).toBeDefined();
+  expect(screen.getByRole("checkbox", { name: /^Select all 2/ })).toBeDefined();
+  // With the proposals filter as well, only the bakery item is left.
+  fireEvent.keyDown(document.body, { key: "p" });
+  await waitFor(() => expect(rows()).toEqual(["Example Bakery"]));
+  // The coffee cart matches the search but has no proposal.
+  search("latte");
+  expect(screen.getByText(/Nothing waiting matches “latte”/)).toBeDefined();
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(input.value).toBe("");
+});
+
 it("steps through a pass in flow with one request per key and no list reloads", async () => {
   const proposal = (category: Proposal["category"], rationale: string) =>
     ({ category, rationale, skip: false, tag_ids: [] }) as unknown as Proposal;
