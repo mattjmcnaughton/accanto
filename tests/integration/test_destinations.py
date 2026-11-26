@@ -399,4 +399,137 @@ async def scenario():
                 )
                 == 3
             )
+        await moving_opening(client, command, sessions, path)
     await engine.dispose()
+
+
+async def moving_opening(client, command, sessions, path):
+    """An opening date moves only where no current activity would predate it."""
+    created = await command(
+        "POST",
+        "/investments",
+        {
+            "name": "Synthetic brokerage",
+            "opening": {"date": "2026-03-01", "amount": "100.00"},
+        },
+    )
+    uuid = created.json()["uuid"]
+    contribution = await command(
+        "POST",
+        "/investment-activity",
+        {"date": "2026-03-10", "amount": "10.00", "investment_id": uuid},
+    )
+    assert contribution.status_code == 200, contribution.text
+    observed = await command(
+        "POST",
+        "/investment-observations",
+        {"date": "2026-03-20", "amount": "120.00", "account_id": uuid},
+    )
+    assert observed.status_code == 200, observed.text
+
+    def edit(day, revision):
+        return {
+            "name": "Synthetic brokerage",
+            "target": None,
+            "active": True,
+            "expected_revision": revision,
+            "opening_date": day,
+        }
+
+    key = str(uuid4())
+    earlier = await command("PUT", f"/investments/{uuid}", edit("2026-02-01", 1), key)
+    assert earlier.status_code == 200, earlier.text
+    assert earlier.json()["opening"] == {"date": "2026-02-01", "amount": "100.00"}
+    assert earlier.json()["revision"] == 2
+    replay = await command("PUT", f"/investments/{uuid}", edit("2026-02-01", 1), key)
+    assert replay.json() == earlier.json()
+    assert (
+        await command("PUT", f"/investments/{uuid}", edit("2026-02-15", 1))
+    ).status_code == 409
+    # The contribution on 03-10 blocks a move past it, and nothing changes.
+    blocked = await command("PUT", f"/investments/{uuid}", edit("2026-03-11", 2))
+    assert blocked.status_code == 422
+    assert blocked.json()["detail"]["code"] == "activity_before_opening"
+    listed = next(
+        row
+        for row in (await client.get(path + "/investments")).json()
+        if row["uuid"] == uuid
+    )
+    assert (listed["opening"]["date"], listed["revision"]) == ("2026-02-01", 2)
+    entry = contribution.json()
+    assert (
+        await command(
+            "DELETE",
+            f"/investment-activity/{entry['uuid']}",
+            {"expected_revision": entry["revision"]},
+        )
+    ).status_code == 200
+    # With the contribution deleted, the observation on 03-20 is the boundary:
+    # one day later is refused, the same day is allowed.
+    assert (await command("PUT", f"/investments/{uuid}", edit("2026-03-21", 2))).json()[
+        "detail"
+    ]["code"] == "activity_before_opening"
+    later = await command("PUT", f"/investments/{uuid}", edit("2026-03-20", 2))
+    assert later.status_code == 200, later.text
+    assert later.json()["opening"]["date"] == "2026-03-20"
+    assert (
+        await command(
+            "POST",
+            "/investment-activity",
+            {"date": "2026-03-19", "amount": "5.00", "investment_id": uuid},
+        )
+    ).json()["detail"]["code"] == "before_opening"
+    unchanged = await command("PUT", f"/investments/{uuid}", edit("2026-03-20", 3))
+    assert unchanged.status_code == 200, unchanged.text
+    no_opening = (await command("POST", "/investments", {"name": "No opening"})).json()
+    assert (
+        await command(
+            "PUT", f"/investments/{no_opening['uuid']}", edit("2026-03-01", 1)
+        )
+    ).json()["detail"]["code"] == "no_opening"
+    recipient = (
+        await command("POST", "/giving-recipients", {"name": "Synthetic"})
+    ).json()
+    assert (
+        await command(
+            "PUT", f"/giving-recipients/{recipient['uuid']}", edit("2026-03-01", 1)
+        )
+    ).json()["detail"]["code"] == "invalid_opening"
+    async with sessions() as session:
+        opening = (
+            (
+                await session.execute(
+                    select(d.observations)
+                    .join(
+                        d.investments,
+                        d.investments.c.id == d.observations.c.investment_id,
+                    )
+                    .where(d.investments.c.uuid == uuid, d.observations.c.is_opening)
+                )
+            )
+            .mappings()
+            .one()
+        )
+        # Created, then moved twice; the same-date edit and the replay add nothing.
+        assert opening["revision"] == 3
+        audits = (
+            await session.execute(
+                select(m.audit.c.before, m.audit.c.after)
+                .where(m.audit.c.record_uuid == opening["uuid"])
+                .order_by(m.audit.c.id)
+            )
+        ).all()
+        assert [row.after["financial_date"] for row in audits] == [
+            "2026-03-01",
+            "2026-02-01",
+            "2026-03-20",
+        ]
+        assert audits[1].before["financial_date"] == "2026-03-01"
+        # The database refuses a move past current activity even outside the service.
+        with pytest.raises(SQLAlchemyError):
+            await session.execute(
+                update(d.observations)
+                .where(d.observations.c.id == opening["id"])
+                .values(financial_date="2026-03-21")
+            )
+        await session.rollback()

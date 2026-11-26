@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from accanto.dtos import tools as t
 from accanto.services.agent_writes import ALWAYS_PENDS, IRREVERSIBLE
-from accanto.services.tools import CATALOG, TOOLS
+from accanto.services.tools import CATALOG, TOOLS, build_destination
 
 CATALOG_NAMES = [
     "get_context",
@@ -196,3 +196,35 @@ def test_spending_subcategory_names_are_untrusted_in_lists_and_reviews():
     line = t.BreakdownLine(id=None, name=name, recorded="5.00", entries=1)
     assert line.model_dump(mode="json")["name"] == {"untrusted": name}
     assert "spending_subcategory_id" in t.Entry.model_fields
+
+
+def test_save_destination_moves_an_investment_opening_date():
+    target = uuid4()
+    args = t.SaveDestination.model_validate(
+        {
+            "kind": "investment",
+            "id": str(target),
+            "values": {
+                "name": "Synthetic fund",
+                "active": True,
+                "expected_revision": 2,
+                "opening_date": "2026-02-01",
+            },
+        }
+    )
+    command, summary = build_destination(args)
+    assert (command.operation, command.target) == ("edit_investment", target)
+    assert command.payload["opening_date"] == "2026-02-01"
+    assert summary.endswith("(opening date 2026-02-01)")
+    row = {
+        "uuid": str(target),
+        "name": "Synthetic fund",
+        "target": None,
+        "active": True,
+        "contribution_progress": "0.00",
+        "revision": 3,
+        "opening": {"date": "2026-02-01", "amount": "100.00"},
+        "latest": None,
+    }
+    listed = t.project_destinations("investment", [row]).model_dump(mode="json")
+    assert listed["destinations"][0]["opening_date"] == "2026-02-01"

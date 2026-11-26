@@ -404,6 +404,8 @@ class Destination(Output):
     contribution_progress: Money
     remaining_to_target: Money | None
     percent_of_target: Amount | None
+    # Investments only: the opening observation's date, which edits may move.
+    opening_date: date | None = None
     revision: int
 
 
@@ -677,6 +679,7 @@ def project_destinations(kind, rows) -> DestinationList:
                 active=r["active"],
                 contribution_progress=r["contribution_progress"],
                 **_gap(r["target"], r["contribution_progress"]),
+                opening_date=(r.get("opening") or {}).get("date"),
                 revision=r["revision"],
             )
             for r in rows

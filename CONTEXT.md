@@ -566,7 +566,9 @@ cumulative contribution targets.
 - Activity already reflected in an opening amount must not be added a second
   time to the starting position. The opening amount represents the start of its calendar date; same-day
   activity applies afterward. Backdated changes follow the ordered historical
-  validation rules below. Investment and debt observations remain separate from
+  validation rules below. An investment's opening date may move earlier, or later
+  up to its earliest current contribution or observation; its amount stays fixed.
+  Investment and debt observations remain separate from
   contributions/payments; this boundary does not make their balances automatic.
 
 Each saving goal belongs to exactly one savings account in current scope. An

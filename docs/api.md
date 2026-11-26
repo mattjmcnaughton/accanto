@@ -94,7 +94,7 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | PUT | `/savings-accounts/movements/{movement_id}` | Correct an existing record with its kind and `expected_revision`; original recording order is retained |
 | DELETE | `/savings-accounts/movements/{movement_id}` | Soft delete with `{kind, expected_revision}`; replay later history |
 | GET/POST | `/investments`, `/giving-recipients` | List/create named destinations with optional positive cumulative target; investments may have an optional dated opening observation |
-| PUT | `/investments/{destination_id}`, `/giving-recipients/{destination_id}` | Name, target, active state and `expected_revision` |
+| PUT | `/investments/{destination_id}`, `/giving-recipients/{destination_id}` | Name, target, active state and `expected_revision`; investments also take optional `opening_date` |
 | GET/POST | `/investment-activity`, `/giving-activity` | Current history or create contribution/adjustment with optional `investment_id` or `giving_recipient_id` |
 | PUT/DELETE | `/investment-activity/{entry_id}`, `/giving-activity/{entry_id}` | Correct entry or soft delete with `expected_revision` |
 | POST | `/activity/{purchase_id}/refunds` | Record a linked refund using positive `amount`, `date`, and optional `note` |
@@ -123,8 +123,14 @@ Giving refunds use the linked purchase refund command. Inactive destinations rej
 but permit correction of their existing assigned entries. Soft deletion removes
 progress while retaining entry and assignment history. Optional investment
 `opening: {"date":"2026-01-01","amount":"25000.00"}` is an observed starting
-value: it is protected and contributes `0.00` to progress. Named investment
-activity cannot predate its opening. Progress sums current assigned entries,
+value: it contributes `0.00` to progress, its amount is protected, and it cannot
+be deleted. An investment edit may send `opening_date` to move the opening's date
+(omit it to keep the date). The move bumps the opening's revision and is audited;
+a later date is refused (`422 activity_before_opening`) when a current assigned
+contribution or observation would then predate it, so correct or delete that
+activity first. Soft-deleted activity does not block a move. An investment without
+an opening rejects `opening_date` (`422 no_opening`), as does a giving recipient
+(`422 invalid_opening`). Named investment activity cannot predate its opening. Progress sums current assigned entries,
 separately from observed market value or tax eligibility. Monthly Reviews expose
 recorded investing and giving totals when entries exist; full comparison metrics
 are a later increment.

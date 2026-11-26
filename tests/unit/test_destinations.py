@@ -10,6 +10,7 @@ from accanto.domains.destinations import (
     contribution_progress,
     contribution_target,
     opening_date_allowed,
+    opening_move_allowed,
     require_new_destination,
 )
 
@@ -38,3 +39,10 @@ def test_inactive_and_opening_boundary():
     opening_date_allowed(date(2026, 1, 1), date(2026, 1, 1))
     with pytest.raises(ValueError, match="predate"):
         opening_date_allowed(date(2026, 1, 1), date(2025, 12, 31))
+
+
+def test_opening_moves_up_to_its_earliest_current_activity():
+    opening_move_allowed(date(2026, 3, 10), None)
+    opening_move_allowed(date(2026, 3, 10), date(2026, 3, 10))
+    with pytest.raises(ValueError, match="predate the new opening"):
+        opening_move_allowed(date(2026, 3, 11), date(2026, 3, 10))

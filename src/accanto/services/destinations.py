@@ -12,6 +12,7 @@ from accanto.domains.destinations import (
     contribution_amount,
     contribution_target,
     opening_date_allowed,
+    opening_move_allowed,
     require_new_destination,
 )
 from accanto.models import destinations as d
@@ -160,6 +161,8 @@ async def write_destination(session, entity, operation, payload, target, audit):
         return (await snapshots(session, kind, [row]))[0]
     row = await scoped(session, table, entity["id"], target)
     check_revision(row, payload["expected_revision"])
+    if payload.get("opening_date"):
+        await move_opening(session, kind, row, payload["opening_date"], audit)
     updated = (
         (
             await session.execute(
@@ -179,6 +182,72 @@ async def write_destination(session, entity, operation, payload, target, audit):
     )
     await audit(table, row["uuid"], dict(row), dict(updated))
     return (await snapshots(session, kind, [updated]))[0]
+
+
+async def move_opening(session, kind, investment, value, audit):
+    """Move the opening date; refuse when current activity would predate it."""
+    if kind != "investment":
+        raise RejectionError(
+            "invalid_opening", "Giving recipients do not have opening balances.", 422
+        )
+    obs = d.observations.c
+    opening = (
+        (
+            await session.execute(
+                select(d.observations).where(
+                    obs.investment_id == investment["id"], obs.is_opening
+                )
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if opening is None:
+        raise RejectionError(
+            "no_opening", "This investment has no opening value to move.", 422
+        )
+    new_date = date.fromisoformat(value)
+    if new_date == opening["financial_date"]:
+        return
+    earliest = await session.scalar(
+        select(func.min(obs.financial_date)).where(
+            obs.investment_id == investment["id"],
+            obs.is_opening.is_(False),
+            obs.deleted_at.is_(None),
+        )
+    )
+    entry = await session.scalar(
+        select(func.min(m.entries.c.financial_date))
+        .select_from(
+            m.entries.join(
+                d.investment_entries,
+                d.investment_entries.c.actual_entry_id == m.entries.c.id,
+            )
+        )
+        .where(
+            d.investment_entries.c.investment_id == investment["id"],
+            m.entries.c.deleted_at.is_(None),
+        )
+    )
+    try:
+        opening_move_allowed(
+            new_date, min((day for day in (earliest, entry) if day), default=None)
+        )
+    except ValueError as error:
+        raise RejectionError("activity_before_opening", str(error), 422) from None
+    moved = (
+        (
+            await session.execute(
+                update(d.observations)
+                .where(obs.id == opening["id"])
+                .values(financial_date=new_date, revision=opening["revision"] + 1)
+                .returning(d.observations)
+            )
+        )
+        .mappings()
+        .one()
+    )
+    await audit(d.observations, opening["uuid"], dict(opening), dict(moved))
 
 
 async def entry_snapshot(session, kind, entry):

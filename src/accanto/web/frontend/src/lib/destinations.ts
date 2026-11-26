@@ -74,6 +74,8 @@ export const destinations = {
       target: string | null;
       active: boolean;
       expected_revision: number;
+      /** Investments with an opening only; omit to keep the opening date. */
+      opening_date?: string;
     },
   ): WriteSpec<Destination> => ({
     method: "PUT",
