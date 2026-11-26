@@ -15,6 +15,7 @@ from pydantic import (
     model_validator,
 )
 
+from accanto.domains.targets import target_gap
 from accanto.dtos.balances import CreateDebt, EditDebt, ObservationInput
 from accanto.dtos.destinations import (
     ContributionInput,
@@ -372,6 +373,8 @@ class Goal(Output):
     kind: str
     target: Money | None
     remaining_saved: Money
+    remaining_to_target: Money | None
+    percent_of_target: Amount | None
     active: bool
     completed: bool
     revision: int
@@ -397,6 +400,8 @@ class Destination(Output):
     target: Money | None
     active: bool
     contribution_progress: Money
+    remaining_to_target: Money | None
+    percent_of_target: Amount | None
     revision: int
 
 
@@ -641,6 +646,14 @@ def project_entry(row) -> Entry:
     )
 
 
+def _gap(target, progress) -> dict:
+    remaining, percent = target_gap(target, progress)
+    return {
+        "remaining_to_target": None if remaining is None else str(remaining),
+        "percent_of_target": None if percent is None else str(percent),
+    }
+
+
 def project_savings(accounts) -> SavingsList:
     return SavingsList(
         accounts=[
@@ -659,6 +672,7 @@ def project_savings(accounts) -> SavingsList:
                         kind=g["kind"],
                         target=g["target"],
                         remaining_saved=g["remaining_saved"],
+                        **_gap(g["target"], g["remaining_saved"]),
                         active=g["active"],
                         completed=g["completed"],
                         revision=g["revision"],
@@ -681,6 +695,7 @@ def project_destinations(kind, rows) -> DestinationList:
                 target=r["target"],
                 active=r["active"],
                 contribution_progress=r["contribution_progress"],
+                **_gap(r["target"], r["contribution_progress"]),
                 revision=r["revision"],
             )
             for r in rows
@@ -856,6 +871,99 @@ class ActivityQuery(Input):
     month: FirstDay
     category: Category | None = None
     tag_id: UUID | None = Field(default=None, description="Only entries with this tag.")
+
+
+class ActivitySummaryQuery(Input):
+    start: date
+    end: date = Field(description="Inclusive.")
+    category: Category | None = None
+    tag_id: UUID | None = None
+    source_id: UUID | None = None
+    fixed_cost_id: UUID | None = None
+    saving_goal_id: UUID | None = None
+    investment_id: UUID | None = None
+    giving_recipient_id: UUID | None = None
+    note_contains: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        description="Case-insensitive text in the entry note, such as a payee.",
+    )
+
+    @model_validator(mode="after")
+    def bounded(self):
+        if self.end < self.start:
+            raise ValueError("end must be on or after start.")
+        if (
+            self.end.year - self.start.year
+        ) * 12 + self.end.month - self.start.month >= 120:
+            raise ValueError("Summaries cover at most 120 months.")
+        return self
+
+
+class CategorySummary(Output):
+    category: Category
+    total: Money
+    entries: int
+    monthly_average: Money | None
+    months_averaged: int
+    months_without_entries: list[date]
+
+
+class MonthSummary(Output):
+    month: date
+    totals: dict[Category, Money]
+
+
+class Rate(Output):
+    numerator: Money | None
+    denominator: Money | None
+    percent: Amount | None
+
+
+class ActivitySummary(Output):
+    start: date
+    end: date
+    entries: int
+    partial_months: list[date]
+    categories: list[CategorySummary]
+    by_month: list[MonthSummary]
+    saving_rate: Rate
+    saving_and_investing_rate: Rate
+
+
+def project_summary(start, end, result) -> ActivitySummary:
+    def money(value):
+        return None if value is None else str(value)
+
+    return ActivitySummary(
+        start=start,
+        end=end,
+        entries=result["entries"],
+        partial_months=result["partial_months"],
+        categories=[
+            CategorySummary(
+                category=c["category"],
+                total=str(c["total"]),
+                entries=c["entries"],
+                monthly_average=money(c["monthly_average"]),
+                months_averaged=c["months_averaged"],
+                months_without_entries=c["months_without_entries"],
+            )
+            for c in result["categories"]
+        ],
+        by_month=[
+            MonthSummary(
+                month=m["month"],
+                totals={k: str(v) for k, v in m["totals"].items()},
+            )
+            for m in result["by_month"]
+        ],
+        **{
+            key: Rate(**{k: money(v) for k, v in result[key].items()})
+            for key in ("saving_rate", "saving_and_investing_rate")
+        },
+    )
 
 
 class KindInput(Input):

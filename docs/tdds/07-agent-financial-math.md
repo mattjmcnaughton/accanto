@@ -1,6 +1,6 @@
 # 07 — Agent financial math: calculator, summaries and projections
 
-Status: In progress (calculator implemented)
+Status: In progress (calculator, activity summaries and target gaps implemented)
 Updated: 2026-11-26
 
 ## Purpose and scope
@@ -31,9 +31,9 @@ pure functions in `domains/`.
 
 | Tool | Covers | Reads | Chunk |
 | --- | --- | --- | --- |
-| `calculate(expression)` | Ad-hoc arithmetic on figures the agent has | None (pure) | 1, implemented |
-| `summarize_activity(start, end, …)` | T1 totals by category, assignment, tag or note; T2 per-month totals, averages and savings rate | Activity | 2 |
-| Target-gap fields on `list_savings` and `list_destinations` | T3 remaining to target and percent of target | Existing reads | 2 |
+| `calculate(expression)` | Ad-hoc arithmetic on figures the agent has | None (pure) | 1, done |
+| `summarize_activity(start, end, …)` | T1 totals by category, assignment, tag or note; T2 per-month totals, averages and savings rate | Activity | 2, done |
+| Target-gap fields on `list_savings` and `list_destinations` | T3 remaining to target and percent of target | Existing reads | 2, done |
 | `project(operation, …)` | T4 months to target; P1 loan payment and schedule; P2 FIRE target; P3 growth and months to FIRE; P4 coast and required contribution; P5 prepay versus invest | None (pure) | 3 |
 | `get_position(on)` | T5 position snapshot and net position; T6 change between observations versus recorded payments or contributions | Savings, investments, debts | 4 |
 | `investment_returns(investment_id?)` | P6 money-weighted return (XIRR) from contributions and observations | Investments | 5 |
@@ -68,6 +68,34 @@ the expression. The tool returns the full `result` and `cents` (half-even).
 Written in-house rather than vendored: popular calculator MCP servers compute in
 floats, and `simpleeval` would need its number handling replaced and most of its
 features disabled, while a copy would miss its security fixes.
+
+## Activity summaries
+
+`domains/activity_summary.summarize(entries, start, end, today)` takes entries
+already narrowed by the tool's filters (category, tag, one record id per record
+type, case-insensitive note text) and ignores dates outside the inclusive range.
+
+- Per category: total, entry count, and a monthly average over **complete months
+  with entries**. A month with no entries in that category is unknown, listed in
+  `months_without_entries`, and never averaged as zero. A month cut by the range,
+  or not yet over in the Entity's time zone, is listed in `partial_months` and
+  not averaged; its entries still count in the total.
+- Per month: totals for the categories with entries.
+- `saving_rate` is recorded saving ÷ recorded income, and
+  `saving_and_investing_rate` adds income-funded investment contributions to the
+  numerator. Both show numerator and denominator; without income entries the
+  percent is unknown. These use recorded activity only: unlike a Review, they do
+  not check completeness against a Plan, because a range spans months that may
+  have no Review.
+- Percents round half-even to two places; averages round half-even to cents.
+
+## Target gaps
+
+`domains/targets.target_gap(target, progress)` gives the amount remaining (never
+below zero) and the percent reached (above 100 when exceeded). Progress is
+remaining saved for goals and contribution progress for investments and giving
+recipients, matching CONTEXT.md **Recorded progress**. No target means both are
+unknown.
 
 ## Interfaces
 

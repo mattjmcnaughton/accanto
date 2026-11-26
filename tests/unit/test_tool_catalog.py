@@ -14,6 +14,7 @@ CATALOG_NAMES = [
     "get_plan",
     "get_monthly_review",
     "list_activity",
+    "summarize_activity",
     "list_tags",
     "list_spending_subcategories",
     "list_savings",

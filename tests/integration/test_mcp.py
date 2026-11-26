@@ -250,6 +250,32 @@ async def scenario():
             assert rest == over_mcp == in_process
             assert sorted(e["amount"] for e in over_mcp["entries"]) == ["4.90", "45.10"]
 
+            # Summaries: October has no entries (unknown) and November is in
+            # progress, so nothing is averaged; a note filter keeps one entry.
+            span = {"start": "2026-10-01", "end": "2026-11-30"}
+            summary = await mcp.call(
+                "summarize_activity", {"entity_id": str(entity), **span}
+            )
+            assert summary == (
+                await TOOLS["summarize_activity"].run(
+                    sidebar, entity, t.ActivitySummaryQuery.model_validate(span), ""
+                )
+            ).model_dump(mode="json")
+            spent = summary["categories"][0]
+            assert (spent["category"], spent["total"], spent["entries"]) == (
+                "spending",
+                "50.00",
+                2,
+            )
+            assert spent["monthly_average"] is None
+            assert spent["months_without_entries"] == ["2026-10-01"]
+            assert summary["saving_rate"]["denominator"] is None
+            market = await mcp.call(
+                "summarize_activity",
+                {"entity_id": str(entity), **span, "note_contains": "MARKET"},
+            )
+            assert market["categories"][0]["total"] == "45.10"
+
             rest_review = (
                 await client.get(prefix + "/reviews/2026-11-01", headers=api)
             ).json()

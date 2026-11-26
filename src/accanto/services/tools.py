@@ -11,13 +11,14 @@ reaches them, and tests assert the exact tool list.
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel
 
-from accanto.domains import calculator
+from accanto.domains import activity_summary, calculator
+from accanto.domains.entity import entity_today
 from accanto.dtos import tools as t
 from accanto.dtos.monthly import KnownTotalInput
 from accanto.integrations.ynab import SourceError, YnabClient, YnabSource
@@ -161,6 +162,37 @@ async def list_activity(ctx, entity_id, args: t.ActivityQuery, key):
         entries=[t.project_entry(row) for row in selected[:LIST_CAP]],
         truncated=len(selected) > LIST_CAP,
     )
+
+
+RECORD_FILTERS = (
+    "source_id",
+    "fixed_cost_id",
+    "saving_goal_id",
+    "investment_id",
+    "giving_recipient_id",
+)
+
+
+async def summarize_activity(ctx, entity_id, args: t.ActivitySummaryQuery, key):
+    async with ctx.sessions() as session:
+        async with session.begin():
+            _, entity = await authorize(session, ctx.actor, entity_id, lock=False)
+        rows = await read_activity(session, ctx.actor, entity_id, args.tag_id)
+    note = (args.note_contains or "").casefold()
+    selected = [
+        row
+        for row in rows
+        if (args.category is None or row["category"] == args.category)
+        and all(
+            getattr(args, name) is None
+            or str(row[name] or "") == str(getattr(args, name))
+            for name in RECORD_FILTERS
+        )
+        and note in (row["note"] or "").casefold()
+    ]
+    today = entity_today(datetime.now(UTC), entity["time_zone"])
+    result = activity_summary.summarize(selected, args.start, args.end, today)
+    return t.project_summary(args.start, args.end, result)
 
 
 async def list_tags(ctx, entity_id, args, key):
@@ -833,6 +865,16 @@ CATALOG: tuple[CatalogTool, ...] = (
         list_activity,
     ),
     _read(
+        "summarize_activity",
+        "Totals of recorded activity over a date range, per category and per "
+        "month, with monthly averages over complete months that have entries "
+        "and saving rates. Filter by category, tag, a record id or note text. "
+        "Months without entries are unknown, not zero.",
+        t.ActivitySummaryQuery,
+        t.ActivitySummary,
+        summarize_activity,
+    ),
+    _read(
         "list_tags",
         "The Entity's tags with how many entries carry each. Tags overlap: never "
         "present tagged amounts as shares of a category total.",
@@ -850,14 +892,16 @@ CATALOG: tuple[CatalogTool, ...] = (
     ),
     _read(
         "list_savings",
-        "Savings accounts and their goals with remaining saved.",
+        "Savings accounts and their goals with remaining saved, remaining to "
+        "target and percent of target.",
         t.NoInput,
         t.SavingsList,
         list_savings,
     ),
     _read(
         "list_destinations",
-        "Investment or giving destinations.",
+        "Investment or giving destinations with contribution progress, remaining "
+        "to target and percent of target.",
         t.KindInput,
         t.DestinationList,
         list_destinations,
