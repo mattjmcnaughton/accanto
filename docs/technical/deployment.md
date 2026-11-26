@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6h028`.
+   supported revision is `6j030`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -135,6 +135,11 @@ User and Entity's latest conversation. No new table, so the grants are unchanged
 `6h028` data would let agents write directly in Ask first and Read only. Downgrade
 to `6g027` before rolling the app back; the downgrade maps `apply_directly` back
 to `record` and both other modes to `propose`. No grant changes.
+`6i029` adds the `job_run` table ([TDD 11](../tdds/11-background-jobs.md));
+`6h028` code never reads it. Grant the runtime role access to it after upgrading.
+`6j030` adds `job_run.credential_kind` and `credential_uuid`, which the inbox
+proposal run stores ([TDD 12](../tdds/12-inbox-batch-flow.md)); `6i029` code never
+reads them. No new grants beyond `job_run`'s.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

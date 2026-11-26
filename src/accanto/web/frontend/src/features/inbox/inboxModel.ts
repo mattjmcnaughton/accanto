@@ -1,4 +1,3 @@
-import type { Tag } from "../../lib/tags";
 /**
  * Presentation model for the Transactions inbox. The server is the authority for every
  * financial rule; `precheck` only explains, before a round trip, why Enter cannot record yet.
@@ -6,6 +5,7 @@ import type { Tag } from "../../lib/tags";
 import { daysBetween, decimalToCents, fmtShort, formatMoney } from "../../lib/format";
 import type { Completion, InboxCategory, StagedTransaction } from "../../lib/inbox";
 import type { Activity } from "../../lib/monthly";
+import type { Tag } from "../../lib/tags";
 
 export type View = "waiting" | "skipped" | "recorded";
 export const CATEGORIES: Array<{
@@ -126,7 +126,7 @@ export function purchaseLabel(p: Activity) {
 
 /** The one-line summary under each row. */
 export function summary(it: StagedTransaction, c: Completion, choices: Choices) {
-  const prefix = it.status === "recorded" ? "Recorded" : it.status === "skipped" ? "Skipped" : "";
+  const prefix = it.status === "recorded" ? "Recorded" : it.status === "skipped" ? "Ignored" : "";
   if (it.status === "conflict")
     return {
       kind: c.category ? CATEGORY[c.category].kind : "none",
@@ -135,7 +135,7 @@ export function summary(it: StagedTransaction, c: Completion, choices: Choices) 
   if (c.skip)
     return {
       kind: "none",
-      text: `${prefix ? `${prefix}: ` : "Skip proposed: "}${SKIP_REASONS[it.kind]?.[0] ?? "not an actual entry"}`,
+      text: `${prefix ? `${prefix}: ` : "Ignore proposed: "}${SKIP_REASONS[it.kind]?.[0] ?? "not an actual entry"}`,
     };
   if (c.refund_of) {
     const p = choices.purchases.find((x) => x.uuid === c.refund_of);
@@ -215,7 +215,7 @@ export function rows(items: StagedTransaction[], view: View): Row[] {
   if (list.length)
     out.push(
       view === "skipped"
-        ? { head: "Skipped", sub: "not actual entries, not in any total" }
+        ? { head: "Ignored", sub: "not actual entries, not in any total, kept on re-sync" }
         : { head: "Recorded", sub: "most recent first" },
     );
   for (const it of list) out.push({ it });

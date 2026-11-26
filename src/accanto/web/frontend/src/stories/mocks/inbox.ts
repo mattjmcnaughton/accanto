@@ -4,7 +4,12 @@
  * record command closely enough to show its rejections; the backend is the authority.
  */
 import { http, HttpResponse, delay } from "msw";
-import type { Completion, StagedTransaction, TransactionSource } from "../../lib/inbox";
+import type {
+  Completion,
+  ProposalRun,
+  StagedTransaction,
+  TransactionSource,
+} from "../../lib/inbox";
 import type { Activity } from "../../lib/monthly";
 import * as data from "./fixtures";
 
@@ -297,15 +302,70 @@ export const manyAccounts = Array.from({ length: 28 }, (_, i) => ({
   selected: false,
 }));
 
+/** What the stand-in agent proposes for an item without a proposal. */
+function agentProposal(it: StagedTransaction): Completion & { rationale: string } {
+  if (Number(it.amount) > 0)
+    return { rationale: "Not sure: an inflow with no memo. Income, or a refund to link?" };
+  if (it.kind === "transfer_tracking")
+    return { rationale: "Not sure: a transfer to a tracking account. Is it an investment?" };
+  return { category: "spending", rationale: "Hardware has been guilt-free spending." };
+}
+
+/** Every waiting item with a proposal, as after a finished proposal run. */
+export function proposedInbox(): StagedTransaction[] {
+  return seedInbox().map((it) =>
+    it.status === "waiting" && !it.proposal
+      ? { ...it, proposal: agentProposal(it), proposed_by: AGENT_RUN, revision: it.revision + 1 }
+      : it,
+  );
+}
+const AGENT_RUN = { ...AGENT, interface: "agent" };
+
 export function inboxApi(
   items: StagedTransaction[] = seedInbox(),
   sources = [source],
-  { syncDelay = 400 }: { syncDelay?: number | "infinite" } = {},
+  {
+    syncDelay = 400,
+    run = "none",
+  }: {
+    syncDelay?: number | "infinite";
+    /** The proposal run: none yet, held mid-way, or finished. */
+    run?: "none" | "held" | "done";
+  } = {},
 ) {
   const state = {
     items: structuredClone(items),
     activity: seedActivity() as Array<Activity & { deleted_at?: string | null }>,
+    run: (run === "none"
+      ? null
+      : {
+          id: "run-1",
+          state: run === "held" ? "running" : "succeeded",
+          steps: 1,
+          counts: {},
+          error_code: null,
+          started_at: "2026-11-20T14:00:00Z",
+          finished_at: null,
+        }) as ProposalRun["run"],
   };
+  const runView = (): ProposalRun => {
+    const waiting = state.items.filter((i) => i.status === "waiting");
+    const proposed = waiting.filter((i) => i.proposal);
+    return {
+      run: state.run,
+      waiting: waiting.length,
+      proposed: proposed.length,
+      needs_you: proposed.filter((i) => !i.proposal?.category && !i.proposal?.skip).length,
+      chunk: 25,
+    };
+  };
+  /** One step of the stand-in run per poll: the next 25 waiting items without a proposal. */
+  function step() {
+    if (state.run?.state !== "running" || run === "held") return;
+    const next = state.items.filter((i) => i.status === "waiting" && !i.proposal).slice(0, 25);
+    for (const it of next) bump(it, { proposal: agentProposal(it), proposed_by: AGENT_RUN });
+    if (next.length < 25) state.run = { ...state.run, state: "succeeded" };
+  }
   const find = (id: string) => state.items.find((i) => i.id === id);
   const bump = (it: StagedTransaction, changes: Partial<StagedTransaction>) =>
     Object.assign(it, changes, { revision: it.revision + 1 });
@@ -352,6 +412,27 @@ export function inboxApi(
   }
 
   return [
+    http.get(`${entity}/inbox/proposal-run`, () => {
+      step();
+      return HttpResponse.json(runView());
+    }),
+    http.post(`${entity}/inbox/proposal-run`, async () => {
+      await delay(200);
+      state.run = {
+        id: crypto.randomUUID(),
+        state: "running",
+        steps: 0,
+        counts: {},
+        error_code: null,
+        started_at: "2026-11-20T14:00:00Z",
+        finished_at: null,
+      };
+      return HttpResponse.json(runView(), { status: 202 });
+    }),
+    http.delete(`${entity}/inbox/proposal-run`, () => {
+      if (state.run) state.run = { ...state.run, state: "cancelled" };
+      return HttpResponse.json(runView());
+    }),
     http.get(`${entity}/inbox`, () =>
       HttpResponse.json(state.items.filter((i) => i.status !== "removed")),
     ),

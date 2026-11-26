@@ -6,6 +6,7 @@ import {
   type Completion,
   type InboxCategory,
   type InboxWrite,
+  type ProposalRun,
   type StagedTransaction,
   inbox,
   send,
@@ -53,8 +54,29 @@ type Picker = {
   at: number;
 };
 type Toast = { text: string; tone?: "warn" | "bad"; undo?: boolean };
-type Undo = Array<{ id: string; action: "undo" | "unskip" | "skip" }>;
+type Undo = Array<{ id: string; action: "undo" | "unskip" | "skip" | "later" }>;
+/**
+ * Flow mode: one waiting item at a time. `queue` holds the pass's item ids in order; items
+ * leave it when they stop waiting, and Later moves one to the end without saving anything.
+ */
+type Flow = { ids: string[]; queue: string[]; later: string[]; editing: boolean };
+const RUN_ERRORS: Record<string, string> = {
+  agent_disabled: "the assistant is turned off in Settings.",
+  read_only: "the Agent mode is Read only.",
+  invalid_credential: "the sign-in that started it ended. Start it again.",
+  agent_unavailable: "the assistant is not configured.",
+  upstream_error: "the model did not answer. Start it again.",
+  step_timeout: "a step took too long. Start it again.",
+};
+const isItem = (x: unknown): x is StagedTransaction =>
+  typeof x === "object" && x !== null && "id" in x && "revision" in x && "status" in x;
 const VIEWS: View[] = ["waiting", "skipped", "recorded"];
+/** The `skipped` status is shown as Ignored: it lasts across re-syncs. */
+const VIEW_NAMES: Record<View, string> = {
+  waiting: "Waiting",
+  skipped: "Ignored",
+  recorded: "Recorded",
+};
 const INTERFACES: Record<string, string> = {
   direct_api: "API key",
   browser: "you, in the browser",
@@ -73,7 +95,7 @@ function useSettled<T>(state: LoadState<T>): LoadState<T> {
 }
 
 /**
- * The Transactions inbox: staged transactions from a source, recorded or skipped from the keyboard.
+ * The Transactions inbox: staged transactions from a source, recorded or ignored from the keyboard.
  * Every write is an explicit inbox command; the server re-runs every check when recording.
  */
 export function Inbox(
@@ -131,8 +153,19 @@ export function Inbox(
   const [syncing, setSyncing] = useState<string | null>(null);
   const undo = useRef<Undo[]>([]);
   const list = useRef<HTMLDivElement>(null);
+  /** Items returned by this screen's writes, newer than the last load. */
+  const [patched, setPatched] = useState<Record<string, StagedTransaction>>({});
+  const [flow, setFlow] = useState<Flow | null>(null);
+  /** In flow, writes patch the list instead of reloading every screen read (§9). */
+  const quiet = useRef(false);
+  quiet.current = Boolean(flow);
+  const [proposals, setProposals] = useState<ProposalRun | null>(null);
+  const proposing = Boolean(proposals?.run && ["queued", "running"].includes(proposals.run.state));
 
-  const all = items.kind === "ready" ? items.data : [];
+  const all = (items.kind === "ready" ? items.data : []).map((i) => {
+    const newer = patched[i.id];
+    return newer && newer.revision > i.revision ? newer : i;
+  });
   const choices: Choices = useMemo(() => {
     const unassigned = (name: string): Option => ({
       id: "unassigned",
@@ -226,7 +259,14 @@ export function Inbox(
   const scope = proposedOnly ? all.filter((i) => i.proposal) : all;
   const shown = rows(scope, view);
   const ids = shown.flatMap((r) => ("it" in r ? [r.it.id] : []));
-  const current = all.find((i) => i.id === cur && ids.includes(i.id)) ?? null;
+  const waitingIds = new Set(all.filter((i) => i.status === "waiting").map((i) => i.id));
+  const queue = flow ? flow.queue.filter((id) => waitingIds.has(id)) : [];
+  const passOver = Boolean(flow) && queue.every((id) => flow?.later.includes(id));
+  const current = flow
+    ? passOver
+      ? null
+      : (all.find((i) => i.id === queue[0]) ?? null)
+    : (all.find((i) => i.id === cur && ids.includes(i.id)) ?? null);
   const visible = ids.join(",");
   // biome-ignore lint/correctness/useExhaustiveDependencies: The cursor follows the visible rows.
   useEffect(() => {
@@ -247,6 +287,13 @@ export function Inbox(
     skipped: scope.filter((i) => i.status === "skipped").length,
     recorded: scope.filter((i) => i.status === "recorded").length,
   };
+  const flowDone = {
+    recorded: flow ? flow.ids.filter((id) => statusOf(id) === "recorded").length : 0,
+    ignored: flow ? flow.ids.filter((id) => statusOf(id) === "skipped").length : 0,
+  };
+  function statusOf(id: string) {
+    return all.find((i) => i.id === id)?.status;
+  }
   const month = (current?.financial_date ?? p.entity.today).slice(0, 7);
   const monthWaiting = all.filter(
     (i) => i.status === "waiting" && i.financial_date.startsWith(month),
@@ -256,12 +303,17 @@ export function Inbox(
     const key = crypto.randomUUID();
     setBusy(true);
     try {
+      let result: T;
       try {
-        return await send<T>(await p.credentials(), spec, key);
+        result = await send<T>(await p.credentials(), spec, key);
       } catch (error) {
         if (!(error instanceof ApiError) || error.kind !== "unauthenticated") throw error;
-        return await send<T>(await p.credentials(true), spec, key);
+        result = await send<T>(await p.credentials(true), spec, key);
       }
+      // Record and undo return { item }; ignore and return-to-inbox return the item.
+      const item = (result as { item?: unknown } | null)?.item ?? result;
+      if (isItem(item)) setPatched((x) => ({ ...x, [item.id]: item }));
+      return result;
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "The inbox could not save. Try again.";
@@ -269,9 +321,12 @@ export function Inbox(
       return null;
     } finally {
       setBusy(false);
-      if (p.changed) p.changed();
-      else setReload((x) => x + 1);
+      if (!quiet.current) refreshAll();
     }
+  }
+  function refreshAll() {
+    if (p.changed) p.changed();
+    else setReload((x) => x + 1);
   }
   /** After an item leaves the view, the cursor lands on the next one still there. */
   const advance = (leaving: string[]) => {
@@ -295,24 +350,29 @@ export function Inbox(
     setHints(({ [id]: _, ...rest }) => rest);
   };
 
-  async function record() {
-    if (!current) return;
-    if (current.status === "conflict") return openPicker("resolve", current);
+  /** Record the current item from its proposal or draft; true when it was saved. */
+  async function record(): Promise<boolean> {
+    if (!current) return false;
+    if (current.status === "conflict") {
+      openPicker("resolve", current);
+      return false;
+    }
     const c = effective(current, drafts[current.id]);
     if (c.skip) return skip(current);
     const reason = precheck(current, c);
     if (reason) {
       setHints((h) => ({ ...h, [current.id]: reason }));
-      return;
+      return false;
     }
     const result = await run<{ item: StagedTransaction }>(
       inbox.record(p.entity.id, current, drafts[current.id]),
     );
-    if (!result) return;
+    if (!result) return false;
     clearDraft(current.id);
     undo.current.push([{ id: current.id, action: "undo" }]);
     advance([current.id]);
     setToast({ text: `Recorded ${describe(current, c)}.`, undo: true });
+    return true;
   }
   async function recordSelected() {
     const chosen = all.filter((i) => selected.has(i.id) && i.status === "waiting");
@@ -354,7 +414,7 @@ export function Inbox(
     setToast({
       text: `${[
         recorded && `Recorded ${recorded}`,
-        done.length - recorded && `Skipped ${done.length - recorded}`,
+        done.length - recorded && `Ignored ${done.length - recorded}`,
         rejected && `${rejected} stayed in the inbox with the reason shown`,
       ]
         .filter(Boolean)
@@ -363,9 +423,26 @@ export function Inbox(
       undo: done.length > 0,
     });
   }
-  async function skip(it: StagedTransaction) {
+  /** Ignore all selected waiting items; z returns them together. */
+  async function ignoreSelected() {
+    const chosen = all.filter((i) => selected.has(i.id) && i.status === "waiting");
+    setSelected(new Set());
+    const done: Undo = [];
+    for (const it of chosen)
+      if (await run(inbox.action(p.entity.id, it, "skip")))
+        done.push({ id: it.id, action: "unskip" });
+    if (done.length) undo.current.push(done);
+    advance(done.map((d) => d.id));
+    setToast({
+      text: `Ignored ${done.length}. They stay under Ignored, even after a re-sync.`,
+      tone: done.length === chosen.length ? undefined : "warn",
+      undo: done.length > 0,
+    });
+  }
+  /** Ignore a waiting item, or return an ignored one; true when it was saved. */
+  async function skip(it: StagedTransaction): Promise<boolean> {
     const back = it.status === "skipped";
-    if (!(await run(inbox.action(p.entity.id, it, back ? "unskip" : "skip")))) return;
+    if (!(await run(inbox.action(p.entity.id, it, back ? "unskip" : "skip")))) return false;
     undo.current.push([{ id: it.id, action: back ? "skip" : "unskip" }]);
     setSelected((s) => {
       const next = new Set(s);
@@ -376,18 +453,24 @@ export function Inbox(
     setToast({
       text: back
         ? `${it.payee} is back in the inbox.`
-        : `Skipped ${it.payee}. It stays visible under Skipped.`,
+        : `Ignored ${it.payee}. It stays under Ignored, even after a re-sync.`,
       undo: true,
     });
+    return true;
   }
-  async function undoLast() {
+  async function undoLast(): Promise<boolean> {
     const last = undo.current.pop();
-    if (!last) return setToast({ text: "Nothing to undo.", tone: "warn" });
+    if (!last) {
+      setToast({ text: "Nothing to undo.", tone: "warn" });
+      return false;
+    }
     let done = 0;
     for (const { id, action } of [...last].reverse()) {
+      if (action === "later") continue;
       // Each command needs the item's current revision, which changed with the last action.
-      const fresh = await inbox.list(p.entity.id);
-      const it = fresh.kind === "ready" ? fresh.data.find((i) => i.id === id) : undefined;
+      // In flow the list holds it already: every write's response patched it.
+      const fresh = flow ? null : await inbox.list(p.entity.id);
+      const it = (fresh?.kind === "ready" ? fresh.data : all).find((i) => i.id === id);
       if (it && (await run(inbox.action(p.entity.id, it, action)))) done++;
     }
     const first = last[0];
@@ -401,11 +484,162 @@ export function Inbox(
       text:
         done === last.length
           ? first.action === "skip"
-            ? `Undone. ${name} skipped again.`
+            ? `Undone. ${name} ignored again.`
             : `Undone. ${name} back in the inbox${first.action === "undo" ? " and out of the totals" : ""}.`
           : "Undo did not finish. The reason is shown above.",
       tone: done === last.length ? undefined : "bad",
     });
+    return done === last.length;
+  }
+
+  // Flow mode -------------------------------------------------------------------
+  function startFlow() {
+    const order = rows(all, "waiting").flatMap((r) =>
+      "it" in r && r.it.status === "waiting" ? [r.it.id] : [],
+    );
+    if (!order.length) return setToast({ text: "Nothing is waiting in the inbox.", tone: "warn" });
+    setSelected(new Set());
+    setProposedOnly(false);
+    setView("waiting");
+    setPicker(null);
+    setFlow({ ids: order, queue: order, later: [], editing: false });
+  }
+  function endFlow() {
+    setFlow(null);
+    setPicker(null);
+    // One refresh of the other screens' reads for the whole pass.
+    refreshAll();
+  }
+  const editing = (on: boolean) => setFlow((f) => f && { ...f, editing: on });
+  /** Enter: accept the proposal; an unsure, incomplete or rejected one opens edit instead. */
+  async function accept() {
+    if (!current) return;
+    const c = effective(current, drafts[current.id]);
+    if (!c.skip && !c.category && !c.refund_of) {
+      setHints((h) => ({
+        ...h,
+        [current.id]: current.proposal
+          ? "The agent was not sure. Choose a category: 1–6."
+          : "No proposal yet. Choose a category: 1–6.",
+      }));
+      return editing(true);
+    }
+    if (!(await record())) editing(true);
+  }
+  function later() {
+    if (!current) return;
+    const id = current.id;
+    undo.current.push([{ id, action: "later" }]);
+    setFlow(
+      (f) =>
+        f && {
+          ...f,
+          queue: [...f.queue.filter((x) => x !== id), id],
+          later: f.later.includes(id) ? f.later : [...f.later, id],
+          editing: false,
+        },
+    );
+    setToast({ text: `${current.payee} waits until the end of this pass. Nothing was saved.` });
+  }
+  /** z in flow: undo the last action, including Later, and return to that item. */
+  async function flowUndo() {
+    const last = undo.current[undo.current.length - 1];
+    const id = last?.[0]?.id;
+    const front = (f: Flow | null) =>
+      f && id
+        ? {
+            ...f,
+            queue: [id, ...f.queue.filter((x) => x !== id)],
+            later: f.later.filter((x) => x !== id),
+            editing: false,
+          }
+        : f;
+    if (last?.length === 1 && last[0].action === "later") {
+      undo.current.pop();
+      setFlow(front);
+      return setToast({ text: "Undone. Back on that item." });
+    }
+    if (await undoLast()) setFlow(front);
+  }
+  /** Keys while flow is on; false lets an edit key reach the normal handler. */
+  function flowKey(key: string): boolean {
+    if (!flow) return false;
+    if (passOver) {
+      if (key === "l" && flow.later.length) setFlow({ ...flow, later: [], editing: false });
+      else if (key === "z") void flowUndo();
+      else if (key === "Escape") endFlow();
+      else if (key === "?") setHelp(true);
+      return true;
+    }
+    if (flow.editing) {
+      if (key === "Enter") {
+        void record().then((ok) => ok && editing(false));
+        return true;
+      }
+      if (key === "Escape") {
+        if (current) setHints(({ [current.id]: _, ...rest }) => rest);
+        editing(false);
+        return true;
+      }
+      if (["1", "2", "3", "4", "5", "6", "a", "f", "t", "r"].includes(key)) return false;
+    }
+    switch (key) {
+      case "Enter":
+        void accept();
+        break;
+      case "l":
+      case "ArrowRight":
+        later();
+        break;
+      case "s":
+        if (current) void skip(current);
+        break;
+      case "e":
+        editing(true);
+        break;
+      case "z":
+        void flowUndo();
+        break;
+      case "Escape":
+        endFlow();
+        break;
+      case "?":
+        setHelp(true);
+        break;
+    }
+    return true;
+  }
+
+  // Proposal run ----------------------------------------------------------------
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Poll while a run is active.
+  useEffect(() => {
+    if (p.concealed) return;
+    let live = true;
+    const poll = async () => {
+      const state = await inbox.proposalRun(p.entity.id);
+      if (live && state.kind === "ready") setProposals(state.data);
+    };
+    void poll();
+    const timer = proposing ? window.setInterval(poll, 2000) : undefined;
+    return () => {
+      live = false;
+      if (timer) window.clearInterval(timer);
+    };
+  }, [p.entity.id, p.concealed, p.refresh, proposing]);
+  const seen = useRef<number | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Reload the items when proposals arrive.
+  useEffect(() => {
+    if (!proposals) return;
+    if (seen.current !== null && seen.current !== proposals.proposed) setReload((x) => x + 1);
+    seen.current = proposals.proposed;
+  }, [proposals?.proposed]);
+  async function startRun() {
+    const started = await run<ProposalRun>(inbox.startRun(p.entity.id));
+    if (started) setProposals(started);
+  }
+  async function stopRun() {
+    const stopped = await run<ProposalRun>(inbox.stopRun(p.entity.id));
+    if (stopped) setProposals(stopped);
   }
 
   function setDraft(it: StagedTransaction, c: Completion) {
@@ -570,6 +804,7 @@ export function Inbox(
       return;
     }
     if (busy && !["j", "k", "ArrowDown", "ArrowUp", "?", "v", "Escape"].includes(key)) return;
+    if (flowKey(key)) return;
     const at = ids.indexOf(cur ?? "");
     const waiting = current?.status === "waiting";
     const notHere = () =>
@@ -592,7 +827,7 @@ export function Inbox(
           return setToast({
             text:
               view === "skipped"
-                ? "This item is skipped. Press s to return it to the inbox."
+                ? "This item is ignored. Press s to return it to the inbox."
                 : "Already recorded. z undoes the last recording.",
             tone: "warn",
           });
@@ -635,7 +870,7 @@ export function Inbox(
             text: "A refund carries its purchase's tags. Change them on the purchase in Activity.",
             tone: "warn",
           });
-        if (c.skip) return setToast({ text: "A skipped item records nothing.", tone: "warn" });
+        if (c.skip) return setToast({ text: "An ignored item records nothing.", tone: "warn" });
         return openPicker("tag", current);
       case "r":
         if (!current || !waiting) return notHere();
@@ -649,14 +884,15 @@ export function Inbox(
         if (!current) return notHere();
         if (current.status === "conflict")
           return setToast({
-            text: "A conflict is not skipped. Press Enter to choose a resolution.",
+            text: "A conflict is not ignored. Press Enter to choose a resolution.",
             tone: "warn",
           });
         if (current.status === "recorded")
           return setToast({
-            text: "Recorded items are not skipped. z undoes the last recording.",
+            text: "Recorded items are not ignored. z undoes the last recording.",
             tone: "warn",
           });
+        if (selected.size) return void ignoreSelected();
         return void skip(current);
       case "x":
         if (!current || !waiting) return notHere();
@@ -675,6 +911,8 @@ export function Inbox(
       case "p":
         setSelected(new Set());
         return setProposedOnly((on) => !on);
+      case "F":
+        return startFlow();
       case "?":
         return setHelp(true);
       case "Escape":
@@ -693,7 +931,7 @@ export function Inbox(
       if (document.querySelector("dialog[open]")) return;
       if (
         e.key.length > 1 &&
-        !["Enter", "Escape", "ArrowUp", "ArrowDown", "Backspace"].includes(e.key)
+        !["Enter", "Escape", "ArrowUp", "ArrowDown", "ArrowRight", "Backspace"].includes(e.key)
       )
         return;
       // Space, N and the month keys stay with the workspace unless a picker is filtering.
@@ -758,41 +996,111 @@ export function Inbox(
             )}
           </button>
         )}
-        {/* biome-ignore lint/a11y/useSemanticElements: The kit's segmented control is a button group. */}
-        <div className="seg-control" role="group" aria-label="View">
-          {VIEWS.map((v) => (
-            <button
-              key={v}
-              type="button"
-              aria-pressed={view === v}
-              onClick={() => {
-                setSelected(new Set());
-                setView(v);
-              }}
-            >
-              {v[0].toUpperCase() + v.slice(1)} <small>{counts[v]}</small>
-            </button>
-          ))}
-        </div>
-        <Key k="v" />
-        {/* biome-ignore lint/a11y/useSemanticElements: The kit's segmented control is a button group. */}
-        <div className="seg-control" role="group" aria-label="Filter">
-          {[false, true].map((on) => (
-            <button
-              key={String(on)}
-              type="button"
-              aria-pressed={proposedOnly === on}
-              onClick={() => {
-                setSelected(new Set());
-                setProposedOnly(on);
-              }}
-            >
-              {on ? "With proposals" : "All"}
-            </button>
-          ))}
-        </div>
-        <Key k="p" />
+        {flow ? (
+          <div className="ix-progress" aria-label="Flow progress">
+            <span>
+              <b>
+                {flowDone.recorded + flowDone.ignored} / {flow.ids.length}
+              </b>{" "}
+              · {flowDone.recorded} recorded · {flowDone.ignored} ignored · {flow.later.length}{" "}
+              later
+            </span>
+            <span className="ix-track">
+              <span
+                style={{
+                  width: `${(100 * (flowDone.recorded + flowDone.ignored)) / Math.max(1, flow.ids.length)}%`,
+                }}
+              />
+            </span>
+          </div>
+        ) : (
+          <>
+            {source && (
+              <button
+                type="button"
+                className="btn sm"
+                disabled={
+                  busy || proposing || !proposals || proposals.proposed >= proposals.waiting
+                }
+                onClick={() => void startRun()}
+              >
+                {proposing ? "Proposing…" : "Propose with agent"}
+              </button>
+            )}
+            {source && (
+              <button
+                type="button"
+                className="btn pri sm"
+                disabled={!counts.waiting}
+                onClick={startFlow}
+              >
+                Start flow <Key k="F" />
+              </button>
+            )}
+            {/* biome-ignore lint/a11y/useSemanticElements: The kit's segmented control is a button group. */}
+            <div className="seg-control" role="group" aria-label="View">
+              {VIEWS.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  aria-pressed={view === v}
+                  onClick={() => {
+                    setSelected(new Set());
+                    setView(v);
+                  }}
+                >
+                  {VIEW_NAMES[v]} <small>{counts[v]}</small>
+                </button>
+              ))}
+            </div>
+            <Key k="v" />
+            {/* biome-ignore lint/a11y/useSemanticElements: The kit's segmented control is a button group. */}
+            <div className="seg-control" role="group" aria-label="Filter">
+              {[false, true].map((on) => (
+                <button
+                  key={String(on)}
+                  type="button"
+                  aria-pressed={proposedOnly === on}
+                  onClick={() => {
+                    setSelected(new Set());
+                    setProposedOnly(on);
+                  }}
+                >
+                  {on ? "With proposals" : "All"}
+                </button>
+              ))}
+            </div>
+            <Key k="p" />
+          </>
+        )}
       </header>
+      {proposals && proposing ? (
+        <output className="ix-syncing ix-run">
+          <span className="ix-bar" aria-hidden="true" />
+          <span>
+            <span className="ix-spin" aria-hidden="true" /> <b>Agent proposing</b> ·{" "}
+            {proposals.proposed} of {proposals.waiting} waiting items have a proposal. It runs on
+            the server, so you can close this tab. Nothing is recorded.
+          </span>
+          <button type="button" className="btn sm" disabled={busy} onClick={() => void stopRun()}>
+            Stop
+          </button>
+        </output>
+      ) : proposals?.run?.state === "failed" ? (
+        <div className="ix-msg bad ix-run-msg" role="alert">
+          The proposal run stopped:{" "}
+          {RUN_ERRORS[proposals.run.error_code ?? ""] ?? "something went wrong. Start it again."}{" "}
+          Proposals it set stay.
+        </div>
+      ) : proposals?.run && proposals.waiting > 0 ? (
+        <div className="ix-ready">
+          <b>
+            Proposals ready: {proposals.proposed - proposals.needs_you} proposed,{" "}
+            {proposals.needs_you} need you
+          </b>
+          <span>Unsure items carry the agent's question instead of a guess.</span>
+        </div>
+      ) : null}
       {syncing && (
         <output className="ix-syncing">
           <span className="ix-bar" aria-hidden="true" />
@@ -838,6 +1146,77 @@ export function Inbox(
             openSettings={p.openSettings}
             connected={(saved) => void sync(saved)}
           />
+        </div>
+      ) : flow ? (
+        <div className="ix-flow">
+          {passOver || !current ? (
+            <article className="ix-card ix-end" aria-label="Pass complete">
+              <div className="ix-d-t">Pass complete</div>
+              <p>
+                {flowDone.recorded} recorded · {flowDone.ignored} ignored · {flow.later.length} left
+                for later
+              </p>
+              <p className="note">
+                Recorded items are actual entries now and count in their Reviews. Items left for
+                later are still waiting; nothing was saved for them.
+              </p>
+              <div className="ix-do">
+                {flow.later.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn pri"
+                    onClick={() => setFlow({ ...flow, later: [], editing: false })}
+                  >
+                    Go through {flow.later.length} later <Key k="l" />
+                  </button>
+                )}
+                <button type="button" className="btn" onClick={endFlow}>
+                  Back to the inbox <Key k="Esc" />
+                </button>
+                <button type="button" className="btn quiet" onClick={() => void flowUndo()}>
+                  Undo last <Key k="z" />
+                </button>
+              </div>
+            </article>
+          ) : (
+            <>
+              <article
+                className={`ix-card${flow.editing ? " editing" : ""}`}
+                aria-label={`${current.payee}, ${signed(current)}`}
+              >
+                {flow.editing ? (
+                  <>
+                    <Detail
+                      it={current}
+                      c={shownAs(current)}
+                      touched={Boolean(drafts[current.id])}
+                      choices={choices}
+                      hint={hints[current.id]}
+                      selected={0}
+                      press={press}
+                    />
+                    <button type="button" className="btn quiet" onClick={() => press("Escape")}>
+                      Back to flow <Key k="Esc" />
+                    </button>
+                  </>
+                ) : (
+                  <FlowCard
+                    it={current}
+                    c={shownAs(current)}
+                    choices={choices}
+                    later={flow.later.includes(current.id)}
+                    press={press}
+                  />
+                )}
+              </article>
+              {queue[1] && (
+                <p className="note">
+                  Next: {all.find((i) => i.id === queue[1])?.payee} · {queue.length - 1} more
+                  waiting in this pass
+                </p>
+              )}
+            </>
+          )}
         </div>
       ) : (
         <div className="ix-cols">
@@ -904,7 +1283,7 @@ export function Inbox(
                   {view === "waiting"
                     ? "Nothing is waiting in the inbox"
                     : view === "skipped"
-                      ? "Nothing is skipped"
+                      ? "Nothing is ignored"
                       : "Nothing is recorded"}
                 </b>
                 <p>
@@ -916,27 +1295,51 @@ export function Inbox(
         </div>
       )}
       <footer className="ix-foot">
-        {(picker
-          ? [
-              [["↑", "↓"], "Move"],
-              [[], "Type to filter"],
-              [["Enter"], "Choose"],
-              [["Esc"], "Cancel"],
-            ]
-          : [
-              [["j", "k"], "Move"],
-              [["Enter"], selected.size ? `Record ${selected.size} selected` : "Accept"],
-              [["1–6"], "Category"],
-              [["a"], "Assignment"],
-              [["f"], "Funding origin"],
-              [["r"], "Refund"],
-              [["s"], "Skip"],
-              [["x"], "Select"],
-              [["z"], "Undo"],
-              [["v"], "View"],
-              [["p"], "Proposals"],
-              [["?"], "Help"],
-            ]
+        {(flow && !picker
+          ? passOver
+            ? [
+                [["l"], "Go through later"],
+                [["z"], "Undo"],
+                [["Esc"], "Back to the inbox"],
+              ]
+            : flow.editing
+              ? [
+                  [["1–6"], "Category"],
+                  [["a", "f", "t", "r"], "Pickers"],
+                  [["Enter"], "Record and continue"],
+                  [["s"], "Ignore"],
+                  [["Esc"], "Back to flow"],
+                ]
+              : [
+                  [["Enter"], "Accept"],
+                  [["l", "→"], "Later"],
+                  [["s"], "Ignore"],
+                  [["e"], "Edit"],
+                  [["z"], "Undo"],
+                  [["Esc"], "Leave flow"],
+                ]
+          : picker
+            ? [
+                [["↑", "↓"], "Move"],
+                [[], "Type to filter"],
+                [["Enter"], "Choose"],
+                [["Esc"], "Cancel"],
+              ]
+            : [
+                [["j", "k"], "Move"],
+                [["Enter"], selected.size ? `Record ${selected.size} selected` : "Accept"],
+                [["1–6"], "Category"],
+                [["a"], "Assignment"],
+                [["f"], "Funding origin"],
+                [["r"], "Refund"],
+                [["s"], "Ignore"],
+                [["x"], "Select"],
+                [["z"], "Undo"],
+                [["v"], "View"],
+                [["p"], "Proposals"],
+                [["F"], "Flow"],
+                [["?"], "Help"],
+              ]
         ).map(([k, label]) => (
           <span key={String(label)}>
             {(k as string[]).map((x) => (
@@ -1090,6 +1493,74 @@ function ItemRow({
   );
 }
 
+/** Flow mode's card: the item, the agent's proposal and why, and the flow's keys. */
+function FlowCard({
+  it,
+  c,
+  choices,
+  later,
+  press,
+}: {
+  it: StagedTransaction;
+  c: Completion;
+  choices: Choices;
+  later: boolean;
+  press: (key: string) => void;
+}) {
+  const unsure = !c.skip && !c.category && !c.refund_of;
+  const inflow = isInflow(it);
+  return (
+    <>
+      <div className="ix-d-h">
+        <div>
+          <div className="ix-d-t">{it.payee}</div>
+          <div className="note">
+            {fmtDay(it.financial_date)} · {it.account_name}
+            {it.source_category && ` · YNAB: ${it.source_category.name}`}
+            {it.memo && ` · ${it.memo}`}
+          </div>
+        </div>
+        <div className={`ix-fig${inflow ? " good" : ""}`}>{signed(it)}</div>
+      </div>
+      {later && <div className="ix-msg">You passed this one with Later.</div>}
+      {it.proposal ? (
+        <div className={`ix-proposal${unsure ? " ix-needs" : ""}`}>
+          <div className="lab">
+            {unsure ? "Needs you" : `Proposal: ${summary(it, c, choices).text}`}
+            {it.proposed_by && <span>{INTERFACES[it.proposed_by.interface] ?? "agent"}</span>}
+          </div>
+          {it.proposal.rationale && <p className="ix-why">{it.proposal.rationale}</p>}
+          {it.proposal_rejection && !unsure && (
+            <div className="ix-msg warn">
+              The record checks would reject this now:{" "}
+              {readable(choices, it.proposal_rejection.message)}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="ix-msg">No proposal yet. Enter opens edit to choose a category.</div>
+      )}
+      <div className="ix-do">
+        <button type="button" className="btn pri" onClick={() => press("Enter")}>
+          {unsure ? "Choose" : c.skip ? "Accept: ignore" : "Accept"} <Key k="Enter" />
+        </button>
+        <button type="button" className="btn" onClick={() => press("l")}>
+          Later <Key k="l" />
+        </button>
+        <button type="button" className="btn" onClick={() => press("s")}>
+          Ignore <Key k="s" />
+        </button>
+        <button type="button" className="btn" onClick={() => press("e")}>
+          Edit <Key k="e" />
+        </button>
+        <button type="button" className="btn quiet" onClick={() => press("z")}>
+          Undo <Key k="z" />
+        </button>
+      </div>
+    </>
+  );
+}
+
 function Detail({
   it,
   c,
@@ -1200,12 +1671,12 @@ function Detail({
       {c.skip ? (
         <>
           <div className="lab">
-            {it.status === "skipped" ? "Skipped" : "Proposed: skip"}
+            {it.status === "skipped" ? "Ignored" : "Proposed: ignore"}
             <span>{SKIP_REASONS[it.kind]?.[0]}</span>
           </div>
           <div className="ix-msg">
-            {SKIP_REASONS[it.kind]?.[1]} A skipped item is not an actual entry and counts in no
-            total.
+            {SKIP_REASONS[it.kind]?.[1]} An ignored item is not an actual entry and counts in no
+            total. A re-sync keeps it ignored.
           </div>
         </>
       ) : !c.category && !purchase && waiting ? (
@@ -1219,7 +1690,7 @@ function Detail({
               </>
             ) : it.kind === "transfer_tracking" ? (
               <>
-                <Key k="5" /> an investing contribution, or <Key k="s" /> skip.
+                <Key k="5" /> an investing contribution, or <Key k="s" /> ignore.
               </>
             ) : (
               <>
@@ -1235,7 +1706,7 @@ function Detail({
             : it.status === "conflict"
               ? "Actual entry"
               : it.status === "skipped"
-                ? "Skipped. Was set to"
+                ? "Ignored. Was set to"
                 : "Will record as"}
         </div>
       )}
@@ -1305,7 +1776,7 @@ function Detail({
               {selected
                 ? `Record ${selected} selected`
                 : c.skip
-                  ? "Accept skip"
+                  ? "Accept: ignore"
                   : c.category || purchase
                     ? touched
                       ? "Record"
@@ -1315,7 +1786,7 @@ function Detail({
             {!c.skip && (
               <button type="button" className="btn" onClick={() => press("s")}>
                 <Key k="s" />
-                Skip
+                Ignore
               </button>
             )}
           </>
@@ -1354,11 +1825,18 @@ const HELP: Array<[string, string]> = [
   ["f", "Choose the funding origin: current income or a saving goal."],
   ["t", "Add or remove tags. A refund carries its purchase's tags."],
   ["r", "Link an inflow as a refund from ranked purchase candidates."],
-  ["s", "Skip. Under Skipped, return the item to the inbox."],
+  [
+    "s",
+    "Ignore: it stays out of totals, even after a re-sync. Under Ignored, return it to the inbox.",
+  ],
   ["x", "Select or deselect for Enter. Esc clears the selection."],
-  ["z", "Undo the last recording or skip."],
-  ["v", "Change the view: Waiting, Skipped, Recorded."],
+  ["z", "Undo the last recording or ignore."],
+  ["v", "Change the view: Waiting, Ignored, Recorded."],
   ["p", "Show only items with a proposal, or all items again."],
+  [
+    "F",
+    "Flow: one waiting item at a time. Enter accepts, l or → leaves it for later (nothing is saved), s ignores, e edits, z undoes, Esc leaves.",
+  ],
   ["↑ ↓ Enter Esc", "In a picker: move, choose, cancel."],
   ["?", "Show or hide this help."],
 ];

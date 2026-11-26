@@ -3,7 +3,8 @@
 Runs uvicorn with a Logfire token against a local fake OTLP receiver and the
 fake YNAB server, drives REST, MCP, YNAB sync and built-in agent requests that
 carry synthetic canary values, then decodes every exported span, metric and
-log. tests/external/test_logfire_live.py runs the same scenario against real
+log, then runs the scheduled tick over the same data.
+tests/external/test_logfire_live.py runs the same scenario against real
 Logfire and checks what its query API returns. Every value is invented.
 """
 
@@ -166,6 +167,7 @@ def server(tmp_path, telemetry_env):
         SOURCE_SECRET_KEY=secrets["fernet"],
         YNAB_API_URL=f"http://127.0.0.1:{ynab_port}/v1",
         AGENT_MODEL="stub",
+        JOB_RECONCILER_INTERVAL="0.2",
     )
     log = (tmp_path / "server.log").open("w")
     ynab = subprocess.Popen(
@@ -337,6 +339,16 @@ async def drive(origin, secrets, suffix):
             },
             headers=browser,
         )
+        # The inbox proposal run (TDD 12): its steps send payees and AGENT.md to
+        # the model in the background and log counts only.
+        started = await client.post(prefix + "/inbox/proposal-run", headers=api)
+        assert started.status_code == 202, started.text
+        for _ in range(100):
+            run = await call("GET", "/inbox/proposal-run")
+            if run["run"]["state"] not in {"queued", "running"}:
+                break
+            await asyncio.sleep(0.1)
+        assert run["run"]["state"] == "succeeded" and run["proposed"] == run["waiting"]
         # AGENT.md over REST (API key) and MCP.
         assert (await call("GET", "/agent/instructions"))["instructions"] == agent_md
         instructions = await client.post(
@@ -418,6 +430,45 @@ def check_log(tmp_path, private):
     assert "Application startup complete" in captured
     for value in private:
         assert value not in captured, f"server log contains {value[:24]}"
+
+
+def run_tick(tmp_path, suffix, private):
+    """The scheduled tick (TDD 11) deletes this run's conversation, whose
+    messages carry the prompt canary, and logs none of it."""
+    assert URL
+
+    async def expire():
+        assert URL
+        engine = create_async_engine(URL, hide_parameters=True)
+        async with async_sessionmaker(engine)() as db, db.begin():
+            expired = await db.scalars(
+                text(
+                    "UPDATE agent_conversation SET expires_at = now() - interval '1d'"
+                    " WHERE entity_id = (SELECT id FROM entity WHERE name = :name)"
+                    " RETURNING id"
+                ),
+                {"name": f"Synthetic canary {suffix}"},
+            )
+            assert expired.all()
+        await engine.dispose()
+
+    asyncio.run(expire())
+    env = {k: v for k, v in os.environ.items() if not k.startswith("LOGFIRE_")}
+    with (tmp_path / "tick.log").open("w") as log:
+        status = subprocess.run(
+            [sys.executable, "-m", "accanto.jobs.tick"],
+            cwd=ROOT, env={**env, "DATABASE_URL": URL}, stdout=log,
+            stderr=subprocess.STDOUT, timeout=60,
+        ).returncode  # fmt: skip
+    captured = (tmp_path / "tick.log").read_text()
+    assert status == 0, captured
+    steps = [
+        json.loads(line) for line in captured.splitlines() if "job_tick_step" in line
+    ]
+    assert steps[0]["step"] == "conversation_retention"
+    assert steps[0]["counts"]["deleted"] >= 1
+    for value in private:
+        assert value not in captured, f"tick log contains {value[:24]}"
 
 
 def check(found, documents, keys, private):
@@ -540,11 +591,13 @@ def test_exported_telemetry_excludes_financial_data(tmp_path):
         "LOGFIRE_BASE_URL": f"http://127.0.0.1:{receiver.server_address[1]}",
         "LOGFIRE_ENVIRONMENT": "test",
     }
+    suffix = uuid4().hex[:12]
     try:
         with server(tmp_path, telemetry) as (origin, secrets):
-            private = asyncio.run(drive(origin, secrets, uuid4().hex[:12]))
+            private = asyncio.run(drive(origin, secrets, suffix))
     finally:
         receiver.shutdown()
     found, documents, keys = decoded()
     check(found, documents, keys, [*private, token, URL])
     check_log(tmp_path, [*private, token, URL])
+    run_tick(tmp_path, suffix, [*private, token, URL])

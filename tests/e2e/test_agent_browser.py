@@ -1,7 +1,8 @@
 """Agent access journey in the production UI with AGENT_MODEL=stub.
 
 Saves the fake YNAB token in Settings, connects a plan from the inbox (which syncs),
-asks the assistant to categorize, records from the inbox, applies a
+runs the background proposal run, asks the assistant to categorize, records
+from the inbox, works through a flow pass (accept, later, ignore, undo), applies a
 receipt draft from an attached synthetic image, then runs the AGENT.md interview
 and applies the AGENT.md it drafts. Everything is synthetic and loopback-only;
 the stub model never reaches a network. Set ACCANTO_E2E_RECORDING to a .webm
@@ -75,6 +76,7 @@ def test_agent_journey(tmp_path):
         "YNAB_API_URL": f"http://127.0.0.1:{ynab_port}/v1",
         "SOURCE_SECRET_KEY": Fernet.generate_key().decode(),
         "AGENT_MODEL": "stub",
+        "JOB_RECONCILER_INTERVAL": "0.2",
     }
     env.pop("OPENROUTER_API_KEY", None)
     config = tmp_path / "browser.json"
@@ -252,6 +254,15 @@ def test_agent_journey(tmp_path):
         # and household goods = 2. Brokerage and savings are not imported.
         assert before == 19, before
 
+        # The background proposal run proposes for every waiting item, in steps
+        # on the server, and records nothing.
+        button("Propose with agent")
+        until(
+            "/Proposals ready/.test(document.querySelector('.ix-ready')?.textContent)"
+        )
+        until("!/No proposal yet/.test(document.querySelector('#main').textContent)")
+        assert waiting() == before
+
         # Proposals record nothing: the waiting count does not move.
         ask("Please categorize my inbox")
         assert "I proposed categories for 19 inbox items" in last_reply()
@@ -280,6 +291,36 @@ def test_agent_journey(tmp_path):
             ".every(o => !o.textContent.includes('Example Property Co'))"
         )
         assert waiting() == before - 1
+
+        # Flow: one item at a time. Enter accepts, l leaves one for later
+        # (nothing saved), s ignores, z undoes the ignore, Esc leaves.
+        def flow_title():
+            until("!!document.querySelector('.ix-card .ix-d-t')")
+            return text(".ix-card .ix-d-t")
+
+        def done():
+            return int(text(".ix-progress b").split("/")[0])
+
+        browser("press", "F")
+        first = flow_title()
+        browser("press", "Enter")
+        # Accepted: recorded, or ignored when the proposal was to ignore it.
+        until(f"document.querySelector('.ix-card .ix-d-t')?.textContent !== {first!r}")
+        assert done() == 1
+        second = flow_title()
+        browser("press", "l")
+        until(f"document.querySelector('.ix-card .ix-d-t')?.textContent !== {second!r}")
+        assert "1 later" in text(".ix-progress") and done() == 1
+        third = flow_title()
+        browser("press", "s")
+        until("document.querySelector('.ix-progress b').textContent.startsWith('2 /')")
+        browser("press", "z")
+        until("document.querySelector('.ix-progress b').textContent.startsWith('1 /')")
+        assert flow_title() == third
+        browser("press", "Escape")
+        until("!document.querySelector('.ix-card')")
+        # One item left waiting in flow; Later and the undone ignore saved nothing.
+        assert waiting() == before - 2
 
         # Two receipt images in Ask first: their drafts wait as cards and
         # nothing is recorded; Pending changes applies both at once after a

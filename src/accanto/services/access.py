@@ -69,6 +69,23 @@ async def _resolve(session, digest, kind, *, lock):
     return AuthenticatedActor(record["user_id"], kind, record["uuid"], digest)
 
 
+async def resolve_stored_credential(session, kind: str, credential_uuid: UUID):
+    """The actor for a credential a job run stored by UUID, if it is still valid.
+
+    A background step re-checks the session or API key that started its run
+    (TDD 12), so signing out or revoking the key stops the run at its next step.
+    """
+    if kind not in {"api_key", "session"}:
+        raise invalid_credential()
+    table = m.keys if kind == "api_key" else m.sessions
+    digest = await session.scalar(
+        select(table.c.digest).where(table.c.uuid == credential_uuid)
+    )
+    if digest is None:
+        raise invalid_credential()
+    return await _resolve(session, digest, kind, lock=False)
+
+
 async def resolve_actor(session, token: str, kind="api_key", *, lock=False):
     """Resolve an opaque secret; callers retain transaction ownership."""
     return await _resolve(

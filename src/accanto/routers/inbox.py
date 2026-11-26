@@ -5,7 +5,7 @@ from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 
 from accanto.dtos.inbox import (
     BulkProposalInput,
@@ -16,7 +16,7 @@ from accanto.dtos.inbox import (
     RevisionInput,
 )
 from accanto.routers.authentication import Session, Token
-from accanto.services import inbox
+from accanto.services import inbox, inbox_proposals
 from accanto.services.access import RejectionError
 from accanto.services.monthly import write
 
@@ -49,6 +49,7 @@ async def list_inbox(
     month: date | None = None,
     source: UUID | None = None,
     proposed: bool | None = None,
+    limit: Annotated[int | None, Query(ge=1, le=500)] = None,
 ):
     if month is not None and month.day != 1:
         raise HTTPException(422, "Use the first day of the calendar month.")
@@ -60,7 +61,31 @@ async def list_inbox(
         month=month,
         source=source,
         proposed=proposed,
+        limit=limit,
     )
+
+
+@router.get("/proposal-run")
+async def read_proposal_run(entity_id: UUID, session: Session, token: Token):
+    """The latest proposal run's progress and the waiting items' proposal counts."""
+    return await inbox_proposals.read_run(session, token, entity_id)
+
+
+@router.post("/proposal-run", status_code=202)
+async def start_proposal_run(
+    entity_id: UUID, request: Request, session: Session, token: Token
+):
+    """Queue a background proposal run over every waiting item, or return the
+    active one. Records nothing (TDD 12)."""
+    return await inbox_proposals.start_run(
+        session, token, entity_id, request.app.state.auth_settings
+    )
+
+
+@router.delete("/proposal-run")
+async def stop_proposal_run(entity_id: UUID, session: Session, token: Token):
+    """Stop the active run; proposals it already set stay."""
+    return await inbox_proposals.stop_run(session, token, entity_id)
 
 
 @router.get("/{item_id}")

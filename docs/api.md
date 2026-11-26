@@ -806,14 +806,17 @@ point it at the fake server in `tests/fakes/ynab_server.py`.
 | PUT | `/sources/{source_id}/accounts` | `{account_ids, expected_revision}`; default is none; adding an account re-reads history |
 | DELETE | `/sources/{source_id}` | `{expected_revision}`; stops importing the plan; recorded entries and inbox history stay |
 | POST | `/sources/{source_id}/sync` | Fetch changes since the stored cursor and stage them; returns counts. Records nothing |
-| GET | `/inbox?status=&month=YYYY-MM-01&source=&proposed=` | Staged transactions (default: all but removed), with source facts, proposal, rejections and revision; `proposed=true` keeps only items with a proposal, `false` only items without one |
+| GET | `/inbox?status=&month=YYYY-MM-01&source=&proposed=&limit=` | Staged transactions (default: all but removed), oldest first, with source facts, proposal, rejections and revision; `proposed=true` keeps only items with a proposal, `false` only items without one; `limit` (1–500) returns the first items, to work in chunks |
+| POST | `/inbox/proposal-run` | `202`; starts the built-in agent's proposal run over every waiting item without a proposal, or returns the active run. Records nothing. Needs the assistant on and an Agent mode other than Read only (`agent_disabled`, `read_only`); a browser session or API key (`proposal_run_credential` otherwise) |
+| GET | `/inbox/proposal-run` | `{run, waiting, proposed, needs_you, chunk}`: the latest run (`state` queued, running, succeeded, failed or cancelled; `steps`; `counts` proposed, needs_you, failed; `error_code`) and the waiting items' proposal counts |
+| DELETE | `/inbox/proposal-run` | Stops the active run; proposals it set stay |
 | GET | `/inbox/{item_id}` | One staged transaction |
 | PUT | `/inbox/{item_id}/proposal` | Set a proposal (replaces any earlier one) |
 | DELETE | `/inbox/{item_id}/proposal` | `{expected_revision}`; clear it |
 | PUT | `/inbox/proposals` | `{proposals: [{item_id, ...proposal}]}`; per-item outcomes |
 | POST | `/inbox/{item_id}/record` | `{expected_revision, completion?}`; records from the proposal, or from `completion`, which replaces it |
 | POST | `/inbox/record` | `{items: [{item_id, expected_revision, completion?}]}`; each in its own transaction; per-item outcomes |
-| POST | `/inbox/{item_id}/skip`, `/unskip` | `{expected_revision}` |
+| POST | `/inbox/{item_id}/skip`, `/unskip` | `{expected_revision}`; ignore an item (the UI calls status `skipped` Ignored) or return it to waiting. A re-sync of the same transaction keeps it ignored |
 | POST | `/inbox/{item_id}/undo` | `{expected_revision}`; soft-deletes the recorded entry through its normal delete command; the item waits again |
 | POST | `/inbox/{item_id}/resolve` | `{expected_revision, resolution: "keep" \| "delete"}` for a conflict |
 

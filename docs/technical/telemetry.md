@@ -66,7 +66,11 @@ recognise an amount, so it is never the control.
 - structlog writes JSON to stdout (journald on the Box). Events are fixed names
   with counts, UUIDs, codes, statuses and `ms`, for example `ynab_request`
   (operation, status, ms), `inbox_sync` (source ID and counts) and `agent_turn`
-  (outcome, ms, token counts or error type). No code path logs `exc_info`.
+  (outcome, ms, token counts or error type). Background jobs log `job_step`
+  (kind, run UUID, outcome, fixed error code, counts, ms), `job_step_error` and
+  `job_reconciler_failed` (error type), and the scheduled tick logs
+  `job_tick_step` (step name, outcome, counts or error type, ms); see
+  [TDD 11](../tdds/11-background-jobs.md). No code path logs `exc_info`.
 - Uvicorn runs with `--no-access-log` everywhere (`Dockerfile`, `.amp/box.yaml`,
   `just dev-be`). The OIDC callback also clears its query string before handling.
 - Handled errors are not logged: `RejectionError` and `SQLAlchemyError` become
@@ -106,7 +110,8 @@ cookies, API keys, session tokens, YNAB tokens or the OIDC code.
 - `tests/integration/test_trace_privacy.py` (runs with `just test-integration`)
   starts the real server against a local fake Logfire receiver and the fake YNAB
   server. It drives REST, MCP, a YNAB sync, a built-in agent turn and the OIDC
-  callback with synthetic canary values. It also submits a wrong YNAB token and
+  callback with synthetic canary values, then runs `python -m accanto.jobs.tick`
+  over the same data. It also submits a wrong YNAB token and
   makes a database write fail with a canary in the error. It then decodes every
   exported span, metric and log, and reads the server's own stdout and stderr.
   It fails if a canary or a secret appears in either, if an exception message is

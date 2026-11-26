@@ -13,3 +13,13 @@ services:
     command: >-
       sh -c 'BROWSER_ORIGIN="$AMP_DEPLOYMENT_URL" exec python/bin/python3 -m uvicorn
       accanto.app:app --host 0.0.0.0 --port "$PORT" --no-access-log'
+  # Scheduled tick (TDD 11): one finite run, then an hour's sleep; systemd
+  # restarts the unit when it exits, so it repeats hourly and after each deploy.
+  jobs:
+    cwd: box-release
+    env:
+      PYTHONPATH: site
+      PYTHONNOUSERSITE: "1"
+      PGSSLROOTCERT: site/certifi/cacert.pem
+    command: >-
+      sh -c 'python/bin/python3 -m accanto.jobs.tick; exec sleep 3600'

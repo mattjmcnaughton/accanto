@@ -253,7 +253,7 @@ async def staged_item(session, entity_id, item_uuid):
 
 
 async def read_inbox(
-    session, token, entity_uuid, *, statuses, month, source, proposed=None
+    session, token, entity_uuid, *, statuses, month, source, proposed=None, limit=None
 ):
     async with session.begin():
         _, entity = await authorize(session, token, entity_uuid, lock=False)
@@ -293,7 +293,7 @@ async def read_inbox(
                         st.staged.c.financial_date,
                         st.staged.c.parent_ref,
                         st.staged.c.source_ref,
-                    )
+                    ).limit(limit)
                 )
             )
             .mappings()

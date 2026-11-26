@@ -114,6 +114,23 @@ export interface TransactionProvider {
 const root = (entityId: UUID) => `/api/entities/${encodeURIComponent(entityId)}`;
 const item = (entityId: UUID, id: UUID) => `${root(entityId)}/inbox/${encodeURIComponent(id)}`;
 
+/** The background agent proposal run (TDD 12): its latest run and the waiting counts. */
+export interface ProposalRun {
+  run: {
+    id: string;
+    state: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+    steps: number;
+    counts: { proposed?: number; needs_you?: number; failed?: number };
+    error_code: string | null;
+    started_at: string;
+    finished_at: string | null;
+  } | null;
+  waiting: number;
+  proposed: number;
+  needs_you: number;
+  chunk: number;
+}
+
 export interface InboxWrite {
   method: "POST" | "PUT" | "DELETE";
   path: string;
@@ -124,6 +141,18 @@ export const inbox = {
   providerPath: (entityId: UUID) => `${root(entityId)}/transaction-provider`,
   list: (entityId: UUID): Promise<LoadState<StagedTransaction[]>> =>
     loadResource(`${root(entityId)}/inbox`, () => false),
+  proposalRun: (entityId: UUID): Promise<LoadState<ProposalRun>> =>
+    loadResource(`${root(entityId)}/inbox/proposal-run`, () => false),
+  startRun: (entityId: UUID): InboxWrite => ({
+    method: "POST",
+    path: `${root(entityId)}/inbox/proposal-run`,
+    body: {},
+  }),
+  stopRun: (entityId: UUID): InboxWrite => ({
+    method: "DELETE",
+    path: `${root(entityId)}/inbox/proposal-run`,
+    body: {},
+  }),
   sources: (entityId: UUID): Promise<LoadState<TransactionSource[]>> =>
     loadResource(`${root(entityId)}/sources`, (rows) => rows.length === 0),
   record: (entityId: UUID, it: StagedTransaction, completion?: Completion): InboxWrite => ({

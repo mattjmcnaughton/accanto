@@ -120,6 +120,11 @@ purchase candidates; `s` skip or un-skip; `x` select; `z` undo the last record,
 skip, or bulk action; `v` cycle Waiting/Skipped/Recorded; `?` help. Pickers use
 ↑/↓ and type-to-filter.
 
+Flow mode (TDD 12): `F` steps through waiting items one at a time. `Enter`
+accepts the proposal, `l` or → leaves the item for later (nothing saved), `s`
+ignores it (status `skipped`, shown as Ignored), `e` edits it in place with the
+keys above and returns to the flow, `z` undoes, `Esc` leaves.
+
 ## Staged-transaction shape (the adapter boundary)
 
 The only thing the inbox and services know about a source:
@@ -301,6 +306,8 @@ nothing. A YNAB failure changes nothing. The Review shows its waiting count.
   and rotation), and whether to use YNAB OAuth.
 - **T2.** HTTP client: thin `httpx` client (proposed) over the synchronous SDK.
 - **T3.** Manual sync only for now; a schedule is a new service under §5.
+  The background job infrastructure it would use is adopted in
+  [TDD 11](11-background-jobs.md); scheduled sync itself is not built.
 - **UI.** Accept the mockup's binding changes (`v`, `1`–`6` opening pickers,
   oldest first). Until decided, follow the mockup.
 

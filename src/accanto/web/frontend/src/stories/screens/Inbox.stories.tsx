@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent } from "storybook/test";
 import { Inbox } from "../../features/inbox/Inbox";
 import { data, mockApi, screenArgs } from "../mocks/api";
-import { inboxApi, seedInbox, source } from "../mocks/inbox";
+import { inboxApi, proposedInbox, seedInbox, source } from "../mocks/inbox";
 
 /**
  * The Transactions inbox over a stateful synthetic inbox: the keys in the legend really record,
@@ -68,7 +68,8 @@ export const BulkSelection: Story = {
   play: () => press("j", "j", "x", "j", "j", "j", "x", "j", "x"),
 };
 
-export const Skipped: Story = {
+/** Ignored items (status skipped): out of totals, kept on re-sync, returned with s. */
+export const Ignored: Story = {
   parameters: {
     msw: [
       ...inboxApi(
@@ -77,10 +78,86 @@ export const Skipped: Story = {
       ...mockApi(),
     ],
   },
-  play: () => press("v"),
+  play: async ({ canvas }) => {
+    await canvas.findAllByText("Sample Street Market");
+    await press("v");
+  },
 };
 
 export const Recorded: Story = { play: () => press("v", "v") };
+
+/** Flow starts once the items are on screen, then presses the keys. */
+const flowPlay =
+  (...keys: string[]) =>
+  async ({ canvas }: { canvas: { findAllByText: (t: string) => Promise<unknown> } }) => {
+    await canvas.findAllByText("Sample Street Market");
+    // Keys wait for the previous write: flow drops keys while one is saving.
+    for (const key of ["F", ...keys]) {
+      await press(key);
+      await new Promise((done) => setTimeout(done, 500));
+    }
+  };
+const proposed = { msw: [...inboxApi(proposedInbox(), [source], { run: "done" }), ...mockApi()] };
+
+/** The agent proposal run in the background, 25 items a step; the tab may close. */
+export const AgentProposing: Story = {
+  parameters: { msw: [...inboxApi(seedInbox(), [source], { run: "held" }), ...mockApi()] },
+};
+
+/** The run finished: unsure items carry the agent's question instead of a guess. */
+export const ProposalsReady: Story = { parameters: proposed };
+
+/** F starts flow: one waiting item at a time with its proposal and why. */
+export const Flow: Story = { parameters: proposed, play: flowPlay() };
+
+/** Enter accepted two; the toast offers undo and the header counts them. */
+export const FlowAfterAccepting: Story = {
+  parameters: proposed,
+  play: flowPlay("{Enter}", "{Enter}"),
+};
+
+/** An item the agent was unsure about: its question shows, and Enter opens edit to choose. */
+export const FlowNeedsYou: Story = {
+  parameters: {
+    msw: [
+      ...inboxApi(
+        proposedInbox().filter((it) =>
+          ["Placeholder Pay App", "Example Coffee Cart"].includes(it.payee),
+        ),
+        [source],
+        { run: "done" },
+      ),
+      ...mockApi(),
+    ],
+  },
+  play: async ({ canvas }) => {
+    await canvas.findAllByText("Placeholder Pay App");
+    await press("F", "{Enter}");
+  },
+};
+
+/** Edit inside flow uses the inbox's own fields; Enter records and moves on. */
+export const FlowEdit: Story = {
+  parameters: proposed,
+  play: flowPlay("e", "3"),
+};
+
+/** The end of a pass, with items left for later. */
+export const FlowPassComplete: Story = {
+  parameters: {
+    msw: [
+      ...inboxApi(
+        proposedInbox()
+          .filter((it) => it.status === "waiting" && !it.parent_ref)
+          .slice(0, 3),
+        [source],
+        { run: "done" },
+      ),
+      ...mockApi(),
+    ],
+  },
+  play: flowPlay("{Enter}", "l", "s"),
+};
 
 export const Help: Story = { play: () => press("?") };
 

@@ -693,3 +693,92 @@
   color: var(--bad);
   margin: 0;
 }
+
+/* The agent proposal run's strip and flow mode (TDD 12). */
+.ix-run {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ix-run > span:not(.ix-bar) {
+  flex: 1;
+}
+.ix-run-msg {
+  margin: 8px 14px 0;
+}
+.ix-ready {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  padding: 6px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
+  background: var(--good-bg, var(--wash));
+  color: var(--good, var(--ink2));
+}
+.ix-progress {
+  display: grid;
+  gap: 4px;
+  min-width: 280px;
+  font-size: 13px;
+  color: var(--ink2);
+}
+.ix-progress b {
+  color: var(--ink);
+}
+.ix-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--wash);
+  overflow: hidden;
+}
+.ix-track > span {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+  transition: width 0.2s ease-out;
+}
+.ix-flow {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  /* A tall edit card scrolls from its top instead of being cut off. */
+  align-content: safe center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px 16px;
+}
+.ix-card {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px 18px 0;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.ix-card.editing {
+  box-shadow: 0 0 0 2px var(--brand), 0 8px 24px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.ix-card > .btn.quiet {
+  justify-self: start;
+  margin-bottom: 12px;
+}
+.ix-card .ix-fig {
+  font-size: 24px;
+}
+.ix-card .ix-do {
+  position: static;
+}
+.ix-needs {
+  border-color: var(--warn);
+}
+.ix-end p {
+  margin: 0;
+}
+.ix-ready span {
+  color: var(--ink3);
+}

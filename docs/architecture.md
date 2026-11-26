@@ -24,6 +24,7 @@ src/accanto/
   web/                 # Frontend integration
     serve.py           # Static file serving for production
     frontend/          # Frontend app (scaffolded separately)
+  jobs/                # Finite scheduled tick: python -m accanto.jobs.tick
   db.py                # Async engine/session factory
   models/              # SQLAlchemy async models
   repositories/        # Data access layer
@@ -57,6 +58,7 @@ required.
 | `domains/` (when needed) | Pure financial calculations and domain rules with explicit inputs/results. No FastAPI, SQLAlchemy, network, browser, configuration loading, or implicit clock access. Create modules for concrete behavior, not an empty framework. |
 | `repositories/` and `models/` | Database queries, persistence, relationships, and constraints. Repositories may return SQLAlchemy models to services; services pass plain values into pure calculations. |
 | `dtos/` | Pydantic API contracts, separate from database models. |
+| `services/jobs.py`, `jobs/tick.py` | Background job runs (leased, advanced in the web process) and the finite scheduled tick. Add a job kind or tick step there ([TDD 11](tdds/11-background-jobs.md)). |
 | `web/frontend/src/routes/` | Route composition and navigation. |
 | `web/frontend/src/features/` | Feature UI, interactions, and presentation state as production workflows are added. |
 | `web/frontend/src/lib/api.ts` | Same-origin session transport, normalized API errors and load states. |
