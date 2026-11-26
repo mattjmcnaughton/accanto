@@ -121,12 +121,14 @@ Excluded from every agent surface:
 
 Each Entity has an agent mode, enforced by the server:
 
-- **Propose only** (default). Agents may read, sync, and set inbox proposals.
+- **Read only.** Agents may read. Every write, including syncing and setting
+  inbox proposals, is rejected.
+- **Ask first** (default). Agents may read, sync, and set inbox proposals.
   Every other write becomes a pending change that the owner applies in Accanto.
-- **Record with approval.** In the sidebar, the owner applies each change from
-  its card. Over MCP, a write runs once the client's approval prompt allows it.
+- **Apply directly.** Writes run: the sidebar records them, and an MCP client
+  records them once its own approval prompt (if any) allows it.
 
-In both modes, deletes that cannot be restored (savings movements and balance
+In Ask first and Apply directly, deletes that cannot be restored (savings movements and balance
 observations) always become pending changes applied in Accanto.
 
 Agent mode governs the agent surfaces (`/mcp` and the sidebar). It does not
@@ -134,7 +136,7 @@ restrict the REST API, and in v1 an MCP client's key is a full-access REST key
 (AG-03), so a client that also has a shell can bypass the mode. Keys limited to
 `/mcp` are the planned follow-up.
 
-Acceptance: in propose-only mode, an MCP `save_activity` call records nothing and
+Acceptance: in Ask first, an MCP `save_activity` call records nothing and
 returns a pending change that appears in the sidebar; applying it records one
 entry with one audit row. A retry of the same apply returns the same entry.
 

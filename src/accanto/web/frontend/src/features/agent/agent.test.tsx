@@ -184,7 +184,7 @@ it("shows a stale Apply on its card without leaving a save to discard", async ()
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
     const url = String(path);
     if (url.endsWith("/settings"))
-      return json({ enabled: true, mode: "propose", instructions: "", revision: 1 });
+      return json({ enabled: true, mode: "ask_first", instructions: "", revision: 1 });
     if (url.includes("/pending-changes")) return json([stale]);
     return json([]);
   });
@@ -248,7 +248,7 @@ it("applies all pending changes with their edits after confirming, and shows whe
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
     const url = String(path);
     if (url.endsWith("/settings"))
-      return json({ enabled: true, mode: "propose", instructions: "", revision: 1 });
+      return json({ enabled: true, mode: "ask_first", instructions: "", revision: 1 });
     if (url.includes("/pending-changes")) return json(changes);
     return json([]);
   });
@@ -402,7 +402,7 @@ it("discloses what the assistant sends before the owner turns it on", async () =
   vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
     json({
       enabled: false,
-      mode: "propose",
+      mode: "ask_first",
       instructions: "",
       revision: 0,
       provider: "OpenRouter, zero data retention",
@@ -431,7 +431,7 @@ it("discloses what the assistant sends before the owner turns it on", async () =
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
       method: "PUT",
-      body: { enabled: true, mode: "propose", instructions: "", expected_revision: 0 },
+      body: { enabled: true, mode: "ask_first", instructions: "", expected_revision: 0 },
     }),
     expect.any(Function),
   );
@@ -446,7 +446,7 @@ it("resizes from its edge within bounds and remembers the width and full screen"
   // A 1600px window leaves room for at most 820px beside the sidebar and a 560px screen.
   vi.stubGlobal("innerWidth", 1600);
   vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
-    json({ enabled: false, mode: "propose", instructions: "", revision: 0 }),
+    json({ enabled: false, mode: "ask_first", instructions: "", revision: 0 }),
   );
   const props = {
     entity,
@@ -491,7 +491,7 @@ it("keeps the partial reply and puts the question back when the owner stops a re
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
     const url = String(path);
     if (url.endsWith("/settings"))
-      return json({ enabled: true, mode: "propose", instructions: "", revision: 1 });
+      return json({ enabled: true, mode: "ask_first", instructions: "", revision: 1 });
     if (init?.method === "POST")
       // One sentence arrives, then the reply hangs until it is stopped.
       return new Response(
@@ -552,7 +552,7 @@ it("opens the latest conversation, reopens an older one from History, and archiv
   const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
     const url = String(path);
     if (url.endsWith("/settings"))
-      return json({ enabled: true, mode: "propose", instructions: "", revision: 1 });
+      return json({ enabled: true, mode: "ask_first", instructions: "", revision: 1 });
     if (url.endsWith("/conversations"))
       return json([summary("c-new", "Newer question"), summary("c-old", "Older question")]);
     if (url.endsWith("/conversations/c-new")) return json([message("m1", "Newer question")]);

@@ -280,7 +280,7 @@ class EntityRef(Output):
 class Context(Output):
     entity: EntityContext | None
     entities: list[EntityContext]
-    agent_mode: Literal["propose", "record"] | None
+    agent_mode: Literal["read_only", "ask_first", "apply_directly"] | None
     rules: list[str]
 
 

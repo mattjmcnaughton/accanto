@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from accanto.app import create_app
 from accanto.db import get_session
 from accanto.dtos import tools as t
+from accanto.models import agent as a
 from accanto.models import monthly as m
 from accanto.services.access import issue_session, resolve_actor
 from accanto.services.api_keys import issue_key
@@ -261,7 +262,7 @@ async def scenario():
             income = next(c for c in review["categories"] if c["category"] == "income")
             assert income["recorded"] is None  # unknown, not zero
 
-            # Propose mode (default): an MCP write records nothing and pends.
+            # Ask first (default): an MCP write records nothing and pends.
             async def entries():
                 async with sessions() as db:
                     return await db.scalar(
@@ -295,6 +296,56 @@ async def scenario():
                 error=True,
             )
             assert "idempotency_key" in missing_key["content"][0]["text"]
+
+            # Read only: MCP writes are refused, sync and proposals included.
+            async with sessions() as db, db.begin():
+                await db.execute(
+                    insert(a.settings).values(
+                        entity_id=entity_id, enabled=True, mode="read_only"
+                    )
+                )
+            for name, arguments in (
+                (
+                    "save_activity",
+                    {
+                        "date": "2026-11-04",
+                        "category": "spending",
+                        "amount": "9.00",
+                    },
+                ),
+                ("sync_source", {"source_id": str(uuid4())}),
+                (
+                    "set_proposals",
+                    {
+                        "proposals": [
+                            {
+                                "item_id": str(uuid4()),
+                                "expected_revision": 1,
+                                "skip": True,
+                                "rationale": "Synthetic",
+                            }
+                        ]
+                    },
+                ),
+            ):
+                refused = await mcp.call(
+                    name,
+                    {
+                        "entity_id": str(entity),
+                        "idempotency_key": f"synthetic-read-only-{name}",
+                        **arguments,
+                    },
+                    error=True,
+                )
+                assert refused["content"][0]["text"].startswith("read_only:"), name
+            assert await entries() == 2
+            async with sessions() as db:
+                assert (
+                    await db.scalar(
+                        select(func.count()).where(a.pending.c.entity_id == entity_id)
+                    )
+                    == 1
+                )
 
             # The SPA never swallows /mcp.
             assert (await client.get("/mcp")).headers.get(

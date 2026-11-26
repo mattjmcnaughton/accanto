@@ -145,13 +145,15 @@ async def scenario():
         assert (await send("Hello")).json()["detail"]["code"] == "agent_disabled"
 
         settings_view = (await client.get(prefix + "/agent/settings")).json()
-        assert settings_view["enabled"] is False and settings_view["mode"] == "propose"
+        assert (
+            settings_view["enabled"] is False and settings_view["mode"] == "ask_first"
+        )
         assert settings_view["retention_days"] == 30
         enabled = await client.put(
             prefix + "/agent/settings",
             json={
                 "enabled": True,
-                "mode": "record",
+                "mode": "ask_first",
                 "instructions": "Synthetic: groceries are spending.",
                 "expected_revision": 0,
             },

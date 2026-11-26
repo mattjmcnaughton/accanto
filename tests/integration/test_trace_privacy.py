@@ -330,7 +330,7 @@ async def drive(origin, secrets, suffix):
             "/agent/settings",
             {
                 "enabled": True,
-                "mode": "propose",
+                "mode": "ask_first",
                 "instructions": note,
                 "expected_revision": 0,
             },

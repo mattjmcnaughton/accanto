@@ -350,12 +350,12 @@ terminal from the repository root, with PostgreSQL running (in an orb:
 `127.0.0.1:5433`, user and password `postgres`).
 
 1. Seed a synthetic Entity for the fixture identity, with the assistant on in
-   propose mode (omit `--agent` to show the opt-in in Settings instead):
+   Ask first (omit `--agent` to show the opt-in in Settings instead):
 
    ```sh
    export ACCANTO_FIXTURE_DATABASE_URL=postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/accanto_fixture_test
    uv run python skills/managing-fixtures/scripts/fixtures.py seed \
-     --issuer http://127.0.0.1:55439 --agent propose
+     --issuer http://127.0.0.1:55439 --agent ask_first
    ```
 
    An existing fixture database is refused; reset it only if its synthetic edits

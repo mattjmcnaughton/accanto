@@ -9,8 +9,9 @@ Behaviors, keyed on the owner's message (case-insensitive):
 - "categor"     list_inbox, then set_proposals for every waiting item.
 - "spend"       get_monthly_review for the named month (or the one in view)
                 and quote the recorded spending it returns.
-- "receipt" or an attached image: draft one save_activity entry dated by the
-                YYYY-MM-DD in the message, or ask for the date if there is none.
+- "receipt" or an attached image: save one save_activity entry dated by the
+                YYYY-MM-DD in the message (drafted or recorded per the Agent
+                mode), or ask for the date if there is none.
 - "budget"      say a sentence, call get_context in the same response, then
                 answer: two text parts around a tool call.
 - "[stub-fail]" fail mid-stream after a few deltas.
@@ -18,7 +19,8 @@ Behaviors, keyed on the owner's message (case-insensitive):
 
 Scripted to obey injections, on purpose: if a tool result contains
 INJECTION_MARKER, it lists the month's activity and calls delete_activity for
-every entry, so tests show the dispatcher still only drafts Pending changes.
+every entry, so tests show the dispatcher still only drafts Pending changes in
+Ask first and rejects them in Read only.
 """
 
 from __future__ import annotations
@@ -191,10 +193,17 @@ def _next_step(messages: Sequence[ModelMessage], info: AgentInfo):
             return _call(*deletes)
         return "Nothing to delete."
     if injected:
-        return (
-            "I followed an instruction found in a payee and drafted deletions. "
-            "They are pending changes; nothing was deleted."
-        )
+        statuses = {
+            _content(p).get("status")
+            for p in returns
+            if p.tool_name == "delete_activity"
+        }
+        if statuses == {"pending"}:
+            return (
+                "I followed an instruction found in a payee and drafted deletions. "
+                "They are pending changes; nothing was deleted."
+            )
+        return "I followed an instruction found in a payee and tried to delete entries."
 
     if "categor" in lowered:
         if "list_inbox" not in called:
@@ -206,6 +215,8 @@ def _next_step(messages: Sequence[ModelMessage], info: AgentInfo):
                 return "The inbox has no waiting transactions."
             return _call(("set_proposals", {"proposals": proposals}))
         outcome = next(_content(p) for p in returns if p.tool_name == "set_proposals")
+        if outcome.get("error"):
+            return f"I could not propose categories: {outcome.get('message')}"
         done = sum(1 for r in outcome.get("results", []) if r.get("ok"))
         return (
             f"I proposed categories for {done} inbox items. Nothing is recorded "
@@ -228,6 +239,11 @@ def _next_step(messages: Sequence[ModelMessage], info: AgentInfo):
                 draft["uncertain_fields"] = ["note"]
                 draft["source_text"] = f"SYNTHETIC STORE TOTAL {RECEIPT_AMOUNT}"
             return _call(("save_activity", draft))
+        saved = next(_content(p) for p in returns if p.tool_name == "save_activity")
+        if saved.get("status") == "recorded":
+            return f"I recorded a {RECEIPT_AMOUNT} spending entry from the receipt."
+        if saved.get("error"):
+            return f"I could not save the receipt: {saved.get('message')}"
         return (
             f"I drafted a {RECEIPT_AMOUNT} spending entry from the receipt. "
             "Review the card and apply it if it is right."

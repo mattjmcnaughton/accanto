@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6g027`.
+   supported revision is `6h028`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -129,6 +129,12 @@ and adds `archived_at` ([TDD 08](../tdds/08-assistant-conversation-history.md)).
 anyone starts a second conversation it shows an arbitrary one and its Clear deletes
 only that one; roll back before relying on history. The downgrade keeps only each
 User and Entity's latest conversation. No new table, so the grants are unchanged.
+`6h028` renames the stored Agent modes (`propose` → `ask_first`, `record` →
+`apply_directly`) and adds `read_only` ([TDD 03](../tdds/03-agent-access.md)).
+`6g027` code treats any mode other than `propose` as `record`, so running it on
+`6h028` data would let agents write directly in Ask first and Read only. Downgrade
+to `6g027` before rolling the app back; the downgrade maps `apply_directly` back
+to `record` and both other modes to `propose`. No grant changes.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

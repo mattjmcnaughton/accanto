@@ -2,9 +2,9 @@
 
 Every catalog write goes through dispatch(). Inside the existing write()
 transaction (Entity lock, retry lookup, audit and recorded outcome), the hook
-reads the Agent mode and either runs the existing command or stores a Pending
-change. A Pending change records nothing; applying it later runs the same
-command with the server key ``agent:{pending_id}``.
+reads the Agent mode and runs the existing command, stores a Pending
+change, or rejects it (Read only). A Pending change records nothing; applying
+it later runs the same command with the server key ``agent:{pending_id}``.
 """
 
 from collections.abc import Callable
@@ -25,10 +25,26 @@ from accanto.services.access import AuthenticatedActor, RejectionError
 from accanto.services.inbox import Hook, keep_rejection
 from accanto.services.monthly import DryRun, authorize, json_values, scoped, write
 
-# Deletes that cannot be restored always pend, in both Agent modes (PRD AG-06).
+# Deletes that cannot be restored always pend, even in Apply directly (PRD AG-06).
 IRREVERSIBLE = frozenset(
     {"delete_savings_movement", "delete_observation", "delete_tag"}
 )
+
+
+def read_only() -> RejectionError:
+    return RejectionError(
+        "read_only",
+        "The Agent mode is Read only: agents cannot change this Entity.",
+        403,
+    )
+
+
+async def pends(session, entity, tool) -> bool:
+    """The Agent mode decision; Read only rejects (catalog.writable checks first)."""
+    mode = await agent_settings.mode(session, entity["id"])
+    if mode == "read_only":
+        raise read_only()
+    return tool in IRREVERSIBLE or mode == "ask_first"
 
 
 @dataclass
@@ -96,16 +112,9 @@ class AgentHook(Hook):
         self.inner: Hook | None = None
         self.pended = False
 
-    async def pends(self, session, entity, actor) -> bool:
-        if self.force_run:
-            return False
-        # The built-in agent never writes from inside a model run (TDD 03).
-        if actor.interface == "agent" or self.tool in IRREVERSIBLE:
-            return True
-        return await agent_settings.mode(session, entity["id"]) == "propose"
-
     async def before(self, session, entity, actor):
-        if await self.pends(session, entity, actor):
+        # Under the Entity lock, so a mode change cannot race the write.
+        if not self.force_run and await pends(session, entity, self.tool):
             self.pended = True
             return (
                 "draft_pending_change",
@@ -159,11 +168,7 @@ async def dispatch(
     async with sessions() as session:
         async with session.begin():
             _, entity = await authorize(session, actor, entity_uuid, lock=False)
-            likely = (
-                actor.interface == "agent"
-                or tool in IRREVERSIBLE
-                or await agent_settings.mode(session, entity["id"]) == "propose"
-            )
+            likely = await pends(session, entity, tool)
         if likely:
             # Validate the draft with the command's own checks, rolled back. A
             # recorded outcome for this key is returned unchanged (replay).
