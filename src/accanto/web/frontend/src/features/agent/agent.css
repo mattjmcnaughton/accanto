@@ -55,6 +55,7 @@
   gap: 6px;
   max-width: 100%;
 }
+/* Replies use `reply`, never `agent`, which would match the panel rule above. */
 .agent-msg.owner {
   align-self: flex-end;
   background: var(--wash);
@@ -163,9 +164,25 @@
   .app.with-agent {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* Pinned to the screen (inset, not 100dvh) so the header and close button stay
+     reachable; the page behind cannot scroll it away. */
   .app.with-agent .agent {
     inset: 0;
     width: 100vw;
+    height: auto;
+    overscroll-behavior: contain;
+  }
+  html:has(.app.with-agent),
+  html:has(.app.with-agent) body {
+    overflow: hidden;
+  }
+  .agent-new-label,
+  .agent-mode {
+    display: none;
+  }
+  /* iOS zooms into a focused field under 16px and does not zoom back out. */
+  .agent-compose textarea {
+    font-size: 16px;
   }
 }
 /* The file input stays focusable and labelled, drawn as the button around it. */

@@ -99,7 +99,11 @@ export function AgentPanel(p: AgentPanelProps) {
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight });
   }, [messages, live]);
-  useEffect(() => input.current?.focus(), []);
+  // Only with a mouse: on a phone, focusing opens the keyboard, and iOS scrolls or
+  // zooms the full-screen sheet until its header and close button are off-screen.
+  useEffect(() => {
+    if (window.matchMedia?.("(pointer: fine)").matches) input.current?.focus();
+  }, []);
 
   async function send() {
     const content = text.trim();
@@ -174,13 +178,21 @@ export function AgentPanel(p: AgentPanelProps) {
     }
   }
 
-  async function clear() {
-    if (live || !window.confirm("Clear this conversation? Pending changes stay listed.")) return;
+  /** Starts over: the backend keeps one conversation per Entity, so this replaces it. */
+  async function startNew() {
+    if (live) return;
+    if (
+      messages.length &&
+      !window.confirm("Start a new conversation? This one is deleted; pending changes stay listed.")
+    )
+      return;
     try {
-      await agent.clear(await p.credentials(), p.entity.id);
+      if (messages.length) await agent.clear(await p.credentials(), p.entity.id);
       setMessages([]);
+      setError("");
+      setTab("chat");
     } catch (issue) {
-      setError(issue instanceof Error ? issue.message : "The conversation was not cleared.");
+      setError(issue instanceof Error ? issue.message : "A new conversation was not started.");
     }
   }
 
@@ -236,8 +248,14 @@ export function AgentPanel(p: AgentPanelProps) {
         )}
         <span className="spacer" />
         {settings?.enabled && (
-          <button type="button" className="btn quiet sm" onClick={() => void clear()}>
-            Clear
+          <button
+            type="button"
+            className="btn quiet sm"
+            aria-label="New conversation"
+            disabled={live !== null}
+            onClick={() => void startNew()}
+          >
+            <Icon name="plus" /> <span className="agent-new-label">New conversation</span>
           </button>
         )}
         <button type="button" className="icon-btn" aria-label="Close assistant" onClick={p.close}>
@@ -303,7 +321,7 @@ export function AgentPanel(p: AgentPanelProps) {
                 </p>
               )}
               {messages.map((m) => (
-                <div key={m.id} className={`agent-msg ${m.role}`}>
+                <div key={m.id} className={`agent-msg ${m.role === "owner" ? "owner" : "reply"}`}>
                   {m.role === "owner" ? <p>{m.content}</p> : <Markdown text={m.content} />}
                   {m.image_count > 0 && (
                     <small className="note">{m.image_count} image(s) sent, not kept</small>
@@ -312,7 +330,7 @@ export function AgentPanel(p: AgentPanelProps) {
                 </div>
               ))}
               {live && (
-                <div className="agent-msg agent">
+                <div className="agent-msg reply">
                   {live.tools.map((t, i) => (
                     // biome-ignore lint/suspicious/noArrayIndexKey: Tool lines only append.
                     <small key={i} className={`agent-tool ${t.status}`}>
