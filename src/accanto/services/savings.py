@@ -43,7 +43,7 @@ async def current_link(session, entry_id):
     )
 
 
-async def saving_facts(session, entity_id, *, as_of=None, excluded_adjustment_id=None):
+async def saving_history(session, entity_id, *, excluded_adjustment_id=None):
     goals = (
         (
             await session.execute(
@@ -137,6 +137,13 @@ async def saving_facts(session, entity_id, *, as_of=None, excluded_adjustment_id
         for row in adjustments
         if row["id"] != excluded_adjustment_id
     )
+    return goals, openings, events
+
+
+async def saving_facts(session, entity_id, *, as_of=None, excluded_adjustment_id=None):
+    goals, openings, events = await saving_history(
+        session, entity_id, excluded_adjustment_id=excluded_adjustment_id
+    )
     if as_of is not None:
         events = [
             event
@@ -148,6 +155,43 @@ async def saving_facts(session, entity_id, *, as_of=None, excluded_adjustment_id
     except SavingsShortfallError as error:
         raise RejectionError("savings_shortfall", str(error), 422) from None
     return goals, balances, contributions
+
+
+def check_goal_link(
+    goal,
+    account_active,
+    opening_date,
+    entry,
+    previous_link=None,
+    previous_category=None,
+):
+    if not account_active:
+        raise RejectionError("archived_account", "Reopen the savings account first.")
+    if entry["financial_date"] < opening_date:
+        raise RejectionError(
+            "before_opening",
+            "Savings activity cannot precede the account opening date.",
+            422,
+        )
+    if (
+        goal["completed"]
+        and not entry["is_refund"]
+        and (previous_link is None or previous_link["goal_id"] != goal["id"])
+    ):
+        raise RejectionError(
+            "completed_goal", "Completed goals accept linked refunds only.", 422
+        )
+    # Corrections may retain an inactive goal, but new contributions may not.
+    if (
+        entry["category"] == "saving"
+        and not goal["active"]
+        and (
+            previous_link is None
+            or previous_link["goal_id"] != goal["id"]
+            or previous_category != "saving"
+        )
+    ):
+        raise RejectionError("inactive_goal", "Choose an active saving goal.")
 
 
 async def attach_entry(
@@ -167,35 +211,14 @@ async def attach_entry(
             .mappings()
             .one()
         )
-        if not account["active"]:
-            raise RejectionError(
-                "archived_account", "Reopen the savings account first."
-            )
-        if entry["financial_date"] < account["opening_date"]:
-            raise RejectionError(
-                "before_opening",
-                "Savings activity cannot precede the account opening date.",
-                422,
-            )
-        if (
-            goal["completed"]
-            and not entry["is_refund"]
-            and (previous_link is None or previous_link["goal_id"] != goal["id"])
-        ):
-            raise RejectionError(
-                "completed_goal", "Completed goals accept linked refunds only.", 422
-            )
-        # Corrections may retain an inactive goal, but new contributions may not.
-        if (
-            entry["category"] == "saving"
-            and not goal["active"]
-            and (
-                previous_link is None
-                or previous_link["goal_id"] != goal["id"]
-                or previous_category != "saving"
-            )
-        ):
-            raise RejectionError("inactive_goal", "Choose an active saving goal.")
+        check_goal_link(
+            goal,
+            account["active"],
+            account["opening_date"],
+            entry,
+            previous_link,
+            previous_category,
+        )
     if previous_link:
         previous_account = (
             await session.execute(

@@ -831,7 +831,7 @@ point it at the fake server in `tests/fakes/ynab_server.py`.
 | DELETE | `/inbox/{item_id}/proposal` | `{expected_revision}`; clear it |
 | PUT | `/inbox/proposals` | `{proposals: [{item_id, ...proposal}]}`; per-item outcomes |
 | POST | `/inbox/{item_id}/record` | `{expected_revision, completion?}`; records from the proposal, or from `completion`, which replaces it |
-| POST | `/inbox/record` | `{items: [{item_id, expected_revision, completion?}]}`; each in its own transaction; per-item outcomes |
+| POST | `/inbox/record` | `{items: [{item_id, expected_revision, completion?}]}` (up to 200); validates in request order and commits accepted entries, audit and retry outcomes together. Each rejected item reports its own reason. |
 | POST | `/inbox/{item_id}/skip`, `/unskip` | `{expected_revision}`; ignore an item (the UI calls status `skipped` Ignored) or return it to waiting. A re-sync of the same transaction keeps it ignored |
 | POST | `/inbox/{item_id}/undo` | `{expected_revision}`; soft-deletes the recorded entry through its normal delete command; the item waits again |
 | POST | `/inbox/skip`, `/inbox/unskip`, `/inbox/undo` | `{items: [{item_id, expected_revision}]}` (up to 200); the batch form of the commands above. Each item is its own write under the request's `Idempotency-Key`, so one rejection keeps the rest; per-item outcomes `{item_id, ok, item?, entry?, error?}` |

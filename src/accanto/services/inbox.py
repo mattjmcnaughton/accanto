@@ -274,59 +274,70 @@ async def read_inbox(
             # A cleared proposal is stored as JSON null, not SQL NULL.
             has = func.coalesce(func.jsonb_typeof(st.staged.c.proposal), "null")
             query = query.where((has == "object") == proposed)
-        views = (
-            query.add_columns(
-                st.sources.c.uuid.label("source_uuid"),
-                m.entries.c.uuid.label("entry_uuid"),
-                m.users.c.uuid.label("proposer_uuid"),
-            )
-            .join_from(st.staged, st.sources)
-            .outerjoin_from(st.staged, m.entries)
-            .outerjoin_from(
-                st.staged, m.users, m.users.c.id == st.staged.c.proposed_by_user_id
-            )
-        )
         rows = (
             (
                 await session.execute(
-                    views.order_by(
+                    item_view_query(query)
+                    .order_by(
                         st.staged.c.financial_date,
                         st.staged.c.parent_ref,
                         st.staged.c.source_ref,
-                    ).limit(limit)
+                    )
+                    .limit(limit)
                 )
             )
             .mappings()
             .all()
         )
-        groups = {
-            (row["source_id"], row["parent_ref"]) for row in rows if row["parent_ref"]
-        }
-        splits = {}
-        if groups:
-            # Use exactly the groups returned by the list and pass them as two
-            # arrays so the bind count does not grow with the Inbox.
-            source_ids, parents = zip(*groups, strict=True)
-            pairs = select(
-                func.unnest(literal(list(source_ids), ARRAY(BigInteger))),
-                func.unnest(literal(list(parents), ARRAY(String))),
-            )
-            splits = await split_totals(
-                session,
-                entity["id"],
-                tuple_(st.staged.c.source_id, st.staged.c.parent_ref).in_(pairs),
-            )
+        splits = await item_splits(session, entity["id"], rows)
         with logfire.span("inbox.item_views", item_count=len(rows)):
-            return [
-                render_item(
-                    row,
-                    row["source_uuid"],
-                    row["entry_uuid"],
-                    row["proposer_uuid"],
-                    splits.get((row["source_id"], row["parent_ref"])),
-                )
-                for row in rows
-            ]
+            return [joined_item(row, splits) for row in rows]
+
+
+def item_view_query(query):
+    return (
+        query.add_columns(
+            st.sources.c.uuid.label("source_uuid"),
+            m.entries.c.uuid.label("entry_uuid"),
+            m.users.c.uuid.label("proposer_uuid"),
+        )
+        .join_from(st.staged, st.sources)
+        .outerjoin_from(st.staged, m.entries)
+        .outerjoin_from(
+            st.staged, m.users, m.users.c.id == st.staged.c.proposed_by_user_id
+        )
+    )
+
+
+async def item_splits(session, entity_id, rows):
+    groups = {
+        (row["source_id"], row["parent_ref"]) for row in rows if row["parent_ref"]
+    }
+    splits = {}
+    if groups:
+        # Use exactly the groups returned by the list and pass them as two
+        # arrays so the bind count does not grow with the Inbox.
+        source_ids, parents = zip(*groups, strict=True)
+        pairs = select(
+            func.unnest(literal(list(source_ids), ARRAY(BigInteger))),
+            func.unnest(literal(list(parents), ARRAY(String))),
+        )
+        splits = await split_totals(
+            session,
+            entity_id,
+            tuple_(st.staged.c.source_id, st.staged.c.parent_ref).in_(pairs),
+        )
+    return splits
+
+
+def joined_item(row, splits):
+    return render_item(
+        row,
+        row["source_uuid"],
+        row["entry_uuid"],
+        row["proposer_uuid"],
+        splits.get((row["source_id"], row["parent_ref"])),
+    )
 
 
 async def read_item(session, token, entity_uuid, item_uuid):
@@ -680,20 +691,23 @@ class RecordHook(Hook):
         self.checked = False
 
     async def before(self, session, entity, actor):
+        self.row = await staged_item(session, entity["id"], self.item_uuid)
+        return self.prepare(self.row, contribution_mode="json")
+
+    def prepare(self, row, *, contribution_mode="python"):
         from accanto.dtos.destinations import ContributionInput
         from accanto.dtos.monthly import ActivityInput, RefundInput
 
-        self.row = await staged_item(session, entity["id"], self.item_uuid)
         if not self.dry_run:
             try:
-                transition(self.row["status"], "record")
+                transition(row["status"], "record")
             except InboxRejectionError as error:
                 raise domain_rejection(error) from None
-            check_revision(self.row, self.expected)
+            check_revision(row, self.expected)
         self.checked = True
-        completion = self.completion or completion_of(self.row["proposal"])
+        completion = self.completion or completion_of(row["proposal"])
         try:
-            command = command_for(facts_of(self.row), completion)
+            command = command_for(facts_of(row), completion)
         except InboxRejectionError as error:
             raise domain_rejection(error) from None
         fields = command.fields
@@ -709,7 +723,7 @@ class RecordHook(Hook):
         if command.kind in {"investment", "giving"}:
             return (
                 f"create_{command.kind}_entry",
-                dto_payload(ContributionInput, fields, "json"),
+                dto_payload(ContributionInput, fields, contribution_mode),
                 None,
             )
         return "create_entry", dto_payload(ActivityInput, fields), None
