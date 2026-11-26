@@ -620,6 +620,12 @@ async def write(
                 .one()
             )
             check_revision(old, payload["expected_revision"])
+            previous_latest = await session.scalar(
+                select(m.revisions.c.id)
+                .where(m.revisions.c.plan_id == plan["id"], m.revisions.c.saved)
+                .order_by(m.revisions.c.number.desc())
+                .limit(1)
+            )
             before = await plan_snapshot(session, old)
             record = (
                 (
@@ -729,6 +735,41 @@ async def write(
             }
             await audit(m.revisions, record["uuid"], before, response["version"])
             await audit(m.revisions, draft["uuid"], None, response["draft"])
+            # Unreviewed Reviews on the previous latest version follow the Plan
+            # forward; reviewed months and deliberately older targets stay pinned.
+            if previous_latest is not None:
+                followers = (
+                    await session.execute(
+                        select(m.reviews).where(
+                            m.reviews.c.entity_id == entity["id"],
+                            m.reviews.c.plan_revision_id == previous_latest,
+                            m.reviews.c.reviewed_at.is_(None),
+                        )
+                    )
+                ).mappings()
+                for old_review in followers.all():
+                    advanced = (
+                        (
+                            await session.execute(
+                                update(m.reviews)
+                                .where(m.reviews.c.id == old_review["id"])
+                                .values(
+                                    plan_revision_id=record["id"],
+                                    revision=old_review["revision"] + 1,
+                                )
+                                .returning(m.reviews)
+                            )
+                        )
+                        .mappings()
+                        .one()
+                    )
+                    await audit(
+                        m.reviews,
+                        advanced["uuid"],
+                        dict(old_review),
+                        json_values(dict(advanced)),
+                        action="follow_latest_version",
+                    )
         elif operation in {"create_entry", "edit_entry", "delete_entry", "known_total"}:
             old = None
             before = None

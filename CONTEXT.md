@@ -134,8 +134,11 @@ sourcing, a message broker, or asynchronous processing.
 - **Event:** Plan version saved, after the snapshot is successfully saved.
 - **Policy:** capture the draft's inputs, assumptions, and calculation results
   together as an immutable version. Preserve earlier versions unchanged.
-- **Policy:** existing Reviews keep their explicitly linked version. Saving a
-  new version never automatically retargets them or changes their comparisons.
+- **Policy:** Reviews not marked reviewed that target the previous latest
+  version follow the Plan to the new version, recorded in the audit log as
+  `follow_latest_version`. Reviews marked reviewed and Reviews deliberately
+  targeting an older version keep their linked version; the Review shows that a
+  newer version exists and offers an explicit switch.
 - **Policy:** allow saving a Plan version even when total allocations exceed
   total planned funding. Clearly show the amount overallocated; do not reduce
   allocations, invent income, or assume savings will fund the gap. A warning
@@ -143,9 +146,11 @@ sourcing, a message broker, or asynchronous processing.
 - **Consistency rule:** save the complete snapshot or report failure; do not
   expose a version with only some of its inputs or results recorded.
 
-Example: saving a version with $600 of planned guilt-free spending leaves an
-October Review linked to an earlier $500 version comparing against $500. Changing
-that comparison requires an explicit change to the Review's linked version.
+Example: saving a version with $600 of planned guilt-free spending moves an
+unreviewed November Review from the $500 version to the $600 version. An October
+Review already marked reviewed against the $500 version keeps comparing against
+$500, shows that a newer version exists, and changes only when the person
+switches it explicitly.
 
 ### Start a monthly Review
 
@@ -153,17 +158,16 @@ that comparison requires an explicit change to the Review's linked version.
 - **Command:** Start monthly Review, choosing the month and a saved Plan version.
 - **Event:** Monthly Review started.
 - **Policy:** when the immediately previous calendar month has a Review,
-  preselect its linked Plan version and show that choice before creation. Allow
-  the person to choose a different saved version explicitly. A newer version
-  does not automatically replace this default.
+  preselect the latest saved version of its linked Plan and show that choice
+  before creation. Allow the person to choose a different saved version explicitly.
 - **Policy:** without a previous-month Review, ask the person to select a saved
   version. Never fabricate a previous comparison or select an unrelated Plan
   implicitly. At most one Review exists per Entity per calendar month.
 - **Policy:** starting a Review does not copy or create actual activity; roll up
   the Entity's entries already recorded for that month.
 
-Example: October targets version 2. Even if version 3 has since been saved,
-starting November preselects version 2, visibly, until the person chooses otherwise.
+Example: October targets version 2. If version 3 has since been saved,
+starting November preselects version 3, visibly, until the person chooses otherwise.
 The prototype preselects this version and requires an explicit save.
 
 ### Annotate a month as reviewed or closed
@@ -416,9 +420,12 @@ establish a match. Fixed-cost identity behavior is unchanged by this income deci
   entry does not convert income frequencies.
 - Plans and projections describe intentions and scenarios. Reviews and
   dated balances describe recorded results. A Review targets one saved
-  Plan version; editing the Plan draft or saving a later version does not rewrite
-  the Review's target or planned comparison amounts. A user may deliberately
-  change the target, which changes the planned comparison.
+  Plan version; editing the Plan draft does not rewrite it. Saving a later
+  version moves Reviews that are not marked reviewed and target the previous
+  latest version to the new version. A Review marked reviewed, or one deliberately
+  targeting an older version, keeps its target, and the Review shows that a newer
+  version exists with a one-click switch. A user may deliberately change the
+  target, which changes the planned comparison.
 - When a Review is retargeted, entered actuals remain attached to their stable
   Income source or category identities. Switching versions within the same Plan
   retains matching source identities without relinking. Switching to a different

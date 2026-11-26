@@ -491,7 +491,12 @@ async def scenario():
                 edit_path, json=edit, headers={"Idempotency-Key": str(uuid4())}
             )
         ).status_code == 409
-        # Saving a later version leaves this Review pinned until deliberate edit.
+        # Saving a later version moves unreviewed months on the previous latest
+        # version forward; this reviewed Review stays pinned until deliberate edit.
+        unreviewed = await post(
+            "/reviews", {"month": "2026-12-01", "version_id": version["uuid"]}
+        )
+        assert unreviewed.status_code == 200, unreviewed.text
         later = await post(
             f"/plans/{plan['plan_id']}/versions", {"expected_revision": 2}
         )
@@ -500,6 +505,9 @@ async def scenario():
         assert (await client.get(edit_path)).json()["version"]["uuid"] == version[
             "uuid"
         ]
+        followed = (await client.get(prefix + "/reviews/2026-12-01")).json()
+        assert followed["version"]["uuid"] == second_version["uuid"]
+        assert followed["review"]["revision"] == 2
         revised = {
             **edit,
             "expected_revision": 2,

@@ -67,7 +67,7 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | POST | `/plans` | Name, income lines, fixed-cost lines and spending; returns Plan UUID and draft |
 | GET | `/plans` | Plans with saved revisions and current drafts |
 | PUT | `/plans/{plan_id}/draft` | Full replacement inputs plus expected revision |
-| POST | `/plans/{plan_id}/versions` | Expected draft revision; freezes snapshot and creates next draft |
+| POST | `/plans/{plan_id}/versions` | Expected draft revision; freezes snapshot and creates next draft. Unreviewed Reviews on the previous latest version move to the new version |
 | POST | `/activity` | Income/fixed-cost/spending/saving with explicit date, amount, optional source/fixed-cost/spending-subcategory/goal and note; `is_adjustment` for signed corrections; one savings funding origin on spending |
 | POST | `/activity/known-total` | Desired total and contributing-entry fingerprint; fixed-cost totals remain category-level and unassigned; saving requires a goal; creates one signed adjustment |
 | GET | `/activity` | Current entries ordered by financial date and recording order; optional `?tag_id=` keeps entries with that tag |

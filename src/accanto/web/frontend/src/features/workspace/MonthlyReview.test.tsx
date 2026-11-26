@@ -65,7 +65,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-it("preselects the previous calendar month version rather than a newer version", async () => {
+it("preselects the latest saved version of the previous month's Plan", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
     String(path).endsWith("/plans")
       ? json(plans)
@@ -76,12 +76,58 @@ it("preselects the previous calendar month version rather than a newer version",
   const p = props();
   render(<MonthlyReview {...p} />);
   const choice = (await screen.findByLabelText("Compare with")) as HTMLSelectElement;
-  await waitFor(() => expect(choice.value).toBe("v1"));
+  // October compared with v1; v2 is newer and the unsaved draft is never offered.
+  await waitFor(() => expect(choice.value).toBe("v2"));
   fireEvent.click(screen.getByRole("button", { name: "Start Review" }));
   expect(p.save).toHaveBeenCalledWith(
-    expect.objectContaining({ body: { month: "2026-11-01", version_id: "v1" } }),
+    expect.objectContaining({ body: { month: "2026-11-01", version_id: "v2" } }),
     expect.any(Function),
   );
+});
+it("offers a one-click switch when a reviewed month compares with an older version", async () => {
+  const reviewed = {
+    ...review,
+    review: { ...review.review, month: "2026-11-01", revision: 4, reviewed_at: "2026-11-20" },
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/plans")
+      ? json(plans)
+      : String(path).endsWith("2026-11-01")
+        ? json(reviewed)
+        : absent(),
+  );
+  const p = props();
+  render(<MonthlyReview {...p} />);
+  expect(
+    await screen.findByText(/A newer version is saved: Baseline v2.*marked reviewed against it/),
+  ).toBeDefined();
+  fireEvent.click(screen.getByRole("button", { name: "Compare with v2" }));
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      body: {
+        expected_revision: 4,
+        version_id: "v2",
+        note: "",
+        reviewed: true,
+        checkpoint: false,
+      },
+    }),
+    expect.any(Function),
+  );
+});
+it("shows no newer-version notice on the latest saved version", async () => {
+  const latest = { ...review, version: { ...version, uuid: "v2", number: 2 } };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/plans")
+      ? json(plans)
+      : String(path).endsWith("2026-11-01")
+        ? json(latest)
+        : absent(),
+  );
+  render(<MonthlyReview {...props()} />);
+  const target = (await screen.findByLabelText("Compared with")) as HTMLSelectElement;
+  await waitFor(() => expect(target.options.length).toBe(2));
+  expect(screen.queryByText(/A newer version is saved/)).toBeNull();
 });
 it("edits an incomplete Review with same-Plan version, notes, and annotation", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
