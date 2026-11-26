@@ -1113,6 +1113,101 @@ class ProjectionResult(Output):
     )
 
 
+class PositionQuery(Input):
+    since: date | None = Field(
+        default=None,
+        description="Also report each investment and loan's balance change since "
+        "this date, next to contributions or payments recorded in between.",
+    )
+    stale_after_days: int = Field(default=45, ge=1, le=3650)
+
+
+class BalanceChange(Output):
+    from_date: date
+    to_date: date
+    from_balance: Money
+    to_balance: Money
+    balance_change: Money
+    recorded_total: Money
+    recorded_entries: int
+
+
+class PositionLine(Output):
+    id: UUID
+    name: Untrusted
+    active: bool
+    balance: Money | None
+    observed_on: date | None
+    days_old: int | None
+    stale: bool
+    change: BalanceChange | None
+
+
+class SavingsLine(Output):
+    id: UUID
+    name: Untrusted
+    remaining_saved: Money
+
+
+class Position(Output):
+    on: date
+    savings: list[SavingsLine]
+    savings_total: Money
+    investments: list[PositionLine]
+    investments_total: Money | None
+    debts: list[PositionLine]
+    debts_total: Money | None
+    net_position: Money | None
+    note: str = (
+        "Savings are remaining saved from recorded activity, not bank balances. "
+        "Investments and loans are their latest observations, dated per line. "
+        "A balance change is not inferred from recorded payments or contributions."
+    )
+
+
+def _position_line(line) -> PositionLine:
+    change = line["change"]
+    return PositionLine(
+        id=line["id"],
+        name=line["name"],
+        active=line["active"],
+        balance=None if line["balance"] is None else str(line["balance"]),
+        observed_on=line["observed_on"],
+        days_old=line["days_old"],
+        stale=line["stale"],
+        change=None
+        if change is None
+        else BalanceChange(
+            **{k: v if isinstance(v, date | int) else str(v) for k, v in change.items()}
+        ),
+    )
+
+
+def _known_total(lines) -> str | None:
+    if any(line["active"] and line["balance"] is None for line in lines):
+        return None
+    return str(
+        sum((line["balance"] or Decimal("0.00") for line in lines), Decimal("0.00"))
+    )
+
+
+def project_position(on, accounts, investments, debts, net) -> Position:
+    savings_total = sum((Decimal(a["balance"]) for a in accounts), Decimal("0.00"))
+    return Position(
+        on=on,
+        savings=[
+            SavingsLine(id=a["uuid"], name=a["name"], remaining_saved=a["balance"])
+            for a in accounts
+        ],
+        savings_total=str(savings_total),
+        investments=[_position_line(i) for i in investments],
+        investments_total=_known_total(investments),
+        debts=[_position_line(d) for d in debts],
+        debts_total=_known_total(debts),
+        net_position=None if net is None else str(net),
+    )
+
+
 class KindInput(Input):
     kind: Kind
 

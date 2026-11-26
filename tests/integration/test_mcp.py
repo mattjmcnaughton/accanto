@@ -306,6 +306,39 @@ async def scenario():
             )
             assert market["categories"][0]["total"] == "45.10"
 
+            # Position: a loan opened at 5,000.00 and observed at 4,700.00 is
+            # the only account, so the net position is 0 savings − 4,700.00.
+            loan = await post(
+                "/debts",
+                {
+                    "name": "Synthetic loan",
+                    "opening": {"date": "2026-09-01", "amount": "5000.00"},
+                },
+            )
+            await post(
+                "/debt-observations",
+                {"date": "2026-10-31", "amount": "4700.00", "account_id": loan["uuid"]},
+            )
+            held = await mcp.call(
+                "get_position", {"entity_id": str(entity), "since": "2026-09-15"}
+            )
+            assert held == (
+                await TOOLS["get_position"].run(
+                    sidebar,
+                    entity,
+                    t.PositionQuery.model_validate({"since": "2026-09-15"}),
+                    "",
+                )
+            ).model_dump(mode="json")
+            owed = held["debts"][0]
+            assert (owed["balance"], owed["observed_on"]) == ("4700.00", "2026-10-31")
+            assert owed["change"]["balance_change"] == "-300.00"
+            assert owed["change"]["recorded_entries"] == 0
+            assert (held["debts_total"], held["net_position"]) == (
+                "4700.00",
+                "-4700.00",
+            )
+
             rest_review = (
                 await client.get(prefix + "/reviews/2026-11-01", headers=api)
             ).json()

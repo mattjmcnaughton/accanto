@@ -1,6 +1,6 @@
 # 07 — Agent financial math: calculator, summaries and projections
 
-Status: In progress (calculator, activity summaries, target gaps and projections implemented)
+Status: In progress (all but investment returns implemented)
 Updated: 2026-11-26
 
 ## Purpose and scope
@@ -35,7 +35,7 @@ pure functions in `domains/`.
 | `summarize_activity(start, end, …)` | T1 totals by category, assignment, tag or note; T2 per-month totals, averages and savings rate | Activity | 2, done |
 | Target-gap fields on `list_savings` and `list_destinations` | T3 remaining to target and percent of target | Existing reads | 2, done |
 | `project(operation, …)` | T4 months to target; P1 loan payment and schedule; P2 FIRE target; P3 growth and months to FIRE; P4 coast and required contribution; P5 prepay versus invest | None (pure) | 3, done |
-| `get_position(on)` | T5 position snapshot and net position; T6 change between observations versus recorded payments or contributions | Savings, investments, debts | 4 |
+| `get_position(since?)` | T5 position snapshot and net position; T6 change between observations versus recorded payments or contributions | Savings, investments, debts | 4, done |
 | `investment_returns(investment_id?)` | P6 money-weighted return (XIRR) from contributions and observations | Investments | 5 |
 
 Grouping thirteen functions into five tools keeps the catalog's schema small
@@ -136,6 +136,25 @@ that it is a projection. Pure functions live in `domains/projections.py`.
 Rationale: half-even could report a figure that, followed exactly, falls short;
 the worked case of $100,000 growing to $1,000,000 over 240 months at 5% was
 $1.79 short. Everything else rounds half-even.
+
+## Position
+
+`get_position(since?, stale_after_days = 45)` reads savings accounts, investment
+destinations, debts, their observations and activity. Pure rules are in
+`domains/position.py`.
+
+- Savings are each account's remaining saved now (derived from activity, not a
+  bank balance). Each investment and loan shows its latest observation on or
+  before the Entity's today, its date, days old and `stale` past the threshold.
+  An account with no observation has an unknown balance and is stale.
+- `net_position` (CONTEXT.md **Net position**) is savings + investments − loans.
+  It is unknown when any active investment or loan has no observation. Inactive
+  accounts count with their last observation.
+- With `since`, each investment and loan reports the change from its last
+  observation on or before `since` (else its earliest) to its latest, next to
+  the contributions (investing entries) or loan payments (fixed costs linked to
+  the debt) recorded after the first date and on or before the second. Neither
+  figure is inferred from the other: a payment does not prove a balance fell.
 
 ## Interfaces
 

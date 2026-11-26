@@ -22,6 +22,7 @@ CATALOG_NAMES = [
     "list_destinations",
     "list_debts",
     "list_investment_observations",
+    "get_position",
     "list_income_estimates",
     "list_inbox",
     "get_inbox_item",

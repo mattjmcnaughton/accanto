@@ -112,7 +112,7 @@ pairs, and `save_*` creates or, given `id` and `expected_revision`, edits.
   `list_sources` (no token), `list_pending_changes`.
 - **Math ([TDD 07](07-agent-financial-math.md)):** `calculate(expression)`,
   and `project(projection)`, which take no Entity;
-  `summarize_activity(start, end, …filters)`. Goals and
+  `summarize_activity(start, end, …filters)`, `get_position(since?)`. Goals and
   destinations carry `remaining_to_target` and `percent_of_target`.
 - **Inbox:** `sync_source`, `set_proposals` (bulk, clear allowed),
   `record_inbox_items`, `skip_inbox_item(skip: bool)`, `undo_inbox_item`,

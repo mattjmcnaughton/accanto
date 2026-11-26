@@ -18,7 +18,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from accanto.domains import activity_summary, calculator, projections
+from accanto.domains import activity_summary, calculator, position, projections
 from accanto.domains.entity import entity_today
 from accanto.dtos import tools as t
 from accanto.dtos.monthly import KnownTotalInput
@@ -361,6 +361,51 @@ async def list_investment_observations(ctx, entity_id, args, key):
     async with ctx.sessions() as session:
         rows = await read_observations(session, ctx.actor, entity_id, "investment")
     return t.ObservationList(observations=[t.project_observation(r) for r in rows])
+
+
+async def get_position(ctx, entity_id, args: t.PositionQuery, key):
+    async with ctx.sessions() as session:
+        async with session.begin():
+            _, entity = await authorize(session, ctx.actor, entity_id, lock=False)
+        accounts = await read_accounts(session, ctx.actor, entity_id)
+    async with ctx.sessions() as session:
+        destinations = await read_destinations(
+            session, ctx.actor, entity_id, "investment"
+        )
+    async with ctx.sessions() as session:
+        debts = await read_debts(session, ctx.actor, entity_id)
+    observed = {}
+    for kind in ("investment", "debt"):
+        async with ctx.sessions() as session:
+            observed[kind] = await read_observations(
+                session, ctx.actor, entity_id, kind
+            )
+    async with ctx.sessions() as session:
+        entries = await read_activity(session, ctx.actor, entity_id)
+    today = entity_today(datetime.now(UTC), entity["time_zone"])
+
+    def lines(kind, records, entry_key, category):
+        return [
+            position.account_line(
+                {"id": r["uuid"], "name": r["name"], "active": r["active"]},
+                [o for o in observed[kind] if o["account_id"] == str(r["uuid"])],
+                [
+                    e
+                    for e in entries
+                    if e["category"] == category and str(e[entry_key]) == str(r["uuid"])
+                ],
+                today=today,
+                since=args.since,
+                stale_after_days=args.stale_after_days,
+            )
+            for r in records
+        ]
+
+    investments = lines("investment", destinations, "investment_id", "investing")
+    loans = lines("debt", debts, "debt_account_id", "fixed_cost")
+    savings = sum((Decimal(a["balance"]) for a in accounts), Decimal("0.00"))
+    net = position.net_position(savings, investments, loans)
+    return t.project_position(today, accounts, investments, loans, net)
 
 
 async def list_income_estimates(ctx, entity_id, args, key):
@@ -1066,6 +1111,17 @@ CATALOG: tuple[CatalogTool, ...] = (
         t.NoInput,
         t.ObservationList,
         list_investment_observations,
+    ),
+    _read(
+        "get_position",
+        "Net position today: savings (remaining saved), the latest dated "
+        "observation for each investment and loan with staleness, totals and "
+        "savings + investments - loans (unknown if an active account has no "
+        "observation). With since: each investment and loan's balance change "
+        "next to contributions or payments recorded in between.",
+        t.PositionQuery,
+        t.Position,
+        get_position,
     ),
     _read(
         "list_income_estimates",
