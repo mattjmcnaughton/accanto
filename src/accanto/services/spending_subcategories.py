@@ -85,18 +85,6 @@ async def read_spending_subcategories(session, token, entity_uuid):
         return [view(row, counts.get(row["id"], 0)) for row in rows]
 
 
-async def entry_subcategory(session, entry_id) -> tuple[str | None, str | None]:
-    """The entry's subcategory UUID and current name, or (None, None)."""
-    row = (
-        await session.execute(
-            select(table.c.uuid, table.c.name)
-            .join(links, links.c.spending_subcategory_id == table.c.id)
-            .where(links.c.actual_entry_id == entry_id)
-        )
-    ).first()
-    return (str(row.uuid), row.name) if row else (None, None)
-
-
 async def replace_link(session, entity, entry_id, subcategory_id) -> bool:
     """Point an entry at a subcategory row id (None: Unassigned). Returns changed."""
     current = await session.scalar(
