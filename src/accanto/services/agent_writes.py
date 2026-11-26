@@ -13,9 +13,12 @@ from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, select, union_all, update
 
 from accanto.models import agent as a
+from accanto.models import debts, income_estimates
+from accanto.models import destinations as d
+from accanto.models import monthly as m
 from accanto.models import savings as s
 from accanto.services import agent_settings
 from accanto.services.access import AuthenticatedActor, RejectionError
@@ -214,13 +217,86 @@ async def read_pending(session, actor, entity_uuid, *, status=None):
             .mappings()
             .all()
         )
-        return [pending_view(row) for row in rows]
+        names = await record_names(
+            session, entity["id"], {i for row in rows for i in uuids_in(row["input"])}
+        )
+        return [
+            {
+                **pending_view(row),
+                "labels": {i: names[i] for i in uuids_in(row["input"]) if i in names},
+            }
+            for row in rows
+        ]
+
+
+# Records a draft may reference by id; the card shows their current names.
+NAMED = (
+    s.accounts,
+    s.goals,
+    m.fixed_costs,
+    m.tags,
+    m.spending_subcategories,
+    d.investments,
+    d.recipients,
+    debts.debts,
+    income_estimates.estimates,
+)
+
+
+def uuids_in(value) -> set[str]:
+    """Every UUID string anywhere in a drafted input."""
+    if isinstance(value, dict):
+        return {i for v in value.values() for i in uuids_in(v)}
+    if isinstance(value, list):
+        return {i for v in value for i in uuids_in(v)}
+    if isinstance(value, str) and len(value) == 36:
+        try:
+            return {str(UUID(value))}
+        except ValueError:
+            return set()
+    return set()
+
+
+async def record_names(session, entity_id, ids: set[str]) -> dict[str, str]:
+    """Current names of the Entity's records among ids, in one query."""
+    if not ids:
+        return {}
+    query = union_all(
+        *(
+            select(table.c.uuid, table.c.name).where(
+                table.c.entity_id == entity_id, table.c.uuid.in_(ids)
+            )
+            for table in NAMED
+        )
+    )
+    return {str(row.uuid): row.name for row in await session.execute(query)}
 
 
 async def pending_row(session, actor, entity_uuid, pending_uuid):
     async with session.begin():
         _, entity = await authorize(session, actor, entity_uuid, lock=False)
         return await scoped(session, a.pending, entity["id"], pending_uuid)
+
+
+async def drafted_order(session, actor, entity_uuid, pending_uuids) -> list[UUID]:
+    """The given Pending changes oldest first; any unknown id refuses them all."""
+    async with session.begin():
+        _, entity = await authorize(session, actor, entity_uuid, lock=False)
+        found = (
+            await session.scalars(
+                select(a.pending.c.uuid)
+                .where(
+                    a.pending.c.entity_id == entity["id"],
+                    a.pending.c.uuid.in_(pending_uuids),
+                )
+                .order_by(a.pending.c.created_at, a.pending.c.id)
+            )
+        ).all()
+    if len(found) != len(set(pending_uuids)):
+        raise RejectionError(
+            "record_not_found", "Record is unavailable in this Entity.", 404
+        )
+    return list(found)
 
 
 async def apply(

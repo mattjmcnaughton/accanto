@@ -3,6 +3,7 @@ import { ApiError, type BrowserSession, type UUID } from "../../lib/api";
 import {
   type AgentMessage,
   type AgentSettings,
+  type ApplyAllResult,
   type ConversationSummary,
   type PendingChange,
   type StreamDone,
@@ -10,6 +11,7 @@ import {
   agent,
   streamReply,
 } from "../../lib/agentStream";
+import { formatMoney } from "../../lib/format";
 import type { WriteSpec } from "../../lib/monthly";
 import { Icon } from "../../ui";
 import type { Entity } from "../workspace/shared";
@@ -163,6 +165,21 @@ export function AgentPanel(p: AgentPanelProps) {
   /** The question the latest turn answers: the log never scrolls it out of view on its own. */
   const anchor = useRef<string | null>(null);
   const [error, setError] = useState("");
+  /** Owner edits to drafted cards, kept here so Apply all sends them too. */
+  const [edits, setEdits] = useState<Record<UUID, Record<string, unknown>>>({});
+  const [confirming, setConfirming] = useState(false);
+  /** The last Apply all: what it did, and the change it stopped at. */
+  const [outcome, setOutcome] = useState<{
+    note: string;
+    failed: UUID | null;
+    message: string;
+  } | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Edits and outcomes belong to one Entity.
+  useEffect(() => {
+    setEdits({});
+    setConfirming(false);
+    setOutcome(null);
+  }, [p.entity.id]);
   const [reload, setReload] = useState(0);
   const abort = useRef<AbortController | null>(null);
   const log = useRef<HTMLDivElement>(null);
@@ -409,14 +426,35 @@ export function AgentPanel(p: AgentPanelProps) {
     }
   }
 
-  function apply(change: PendingChange, edited?: Record<string, unknown>) {
-    p.save<unknown>(
+  /** Applies changes with the owner's edits. The server applies them oldest first and stops at
+   * the first rejection, which comes back as that change's result rather than a failed save:
+   * a stale draft can never succeed on retry, so it is shown on its card to dismiss. */
+  function applyChanges(changes: PendingChange[], edited: Record<UUID, Record<string, unknown>>) {
+    setConfirming(false);
+    setOutcome(null);
+    p.save<ApplyAllResult>(
       {
         method: "POST",
-        path: agent.applyPath(p.entity.id, change.id),
-        body: { input: edited ?? null },
+        path: agent.applyAllPath(p.entity.id),
+        body: { changes: changes.map((c) => ({ id: c.id, input: edited[c.id] ?? null })) },
       },
-      () => setReload((x) => x + 1),
+      ({ results }) => {
+        const applied = results.filter((r) => r.status === "applied").length;
+        const failed = results.find((r) => r.status === "failed");
+        const message = failed?.error?.message ?? "It was not applied.";
+        const summary = changes.find((c) => c.id === failed?.id)?.summary ?? "";
+        const note =
+          results.length === 1
+            ? failed
+              ? `“${summary}” was not applied: ${message}`
+              : `Applied “${changes[0].summary}”.`
+            : failed
+              ? `Applied ${applied} of ${results.length}. Stopped at “${summary}”: ${message} It and the ones after it are still pending.`
+              : `Applied all ${applied} changes.`;
+        setOutcome({ note, failed: failed?.id ?? null, message: failed ? message : "" });
+        setAnnounce(note);
+        setReload((x) => x + 1);
+      },
     );
   }
   async function dismiss(change: PendingChange) {
@@ -442,7 +480,10 @@ export function AgentPanel(p: AgentPanelProps) {
           canApply={recordMode}
           entityName={p.entity.name}
           disabled={p.busy}
-          apply={(edited) => apply(c, edited)}
+          edited={edits[c.id] ?? null}
+          edit={(values) => setEdits((all) => ({ ...all, [c.id]: values }))}
+          problem={outcome?.failed === c.id ? outcome.message : ""}
+          apply={(edited) => applyChanges([c], edited ? { [c.id]: edited } : {})}
           dismiss={() => void dismiss(c)}
         />
       ));
@@ -467,6 +508,9 @@ export function AgentPanel(p: AgentPanelProps) {
           canApply={recordMode}
           entityName={p.entity.name}
           disabled
+          edited={null}
+          edit={() => {}}
+          problem=""
           apply={() => {}}
           dismiss={() => {}}
         />
@@ -651,6 +695,54 @@ export function AgentPanel(p: AgentPanelProps) {
           ) : tab === "pending" ? (
             <div className="agent-log">
               {pending.length === 0 && <p className="note">No pending changes.</p>}
+              {pending.length > 1 &&
+                (confirming ? (
+                  <div className="agent-apply-all card pad">
+                    <p>
+                      Apply all {pending.length} changes to <b>{p.entity.name}</b>? They apply
+                      oldest first and stop at the first one that can't be applied.
+                    </p>
+                    <div className="agent-actions">
+                      <button
+                        type="button"
+                        className="btn pri sm"
+                        disabled={p.busy}
+                        onClick={() => applyChanges(pending, edits)}
+                      >
+                        Apply {pending.length} changes
+                      </button>
+                      <button
+                        type="button"
+                        className="btn quiet sm"
+                        onClick={() => setConfirming(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="agent-apply-all">
+                    <button
+                      type="button"
+                      className="btn sm"
+                      disabled={p.busy}
+                      onClick={() => setConfirming(true)}
+                    >
+                      Apply all
+                    </button>
+                  </div>
+                ))}
+              {outcome &&
+                (outcome.failed ? (
+                  <div className="banner bad" role="alert">
+                    <span>{outcome.note}</span>
+                  </div>
+                ) : (
+                  // biome-ignore lint/a11y/useSemanticElements: An <output> here would read as a result.
+                  <p className="note" role="status">
+                    {outcome.note}
+                  </p>
+                ))}
               {pending.map((c) => (
                 <PendingCard
                   key={c.id}
@@ -658,7 +750,10 @@ export function AgentPanel(p: AgentPanelProps) {
                   canApply
                   entityName={p.entity.name}
                   disabled={p.busy}
-                  apply={(edited) => apply(c, edited)}
+                  edited={edits[c.id] ?? null}
+                  edit={(values) => setEdits((all) => ({ ...all, [c.id]: values }))}
+                  problem={outcome?.failed === c.id ? outcome.message : ""}
+                  apply={(edited) => applyChanges([c], edited ? { [c.id]: edited } : {})}
                   dismiss={() => void dismiss(c)}
                 />
               ))}
@@ -865,6 +960,39 @@ export function AgentPanel(p: AgentPanelProps) {
 }
 
 const ACTIVITY_FIELDS = ["date", "category", "amount", "note"] as const;
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MONEY_KEY = /(amount|target|total|balance)$/;
+const KIND: Record<string, string> = { finite: "Finite, with a target", ongoing: "Ongoing" };
+/** "account_id" reads "account", "tag_ids" reads "tags", "opening_amount" reads "opening amount". */
+const fieldName = (key: string) =>
+  key.replace(/_ids$/, "s").replace(/_id$/, "").split("_").join(" ");
+
+/**
+ * A drafted input as rows a person can check: nested values inline, ids as the current names of
+ * the records they point to, money and goal kinds as the Savings screen shows them, and the
+ * revision checks that only guard against stale writes left out.
+ */
+export function inputRows(
+  input: Record<string, unknown>,
+  labels: Record<string, string> = {},
+): [string, string][] {
+  const shown = (key: string, value: unknown): string => {
+    if (Array.isArray(value)) return value.map((v) => shown(key, v)).join(", ");
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value === "string") {
+      if (UUID_TEXT.test(value)) return labels[value.toLowerCase()] ?? "An existing record";
+      if (key === "kind" && KIND[value]) return KIND[value];
+      if (MONEY_KEY.test(key)) return formatMoney(value);
+    }
+    return plain(value);
+  };
+  return Object.entries(input).flatMap(([key, value]): [string, string][] => {
+    if (key.startsWith("expected_") || key === "_draft" || value == null) return [];
+    if (value && typeof value === "object" && !Array.isArray(value) && !("untrusted" in value))
+      return inputRows(value as Record<string, unknown>, labels);
+    return [[fieldName(key), shown(key, value)]];
+  });
+}
 
 /** A drafted change. save_activity drafts are editable before applying. */
 export function PendingCard({
@@ -872,6 +1000,9 @@ export function PendingCard({
   canApply,
   entityName,
   disabled,
+  edited,
+  edit,
+  problem,
   apply,
   dismiss,
 }: {
@@ -880,13 +1011,17 @@ export function PendingCard({
   /** The Entity the change is for: a card never applies anywhere else. */
   entityName: string;
   disabled: boolean;
+  /** The owner's edits to the drafted input, or null when unedited. */
+  edited: Record<string, unknown> | null;
+  edit: (values: Record<string, unknown>) => void;
+  /** Why Apply all stopped at this change, if it did. */
+  problem: string;
   apply: (edited?: Record<string, unknown>) => void;
   dismiss: () => void;
 }) {
   const { _draft, ...input } = change.input as Record<string, unknown> & {
     _draft?: { uncertain_fields?: string[]; source_text?: string };
   };
-  const [edited, setEdited] = useState<Record<string, unknown> | null>(null);
   const values = edited ?? input;
   const editable = change.tool === "save_activity" && !input.id;
   const uncertain = new Set(_draft?.uncertain_fields ?? []);
@@ -915,7 +1050,7 @@ export function PendingCard({
                   id={`${change.id}-${field}`}
                   className="input"
                   value={String(values[field] ?? "spending")}
-                  onChange={(e) => setEdited({ ...values, [field]: e.target.value })}
+                  onChange={(e) => edit({ ...values, [field]: e.target.value })}
                 >
                   {["spending", "income", "fixed_cost", "saving"].map((c) => (
                     <option key={c} value={c}>
@@ -930,7 +1065,7 @@ export function PendingCard({
                   type={field === "date" ? "date" : "text"}
                   inputMode={field === "amount" ? "decimal" : undefined}
                   value={String(values[field] ?? "")}
-                  onChange={(e) => setEdited({ ...values, [field]: e.target.value })}
+                  onChange={(e) => edit({ ...values, [field]: e.target.value })}
                 />
               )}
             </label>
@@ -938,10 +1073,11 @@ export function PendingCard({
         </div>
       ) : (
         <dl className="agent-input">
-          {Object.entries(input).map(([key, value]) => (
-            <div key={key}>
+          {inputRows(input, change.labels).map(([key, value], i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: Nested inputs may repeat a field name.
+            <div key={i}>
               <dt>{key}</dt>
-              <dd>{typeof value === "object" ? JSON.stringify(value) : plain(value)}</dd>
+              <dd>{value}</dd>
             </div>
           ))}
         </dl>
@@ -951,6 +1087,11 @@ export function PendingCard({
           <summary>Text read from the image</summary>
           <p className="agent-source">{_draft.source_text}</p>
         </details>
+      )}
+      {problem && (
+        <p className="agent-problem bad" role="alert">
+          Not applied: {problem}
+        </p>
       )}
       <div className="agent-actions">
         {canApply && (

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentStreamError, type PendingChange, readFrames } from "../../lib/agentStream";
 import { ConnectSource } from "../inbox/ConnectSource";
@@ -104,37 +104,209 @@ it("shows untrusted free text as plain text", () => {
 
 it("hides Apply when the change cannot be applied, and applies owner edits", () => {
   const apply = vi.fn();
-  const view = render(
+  const edit = vi.fn();
+  const card = (canApply: boolean, edited: Record<string, unknown> | null = null) => (
     <PendingCard
       change={change()}
-      canApply={false}
+      canApply={canApply}
       entityName="Synthetic Personal"
       disabled={false}
+      edited={edited}
+      edit={edit}
+      problem=""
       apply={apply}
       dismiss={vi.fn()}
-    />,
+    />
   );
+  const view = render(card(false));
   expect(screen.getByText(/For Synthetic Personal/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
   expect(screen.getByRole("button", { name: "Dismiss" })).toBeEnabled();
   expect(screen.getByText("date (check this)")).toBeInTheDocument();
   expect(screen.getByText("EXAMPLE GROCER TOTAL 65.50")).toBeInTheDocument();
-  view.rerender(
+  view.rerender(card(true));
+  fireEvent.change(screen.getByLabelText(/^date/), { target: { value: "2026-11-10" } });
+  const edited = edit.mock.calls[0][0];
+  expect(edited).toEqual(expect.objectContaining({ date: "2026-11-10", amount: "65.50" }));
+  expect(edited).not.toHaveProperty("_draft");
+  view.rerender(card(true, edited));
+  fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+  expect(apply).toHaveBeenCalledWith(edited);
+});
+
+it("shows a goal draft with record names, its kind and a formatted target, not ids", () => {
+  render(
     <PendingCard
-      change={change()}
+      change={change({
+        tool: "save_goal",
+        summary: "Add saving goal Synthetic trip",
+        input: {
+          account_id: "0b0e8d4c-5a52-4a43-9d1a-6f0f3a1c2b7e",
+          values: {
+            name: "Synthetic trip",
+            kind: "finite",
+            target: "1450.5",
+            expected_account_revision: 3,
+          },
+          goal_id: null,
+        },
+        labels: { "0b0e8d4c-5a52-4a43-9d1a-6f0f3a1c2b7e": "Synthetic reserve" },
+      })}
       canApply
-      entityName="Synthetic Personal"
+      entityName="Synthetic"
       disabled={false}
-      apply={apply}
+      edited={null}
+      edit={vi.fn()}
+      problem=""
+      apply={vi.fn()}
       dismiss={vi.fn()}
     />,
   );
-  fireEvent.change(screen.getByLabelText(/^date/), { target: { value: "2026-11-10" } });
-  fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-  expect(apply).toHaveBeenCalledWith(
-    expect.objectContaining({ date: "2026-11-10", amount: "65.50" }),
+  const rows = Array.from(document.querySelectorAll(".agent-input div")).map((row) =>
+    Array.from(row.children).map((cell) => cell.textContent),
   );
-  expect(apply.mock.calls[0][0]).not.toHaveProperty("_draft");
+  expect(rows).toEqual([
+    ["account", "Synthetic reserve"],
+    ["name", "Synthetic trip"],
+    ["kind", "Finite, with a target"],
+    ["target", "$1,450.50"],
+  ]);
+  expect(document.body.textContent).not.toMatch(/0b0e8d4c|[{}]|revision/);
+});
+
+it("shows a stale Apply on its card without leaving a save to discard", async () => {
+  const stale = change({
+    id: "pc9",
+    summary: "Archive Synthetic reserve",
+    tool: "set_savings_account_status",
+    input: { status: "archived" },
+  });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    if (url.endsWith("/settings"))
+      return json({ enabled: true, mode: "propose", instructions: "", revision: 1 });
+    if (url.includes("/pending-changes")) return json([stale]);
+    return json([]);
+  });
+  const save = vi.fn();
+  render(
+    <AgentPanel
+      entity={entity}
+      busy={false}
+      refresh={0}
+      screen="home"
+      month="2026-11"
+      credentials={async () => session}
+      save={save}
+      close={vi.fn()}
+      openSettings={vi.fn()}
+      changed={vi.fn()}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: /^Pending changes/ }));
+  // One change: no Apply all, and Apply sends it as a one-change batch.
+  expect(screen.queryByRole("button", { name: "Apply all" })).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+  const [spec, confirmed] = save.mock.calls[0];
+  expect(spec.path).toMatch(/\/pending-changes\/apply-all$/);
+  expect(spec.body).toEqual({ changes: [{ id: "pc9", input: null }] });
+  // A real conflict is a result the save confirms, so nothing is left to retry or discard.
+  act(() =>
+    confirmed({
+      results: [
+        {
+          id: "pc9",
+          status: "failed",
+          error: { code: "stale_revision", message: "Reload the current record." },
+        },
+      ],
+    }),
+  );
+  expect(
+    await screen.findByText(
+      "“Archive Synthetic reserve” was not applied: Reload the current record.",
+    ),
+  ).toBeInTheDocument();
+  const card = document.querySelector("[data-pending=pc9]") as HTMLElement;
+  expect(within(card).getByRole("alert")).toHaveTextContent(
+    "Not applied: Reload the current record.",
+  );
+  expect(within(card).getByRole("button", { name: "Dismiss" })).toBeEnabled();
+});
+
+it("applies all pending changes with their edits after confirming, and shows where it stopped", async () => {
+  const changes = [
+    change({ id: "pc3", summary: "Record Example Cafe", created_at: "2026-11-20T03:00:00Z" }),
+    change({
+      id: "pc2",
+      summary: "Archive Synthetic reserve",
+      tool: "set_savings_account_status",
+      input: { status: "archived" },
+    }),
+    change({ id: "pc1", summary: "Record Example Grocer", created_at: "2026-11-20T01:00:00Z" }),
+  ];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    if (url.endsWith("/settings"))
+      return json({ enabled: true, mode: "propose", instructions: "", revision: 1 });
+    if (url.includes("/pending-changes")) return json(changes);
+    return json([]);
+  });
+  const save = vi.fn();
+  render(
+    <AgentPanel
+      entity={entity}
+      busy={false}
+      refresh={0}
+      screen="home"
+      month="2026-11"
+      credentials={async () => session}
+      save={save}
+      close={vi.fn()}
+      openSettings={vi.fn()}
+      changed={vi.fn()}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: /^Pending changes/ }));
+  const grocer = (await screen.findByText("Record Example Grocer")).closest("[data-pending]");
+  fireEvent.change(within(grocer as HTMLElement).getByLabelText(/^amount/), {
+    target: { value: "60.00" },
+  });
+  // Nothing is sent until the owner confirms.
+  fireEvent.click(screen.getByRole("button", { name: "Apply all" }));
+  expect(save).not.toHaveBeenCalled();
+  expect(screen.getByText(/Apply all 3 changes to/)).toHaveTextContent("Synthetic");
+  fireEvent.click(screen.getByRole("button", { name: "Apply 3 changes" }));
+  expect(save).toHaveBeenCalledTimes(1);
+  const [spec, confirmed] = save.mock.calls[0];
+  expect(spec.path).toMatch(/\/pending-changes\/apply-all$/);
+  expect(spec.body.changes.map((c: { id: string }) => c.id)).toEqual(["pc3", "pc2", "pc1"]);
+  expect(spec.body.changes[2].input).toEqual(expect.objectContaining({ amount: "60.00" }));
+  expect(spec.body.changes[2].input).not.toHaveProperty("_draft");
+  expect(spec.body.changes[0].input).toBeNull();
+
+  act(() =>
+    confirmed({
+      results: [
+        { id: "pc1", status: "applied" },
+        {
+          id: "pc2",
+          status: "failed",
+          error: { code: "stale_revision", message: "Reload the current record." },
+        },
+        { id: "pc3", status: "not_applied" },
+      ],
+    }),
+  );
+  expect(
+    await screen.findByText(/Applied 1 of 3\. Stopped at “Archive Synthetic reserve”/),
+  ).toBeInTheDocument();
+  const archive = screen
+    .getByText("Archive Synthetic reserve", { selector: "b" })
+    .closest("[data-pending]");
+  expect(within(archive as HTMLElement).getByRole("alert")).toHaveTextContent(
+    "Not applied: Reload the current record.",
+  );
 });
 
 it("saves the YNAB token from Settings once and never shows it again", async () => {

@@ -274,23 +274,36 @@ def test_agent_journey(tmp_path):
         )
         assert waiting() == before - 1
 
-        # A receipt image: in propose mode its draft card has no Apply in the
-        # conversation; Pending changes applies it, and Activity shows it.
-        browser("upload", ".agent-attach input", str(receipt))
-        until("document.querySelectorAll('.agent-thumb').length === 1")
-        ask(f"Here is a receipt from {today}")
-        until("!!document.querySelector('.agent-msg .agent-card')")
+        # Two receipt images: in propose mode their draft cards have no Apply in
+        # the conversation; Pending changes applies both at once after a
+        # confirmation, and Activity shows them.
+        for drafted in (1, 2):
+            browser("upload", ".agent-attach input", str(receipt))
+            until("document.querySelectorAll('.agent-thumb').length === 1")
+            ask(f"Here is a receipt from {today}")
+            until(
+                "document.querySelectorAll('.agent-msg .agent-card').length"
+                f" === {drafted}"
+            )
         card = ".agent-msg .agent-card"
         assert "Apply" not in text(card)
         assert "SYNTHETIC STORE TOTAL 23.45" in browser("get", "html", card)
         assert "1 image(s) sent, not kept" in text(".agent-log")
-        browser("find", "role", "button", "click", "--name", "Pending changes 1")
-        button("Apply", ".agent")
+        browser("find", "role", "button", "click", "--name", "Pending changes 2")
+        button("Apply all", ".agent")
+        until(
+            "/Apply all 2 changes to/"
+            ".test(document.querySelector('.agent').textContent)"
+        )
+        button("Apply 2 changes", ".agent")
+        until(
+            "/Applied all 2 changes/.test(document.querySelector('.agent').textContent)"
+        )
         until("/No pending changes/.test(document.querySelector('.agent').textContent)")
         go("Activity")
         until(
-            "/Synthetic receipt \\(stub draft\\)/.test("
-            "document.querySelector('#main').textContent)"
+            "document.querySelector('#main').textContent"
+            ".split('Synthetic receipt (stub draft)').length === 3"
         )
         assert "$23.45" in text("#main")
     finally:

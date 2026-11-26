@@ -1149,6 +1149,44 @@ async def apply_pending(ctx: ToolContext, entity_id, pending_id, edited=None):
     return write_result(response)
 
 
+async def apply_all_pending(ctx: ToolContext, entity_id, edits: dict):
+    """Apply each Pending change in drafted order, each in its own write under the
+    Entity lock, and stop at the first rejection: later drafts may build on it.
+
+    edits maps each pending id to its edited input or None. Each apply keeps its
+    own key agent:{pending_id}, so resending the batch replays what applied.
+    """
+    async with ctx.sessions() as session:
+        order = await agent_writes.drafted_order(
+            session, ctx.actor, entity_id, list(edits)
+        )
+    results, stopped = [], False
+    for pending_id in order:
+        if stopped:
+            results.append({"id": str(pending_id), "status": "not_applied"})
+            continue
+        try:
+            result = await apply_pending(ctx, entity_id, pending_id, edits[pending_id])
+        except RejectionError as error:
+            stopped = True
+            results.append(
+                {
+                    "id": str(pending_id),
+                    "status": "failed",
+                    "error": {"code": error.code, "message": error.message},
+                }
+            )
+            continue
+        results.append(
+            {
+                "id": str(pending_id),
+                "status": "applied",
+                "result": result.model_dump(mode="json"),
+            }
+        )
+    return {"results": results}
+
+
 async def entity_mode(ctx: ToolContext, entity_id) -> str:
     async with ctx.sessions() as session, session.begin():
         _, entity = await authorize(session, ctx.actor, entity_id, lock=False)
