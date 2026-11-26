@@ -123,10 +123,9 @@ tables after upgrading ([deployment](../technical/deployment.md)).
 
 ## Open decisions
 
-- **Agent creation (owner question).** Implemented like tags: agents may create,
-  rename and archive subcategories through `save_spending_subcategory`, which is a
-  Pending change in propose mode. The design review recommended choose-only. If
-  the owner prefers that, remove the tool and keep `list_spending_subcategories`.
+- **Agent creation (decided 2026-11-26 by the owner): allowed when needed.**
+  Agents may create, rename and archive subcategories through
+  `save_spending_subcategory`, a Pending change in propose mode, as with tags.
 - **Label-only edits flag a reviewed month.** Changing an entry's subcategory
   bumps its revision, which marks a reviewed month for another look, as tags do.
 - **No bulk label command in v1.** Backfilling history goes entry by entry
