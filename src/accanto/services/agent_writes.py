@@ -16,7 +16,7 @@ from uuid import UUID
 from sqlalchemy import insert, select, union_all, update
 
 from accanto.models import agent as a
-from accanto.models import debts, income_estimates
+from accanto.models import debts
 from accanto.models import destinations as d
 from accanto.models import monthly as m
 from accanto.models import savings as s
@@ -246,7 +246,6 @@ NAMED = (
     d.investments,
     d.recipients,
     debts.debts,
-    income_estimates.estimates,
 )
 
 

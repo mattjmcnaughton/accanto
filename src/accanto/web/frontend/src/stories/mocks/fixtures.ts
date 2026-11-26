@@ -7,7 +7,6 @@
 import type { BrowserSession } from "../../lib/api";
 import type { Loan, Observation } from "../../lib/balances";
 import type { Contribution, Destination } from "../../lib/destinations";
-import type { EstimateResult } from "../../lib/incomeEstimates";
 import type { Activity, PlanGroup, ReviewResult } from "../../lib/monthly";
 import type { SavingsAccount, SavingsMovement } from "../../lib/savings";
 
@@ -2294,37 +2293,6 @@ export const investmentObservations: Observation[] = [
     deleted: false,
   },
 ] as Observation[];
-
-export const incomeEstimates: EstimateResult[] = [
-  {
-    uuid: "6c38c7a2-8286-45c9-8b30-872b2848e9df",
-    name: "Fixture income estimate",
-    revision: 1,
-    monthly_total: "6650.00",
-    lines: [
-      {
-        uuid: "fecbc2a7-f8d0-440a-98a0-b91d381b1bd1",
-        name: "Regular work",
-        gross: "4100.00",
-        withholding: "800.00",
-        payroll: "200.00",
-        frequency: "twice_monthly",
-        paid_days: null,
-        monthly_net: "6200.00",
-      },
-      {
-        uuid: "b129f998-df02-46ad-86d1-40ef6a712767",
-        name: "Project work",
-        gross: "550.00",
-        withholding: "100.00",
-        payroll: "0.00",
-        frequency: "monthly",
-        paid_days: null,
-        monthly_net: "450.00",
-      },
-    ],
-  },
-] as EstimateResult[];
 
 export const reviews: Record<string, ReviewResult> = {
   "2026-09-01": {

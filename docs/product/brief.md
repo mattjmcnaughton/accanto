@@ -19,9 +19,6 @@ required. USD is the only currency.
   Separate account-level savings funding adds to funding, never income or tithe.
   Save immutable versions and compare scenarios. Overallocation warns but does
   not block saving. Copies have independent Income source identities.
-- Optionally save, edit and duplicate multi-income estimates. Annual/monthly/
-  twice-monthly/weekly/daily payment assumptions subtract entered withholding
-  and deductions. Manually copy results to Plans. No tax estimation or live link.
 - Record dated activity independently of Reviews. Every savings dollar belongs
   to a goal in one savings account, including its mandatory Unallocated goal.
   Opening positions, transfers, reassignments and reconciliation are distinct
@@ -61,8 +58,7 @@ The production browser and API implement create/save a Plan → record activity 
 review a month for direct net income and guilt-free spending. It has Python
 Decimal rules, authenticated API access, relational Postgres persistence, atomic
 audit writes, retry outcomes and stale-write protection, verified separately
-from the prototype. The browser and API also support named, editable, independent
-income estimates with multiple assumption lines and manual Plan handoff. Remaining
+from the prototype. Remaining
 financial commands are subsequent increments. Real
 provider configuration and hosted compatibility verification remain manual.
 The UI must use the same application behavior as direct API access.

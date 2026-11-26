@@ -93,7 +93,6 @@ may be reset within that verification task.
 - Three Reviews: oldest annotated as reviewed; middle month has an unknown income
   source; current month records that source as explicit zero. Insurance actuals
   remain unknown. Known totals must not imply all expected lines are complete.
-- Income estimate: twice-monthly and monthly inputs, separate from Plan incomes.
 - Settings: a synthetic UTC Entity and revoked fixture-tool credentials. Never
   change a real identity or expose credential values for a demo.
 

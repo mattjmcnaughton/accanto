@@ -25,7 +25,6 @@ const icons = [
   "activity",
   "review",
   "plans",
-  "estimates",
   "savings",
   "investments",
   "giving",

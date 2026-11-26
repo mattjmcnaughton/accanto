@@ -23,7 +23,6 @@ CATALOG_NAMES = [
     "list_debts",
     "list_investment_observations",
     "get_position",
-    "list_income_estimates",
     "list_inbox",
     "get_inbox_item",
     "list_sources",
@@ -62,8 +61,6 @@ CATALOG_NAMES = [
     "save_debt",
     "save_observation",
     "delete_observation",
-    "save_income_estimate",
-    "duplicate_income_estimate",
 ]
 
 

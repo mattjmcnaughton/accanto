@@ -25,8 +25,8 @@ from accanto.services.tools import CATALOG, CatalogTool, ToolContext
 
 INSTRUCTIONS = """\
 Accanto is a financial companion. These tools read and change one Entity's \
-Plans, activity, Reviews, savings, investments, giving, loans, income estimates \
-and Transactions inbox for the owner who issued your API key.
+Plans, activity, Reviews, savings, investments, giving, loans and \
+Transactions inbox for the owner who issued your API key.
 
 - Call get_context first; without entity_id it lists the owner's Entities. If \
 there is more than one and the request does not name one, ask the owner which \

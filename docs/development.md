@@ -49,7 +49,7 @@ reconciliation. Session recovery opens a separate sign-in window and verifies th
 same User through `/api/auth/session` before retrying with fresh CSRF. This memory
 is cleared on explicit logout and does not survive closing or reloading the tab.
 The workspace shell has a sidebar grouped by job (This month: Home, Activity,
-Review; Planning: Plans, Income estimates; Balances: Savings, Investments, Giving,
+Review; Planning: Plans; Balances: Savings, Investments, Giving,
 Loans; then Settings) and, below 760 px, five tabs with More for the rest. Every
 screen has its own hash address, such as `#/giving`. Home, Activity and Review share
 the month chosen in the top bar, kept in the address as `?m=YYYY-MM` when it is not
