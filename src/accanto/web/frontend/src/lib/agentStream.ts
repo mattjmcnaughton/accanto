@@ -119,11 +119,12 @@ export const agent = {
       `${root(entityId)}/conversations/${encodeURIComponent(id)}/archive`,
       { method: "POST", headers: csrf(session) },
     ),
-  /** Ends the running reply; closing its stream does not, so a dropped one can resume. */
-  stop: (session: BrowserSession, entityId: UUID) =>
+  /** Ends the reply sent with `key`; closing its stream does not, so a dropped one can
+   * resume. Replies in other conversations keep running. */
+  stop: (session: BrowserSession, entityId: UUID, key: string) =>
     fetchJson<{ stopped: boolean }>(`${root(entityId)}/turn/stop`, {
       method: "POST",
-      headers: csrf(session),
+      headers: { ...csrf(session), "Idempotency-Key": key },
     }),
   pending: (entityId: UUID) => fetchJson<PendingChange[]>(`${root(entityId)}/pending-changes`),
   /** Applies the listed changes oldest first and stops at the first that is rejected. */

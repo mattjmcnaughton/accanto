@@ -537,10 +537,11 @@ it("resizes from its edge within bounds and remembers the width and full screen"
 });
 
 it("keeps the partial reply and puts the question back when the owner stops a reply, and closes on Escape only when nothing typed would be lost", async () => {
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
     const url = String(path);
     if (url.endsWith("/settings"))
       return json({ enabled: true, mode: "ask_first", instructions: "", revision: 1 });
+    if (url.endsWith("/turn/stop")) return json({ stopped: true });
     if (init?.method === "POST")
       // One sentence arrives, then the reply hangs until it is stopped.
       return new Response(
@@ -581,6 +582,13 @@ it("keeps the partial reply and puts the question back when the owner stops a re
   await screen.findByText("Stopped. Your question is back in the box.");
   expect(screen.getByText("Partial answer")).toBeInTheDocument();
   expect(box).toHaveValue("Where did November go?");
+  // Stop names the stopped turn, so replies in other conversations keep running.
+  const keyOf = (suffix: string) => {
+    const call = fetchMock.mock.calls.find(([path]) => String(path).endsWith(suffix));
+    return new Headers(call?.[1]?.headers).get("Idempotency-Key");
+  };
+  await waitFor(() => expect(keyOf("/turn/stop")).toBeTruthy());
+  expect(keyOf("/turn/stop")).toBe(keyOf("/messages"));
   // Escape stopped the reply without closing; with the question back in the box it still
   // does not close, and with the box empty it does.
   expect(close).not.toHaveBeenCalled();

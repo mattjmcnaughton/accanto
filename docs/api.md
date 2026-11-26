@@ -770,7 +770,7 @@ affected.
 | GET | `/agent/conversation` | Messages of the latest active conversation (`[]` when none) |
 | POST | `/agent/conversation/messages` | Continues the latest active conversation, or starts one |
 | DELETE | `/agent/conversation` | Archives the latest active conversation; `{"cleared": false}` when none |
-| POST | `/agent/turn/stop` | Stops the running reply, which stores nothing and ends with an `error` frame, code `stopped`; `{"stopped": false}` when none runs |
+| POST | `/agent/turn/stop` | Stops the reply sent with the `Idempotency-Key` header (every running reply without one), which stores nothing and ends with an `error` frame, code `stopped`; `{"stopped": false}` when none runs |
 
 A turn outlives its connection: closing the stream does not stop it. Send an
 `Idempotency-Key` with each message. Posting the same key again, with `after`
@@ -778,6 +778,13 @@ set to the number of data frames already handled (heartbeats are not counted),
 follows that turn from there instead of starting another, while it runs and for
 10 minutes after it ends. A nonzero `after` with a key the server no longer has
 returns `409 turn_gone`.
+
+Each conversation runs one reply at a time: another message to a conversation
+whose reply is running returns `409 reply_in_progress`, while other
+conversations, including a new one, reply meanwhile (up to the server's
+concurrent reply limit, `429 agent_busy`). A reply's hold on its conversation
+ends with the reply however it ends, and lapses after twice the reply timeout
+plus 30 seconds in any case.
 
 ## Transactions inbox and sources
 

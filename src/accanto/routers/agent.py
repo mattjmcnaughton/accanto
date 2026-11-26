@@ -134,13 +134,6 @@ async def dismiss_pending(
     )
 
 
-@router.post("/turn/stop")
-async def stop_turn(entity_id: UUID, request: Request, actor: BrowserToken):
-    """Stops the running reply, which then stores nothing. Closing the stream does
-    not: a turn outlives its connection so a dropped client can follow it again."""
-    return {"stopped": await turns(request).stop(actor, entity_id)}
-
-
 # Assistant conversations (TDD 08): several per User and Entity. Archive hides one;
 # retention deletes it 30 days after its latest turn.
 @router.get("/conversations")
@@ -184,6 +177,18 @@ Images = Annotated[list[UploadFile] | None, File()]
 TurnKey = Annotated[
     str | None, Header(alias="Idempotency-Key", min_length=1, max_length=120)
 ]
+
+
+@router.post("/turn/stop")
+async def stop_turn(
+    entity_id: UUID, request: Request, actor: BrowserToken, key: TurnKey = None
+):
+    """Stops the reply with that Idempotency-Key, or every running one without a
+    key; it then stores nothing. Closing the stream does not: a turn outlives its
+    connection so a dropped client can follow it again."""
+    return {"stopped": await turns(request).stop(actor, entity_id, key)}
+
+
 # Frames the client already has from that turn (heartbeats not counted).
 After = Annotated[int, Form(ge=0)]
 
