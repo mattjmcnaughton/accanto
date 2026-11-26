@@ -480,6 +480,7 @@ async def check_references(session, entity_id, proposal):
     tables = {
         "income": m.sources,
         "fixed_cost": m.fixed_costs,
+        "spending": m.spending_subcategories,
         "saving": s.goals,
         "investing": d.investments,
         "giving": d.recipients,

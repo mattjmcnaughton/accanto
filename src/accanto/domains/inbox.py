@@ -20,7 +20,8 @@ CATEGORY_NAMES = {
     "investing": "investing",
     "giving": "giving",
 }
-# Categories whose entries name a line; spending has none.
+# Categories whose completion must choose an assignment (a record or Unassigned).
+# Guilt-free spending's Spending subcategory is optional: none means Unassigned.
 ASSIGNED = {
     "income": "an Income source",
     "fixed_cost": "a fixed cost",
@@ -127,10 +128,6 @@ def validate_shape(c: Completion) -> None:
         raise InboxRejectionError(
             "invalid_proposal", "Choose a category before a line."
         )
-    if c.category == "spending" and c.assignment:
-        raise InboxRejectionError(
-            "invalid_proposal", "Guilt-free spending has no assignment."
-        )
     if c.category == "saving" and c.assignment == UNASSIGNED:
         raise InboxRejectionError(
             "invalid_proposal", "Saving always names a goal, such as Unallocated."
@@ -207,6 +204,8 @@ def command_for(facts: StagedFacts, c: Completion) -> EntryCommand:
         fields.update(funding)
         if c.category == "fixed_cost":
             fields["fixed_cost_id"] = line
+        else:
+            fields["spending_subcategory_id"] = line
     return EntryCommand("entry", fields)
 
 

@@ -23,7 +23,12 @@ import {
   monthly,
 } from "../../lib/monthly";
 import { savings } from "../../lib/savings";
+import {
+  type SpendingSubcategory,
+  spendingSubcategories as subcategoryApi,
+} from "../../lib/spendingSubcategories";
 import { type Tag, tags as tagApi } from "../../lib/tags";
+import { SubcategoriesDialog } from "../tags/Subcategories";
 import { TagChips, TagPicker, TagsDialog } from "../tags/Tags";
 import { Dialog, Empty, Field, Head, tint } from "../../ui";
 import { type ScreenProps, composing, sourceChoices, useLoad } from "./shared";
@@ -125,6 +130,10 @@ export function ActivityScreen(
   );
   const loans = useLoad(() => balances.loans(p.entity.id), [p.entity.id, p.refresh, reload]);
   const tagState = useLoad(() => tagApi.list(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const subcategoryState = useLoad(
+    () => subcategoryApi.list(p.entity.id),
+    [p.entity.id, p.refresh, reload],
+  );
   const recipients = useLoad(
     () => destinations.list(p.entity.id, "giving"),
     [p.entity.id, p.refresh, reload],
@@ -143,6 +152,7 @@ export function ActivityScreen(
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState("");
   const [managing, setManaging] = useState(false);
+  const [managingSubcategories, setManagingSubcategories] = useState(false);
   const [infoTags, setInfoTags] = useState<string[] | null>(null);
   const [quick, setQuick] = useState("");
   const [quickError, setQuickError] = useState("");
@@ -162,6 +172,7 @@ export function ActivityScreen(
   }, [submitRequest]);
   const data = entries.kind === "ready" ? entries.data : [];
   const tagList = tagState.kind === "ready" ? tagState.data : [];
+  const subcategoryList = subcategoryState.kind === "ready" ? subcategoryState.data : [];
   const tagNames = (entry: Activity) =>
     (entry.tag_ids ?? []).map((id) => tagList.find((tag) => tag.uuid === id)?.name ?? "");
   const today = p.entity.today;
@@ -231,6 +242,7 @@ export function ActivityScreen(
   const describe = (entry: Activity) =>
     [
       categoryNames[entry.category],
+      entry.category === "spending" ? (entry.spending_subcategory_name ?? "") : "",
       entry.category === "fixed_cost" && entry.debt_account_id
         ? `Loan: ${loanName(entry.debt_account_id)}`
         : "",
@@ -279,6 +291,9 @@ export function ActivityScreen(
           fixed_cost_name:
             fixedCosts.find((cost) => cost.fixed_cost_id === f.fixed_cost_id)?.canonical_name ??
             (f.fixed_cost_id === base.fixed_cost_id ? base.fixed_cost_name : null),
+          spending_subcategory_id: f.spending_subcategory_id ?? null,
+          spending_subcategory_name:
+            subcategoryList.find((sub) => sub.uuid === f.spending_subcategory_id)?.name ?? null,
           debt_account_id: f.debt_account_id ?? null,
           note: f.note ?? "",
           is_adjustment: Boolean(f.is_adjustment),
@@ -449,6 +464,7 @@ export function ActivityScreen(
             source_id: entry.source_id,
             fixed_cost_id: entry.fixed_cost_id,
             debt_account_id: entry.debt_account_id,
+            spending_subcategory_id: entry.spending_subcategory_id ?? null,
             note: entry.note,
             expected_revision: entry.revision,
             is_adjustment: entry.is_adjustment,
@@ -709,6 +725,14 @@ export function ActivityScreen(
         >
           Manage tags
         </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={subcategoryState.kind !== "ready"}
+          onClick={() => setManagingSubcategories(true)}
+        >
+          Spending subcategories
+        </button>
         <button type="button" className="btn pri" disabled={p.busy} onClick={() => openNew()}>
           Record activity
         </button>
@@ -770,7 +794,16 @@ export function ActivityScreen(
         )}
       </div>
       <LoadProblem
-        states={[entries, plans, accounts, investments, loans, recipients, tagState]}
+        states={[
+          entries,
+          plans,
+          accounts,
+          investments,
+          loans,
+          recipients,
+          tagState,
+          subcategoryState,
+        ]}
         retry={() => setReload((x) => x + 1)}
       />
       {entries.kind === "loading" ? (
@@ -955,6 +988,15 @@ export function ActivityScreen(
           </p>
         </section>
       )}
+      {managingSubcategories && (
+        <SubcategoriesDialog
+          entityId={p.entity.id}
+          subcategories={subcategoryList}
+          busy={p.busy}
+          save={p.save}
+          onClose={() => setManagingSubcategories(false)}
+        />
+      )}
       {managing && (
         <TagsDialog
           entityId={p.entity.id}
@@ -1061,6 +1103,7 @@ export function ActivityScreen(
                       sources={sources}
                       savingGoals={savingGoals}
                       tags={tagList}
+                      subcategories={subcategoryList}
                     />
                   )}
                   {draft.kind === "refund" && (
@@ -1217,6 +1260,7 @@ function ActivityFields({
   sources,
   savingGoals,
   tags,
+  subcategories,
 }: {
   draft: Extract<Draft, { kind: "activity" }>;
   change: (next: Draft) => void;
@@ -1225,6 +1269,7 @@ function ActivityFields({
   sources: Array<{ id: string; label: string }>;
   savingGoals: GoalChoice[];
   tags: Tag[];
+  subcategories: SpendingSubcategory[];
 }) {
   const form = draft.form;
   const selected = draft.entry;
@@ -1249,6 +1294,7 @@ function ActivityFields({
                 source_id: null,
                 fixed_cost_id: null,
                 debt_account_id: null,
+                spending_subcategory_id: null,
                 saving_goal_id: null,
                 funding_goal_id: null,
               })
@@ -1270,14 +1316,33 @@ function ActivityFields({
         </Field>
       </div>
       {form.category === "spending" && (
-        <Field label="What was it?">
-          <input
-            maxLength={2000}
-            placeholder="Groceries"
-            value={form.note || ""}
-            onChange={(e) => update({ ...form, note: e.target.value })}
-          />
-        </Field>
+        <div className="two">
+          <Field label="What was it?">
+            <input
+              maxLength={2000}
+              placeholder="Groceries"
+              value={form.note || ""}
+              onChange={(e) => update({ ...form, note: e.target.value })}
+            />
+          </Field>
+          <Field label="Subcategory">
+            <select
+              name="spending-subcategory"
+              value={form.spending_subcategory_id || ""}
+              onChange={(e) => update({ ...form, spending_subcategory_id: e.target.value || null })}
+            >
+              <option value="">Unassigned</option>
+              {subcategories
+                .filter((sub) => sub.active || sub.uuid === selected?.spending_subcategory_id)
+                .map((sub) => (
+                  <option key={sub.uuid} value={sub.uuid}>
+                    {sub.name}
+                    {sub.active ? "" : " (archived)"}
+                  </option>
+                ))}
+            </select>
+          </Field>
+        </div>
       )}
       {form.category === "income" && (
         <Field label="Income source">

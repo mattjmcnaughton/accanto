@@ -32,6 +32,8 @@ from accanto.dtos.monthly import (
     RefundInput,
     ReviewEditInput,
     ReviewInput,
+    SpendingSubcategoryEditInput,
+    SpendingSubcategoryInput,
     TagEditInput,
     TagInput,
 )
@@ -86,6 +88,15 @@ class IdentityComparison(Output):
     difference: Amount | None
 
 
+class BreakdownLine(Output):
+    """Recorded guilt-free spending for one subcategory; id None is Unassigned."""
+
+    id: UUID | None
+    name: "Untrusted | None"
+    recorded: Amount
+    entries: int
+
+
 class CategoryComparison(Output):
     category: Category
     planned: Amount | None
@@ -93,6 +104,8 @@ class CategoryComparison(Output):
     incomplete: bool
     difference: Amount | None
     items: list[IdentityComparison]
+    # Spending only: groups that add up exactly to recorded; no planned amounts.
+    breakdown: list[BreakdownLine] = []
 
 
 class Summary(Output):
@@ -180,6 +193,15 @@ def project_review(result) -> MonthlyReview:
                 items=[
                     IdentityComparison(**_select(IdentityComparison, item))
                     for item in comparison["items"]
+                ],
+                breakdown=[
+                    BreakdownLine(
+                        id=line["id"],
+                        name=line["name"],
+                        recorded=line["recorded"],
+                        entries=len(line["entries"]),
+                    )
+                    for line in comparison.get("breakdown", [])
                 ],
             )
             for category in (
@@ -328,6 +350,7 @@ class Entry(Output):
     source_id: UUID | None
     fixed_cost_id: UUID | None
     debt_account_id: UUID | None
+    spending_subcategory_id: UUID | None
     saving_goal_id: UUID | None
     investment_id: UUID | None
     giving_recipient_id: UUID | None
@@ -607,6 +630,7 @@ def project_entry(row) -> Entry:
         source_id=_id(row["source_id"]),
         fixed_cost_id=_id(row["fixed_cost_id"]),
         debt_account_id=_id(row["debt_account_id"]),
+        spending_subcategory_id=_id(row.get("spending_subcategory_id")),
         saving_goal_id=_id(row["saving_goal_id"]),
         investment_id=_id(row["investment_id"]),
         giving_recipient_id=_id(row["giving_recipient_id"]),
@@ -1032,3 +1056,41 @@ class DeleteTag(DeleteRecord):
 
 class SetEntryTags(EntryTagsInput):
     pass
+
+
+# --- Spending subcategories (TDD 07) -------------------------------------------
+
+
+class SpendingSubcategory(Output):
+    id: UUID
+    name: Untrusted
+    active: bool
+    entries: int
+    revision: int
+
+
+class SpendingSubcategoryList(Output):
+    spending_subcategories: list[SpendingSubcategory]
+
+
+def project_spending_subcategories(rows) -> SpendingSubcategoryList:
+    return SpendingSubcategoryList(
+        spending_subcategories=[
+            SpendingSubcategory(
+                id=r["uuid"],
+                name=r["name"],
+                active=r["active"],
+                entries=r["entries"],
+                revision=r["revision"],
+            )
+            for r in rows
+        ]
+    )
+
+
+class SaveSpendingSubcategory(Input):
+    id: UUID | None = Field(
+        default=None,
+        description="Omit to create a subcategory; set to rename, archive or restore.",
+    )
+    values: SpendingSubcategoryEditInput | SpendingSubcategoryInput

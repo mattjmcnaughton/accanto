@@ -29,7 +29,8 @@ export const CATEGORIES: Array<{
     line: "Fixed cost",
     article: "a fixed cost",
   },
-  { id: "spending", name: "Guilt-free spending", kind: "free" },
+  // Optional assignment: no article, so Enter records it Unassigned when none is chosen.
+  { id: "spending", name: "Guilt-free spending", kind: "free", line: "Subcategory" },
   { id: "saving", name: "Saving", kind: "save", line: "Saving goal", article: "a saving goal" },
   {
     id: "investing",

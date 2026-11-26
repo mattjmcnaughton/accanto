@@ -105,7 +105,7 @@ pairs, and `save_*` creates or, given `id` and `expected_revision`, edits.
 
 - **Reads:** `get_context`, `list_plans`, `get_plan`, `get_monthly_review`,
   `list_activity(month, category?, tag_id?)` (with notes and payees, capped),
-  `list_tags`, `list_savings`,
+  `list_tags`, `list_spending_subcategories`, `list_savings`,
   `list_destinations(kind)`, `list_debts`, `list_investment_observations`,
   `list_income_estimates`, `list_inbox(status?, month?)`, `get_inbox_item`,
   `list_sources` (no token), `list_pending_changes`.
@@ -115,6 +115,9 @@ pairs, and `save_*` creates or, given `id` and `expected_revision`, edits.
 - **Activity:** `save_activity`, `record_known_total`, `delete_activity`,
   `save_refund`, `delete_refund`.
 - **Tags ([TDD 05](05-tags.md)):** `save_tag`, `delete_tag`, `set_entry_tags`.
+- **Spending subcategories ([TDD 07](07-spending-subcategories.md)):**
+  `save_spending_subcategory` (create, rename, archive, restore); entries take
+  `spending_subcategory_id` through `save_activity` and inbox `assignment`.
 - **Plans and Reviews:** `create_plan(copy_of?)`, `edit_plan_draft`,
   `save_plan_version`, `start_review`, `update_review`.
 - **Savings:** `save_savings_account`, `set_savings_account_status`, `save_goal`,

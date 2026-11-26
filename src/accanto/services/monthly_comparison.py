@@ -1,6 +1,11 @@
 """Adapt coherent stored snapshots to pure monthly comparison rules."""
 
-from accanto.domains.monthly_comparison import actual_metrics, compare_category, summary
+from accanto.domains.monthly_comparison import (
+    actual_metrics,
+    breakdown,
+    compare_category,
+    summary,
+)
 
 
 def explain_review(version, entries):
@@ -60,12 +65,17 @@ def explain_review(version, entries):
             identity,
             version[total_key],
         )
-    comparisons["spending"] = compare_category(
-        [],
-        [e for e in entries if e["category"] == "spending"],
-        None,
-        version["spending"],
-    )
+    # Spending subcategories have no planned lines (TDD 07): every spending entry
+    # is unplanned, grouped by subcategory in a breakdown that sums to the total.
+    spending = [e for e in entries if e["category"] == "spending"]
+    comparisons["spending"] = {
+        **compare_category(
+            [], spending, "spending_subcategory_id", version["spending"]
+        ),
+        "breakdown": breakdown(
+            spending, "spending_subcategory_id", "spending_subcategory_name"
+        ),
+    }
     amounts = summary(comparisons, entries)
     return {
         "comparison": comparisons,

@@ -127,6 +127,8 @@ class ActivityInput(Input):
     source_id: UUID | None = None
     fixed_cost_id: UUID | None = None
     debt_account_id: UUID | None = None
+    # Guilt-free spending's assignment; omit (or null) for Unassigned.
+    spending_subcategory_id: UUID | None = None
     saving_goal_id: UUID | None = None
     funding_goal_id: UUID | None = None
     note: str = Field(default="", max_length=2000)
@@ -163,6 +165,8 @@ class ActivityInput(Input):
             raise ValueError("Only fixed-cost payments can select a Debt account.")
         if self.fixed_cost_id is not None and self.category != "fixed_cost":
             raise ValueError("Only fixed-cost payments select a Fixed cost.")
+        if self.spending_subcategory_id is not None and self.category != "spending":
+            raise ValueError("Only guilt-free spending selects a subcategory.")
         return self
 
 
@@ -240,6 +244,16 @@ class ReviewEditInput(Input):
     note: str = Field(max_length=4000)
     reviewed: bool
     checkpoint: bool = False
+
+
+class SpendingSubcategoryInput(Input):
+    name: Name
+
+
+class SpendingSubcategoryEditInput(Input):
+    name: Name
+    active: bool
+    expected_revision: int = Field(ge=1)
 
 
 class TagInput(Input):

@@ -46,6 +46,28 @@ def compare_category(expected, entries, identity_key, planned):
     }
 
 
+def breakdown(entries, identity_key, name_key):
+    """Recorded entries grouped by assignment, with no planned amounts.
+
+    Every entry falls in exactly one group (Unassigned has id None), so the groups
+    add up to the category's recorded total. Largest first; Unassigned last.
+    """
+    groups: dict = {}
+    for entry in entries:
+        identity = entry.get(identity_key)
+        group = groups.setdefault(
+            identity,
+            {"id": identity, "name": entry.get(name_key), "entries": []},
+        )
+        group["entries"].append(entry)
+    lines = [
+        {**group, "recorded": str(total(group["entries"]))} for group in groups.values()
+    ]
+    return sorted(
+        lines, key=lambda line: (line["id"] is None, -Decimal(line["recorded"]))
+    )
+
+
 def summary(comparisons, entries):
     def known(category):
         value = comparisons[category]

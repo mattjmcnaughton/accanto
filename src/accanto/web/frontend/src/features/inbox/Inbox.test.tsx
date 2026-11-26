@@ -188,3 +188,50 @@ it("adds tags with t and records them with the item", async () => {
     },
   });
 });
+
+it("assigns guilt-free spending to a subcategory with a, and records Unassigned without one", async () => {
+  const writes: Array<{ path: string; body: unknown }> = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (init?.method === "POST") {
+      writes.push({ path: url, body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify({ item: {}, entry: {} }));
+    }
+    if (url.endsWith("/inbox")) return new Response(JSON.stringify([item({})]));
+    if (url.endsWith("/spending-subcategories"))
+      return new Response(
+        JSON.stringify([
+          { uuid: "sub-eat", name: "Eating out", active: true, revision: 1, entries: 0 },
+          { uuid: "sub-old", name: "Old hobby", active: false, revision: 2, entries: 4 },
+        ]),
+      );
+    return new Response("[]");
+  });
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+    />,
+  );
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  fireEvent.keyDown(document.body, { key: "3" });
+  // Optional: choosing guilt-free spending does not demand a subcategory.
+  expect(screen.queryByText(/Subcategory for Example Coffee Cart/)).toBeNull();
+  expect(await screen.findByText("Unassigned", { selector: ".fv" })).toBeDefined();
+  fireEvent.keyDown(document.body, { key: "a" });
+  await screen.findByText(/Subcategory for Example Coffee Cart/);
+  expect(screen.queryByText("Old hobby")).toBeNull();
+  fireEvent.click(screen.getByText("Eating out"));
+  expect(await screen.findByText("Eating out", { selector: ".fv" })).toBeDefined();
+  fireEvent.keyDown(document.body, { key: "Enter" });
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(writes[0].body).toMatchObject({
+    completion: { category: "spending", assignment: "sub-eat", funding: "income" },
+  });
+});

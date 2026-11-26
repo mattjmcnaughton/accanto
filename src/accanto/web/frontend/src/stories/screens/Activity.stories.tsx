@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { ActivityScreen } from "../../features/workspace/Activity";
 import { data, mockApi, screenArgs, stateStory } from "../mocks/api";
+import { assignedActivity } from "../mocks/subcategories";
 
 const meta = {
   title: "Screens/Activity",
@@ -29,3 +30,7 @@ const tagged = data.activity.map((entry, index) =>
 );
 /** Entries carry tags; filter by one with Show tag, or open Manage tags. */
 export const Tagged: Story = { parameters: { msw: mockApi("loaded", { activity: tagged }) } };
+/** Guilt-free spending names subcategories; open Spending subcategories to manage them. */
+export const Subcategorized: Story = {
+  parameters: { msw: mockApi("loaded", { activity: assignedActivity }) },
+};

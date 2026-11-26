@@ -42,6 +42,8 @@ export interface ActivityInput {
   source_id?: UUID | null;
   fixed_cost_id?: UUID | null;
   debt_account_id?: UUID | null;
+  /** Guilt-free spending only; omit or null for Unassigned. */
+  spending_subcategory_id?: UUID | null;
   note?: string;
   expected_revision?: number;
   is_adjustment?: boolean;
@@ -118,6 +120,10 @@ export interface Activity {
   fixed_cost_id: UUID | null;
   fixed_cost_name: string | null;
   debt_account_id: UUID | null;
+  /** Guilt-free spending's assignment (TDD 07); null is Unassigned. */
+  spending_subcategory_id?: UUID | null;
+  /** Its current name: a rename relabels past entries. */
+  spending_subcategory_name?: string | null;
   note: string;
   revision: number;
   is_adjustment: boolean;
@@ -169,6 +175,13 @@ export interface ComparisonGroup {
   }>;
   unplanned: Activity[];
   adjustments: Activity[];
+  /** Spending only: recorded entries by subcategory (id null: Unassigned), summing to recorded. */
+  breakdown?: Array<{
+    id: UUID | null;
+    name: string | null;
+    recorded: DecimalString;
+    entries: Activity[];
+  }>;
 }
 export interface ReviewResult {
   comparison?: Record<

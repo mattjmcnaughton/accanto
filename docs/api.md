@@ -69,7 +69,7 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | GET | `/plans` | Plans with saved revisions and current drafts |
 | PUT | `/plans/{plan_id}/draft` | Full replacement inputs plus expected revision |
 | POST | `/plans/{plan_id}/versions` | Expected draft revision; freezes snapshot and creates next draft |
-| POST | `/activity` | Income/fixed-cost/spending/saving with explicit date, amount, optional source/fixed-cost/goal and note; `is_adjustment` for signed corrections; one savings funding origin on spending |
+| POST | `/activity` | Income/fixed-cost/spending/saving with explicit date, amount, optional source/fixed-cost/spending-subcategory/goal and note; `is_adjustment` for signed corrections; one savings funding origin on spending |
 | POST | `/activity/known-total` | Desired total and contributing-entry fingerprint; fixed-cost totals remain category-level and unassigned; saving requires a goal; creates one signed adjustment |
 | GET | `/activity` | Current entries ordered by financial date and recording order; optional `?tag_id=` keeps entries with that tag |
 | PUT | `/activity/{entry_id}` | Replacement entry plus expected revision |
@@ -101,6 +101,8 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | GET/POST | `/tags` | Current tags with entry counts, or create one from `name` |
 | PUT/DELETE | `/tags/{tag_id}` | Rename or archive (`name`, `active`, `expected_revision`), or delete with `expected_revision` |
 | POST | `/activity/tags` | Label-only: `entries: [{entry_id, expected_revision, tag_ids}]` replaces each entry's tags, all or none |
+| GET/POST | `/spending-subcategories` | Spending subcategories with entry counts, or create one from `name` |
+| PUT | `/spending-subcategories/{subcategory_id}` | Rename, archive or restore (`name`, `active`, `expected_revision`); never deleted |
 
 Amounts are USD decimal **strings**, exact cents, maximum absolute value
 `999999999.99` per entered amount. Ordinary entries and known totals are
@@ -152,6 +154,38 @@ use `PUT /tags/{tag_id}`. `DELETE /tags/{tag_id}` removes the tag from every
 entry (each entry's revision and audit advance) and frees its name. Any change
 to an entry's tags advances its revision, so a reviewed month shows
 `checkpoint_changed`. An unchanged tag set leaves the revision as it was.
+
+## Spending subcategories
+
+A Spending subcategory, such as "Eating out" or "Books", is guilt-free spending's
+assignment, as a Fixed cost is for fixed costs ([TDD 07](tdds/07-spending-subcategories.md)).
+A `spending` entry takes an optional `spending_subcategory_id`; omitting it or
+sending `null` leaves the entry Unassigned. Like `fixed_cost_id`, a `PUT` replaces
+the whole entry, so a correction that omits it makes the entry Unassigned. Every
+entry response includes `spending_subcategory_id` and the subcategory's current
+`spending_subcategory_name` (no snapshot: renaming relabels past entries).
+
+Another category with a subcategory returns `422 spending_subcategory_category`;
+one from another Entity returns `404 spending_subcategory_not_found`. An archived
+subcategory (`active: false`) stays on entries that name it, which can still be
+corrected, but returns `422 archived_spending_subcategory` for any other entry.
+Names are 1–120 characters after whitespace collapses and unique per Entity
+ignoring case, archived ones included (`409 spending_subcategory_exists`).
+Subcategories are never deleted, and renaming or archiving one does not change
+any entry's revision.
+
+A linked refund names its purchase's subcategory: a new refund copies it, and
+changing the purchase's subcategory changes its refunds' in the same transaction
+(each refund's revision and audit advance). A refund's subcategory cannot be set
+on its own. Adjustments and known totals are Unassigned unless they name one.
+
+Subcategories change no amount, total, Plan or saved version, and have no planned
+amounts. The Review's `comparison.spending` adds `breakdown`: one row per
+subcategory present in the month, plus `id: null` for Unassigned, each with
+`name`, `recorded` and its `entries`. Every spending entry is in exactly one row,
+so the rows add up exactly to `comparison.spending.recorded`. Rows are sorted
+largest first, with Unassigned last. `items` stays empty, so every spending entry
+is also in `unplanned`.
 
 ## Savings accounts and goals
 
@@ -731,8 +765,9 @@ point it at the fake server in `tests/fakes/ynab_server.py`.
 
 A **proposal** (and a record `completion`) is any subset of `category`
 (`income`, `fixed_cost`, `spending`, `saving`, `investing`, `giving`),
-`assignment` (an Income source, fixed cost, saving goal, investment or giving
-recipient UUID, or `"unassigned"`), `funding` (`"income"` or a saving goal UUID),
+`assignment` (an Income source, fixed cost, spending subcategory, saving goal,
+investment or giving recipient UUID, or `"unassigned"`; optional for guilt-free
+spending, where none means Unassigned), `funding` (`"income"` or a saving goal UUID),
 `refund_of` (a purchase entry UUID), or `skip: true`, optional `tag_ids` (not
 with `refund_of` or `skip`), plus `rationale` and
 `expected_revision`. Setting a proposal checks its shape and that every reference

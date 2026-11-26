@@ -370,3 +370,37 @@ entry_tags = table(
     UniqueConstraint("actual_entry_id", "tag_id"),
 )
 Index("entry_tag_tag", entry_tags.c.tag_id)
+# Guilt-free spending's Assignment (TDD 07): archived, never deleted, and named
+# without a snapshot, so a rename relabels past entries.
+spending_subcategories = table(
+    "spending_subcategory",
+    Column("entity_id", ForeignKey("entity.id"), nullable=False),
+    Column("name", String(120), nullable=False),
+    Column("active", Boolean, nullable=False, server_default="true"),
+    Column("revision", Integer, nullable=False, server_default="1"),
+    UniqueConstraint("id", "entity_id"),
+    CheckConstraint("revision >= 1"),
+)
+Index(
+    "spending_subcategory_entity_name",
+    spending_subcategories.c.entity_id,
+    func.lower(spending_subcategories.c.name),
+    unique=True,
+)
+spending_subcategory_assignments = table(
+    "entry_spending_subcategory",
+    Column("actual_entry_id", BigInteger, nullable=False, unique=True),
+    Column("spending_subcategory_id", BigInteger, nullable=False),
+    Column("entity_id", BigInteger, nullable=False),
+    ForeignKeyConstraint(
+        ["actual_entry_id", "entity_id"], ["actual_entry.id", "actual_entry.entity_id"]
+    ),
+    ForeignKeyConstraint(
+        ["spending_subcategory_id", "entity_id"],
+        ["spending_subcategory.id", "spending_subcategory.entity_id"],
+    ),
+)
+Index(
+    "entry_spending_subcategory_subcategory",
+    spending_subcategory_assignments.c.spending_subcategory_id,
+)

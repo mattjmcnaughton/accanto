@@ -18,7 +18,7 @@ type Entry = Pick<
   Activity,
   "uuid" | "financial_date" | "amount" | "funding_origin" | "is_adjustment" | "note"
 > &
-  Partial<Pick<Activity, "is_refund" | "fixed_cost_name">>;
+  Partial<Pick<Activity, "is_refund" | "fixed_cost_name" | "spending_subcategory_name">>;
 export type ReviewView = Pick<
   ReviewResult,
   | "version"
@@ -199,11 +199,24 @@ export function reviewSections(review: ReviewView): ReviewSection[] {
             entries: [],
           });
       }
+    // Guilt-free spending by subcategory: recorded only, no planned amounts, and the
+    // groups add up to the section's recorded total (TDD 07).
+    if (category === "spending" && group?.breakdown)
+      for (const part of group.breakdown)
+        lines.push({
+          key: `b-spending-${part.id ?? "unassigned"}`,
+          id: part.id,
+          name: part.name ?? "Unassigned",
+          planned: undefined,
+          recorded: part.recorded,
+          difference: undefined,
+          entries: part.entries,
+        });
     const lists: ReviewSection["lists"] = [];
     const spendingEntries = review.entries.filter((e) => e.category === "spending");
-    if (category === "spending" && spendingEntries.length)
+    if (category === "spending" && !group?.breakdown && spendingEntries.length)
       lists.push({ key: "c-spending", name: "Contributing entries", entries: spendingEntries });
-    if (group?.unplanned.length)
+    if (group?.unplanned.length && !(category === "spending" && group.breakdown))
       lists.push({ key: `u-${category}`, name: "Unplanned activity", entries: group.unplanned });
     if (group?.adjustments.length)
       lists.push({
@@ -639,7 +652,10 @@ export function ReviewDetails({
                       ? "Hide lines"
                       : s.category === "spending"
                         ? plural(
-                            s.lists.reduce((n, list) => n + list.entries.length, 0),
+                            s.lists.reduce(
+                              (n, list) => n + list.entries.length,
+                              s.lines.reduce((n, line) => n + line.entries.length, 0),
+                            ),
                             "entry",
                             "entries",
                           )

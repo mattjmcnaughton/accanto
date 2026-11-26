@@ -35,6 +35,7 @@ from accanto.services.monthly import (
     write,
 )
 from accanto.services.savings import read_accounts
+from accanto.services.spending_subcategories import read_spending_subcategories
 from accanto.services.tags import read_tags
 
 LIST_CAP = 200
@@ -147,6 +148,13 @@ async def list_activity(ctx, entity_id, args: t.ActivityQuery, key):
 async def list_tags(ctx, entity_id, args, key):
     async with ctx.sessions() as session:
         return t.project_tags(await read_tags(session, ctx.actor, entity_id))
+
+
+async def list_spending_subcategories(ctx, entity_id, args, key):
+    async with ctx.sessions() as session:
+        return t.project_spending_subcategories(
+            await read_spending_subcategories(session, ctx.actor, entity_id)
+        )
 
 
 async def list_savings(ctx, entity_id, args, key):
@@ -464,6 +472,20 @@ def build_tag(args: t.SaveTag):
         )
     _kind_of(args.values, t.TagInput, "create")
     return Command("create_tag", _json(args.values)), f"Add tag {args.values.name}"
+
+
+def build_spending_subcategory(args: t.SaveSpendingSubcategory):
+    if args.id:
+        _kind_of(args.values, t.SpendingSubcategoryEditInput, "edit (with active)")
+        return (
+            Command("edit_spending_subcategory", _json(args.values), args.id),
+            f"Edit spending subcategory {args.values.name}",
+        )
+    _kind_of(args.values, t.SpendingSubcategoryInput, "create")
+    return (
+        Command("create_spending_subcategory", _json(args.values)),
+        f"Add spending subcategory {args.values.name}",
+    )
 
 
 def build_delete_tag(args: t.DeleteTag):
@@ -789,6 +811,14 @@ CATALOG: tuple[CatalogTool, ...] = (
         list_tags,
     ),
     _read(
+        "list_spending_subcategories",
+        "The Entity's subcategories of guilt-free spending, with how many entries "
+        "name each. Prefer an active one that fits; Unassigned is allowed.",
+        t.NoInput,
+        t.SpendingSubcategoryList,
+        list_spending_subcategories,
+    ),
+    _read(
         "list_savings",
         "Savings accounts and their goals with remaining saved.",
         t.NoInput,
@@ -864,8 +894,9 @@ CATALOG: tuple[CatalogTool, ...] = (
     CatalogTool(
         "set_proposals",
         "Set (or, with clear, remove) proposals on inbox items: category, "
-        "assignment, funding, tag_ids, refund_of or skip, with a rationale. Records "
-        "nothing; allowed in every Agent mode.",
+        "assignment (for guilt-free spending, a spending subcategory or none), "
+        "funding, tag_ids, refund_of or skip, with a rationale. Records nothing; "
+        "allowed in every Agent mode.",
         t.SetProposals,
         t.ItemOutcomes,
         "write",
@@ -900,9 +931,17 @@ CATALOG: tuple[CatalogTool, ...] = (
     ),
     _write(
         "save_activity",
-        "Record an activity entry, or correct one given id and expected_revision.",
+        "Record an activity entry, or correct one given id and expected_revision. "
+        "A correction replaces the whole entry, including spending_subcategory_id.",
         t.SaveActivity,
         build_activity,
+    ),
+    _write(
+        "save_spending_subcategory",
+        "Create a guilt-free spending subcategory, or rename, archive or restore one "
+        "given id. Subcategories are never deleted.",
+        t.SaveSpendingSubcategory,
+        build_spending_subcategory,
     ),
     _write(
         "save_tag",
