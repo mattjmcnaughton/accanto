@@ -51,6 +51,140 @@ def test_transactions_inbox_end_to_end():
     asyncio.run(scenario())
 
 
+def test_record_many_statement_budget():
+    asyncio.run(record_many_budget())
+
+
+async def record_many_budget():
+    from accanto.dtos.inbox import BulkRecordInput
+    from accanto.routers.inbox import record_many
+
+    assert URL and URL.rsplit("/", 1)[-1].endswith("_test")
+    engine = create_async_engine(URL)
+    sessions = async_sessionmaker(engine)
+    try:
+        async with sessions.begin() as session:
+            actor = await session.scalar(
+                insert(m.users)
+                .values(issuer="batch", subject=str(uuid4()))
+                .returning(m.users.c.id)
+            )
+            token = (await issue_key(session, actor, "Synthetic batch"))["key"]
+            entity_id, entity = (
+                await session.execute(
+                    insert(m.entities)
+                    .values(owner_id=actor, name="Batch test", time_zone="UTC")
+                    .returning(m.entities.c.id, m.entities.c.uuid)
+                )
+            ).one()
+            day = date(2026, 11, 1)
+            source = await session.scalar(
+                insert(st.sources)
+                .values(
+                    entity_id=entity_id,
+                    kind="ynab",
+                    external_ref="synthetic",
+                    name="Test",
+                    start_date=day,
+                )
+                .returning(st.sources.c.id)
+            )
+            group = await session.scalar(
+                insert(m.spending_subcategories)
+                .values(entity_id=entity_id, name="Synthetic group")
+                .returning(m.spending_subcategories.c.uuid)
+            )
+            tag = await session.scalar(
+                insert(m.tags)
+                .values(entity_id=entity_id, name="Synthetic tag")
+                .returning(m.tags.c.uuid)
+            )
+            rows = []
+            for i in range(48):
+                ref = f"sample-{i}"
+                facts = StagedTransactionInput(
+                    ref, "test", "Synthetic", day, Decimal(-i - 1), "Test", "ordinary"
+                )
+                rows.append(
+                    dict(
+                        entity_id=entity_id,
+                        source_id=source,
+                        source_ref=ref,
+                        financial_date=day,
+                        latest=facts.latest(),
+                        proposal={
+                            "category": "spending",
+                            "assignment": str(group),
+                            "tag_ids": [str(tag)],
+                        },
+                        proposed_by_user_id=actor,
+                    )
+                )
+            ids = list(
+                (
+                    await session.scalars(
+                        insert(st.staged).returning(st.staged.c.uuid), rows
+                    )
+                ).all()
+            )
+
+        counts = []
+        for batch in (ids[:1], ids[1:]):
+            statements = 0
+
+            def count_statement(*_args):
+                nonlocal statements
+                statements += 1
+
+            body = BulkRecordInput.model_validate(
+                {"items": [{"item_id": item, "expected_revision": 1} for item in batch]}
+            )
+            async with sessions() as session:
+                event.listen(
+                    engine.sync_engine, "before_cursor_execute", count_statement
+                )
+                try:
+                    result = await record_many(entity, body, session, token)
+                finally:
+                    event.remove(
+                        engine.sync_engine, "before_cursor_execute", count_statement
+                    )
+                counts.append(statements)
+                assert [r["item_id"] for r in result["results"]] == list(
+                    map(str, batch)
+                )
+                for row in result["results"]:
+                    assert (
+                        row["ok"]
+                        and row["item"]["actual_entry_id"] == row["entry"]["uuid"]
+                    )
+                    assert row["entry"]["tag_ids"] == [str(tag)]
+                    assert row["entry"]["spending_subcategory_id"] == str(group)
+                assert await record_many(entity, body, session, token) == result
+        assert counts[0] == counts[1] <= 20
+        async with sessions.begin() as session:
+            for table, expected in ((m.entries, 48), (m.outcomes, 48), (m.audit, 96)):
+                assert (
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(table)
+                        .where(table.c.entity_id == entity_id)
+                    )
+                    == expected
+                )
+            # Each item, rather than the whole request, has its own audit identity.
+            assert (
+                await session.scalar(
+                    select(func.count(func.distinct(m.audit.c.operation_uuid))).where(
+                        m.audit.c.entity_id == entity_id
+                    )
+                )
+                == 48
+            )
+    finally:
+        await engine.dispose()
+
+
 async def scenario():
     assert URL and URL.rsplit("/", 1)[-1].endswith("_test")
     engine = create_async_engine(URL)
@@ -415,6 +549,27 @@ async def scenario():
             },
         )
         assert spending_inflow.json()["detail"]["code"] == "needs_refund_link"
+        second = await item("t-return2")
+        refunds = (
+            await command(
+                "POST",
+                "/inbox/record",
+                {
+                    "items": [
+                        {
+                            "item_id": it["id"],
+                            "expected_revision": it["revision"],
+                            "completion": {"refund_of": purchase_id},
+                        }
+                        for it in (first, second)
+                    ]
+                },
+            )
+        ).json()["results"]
+        assert (
+            refunds[0]["ok"] and refunds[0]["entry"]["remaining_refundable"] == "42.00"
+        )
+        assert refunds[1]["error"]["code"] == "invalid_refund"
         refund = await client.post(
             prefix + f"/inbox/{first['id']}/record",
             json={
@@ -454,9 +609,40 @@ async def scenario():
         )
         assert gift_proposal.status_code == 200, gift_proposal.text
         assert gift_proposal.json()["proposal_rejection"] is None
+        # A stale row does not consume the retry key or the goal balance. The
+        # accepted contribution can be replayed through the single-item route.
+        choices = {
+            "category": "giving",
+            "assignment": recipient.json()["uuid"],
+            "funding": goal["uuid"],
+        }
+        gifts = (
+            await command(
+                "POST",
+                "/inbox/record",
+                {
+                    "items": [
+                        {
+                            "item_id": gift["id"],
+                            "expected_revision": revision,
+                            "completion": choices,
+                        }
+                        for revision in (
+                            gift_proposal.json()["revision"] + 1,
+                            gift_proposal.json()["revision"],
+                        )
+                    ]
+                },
+            )
+        ).json()["results"]
+        assert gifts[0]["error"]["code"] == "stale_revision"
+        assert gifts[1]["entry"]["funding_goal_id"] == goal["uuid"]
         donated = await client.post(
             prefix + f"/inbox/{gift['id']}/record",
-            json={"expected_revision": gift_proposal.json()["revision"]},
+            json={
+                "expected_revision": gift_proposal.json()["revision"],
+                "completion": choices,
+            },
         )
         assert donated.status_code == 200, donated.text
         assert donated.json()["entry"]["category"] == "giving"

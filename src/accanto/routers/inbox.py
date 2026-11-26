@@ -17,7 +17,7 @@ from accanto.dtos.inbox import (
     RevisionInput,
 )
 from accanto.routers.authentication import Session, Token
-from accanto.services import inbox, inbox_proposals
+from accanto.services import inbox, inbox_proposals, inbox_record_batch
 from accanto.services.access import RejectionError
 from accanto.services.monthly import write
 
@@ -168,25 +168,12 @@ def record_key(revision: int) -> str:
 async def record_many(
     entity_id: UUID, body: BulkRecordInput, session: Session, token: Token
 ):
-    """Each item records in its own transaction and reports its own outcome."""
-    results = []
-    for item in body.items:
-        fields = item.model_dump(exclude={"item_id"})
-        try:
-            result = await inbox.record(
-                session,
-                token,
-                entity_id,
-                item.item_id,
-                record_key(item.expected_revision),
-                fields,
-            )
-            results.append({"item_id": str(item.item_id), "ok": True, **result})
-        except RejectionError as error:
-            if error.status == 401:
-                raise
-            results.append(outcome(item.item_id, error))
-    return {"results": results}
+    """Commit accepted records together, with per-item rejection and replay."""
+    return {
+        "results": await inbox_record_batch.record_many(
+            session, token, entity_id, body.items
+        )
+    }
 
 
 async def act_on_many(

@@ -171,25 +171,17 @@ async def write(
         async def audit(table, record_uuid, before, after, action=operation):
             await session.execute(
                 insert(m.audit).values(
-                    entity_id=entity["id"],
-                    actor_id=actor.user_id,
-                    api_key_uuid=actor.credential_uuid
-                    if actor.credential_kind == "api_key"
-                    else None,
-                    session_uuid=actor.credential_uuid
-                    if actor.credential_kind == "session"
-                    else None,
-                    # An agent's interface wins over the inbox's own label, so
-                    # inbox records drafted by agents audit as mcp or agent.
-                    interface=actor.interface_override
-                    or getattr(hook, "interface", None)
-                    or actor.interface,
-                    operation_uuid=operation_uuid,
-                    record_type=table.name,
-                    record_uuid=record_uuid,
-                    action=action,
-                    before=json_values(before),
-                    after=json_values(after),
+                    audit_values(
+                        entity["id"],
+                        actor,
+                        getattr(hook, "interface", None),
+                        operation_uuid,
+                        table,
+                        record_uuid,
+                        action,
+                        before,
+                        after,
+                    )
                 )
             )
 
@@ -1314,6 +1306,36 @@ async def write(
             )
         )
     return response
+
+
+def audit_values(
+    entity_id,
+    actor,
+    interface,
+    operation_uuid,
+    table,
+    record_uuid,
+    action,
+    before,
+    after,
+):
+    return dict(
+        entity_id=entity_id,
+        actor_id=actor.user_id,
+        api_key_uuid=actor.credential_uuid
+        if actor.credential_kind == "api_key"
+        else None,
+        session_uuid=actor.credential_uuid
+        if actor.credential_kind == "session"
+        else None,
+        interface=actor.interface_override or interface or actor.interface,
+        operation_uuid=operation_uuid,
+        record_type=table.name,
+        record_uuid=record_uuid,
+        action=action,
+        before=json_values(before),
+        after=json_values(after),
+    )
 
 
 async def entry_snapshot(session, record):
