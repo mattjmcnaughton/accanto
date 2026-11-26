@@ -410,3 +410,26 @@
   margin: 0;
   font-size: 12px;
 }
+.agent-interview {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  margin-top: 8px;
+}
+.agent-md-draft {
+  border-left: 2px solid var(--line, currentColor);
+  padding-left: 8px;
+  font-size: 13px;
+}
+.agent-md-edit {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.agent-md-edit textarea {
+  width: 100%;
+}
+.agent-md-preview {
+  font-size: 13px;
+}

@@ -144,8 +144,9 @@ entry with one audit row. A retry of the same apply returns the same entry.
 
 Settings has an editable AGENT.md per Entity: the owner's standing instructions
 for the built-in agent, such as "Sample Warehouse Club is groceries unless over $300". It is
-added to the built-in agent's instructions on every turn. It is not served to MCP
-clients in this release. It cannot widen what the agent may do: the catalog,
+added to the built-in agent's instructions on every turn. MCP clients can read
+it, and agents can draft a new one as a Pending change, after an AGENT.md
+interview ([TDD 10](../tdds/10-agent-md-interview.md)). It cannot widen what the agent may do: the catalog,
 exclusions, agent mode, and Entity boundary are enforced in code.
 
 ### AG-08 — Trusted and untrusted content
@@ -193,7 +194,8 @@ values and conversation content stay out of logs and telemetry.
 
 - Scheduled or background sync, proactive agent runs, and notifications.
 - Hosted MCP OAuth, claude.ai and mobile connectors (later phase).
-- AGENT.md for MCP clients; agent-proposed edits to AGENT.md.
+- AGENT.md for MCP clients; agent-proposed edits to AGENT.md (since added by
+  TDD 10).
 - Write-back to YNAB.
 - Financial advice and projections beyond what services compute.
 - Storing images.

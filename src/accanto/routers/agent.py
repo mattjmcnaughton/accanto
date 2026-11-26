@@ -1,7 +1,8 @@
 """Agent settings and Pending changes: browser session only (PRD AG-05, AG-06).
 
 API keys are refused here, so no agent (MCP or built-in) can change its own
-mode, AGENT.md or enablement, or apply the changes it drafted.
+mode, AGENT.md or enablement, or apply the changes it drafted. The one exception
+is reading AGENT.md (TDD 10), which any caller with Entity access may do.
 """
 
 import asyncio
@@ -19,7 +20,7 @@ from accanto.dtos.agent import (
     ApplyInput,
     DismissInput,
 )
-from accanto.routers.authentication import BrowserToken, Session
+from accanto.routers.authentication import BrowserToken, Session, Token
 from accanto.services import agent_images, agent_settings, agent_writes, tools
 from accanto.services.agent import LATEST, AgentTurns
 from accanto.services.openrouter import provider_label
@@ -54,6 +55,12 @@ async def get_settings(
         "retention_days": config.agent_retention_days,
         "daily_message_cap": config.agent_daily_message_cap,
     }
+
+
+@router.get("/instructions")
+async def get_instructions(entity_id: UUID, session: Session, token: Token):
+    """AGENT.md and its revision; API keys allowed (read only)."""
+    return await agent_settings.read_instructions(session, token, entity_id)
 
 
 @router.put("/settings")

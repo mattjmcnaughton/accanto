@@ -587,3 +587,65 @@ it("opens the latest conversation, reopens an older one from History, and archiv
   const archived = fetch.mock.calls.find(([, init]) => init?.method === "POST");
   expect(String(archived?.[0])).toMatch(/\/conversations\/c-new\/archive$/);
 });
+
+it("starts an AGENT.md interview from an empty conversation and shows the drafted text", async () => {
+  const sent: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (url.endsWith("/settings"))
+      return json({ enabled: true, mode: "ask_first", instructions: "", revision: 1 });
+    if (init?.method === "POST") {
+      sent.push(String((init.body as FormData).get("content")));
+      return new Response(
+        body(
+          'event: delta\ndata: {"text":"How should I categorize your recurring payees?"}\n\n',
+          'event: done\ndata: {"conversation_id":"c1","owner_message_id":"m1","agent_message_id":"m2","pending_change_ids":[]}\n\n',
+        ),
+        { status: 200 },
+      );
+    }
+    return json([]);
+  });
+  render(
+    <AgentPanel
+      entity={entity}
+      busy={false}
+      refresh={0}
+      screen="home"
+      month="2026-11"
+      credentials={async () => session}
+      save={vi.fn()}
+      close={vi.fn()}
+      openSettings={vi.fn()}
+      changed={vi.fn()}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Interview me for AGENT.md" }));
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]).toMatch(/^Interview me to write my AGENT\.md/);
+
+  cleanup();
+  render(
+    <PendingCard
+      change={change({
+        tool: "propose_agent_instructions",
+        summary: "Update AGENT.md, the assistant's standing instructions",
+        input: {
+          instructions: "## Categories\n- Example Grocer is groceries.",
+          expected_revision: 3,
+        },
+      })}
+      canApply
+      entityName="Synthetic"
+      disabled={false}
+      edited={null}
+      edit={vi.fn()}
+      problem=""
+      apply={vi.fn()}
+      dismiss={vi.fn()}
+    />,
+  );
+  expect(screen.getByText("Categories").tagName).toBe("STRONG");
+  expect(screen.getByText("Example Grocer is groceries.").tagName).toBe("LI");
+  expect(screen.getByText(/as of revision 3/)).toBeInTheDocument();
+});

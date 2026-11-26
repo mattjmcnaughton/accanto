@@ -17,6 +17,10 @@ Behaviors, keyed on the owner's message (case-insensitive):
                 and quote both results (TDD 09).
 - "budget"      say a sentence, call get_context in the same response, then
                 answer: two text parts around a tool call.
+- "interview me" an AGENT.md interview over several turns: read AGENT.md, ask
+                INTERVIEW questions one per reply, show the proposed text
+                (the current text plus the answers), and on "yes" call
+                propose_agent_instructions.
 - "[stub-fail]" fail mid-stream after a few deltas.
 - anything else: a short fixed reply.
 
@@ -93,6 +97,18 @@ def _owner_prompt(messages: Sequence[ModelMessage]) -> tuple[str, bool]:
     return "", False
 
 
+def _owner_prompts(messages: Sequence[ModelMessage]) -> list[str]:
+    """Every owner message text in order, stored history included."""
+    return [
+        part.content
+        if isinstance(part.content, str)
+        else " ".join(c for c in part.content if isinstance(c, str))
+        for message in messages
+        for part in getattr(message, "parts", [])
+        if isinstance(part, UserPromptPart)
+    ]
+
+
 def _returns(messages: Sequence[ModelMessage]) -> list[ToolReturnPart]:
     """Tool results since the owner's latest message (this run only)."""
     parts = [p for m in messages if isinstance(m, ModelRequest) for p in m.parts]
@@ -164,6 +180,71 @@ def plan_proposal(item: dict) -> dict:
     }
 
 
+INTERVIEW = (
+    ("Categories", "How should I categorize your recurring payees?"),
+    ("Naming", "How do you name saving goals and Plans?"),
+    ("Approvals", "When should I ask you before drafting a change?"),
+)
+
+
+def interview_draft(current: str, answers: Sequence[str]) -> str:
+    """The stub's proposed AGENT.md: the current text kept, then one section per
+    answer (a real model would merge them)."""
+    sections = [
+        f"## {heading}\n- {answer.strip()}"
+        for (heading, _), answer in zip(INTERVIEW, answers, strict=False)
+    ]
+    return "\n\n".join([current.strip(), *sections] if current.strip() else sections)
+
+
+def _interview(messages, returns, called):
+    """None when this conversation is not an interview; else the next step."""
+    prompts = _owner_prompts(messages)
+    starts = [i for i, text in enumerate(prompts) if "interview me" in text.lower()]
+    if not starts:
+        return None
+    answers = prompts[starts[-1] + 1 :]
+    if "get_agent_instructions" not in called:
+        return _call(("get_agent_instructions", {}))
+    current = next(
+        _content(p) for p in returns if p.tool_name == "get_agent_instructions"
+    )
+    if len(answers) < len(INTERVIEW):
+        heading, question = INTERVIEW[len(answers)]
+        lead = (
+            "Your AGENT.md is empty, so I will start one."
+            if not answers and not current.get("instructions")
+            else "I will keep what your AGENT.md already says."
+            if not answers
+            else "Noted."
+        )
+        return (
+            f"{lead}\n\n**{question}**\n\nThis sets the {heading} section. "
+            "Answer in your own words, or say skip."
+        )
+    draft = interview_draft(current.get("instructions", ""), answers[: len(INTERVIEW)])
+    if len(answers) == len(INTERVIEW):
+        return f"Here is the proposed AGENT.md:\n\n{draft}\n\nShall I save it?"
+    if not answers[-1].lower().startswith(("yes", "save", "approve")):
+        return "Tell me what to change, or say yes to save it."
+    if "propose_agent_instructions" not in called:
+        return _call(
+            (
+                "propose_agent_instructions",
+                {"instructions": draft, "expected_revision": current["revision"]},
+            )
+        )
+    result = next(
+        _content(p) for p in returns if p.tool_name == "propose_agent_instructions"
+    )
+    if result.get("status") != "pending":
+        return "I could not draft the update. Read AGENT.md again and retry."
+    return (
+        "I drafted the AGENT.md update as a pending change. Nothing changes "
+        "until you apply it."
+    )
+
+
 def _next_step(messages: Sequence[ModelMessage], info: AgentInfo):
     """Either a tool call to make, or the final reply text."""
     text, has_image = _owner_prompt(messages)
@@ -171,6 +252,9 @@ def _next_step(messages: Sequence[ModelMessage], info: AgentInfo):
     returns = _returns(messages)
     called = {part.tool_name for part in returns}
     injected = any(INJECTION_MARKER in json.dumps(_content(p)) for p in returns)
+    interview = _interview(messages, returns, called)
+    if interview is not None:
+        return interview
 
     if injected and "delete_activity" not in called:
         if "list_activity" not in called:

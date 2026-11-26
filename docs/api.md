@@ -738,6 +738,20 @@ drafted; API keys get `403 browser_session_required`.
 | POST | `/agent/pending-changes/apply-all` | `{changes: [{id, input?}]}` (1–100); applies them oldest drafted first, each as its own apply, and stops at the first rejection. Returns `{results: [{id, status, result?, error?}]}` in applied order, `status` `applied`, `failed` (with `error.code` and `error.message`) or `not_applied`; failed and not-applied changes stay pending. Any id not in the Entity refuses the whole request with `404 record_not_found`. Resending replays the ones already applied |
 | POST | `/agent/pending-changes/{pending_id}/dismiss` | `{expected_revision}` |
 
+## AGENT.md
+
+The Entity's AGENT.md is the owner's standing instructions for agents
+([TDD 10](tdds/10-agent-md-interview.md)). Reading it is open to any caller with
+Entity access, including API keys; changing it is browser-session only, through
+`PUT /agent/settings`. Agents may only draft a new AGENT.md as a Pending change
+(`propose_agent_instructions`), which pends in every Agent mode and changes only
+the text when applied; an applied draft based on an older revision is
+`409 stale_revision`.
+
+| Method | Suffix | Body / result |
+| --- | --- | --- |
+| GET | `/agent/instructions` | `{instructions, revision}`; `revision` is 0 before anything was saved |
+
 ## Assistant conversations
 
 Browser session only, like every `/agent` route: API keys are refused. Each User

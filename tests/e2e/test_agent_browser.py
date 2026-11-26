@@ -1,9 +1,11 @@
 """Agent access journey in the production UI with AGENT_MODEL=stub.
 
 Saves the fake YNAB token in Settings, connects a plan from the inbox (which syncs),
-asks the assistant to categorize, records from the inbox, and applies a
-receipt draft from an attached synthetic image. Everything is synthetic and
-loopback-only; the stub model never reaches a network.
+asks the assistant to categorize, records from the inbox, applies a
+receipt draft from an attached synthetic image, then runs the AGENT.md interview
+and applies the AGENT.md it drafts. Everything is synthetic and loopback-only;
+the stub model never reaches a network. Set ACCANTO_E2E_RECORDING to a .webm
+path to record the browser.
 """
 
 import asyncio
@@ -201,6 +203,9 @@ def test_agent_journey(tmp_path):
         wait_ready(f"http://127.0.0.1:{ynab_port}/fake/ready", processes[1])
         wait_ready(origin + "/readyz", processes[2])
         browser("set", "viewport", "1440", "900")
+        recording = os.environ.get("ACCANTO_E2E_RECORDING")
+        if recording:
+            browser("record", "start", recording)
         browser("open", origin)
         browser("wait", "a[href='/api/auth/login']")
         browser("find", "role", "link", "click", "--name", "Sign in", "--exact")
@@ -310,6 +315,33 @@ def test_agent_journey(tmp_path):
         )
         assert "$23.45" in text("#main")
 
+        # AGENT.md interview: one question per reply, the proposed text, and a
+        # Pending change only after the owner says yes. The stub keeps the
+        # existing AGENT.md (empty here) and adds one section per answer.
+        button("New conversation", ".agent")
+        button("Interview me for AGENT.md", ".agent")
+        until("!document.querySelector('.agent-log[aria-busy=true]')")
+        idle()
+        assert "categorize your recurring payees" in last_reply()
+        ask("Example Grocer is groceries; skip transfers between my accounts.")
+        assert "name saving goals" in last_reply()
+        ask("Goals are named after the purchase, like Laptop.")
+        ask("Ask before drafting anything over $500.")
+        assert "Shall I save it?" in last_reply()
+        assert "Example Grocer is groceries" in last_reply()
+        assert not value(
+            "document.querySelector('.agent-msg .agent-card') ? 'card' : ''"
+        )
+        ask("Yes, save it")
+        until("!!document.querySelector('.agent-msg .agent-card')")
+        assert "Update AGENT.md" in text(".agent-msg .agent-card")
+        browser("find", "role", "button", "click", "--name", "Pending changes 1")
+        button("Apply", ".agent")
+        until("/No pending changes/.test(document.querySelector('.agent').textContent)")
+        go("Settings")
+        until("/Laptop/.test(document.querySelector('#agent-md')?.value ?? '')")
+        assert "## Approvals" in value("document.querySelector('#agent-md').value")
+
         def choose_mode(mode, label):
             go("Settings")
             until(f"!!document.querySelector('input[value={mode}]')")
@@ -319,8 +351,10 @@ def test_agent_journey(tmp_path):
             button("Save assistant settings")
             until(f"/{label}/.test(document.querySelector('.agent-mode')?.textContent)")
 
-        # Apply directly: the same receipt request records, with no card.
+        # Apply directly: the same receipt request records, with no card. A new
+        # conversation, so the stub does not read it as an interview answer.
         choose_mode("apply_directly", "Apply directly")
+        button("New conversation", ".agent")
         cards = int(value("document.querySelectorAll('.agent-card').length"))
         ask(f"Here is a receipt from {today}")
         assert "I recorded a 23.45 spending entry" in last_reply()
@@ -338,6 +372,8 @@ def test_agent_journey(tmp_path):
         ask("Please categorize my inbox")
         assert "Read only" in last_reply()
         assert waiting() == before
+        if recording:
+            browser("record", "stop")
     finally:
         try:
             browser("close", check=False)
