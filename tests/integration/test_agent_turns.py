@@ -10,7 +10,7 @@ import io
 import json
 import os
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -81,7 +81,7 @@ async def scenario():
             "browser_origin": "http://test",
             "browser_csrf_secret": SecretStr("synthetic-turn-csrf-secret-long-enough"),
             "agent_model": "stub",
-            "agent_daily_message_cap": 4,
+            "agent_daily_message_cap": 7,
         }
     )
     app = create_app()
@@ -319,7 +319,61 @@ async def scenario():
         # No table holds image bytes, raw or base64, in any column.
         await assert_no_image_bytes(sessions, png.getvalue())
 
-        # Daily cap of 4 owner messages (stored turns: 3 so far; failed and
+        # Text before and after a tool call: two blocks, streamed and stored alike.
+        events = frames((await send("Where is my budget?")).text)
+        text = "".join(data["text"] for name, data in events if name == "delta")
+        assert text == (
+            "Let me look at your budget.\n\nYour budget is in the Plans screen."
+        )
+        history = (await client.get(prefix + "/agent/conversation")).json()
+        assert history[-1]["content"] == text
+
+        # Conversation history (TDD 08): a new conversation is listed first, the
+        # older one can still be continued, and archive hides one but keeps it.
+        async def post(path, text):
+            return await client.post(
+                prefix + path, data={"content": text}, headers=write_headers
+            )
+
+        started = frames((await post("/agent/conversations/messages", "Budget?")).text)
+        assert started[-1][0] == "done"
+        new_id = started[-1][1]["conversation_id"]
+        listed = (await client.get(prefix + "/agent/conversations")).json()
+        assert [c["title"] for c in listed] == [
+            "Budget?",
+            "What did I spend on groceries in October?",
+        ]
+        assert listed[0]["id"] == new_id and listed[0]["message_count"] == 2
+        old_id = listed[1]["id"]
+        latest = (await client.get(prefix + "/agent/conversation")).json()
+        assert [m["content"] for m in latest][0] == "Budget?"
+        continued = frames(
+            (await post(f"/agent/conversations/{old_id}/messages", "Hi")).text
+        )
+        assert continued[-1][1]["conversation_id"] == old_id
+        archived = await client.post(
+            prefix + f"/agent/conversations/{new_id}/archive", headers=write_headers
+        )
+        assert archived.status_code == 200
+        listed = (await client.get(prefix + "/agent/conversations")).json()
+        assert [c["id"] for c in listed] == [old_id]
+        gone = await client.get(prefix + f"/agent/conversations/{new_id}")
+        assert gone.json()["detail"]["code"] == "conversation_not_found"
+        assert (
+            await post(f"/agent/conversations/{new_id}/messages", "x")
+        ).status_code == 404
+        assert (
+            await count(
+                a.messages,
+                a.messages.c.conversation_id
+                == select(a.conversations.c.id)
+                .where(a.conversations.c.uuid == UUID(new_id))
+                .scalar_subquery(),
+            )
+            == 2
+        )
+
+        # Daily cap of 7 owner messages (stored turns: 6 so far; failed and
         # refused turns store nothing). One more fits, then 429.
         assert (await send("Hi")).status_code == 200
         capped = await send("One more")

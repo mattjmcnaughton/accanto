@@ -1,8 +1,13 @@
-/* The assistant: a right-hand panel on wide screens, a full-screen sheet on phones. */
+/*
+ * The assistant: a right-hand panel on wide screens, resized from its left edge, or full screen
+ * when the owner asks. Below 1100px it is an overlay sheet, full screen on phones.
+ */
 .app.with-agent {
-  grid-template-columns: 220px minmax(0, 1fr) minmax(320px, 380px);
+  grid-template-columns: 220px minmax(0, 1fr) auto;
 }
 .agent {
+  /* The same bounds AgentPanel clamps to, so a narrower window never squeezes the screen. */
+  width: clamp(320px, var(--agent-width, 480px), max(480px, calc(100vw - 780px)));
   position: sticky;
   top: 0;
   height: 100dvh;
@@ -14,14 +19,50 @@
   border-left: 1px solid var(--line);
   min-width: 0;
 }
+.agent-resize {
+  position: absolute;
+  inset: 0 auto 0 -3px;
+  width: 6px;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+}
+.agent-resize:hover,
+.agent-resize:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--brand) 45%, transparent);
+}
+/* Full screen keeps the conversation at a readable width in the middle. */
+.app.with-agent .agent.full {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  z-index: 8;
+  border-left: 0;
+  padding-inline: max(12px, calc((100vw - 800px) / 2));
+}
+.agent.full .agent-resize {
+  display: none;
+}
 .agent-h {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+}
+/* Only the title block gives way when the header is tight. */
+.agent-h > * {
+  flex-shrink: 0;
+}
+.agent-h > .agent-title {
+  flex-shrink: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
 }
 .agent-entity {
-  font-weight: 600;
-  color: var(--ink2);
+  font-size: 12px;
+  color: var(--ink3);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -31,6 +72,7 @@
   font-size: 12px;
   border-radius: 99px;
   padding: 2px 8px;
+  white-space: nowrap;
   background: var(--wash);
   color: var(--ink2);
 }
@@ -38,16 +80,61 @@
   background: var(--warn-bg);
   color: var(--warn);
 }
-.agent-tabs {
-  align-self: flex-start;
+/* The mode drops below the tabs when the panel is too narrow for both. */
+.agent-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 8px;
 }
-.agent-log {
+.agent-tabs {
+  flex: none;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.agent-count {
+  margin-left: 2px;
+  padding: 0 6px;
+  border-radius: 99px;
+  background: var(--brand);
+  color: var(--surface);
+}
+.agent-logwrap {
+  position: relative;
   flex: 1;
-  overflow: auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+}
+/* Turns sit further apart than a reply's own paragraphs; text never runs under the scrollbar. */
+.agent-log {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
   min-height: 0;
+}
+.agent-latest {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 99px;
+  box-shadow: var(--pop);
+}
+.agent-ended {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-ended .bad {
+  color: var(--bad);
 }
 .agent-msg {
   display: flex;
@@ -62,6 +149,10 @@
   border-radius: 12px;
   padding: 8px 10px;
   max-width: 88%;
+}
+.agent-msg > p,
+.md {
+  max-width: 72ch;
 }
 .agent-msg p,
 .md p,
@@ -133,14 +224,72 @@
   display: flex;
   gap: 6px;
 }
+/* A full-width box that grows with what is typed, with its actions beneath it. */
 .agent-compose {
   display: flex;
-  gap: 8px;
-  align-items: flex-end;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  background: var(--bg);
+}
+.agent-compose:focus-within {
+  border-color: var(--brand);
 }
 .agent-compose textarea {
-  flex: 1;
   resize: none;
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  outline: none;
+  font: inherit;
+  color: inherit;
+  field-sizing: content;
+  min-height: 2.6em;
+  max-height: 33vh;
+}
+.agent-compose-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.agent-hint {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--ink3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-send:not(:disabled) {
+  background: var(--brand);
+  color: var(--surface);
+}
+.agent-thumb {
+  position: relative;
+}
+.agent-thumb img {
+  display: block;
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.agent-thumb .x {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 99px;
+  background: var(--ink2);
+  color: var(--surface);
+  font-size: 11px;
+  line-height: 16px;
 }
 .agent-off {
   display: flex;
@@ -152,10 +301,13 @@
   .app.with-agent {
     grid-template-columns: 220px minmax(0, 1fr);
   }
+  .agent-resize {
+    display: none;
+  }
   .app.with-agent .agent {
     position: fixed;
     inset: 0 0 0 auto;
-    width: min(400px, 100vw);
+    width: min(520px, 100vw);
     z-index: 8;
     box-shadow: var(--pop);
   }
@@ -176,13 +328,20 @@
   html:has(.app.with-agent) body {
     overflow: hidden;
   }
-  .agent-new-label,
   .agent-mode {
     display: none;
   }
   /* iOS zooms into a focused field under 16px and does not zoom back out. */
   .agent-compose textarea {
     font-size: 16px;
+  }
+  /* Phone keyboards have no Shift+Enter to explain. */
+  .agent-hint {
+    visibility: hidden;
+  }
+  /* The sheet already fills a phone's screen. */
+  .agent .agent-full-btn {
+    display: none;
   }
 }
 /* The file input stays focusable and labelled, drawn as the button around it. */
@@ -198,4 +357,42 @@
 }
 .agent-attach:focus-within {
   outline: 2px solid var(--brand);
+}
+
+/* History: one row per active conversation, newest first. */
+.agent-history {
+  gap: 4px;
+}
+.agent-conv {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 10px;
+}
+.agent-conv:hover,
+.agent-conv:focus-within {
+  background: var(--wash);
+}
+.agent-conv-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  border-radius: 10px;
+}
+.agent-conv-open[aria-current="true"] {
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+.agent-conv-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

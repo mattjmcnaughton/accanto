@@ -61,7 +61,18 @@ const meta = {
       http.get(`${agentRoot}/settings`, () =>
         HttpResponse.json({ ...data.agentSettings, enabled: true }),
       ),
-      http.get(`${agentRoot}/conversation`, () => HttpResponse.json(messages)),
+      http.get(`${agentRoot}/conversations`, () =>
+        HttpResponse.json([
+          {
+            id: "c1",
+            title: messages[0].content,
+            message_count: messages.length,
+            created_at: "2026-11-20T00:00:00Z",
+            updated_at: "2026-11-20T00:00:00Z",
+          },
+        ]),
+      ),
+      http.get(`${agentRoot}/conversations/c1`, () => HttpResponse.json(messages)),
       http.get(`${agentRoot}/pending-changes`, () => HttpResponse.json(pending)),
       ...mockApi(),
     ],

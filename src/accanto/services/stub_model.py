@@ -11,6 +11,8 @@ Behaviors, keyed on the owner's message (case-insensitive):
                 and quote the recorded spending it returns.
 - "receipt" or an attached image: draft one save_activity entry dated by the
                 YYYY-MM-DD in the message, or ask for the date if there is none.
+- "budget"      say a sentence, call get_context in the same response, then
+                answer: two text parts around a tool call.
 - "[stub-fail]" fail mid-stream after a few deltas.
 - anything else: a short fixed reply.
 
@@ -231,6 +233,11 @@ def _next_step(messages: Sequence[ModelMessage], info: AgentInfo):
             "Review the card and apply it if it is right."
         )
 
+    if "budget" in lowered:
+        if "get_context" not in called:
+            return ("Let me look at your budget.", _call(("get_context", {})))
+        return "Your budget is in the Plans screen."
+
     if "spend" in lowered:
         month = _month(text, info)
         if "get_monthly_review" not in called:
@@ -264,6 +271,10 @@ async def stub_stream(
     messages: list[ModelMessage], info: AgentInfo
 ) -> AsyncIterator[str | DeltaToolCalls]:
     step = _next_step(messages, info)
+    if isinstance(step, tuple):
+        before, step = step
+        for chunk in _chunks(before):
+            yield chunk
     if isinstance(step, dict):
         yield step
         return

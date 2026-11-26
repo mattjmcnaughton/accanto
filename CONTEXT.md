@@ -96,6 +96,7 @@ acceptance criteria; this file defines their shared domain meanings.
 | Agent | A caller acting for the owner through the agent tool catalog: the built-in agent or an MCP client. Not a permission role; it has the owner's Entity access, narrowed by the catalog and Agent mode. |
 | Agent mode | Per Entity: `propose` (default) or `record`. Decides whether agent writes run or become Pending changes. Setting inbox Proposals and syncing are allowed in both modes. |
 | Pending change | A validated, not-yet-applied write drafted by an Agent. Not financial activity; never in totals. The owner applies or dismisses it in Accanto. Deletes that cannot be restored are always Pending changes. |
+| Assistant conversation | One thread of messages between the owner and the built-in agent, for one Entity. An owner has several per Entity and can reopen any active one. Archiving hides it without deleting it; any conversation is deleted 30 days after its latest turn. Not financial data; Pending changes it drafted outlive it. |
 | AGENT.md | The owner's standing instructions for the built-in agent, per Entity. Trusted instructions, below enforced rules: it cannot widen the catalog, Agent mode, or the Entity boundary. |
 | Untrusted data | Any text read from the Entity, a source, or an image (payees, memos, notes, names, rationales). Quoted to the model as data, never followed as instructions; an instruction found there is reported to the owner. |
 

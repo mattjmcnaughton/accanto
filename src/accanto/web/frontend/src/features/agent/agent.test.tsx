@@ -4,13 +4,14 @@ import { afterEach, expect, it, vi } from "vitest";
 import { AgentStreamError, type PendingChange, readFrames } from "../../lib/agentStream";
 import { ConnectSource } from "../inbox/ConnectSource";
 import { TransactionProviderSettings } from "../settings/TransactionProviderSettings";
-import { PendingCard, plain } from "./AgentPanel";
+import { AgentPanel, PendingCard, plain } from "./AgentPanel";
 import { AgentSettings } from "./AgentSettings";
 import { Markdown } from "./Markdown";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const entity = { id: "entity", name: "Synthetic", time_zone: "UTC", today: "2026-11-20" };
@@ -262,4 +263,155 @@ it("discloses what the assistant sends before the owner turns it on", async () =
     }),
     expect.any(Function),
   );
+});
+
+it("resizes from its edge within bounds and remembers the width and full screen", async () => {
+  const stored = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => stored.get(key) ?? null,
+    setItem: (key: string, value: string) => stored.set(key, value),
+  });
+  // A 1600px window leaves room for at most 820px beside the sidebar and a 560px screen.
+  vi.stubGlobal("innerWidth", 1600);
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+    json({ enabled: false, mode: "propose", instructions: "", revision: 0 }),
+  );
+  const props = {
+    entity,
+    busy: false,
+    refresh: 0,
+    screen: "home",
+    month: "2026-11",
+    credentials: async () => session,
+    save: vi.fn(),
+    close: vi.fn(),
+    openSettings: vi.fn(),
+    changed: vi.fn(),
+  };
+  const view = render(<AgentPanel {...props} />);
+  const panel = screen.getByRole("complementary", { name: "Assistant" });
+  const handle = screen.getByRole("separator", { name: "Resize assistant" });
+  // The handle is on the left edge, so ArrowLeft widens from the 480px default.
+  fireEvent.keyDown(handle, { key: "ArrowLeft" });
+  fireEvent.keyDown(handle, { key: "ArrowLeft" });
+  expect(panel.style.getPropertyValue("--agent-width")).toBe("512px");
+  fireEvent.keyDown(handle, { key: "End" });
+  expect(handle).toHaveAttribute("aria-valuenow", "820");
+  for (let i = 0; i < 40; i++) fireEvent.keyDown(handle, { key: "ArrowRight" });
+  expect(handle).toHaveAttribute("aria-valuenow", "320");
+  fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
+  expect(panel).toHaveClass("full");
+
+  view.unmount();
+  render(<AgentPanel {...props} />);
+  expect(screen.getByRole("separator", { name: "Resize assistant" })).toHaveAttribute(
+    "aria-valuenow",
+    "320",
+  );
+  expect(screen.getByRole("button", { name: "Full screen" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await waitFor(() => expect(screen.getByText(/The assistant is off/)).toBeInTheDocument());
+});
+
+it("keeps the partial reply and puts the question back when the owner stops a reply", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (url.endsWith("/settings"))
+      return json({ enabled: true, mode: "propose", instructions: "", revision: 1 });
+    if (init?.method === "POST")
+      // One sentence arrives, then the reply hangs until it is stopped.
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode('event: delta\ndata: {"text":"Partial answer"}\n\n'),
+            );
+            init.signal?.addEventListener("abort", () =>
+              controller.error(new DOMException("Aborted", "AbortError")),
+            );
+          },
+        }),
+        { status: 200 },
+      );
+    return json([]);
+  });
+  render(
+    <AgentPanel
+      entity={entity}
+      busy={false}
+      refresh={0}
+      screen="home"
+      month="2026-11"
+      credentials={async () => session}
+      save={vi.fn()}
+      close={vi.fn()}
+      openSettings={vi.fn()}
+      changed={vi.fn()}
+    />,
+  );
+  const box = await screen.findByRole("textbox", { name: "Message the assistant" });
+  fireEvent.change(box, { target: { value: "Where did November go?" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await screen.findByText("Partial answer");
+  fireEvent.keyDown(box, { key: "Escape" });
+  await screen.findByText("Stopped. Your question is back in the box.");
+  expect(screen.getByText("Partial answer")).toBeInTheDocument();
+  expect(box).toHaveValue("Where did November go?");
+});
+
+it("opens the latest conversation, reopens an older one from History, and archives", async () => {
+  const summary = (id: string, title: string) => ({
+    id,
+    title,
+    message_count: 2,
+    created_at: "2026-11-20T09:00:00Z",
+    updated_at: "2026-11-20T09:00:00Z",
+  });
+  const message = (id: string, content: string) => ({
+    id,
+    role: "owner",
+    content,
+    image_count: 0,
+    pending_change_ids: [],
+    created_at: "2026-11-20T09:00:00Z",
+  });
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (url.endsWith("/settings"))
+      return json({ enabled: true, mode: "propose", instructions: "", revision: 1 });
+    if (url.endsWith("/conversations"))
+      return json([summary("c-new", "Newer question"), summary("c-old", "Older question")]);
+    if (url.endsWith("/conversations/c-new")) return json([message("m1", "Newer question")]);
+    if (url.endsWith("/conversations/c-old")) return json([message("m2", "Older question")]);
+    if (init?.method === "POST") return json({ archived: true });
+    return json([]);
+  });
+  render(
+    <AgentPanel
+      entity={entity}
+      busy={false}
+      refresh={0}
+      screen="home"
+      month="2026-11"
+      credentials={async () => session}
+      save={vi.fn()}
+      close={vi.fn()}
+      openSettings={vi.fn()}
+      changed={vi.fn()}
+    />,
+  );
+  // The latest conversation opens first.
+  expect(await screen.findByText("Newer question")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "History" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Older question/ }));
+  expect(await screen.findByText("Older question")).toBeInTheDocument();
+  expect(screen.queryByText("Newer question")).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "History" }));
+  fireEvent.click(screen.getByRole("button", { name: 'Archive "Newer question"' }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: /^Newer question/ })).toBeNull());
+  const archived = fetch.mock.calls.find(([, init]) => init?.method === "POST");
+  expect(String(archived?.[0])).toMatch(/\/conversations\/c-new\/archive$/);
 });

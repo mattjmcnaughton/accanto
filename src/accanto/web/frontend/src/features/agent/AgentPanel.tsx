@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiError, type BrowserSession, type UUID } from "../../lib/api";
 import {
   type AgentMessage,
   type AgentSettings,
-  AgentStreamError,
+  type ConversationSummary,
   type PendingChange,
+  type StreamDone,
   type ToolLine,
   agent,
   streamReply,
@@ -30,14 +31,63 @@ export interface AgentPanelProps {
   /** Whether a reply is streaming; the workspace blocks switching Entities meanwhile. */
   streaming?: (on: boolean) => void;
 }
-type Tab = "chat" | "pending";
-interface Live {
-  text: string;
-  tools: ToolLine[];
-  changes: PendingChange[];
+type Tab = "chat" | "pending" | "history";
+/** A reply as it streamed, in the order things happened: text, tool steps and drafts. */
+type Part =
+  | { kind: "text"; text: string }
+  | { kind: "tool"; line: ToolLine }
+  | { kind: "change"; change: PendingChange };
+/** A turn that has not been stored: streaming, or stopped or failed partway. */
+interface Turn {
+  content: string;
+  image_count: number;
+  parts: Part[];
+  /** Set once the turn ends without a stored reply: why, and whether Retry can resend it. */
+  ended?: { note: string; retry: boolean };
 }
 
 const TOOL_LABEL = (name: string) => name.split("_").join(" ");
+/** What each read tool looks at, in plain words; other tools fall back to their name. */
+const LOOKS_AT: Record<string, string> = {
+  get_context: "your settings",
+  list_plans: "your Plans",
+  get_plan: "a Plan",
+  get_monthly_review: "the month's Review",
+  list_activity: "recorded activity",
+  list_tags: "your tags",
+  list_savings: "savings goals",
+  list_destinations: "investments and giving",
+  list_debts: "loans",
+  list_investment_observations: "investment balances",
+  list_income_estimates: "income estimates",
+  list_inbox: "the inbox",
+  get_inbox_item: "an inbox item",
+  list_sources: "transaction sources",
+  list_pending_changes: "pending changes",
+};
+export function toolText({ name, status }: ToolLine): string {
+  const what = LOOKS_AT[name];
+  if (what)
+    return {
+      started: `Checking ${what}…`,
+      done: `Checked ${what}`,
+      failed: `Could not check ${what}`,
+    }[status];
+  const action = TOOL_LABEL(name);
+  return { started: `Using ${action}…`, done: `Used ${action}`, failed: `Failed: ${action}` }[
+    status
+  ];
+}
+/** Nothing is visibly happening: no text arriving and no tool step under way. */
+const thinking = (parts: Part[]) => {
+  const last = parts[parts.length - 1];
+  return (
+    !last || (last.kind !== "text" && !(last.kind === "tool" && last.line.status === "started"))
+  );
+};
+const WHEN = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+/** Within this many pixels of the end, the log counts as read to the end. */
+const NEAR = 48;
 /** Free text from tools may arrive as {"untrusted": "..."}; show it as plain text. */
 export const plain = (value: unknown): string =>
   typeof value === "object" && value !== null && "untrusted" in value
@@ -46,8 +96,50 @@ export const plain = (value: unknown): string =>
       ? ""
       : String(value);
 
+/**
+ * The docked panel's width, dragged from its left edge, and whether it fills the screen. Both are
+ * remembered on this device; neither is financial data. Below 1100px the panel is an overlay
+ * sheet whose CSS ignores the width.
+ */
+const WIDTH_KEY = "accanto.agent-width";
+const FULL_KEY = "accanto.agent-full";
+const WIDTH_DEFAULT = 480;
+const WIDTH_MIN = 320;
+const WIDTH_STEP = 16;
+/** At most what leaves the 220px sidebar and a 560px screen beside it, never below the default. */
+const clampWidth = (width: number) =>
+  Math.round(
+    Math.min(Math.max(WIDTH_DEFAULT, window.innerWidth - 780), Math.max(WIDTH_MIN, width)),
+  );
+function recall(key: string) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function remember(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Storage can be unavailable; the choice still holds while the panel is open.
+  }
+}
+
 /** The built-in assistant: one conversation per Entity, plus the Entity's pending changes. */
 export function AgentPanel(p: AgentPanelProps) {
+  const [width, setWidth] = useState(() => clampWidth(Number(recall(WIDTH_KEY)) || WIDTH_DEFAULT));
+  const [full, setFull] = useState(() => recall(FULL_KEY) === "true");
+  const drag = useRef<{ x: number; width: number } | null>(null);
+  const resize = (next: number) => {
+    const clamped = clampWidth(next);
+    setWidth(clamped);
+    remember(WIDTH_KEY, String(clamped));
+  };
+  const toggleFull = () => {
+    setFull(!full);
+    remember(FULL_KEY, String(!full));
+  };
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [loadError, setLoadError] = useState("");
   const [messages, setMessages] = useState<AgentMessage[]>([]);
@@ -55,13 +147,53 @@ export function AgentPanel(p: AgentPanelProps) {
   const [tab, setTab] = useState<Tab>("chat");
   const [text, setText] = useState("");
   const [images, setImages] = useState<File[]>([]);
-  const [live, setLive] = useState<Live | null>(null);
+  const thumbs = useMemo(() => images.map((file) => URL.createObjectURL(file)), [images]);
+  useEffect(
+    () => () => {
+      for (const url of thumbs) URL.revokeObjectURL(url);
+    },
+    [thumbs],
+  );
+  const [live, setLive] = useState<Turn | null>(null);
+  const [ended, setEnded] = useState<Turn | null>(null);
+  const [announce, setAnnounce] = useState("");
+  const [below, setBelow] = useState(false);
+  /** Whether the log keeps up with new text; reading earlier text turns it off. */
+  const follow = useRef(true);
+  /** The question the latest turn answers: the log never scrolls it out of view on its own. */
+  const anchor = useRef<string | null>(null);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
   const abort = useRef<AbortController | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
+  const [list, setList] = useState<ConversationSummary[]>([]);
+  /** The open conversation: null is a new one, undefined the latest until loaded. */
+  const [current, setCurrent] = useState<UUID | null | undefined>(undefined);
+  const currentRef = useRef(current);
+  const choose = (id: UUID | null) => {
+    currentRef.current = id;
+    setCurrent(id);
+  };
+  /** The history, pending changes and the open conversation, which falls back to a new one
+   * when it was archived or expired meanwhile. */
+  const loadConversation = async (id = currentRef.current) => {
+    const [summaries, changes] = await Promise.all([
+      agent.conversations(p.entity.id),
+      agent.pending(p.entity.id),
+    ]);
+    const wanted = id === undefined ? summaries[0]?.id : id;
+    const chosen = summaries.some((c) => c.id === wanted) ? (wanted as UUID) : null;
+    const conversation = chosen ? await agent.conversation(p.entity.id, chosen) : [];
+    return { summaries, changes, chosen, conversation };
+  };
+  const show = (loaded: Awaited<ReturnType<typeof loadConversation>>) => {
+    setList(loaded.summaries);
+    setPending(loaded.changes);
+    choose(loaded.chosen);
+    setMessages(loaded.conversation);
+  };
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reload on Entity, saves and explicit retries.
   useEffect(() => {
     let disposed = false;
@@ -72,13 +204,9 @@ export function AgentPanel(p: AgentPanelProps) {
         if (disposed) return;
         setSettings(next);
         if (!next.enabled) return;
-        const [conversation, changes] = await Promise.all([
-          agent.conversation(p.entity.id),
-          agent.pending(p.entity.id),
-        ]);
+        const loaded = await loadConversation();
         if (disposed) return;
-        setMessages(conversation);
-        setPending(changes);
+        show(loaded);
       } catch (issue) {
         if (!disposed)
           setLoadError(issue instanceof Error ? issue.message : "Could not load the assistant.");
@@ -95,27 +223,53 @@ export function AgentPanel(p: AgentPanelProps) {
     reportStreaming.current?.(live !== null);
   }, [live]);
   useEffect(() => () => reportStreaming.current?.(false), []);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Scroll whenever the transcript grows.
-  useEffect(() => {
-    log.current?.scrollTo({ top: log.current.scrollHeight });
-  }, [messages, live]);
+  /** Where following stops: the end, or the latest question at the top once the reply outgrows the log. */
+  const target = () => {
+    const el = log.current;
+    if (!el) return 0;
+    const end = el.scrollHeight - el.clientHeight;
+    const question =
+      anchor.current === null
+        ? null
+        : el.querySelector<HTMLElement>(`[data-turn="${anchor.current}"]`);
+    return question ? Math.min(end, question.offsetTop - 8) : end;
+  };
+  const measure = () => {
+    const el = log.current;
+    if (el) setBelow(el.scrollHeight - el.clientHeight - el.scrollTop > NEAR);
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Follow whenever the transcript changes.
+  useLayoutEffect(() => {
+    const el = log.current;
+    if (el && follow.current) el.scrollTop = target();
+    measure();
+  }, [messages, live, ended, tab]);
+  const toLatest = () => {
+    anchor.current = null;
+    follow.current = true;
+    // Instant: a smooth scroll would land short of a reply that keeps growing meanwhile.
+    if (log.current) log.current.scrollTop = log.current.scrollHeight;
+  };
   // Only with a mouse: on a phone, focusing opens the keyboard, and iOS scrolls or
   // zooms the full-screen sheet until its header and close button are off-screen.
   useEffect(() => {
     if (window.matchMedia?.("(pointer: fine)").matches) input.current?.focus();
   }, []);
 
-  async function send() {
-    const content = text.trim();
-    if ((!content && !images.length) || live) return;
-    const attached = images;
+  async function send(content = text.trim(), attached = images) {
+    if ((!content && !images.length && !attached.length) || live) return;
+    const local = `local-${Date.now()}`;
     setError("");
     setText("");
     setImages([]);
+    setEnded(null);
+    setTab("chat");
+    anchor.current = String(messages.length);
+    follow.current = true;
     setMessages((m) => [
       ...m,
       {
-        id: `local-${Date.now()}`,
+        id: local,
         role: "owner",
         content,
         image_count: attached.length,
@@ -123,40 +277,58 @@ export function AgentPanel(p: AgentPanelProps) {
         created_at: new Date().toISOString(),
       },
     ]);
-    const state: Live = { text: "", tools: [], changes: [] };
-    setLive({ ...state });
+    const turn: Turn = { content, image_count: attached.length, parts: [] };
+    const update = (parts: Part[]) => {
+      turn.parts = parts;
+      setLive({ ...turn });
+    };
+    setLive({ ...turn });
+    setAnnounce("The assistant is replying.");
     const controller = new AbortController();
     abort.current = controller;
     const handlers = {
       onDelta: (delta: string) => {
-        state.text += delta;
-        setLive({ ...state });
+        const last = turn.parts[turn.parts.length - 1];
+        update(
+          last?.kind === "text"
+            ? [...turn.parts.slice(0, -1), { kind: "text", text: last.text + delta }]
+            : [...turn.parts, { kind: "text", text: delta }],
+        );
       },
       onTool: (line: ToolLine) => {
-        const at = state.tools.findIndex((t) => t.name === line.name && t.status === "started");
-        state.tools =
+        const at = turn.parts.findIndex(
+          (part) =>
+            part.kind === "tool" && part.line.name === line.name && part.line.status === "started",
+        );
+        update(
           at >= 0 && line.status !== "started"
-            ? state.tools.map((t, i) => (i === at ? line : t))
-            : [...state.tools, line];
-        setLive({ ...state });
+            ? turn.parts.map((part, i) => (i === at ? { kind: "tool", line } : part))
+            : [...turn.parts, { kind: "tool", line }],
+        );
       },
-      onPendingChange: (change: PendingChange) => {
-        state.changes = [...state.changes, change];
-        setLive({ ...state });
-      },
+      onPendingChange: (change: PendingChange) =>
+        update([...turn.parts, { kind: "change", change }]),
     };
     const input = {
+      conversation: currentRef.current ?? null,
       content,
       images: attached,
       screen: p.screen,
       month: `${p.month}-01`,
     };
+    let done: StreamDone | null = null;
     try {
       try {
-        await streamReply(await p.credentials(), p.entity.id, input, handlers, controller.signal);
+        done = await streamReply(
+          await p.credentials(),
+          p.entity.id,
+          input,
+          handlers,
+          controller.signal,
+        );
       } catch (issue) {
         if (!(issue instanceof ApiError) || issue.kind !== "unauthenticated") throw issue;
-        await streamReply(
+        done = await streamReply(
           await p.credentials(true),
           p.entity.id,
           input,
@@ -164,35 +336,76 @@ export function AgentPanel(p: AgentPanelProps) {
           controller.signal,
         );
       }
+      setAnnounce("The reply finished.");
     } catch (issue) {
-      if (!controller.signal.aborted) {
-        setError(issue instanceof AgentStreamError || issue instanceof Error ? issue.message : "");
-        setText(content);
-        setImages(attached);
-      }
+      // Nothing is stored for a stopped or failed turn: keep what arrived, and put the
+      // question back in the box so it can be sent again or reworded.
+      const stopped = controller.signal.aborted;
+      const note = stopped
+        ? "Stopped. Your question is back in the box."
+        : issue instanceof Error && issue.message
+          ? issue.message
+          : "The reply did not come through.";
+      setMessages((m) => m.filter((message) => message.id !== local));
+      setEnded({ ...turn, ended: { note, retry: !stopped } });
+      anchor.current = "ended";
+      setText(content);
+      setImages(attached);
+      setAnnounce(stopped ? "Stopped." : note);
     } finally {
       abort.current = null;
+      // The reply stays on screen until the stored copy replaces it, so nothing flashes away.
+      try {
+        // A new conversation exists once its first turn is stored.
+        show(await loadConversation(done?.conversation_id ?? currentRef.current));
+      } catch {
+        // The next reload shows it.
+      }
       setLive(null);
-      setReload((x) => x + 1);
-      p.changed();
+      // Only a tool that can change something reloads the screens; a read-only answer leaves
+      // them as they are instead of flashing them.
+      if (
+        turn.parts.some(
+          (part) => part.kind !== "text" && !(part.kind === "tool" && LOOKS_AT[part.line.name]),
+        )
+      )
+        p.changed();
     }
   }
 
-  /** Starts over: the backend keeps one conversation per Entity, so this replaces it. */
-  async function startNew() {
+  /** Starts an empty conversation; the current one stays in History. */
+  function startNew() {
     if (live) return;
-    if (
-      messages.length &&
-      !window.confirm("Start a new conversation? This one is deleted; pending changes stay listed.")
-    )
-      return;
+    choose(null);
+    setMessages([]);
+    setEnded(null);
+    setError("");
+    setTab("chat");
+    input.current?.focus();
+  }
+  function reopen(id: UUID) {
+    if (live) return;
+    choose(id);
+    setEnded(null);
+    setError("");
+    anchor.current = null;
+    follow.current = true;
+    setTab("chat");
+    setReload((x) => x + 1);
+  }
+  /** Hides a conversation from History; its messages stay until retention removes them. */
+  async function archive(id: UUID) {
     try {
-      if (messages.length) await agent.clear(await p.credentials(), p.entity.id);
-      setMessages([]);
-      setError("");
-      setTab("chat");
+      await agent.archive(await p.credentials(), p.entity.id, id);
+      setList((all) => all.filter((c) => c.id !== id));
+      if (currentRef.current === id) {
+        choose(null);
+        setMessages([]);
+        setEnded(null);
+      }
+      setAnnounce("Conversation archived.");
     } catch (issue) {
-      setError(issue instanceof Error ? issue.message : "A new conversation was not started.");
+      setError(issue instanceof Error ? issue.message : "The conversation was not archived.");
     }
   }
 
@@ -234,30 +447,125 @@ export function AgentPanel(p: AgentPanelProps) {
         />
       ));
 
+  /** A turn's parts in order; drafts are full cards, usable once the turn has ended. */
+  const parts = (list: Part[], streaming: boolean) =>
+    list.map((part, i) => {
+      // biome-ignore lint/suspicious/noArrayIndexKey: A turn's parts only append.
+      if (part.kind === "text") return <Markdown key={`t${i}`} text={part.text} />;
+      if (part.kind === "tool")
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: A turn's parts only append.
+          <small key={`u${i}`} className={`agent-tool ${part.line.status}`}>
+            {toolText(part.line)}
+          </small>
+        );
+      if (!streaming && open.has(part.change.id)) return cards([part.change.id]);
+      return (
+        <PendingCard
+          key={part.change.id}
+          change={part.change}
+          canApply={recordMode}
+          entityName={p.entity.name}
+          disabled
+          apply={() => {}}
+          dismiss={() => {}}
+        />
+      );
+    });
+
   return (
-    <aside className="agent" aria-label="Assistant">
+    <aside
+      className={full ? "agent full" : "agent"}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && live) {
+          event.preventDefault();
+          abort.current?.abort();
+        }
+      }}
+      aria-label="Assistant"
+      style={{ "--agent-width": `${width}px` } as CSSProperties}
+    >
+      <div
+        className="agent-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize assistant"
+        aria-valuenow={width}
+        aria-valuemin={WIDTH_MIN}
+        aria-valuemax={clampWidth(Number.POSITIVE_INFINITY)}
+        tabIndex={0}
+        title="Drag to resize; double-click to reset"
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          drag.current = { x: event.clientX, width };
+        }}
+        onPointerMove={(event) => {
+          // The handle is on the panel's left edge: moving left widens it.
+          if (drag.current) resize(drag.current.width + drag.current.x - event.clientX);
+        }}
+        onPointerUp={() => {
+          drag.current = null;
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+        }}
+        onDoubleClick={() => resize(WIDTH_DEFAULT)}
+        onKeyDown={(event) => {
+          const next = {
+            ArrowLeft: width + WIDTH_STEP,
+            ArrowRight: width - WIDTH_STEP,
+            Home: WIDTH_MIN,
+            End: Number.POSITIVE_INFINITY,
+          }[event.key];
+          if (next === undefined) return;
+          event.preventDefault();
+          resize(next);
+        }}
+      />
       <header className="agent-h">
-        <b>Assistant</b>
-        <span className="agent-entity" title="This conversation is limited to this Entity">
-          {p.entity.name}
-        </span>
-        {settings?.enabled && (
-          <span className={`agent-mode ${settings.mode}`}>
-            {recordMode ? "Record with approval" : "Propose only"}
+        {/* Title and Entity stack, so the actions keep one uncrowded row. */}
+        <div className="agent-title">
+          <b>Assistant</b>
+          <span className="agent-entity" title="This conversation is limited to this Entity">
+            {p.entity.name}
           </span>
-        )}
+        </div>
         <span className="spacer" />
         {settings?.enabled && (
           <button
             type="button"
-            className="btn quiet sm"
+            className="icon-btn"
+            aria-label="History"
+            title="Earlier conversations"
+            aria-pressed={tab === "history"}
+            onClick={() => setTab(tab === "history" ? "chat" : "history")}
+          >
+            <Icon name="history" />
+          </button>
+        )}
+        {settings?.enabled && (
+          <button
+            type="button"
+            className="icon-btn"
             aria-label="New conversation"
+            title="New conversation"
             disabled={live !== null}
             onClick={() => void startNew()}
           >
-            <Icon name="plus" /> <span className="agent-new-label">New conversation</span>
+            <Icon name="plus" />
           </button>
         )}
+        <button
+          type="button"
+          className="icon-btn agent-full-btn"
+          aria-label="Full screen"
+          aria-pressed={full}
+          title={full ? "Return to the side panel" : "Fill the screen"}
+          onClick={toggleFull}
+        >
+          <Icon name={full ? "shrink" : "expand"} />
+        </button>
         <button type="button" className="icon-btn" aria-label="Close assistant" onClick={p.close}>
           <Icon name="x" />
         </button>
@@ -284,20 +592,63 @@ export function AgentPanel(p: AgentPanelProps) {
       )}
       {settings?.enabled && (
         <>
-          {/* biome-ignore lint/a11y/useSemanticElements: The kit's segmented control is a button group. */}
-          <div className="seg-control agent-tabs" role="group" aria-label="Assistant view">
-            <button type="button" aria-pressed={tab === "chat"} onClick={() => setTab("chat")}>
-              Conversation
-            </button>
-            <button
-              type="button"
-              aria-pressed={tab === "pending"}
-              onClick={() => setTab("pending")}
-            >
-              Pending changes <small>{pending.length}</small>
-            </button>
+          <div className="agent-bar">
+            {/* biome-ignore lint/a11y/useSemanticElements: The kit's segmented control is a button group. */}
+            <div className="seg-control agent-tabs" role="group" aria-label="Assistant view">
+              <button type="button" aria-pressed={tab === "chat"} onClick={() => setTab("chat")}>
+                Conversation
+              </button>
+              <button
+                type="button"
+                aria-pressed={tab === "pending"}
+                onClick={() => setTab("pending")}
+              >
+                Pending changes
+                {pending.length > 0 && (
+                  <>
+                    {" "}
+                    <small className="agent-count">{pending.length}</small>
+                  </>
+                )}
+              </button>
+            </div>
+            <span className={`agent-mode ${settings.mode}`}>
+              {recordMode ? "Record with approval" : "Propose only"}
+            </span>
           </div>
-          {tab === "pending" ? (
+          {tab === "history" ? (
+            <div className="agent-log agent-history">
+              {list.length === 0 && (
+                <p className="note">No conversations yet. Archived ones are not listed.</p>
+              )}
+              {list.map((c) => (
+                <div key={c.id} className="agent-conv">
+                  <button
+                    type="button"
+                    className="agent-conv-open"
+                    aria-current={c.id === current ? "true" : undefined}
+                    disabled={Boolean(live)}
+                    onClick={() => reopen(c.id)}
+                  >
+                    <span className="agent-conv-title">{c.title}</span>
+                    <small className="note">
+                      {WHEN.format(new Date(c.updated_at))} · {c.message_count} messages
+                    </small>
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={`Archive "${c.title}"`}
+                    title="Archive: hide it from History"
+                    disabled={Boolean(live) && c.id === current}
+                    onClick={() => void archive(c.id)}
+                  >
+                    <Icon name="archive" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : tab === "pending" ? (
             <div className="agent-log">
               {pending.length === 0 && <p className="note">No pending changes.</p>}
               {pending.map((c) => (
@@ -313,49 +664,100 @@ export function AgentPanel(p: AgentPanelProps) {
               ))}
             </div>
           ) : (
-            <div className="agent-log" ref={log} aria-live="polite">
-              {messages.length === 0 && !live && (
-                <p className="note">
-                  Ask about your finances, or ask me to categorize the inbox. Changes I draft wait
-                  for you as cards; nothing is recorded until you apply it.
-                </p>
-              )}
-              {messages.map((m) => (
-                <div key={m.id} className={`agent-msg ${m.role === "owner" ? "owner" : "reply"}`}>
-                  {m.role === "owner" ? <p>{m.content}</p> : <Markdown text={m.content} />}
-                  {m.image_count > 0 && (
-                    <small className="note">{m.image_count} image(s) sent, not kept</small>
-                  )}
-                  {cards(m.pending_change_ids)}
-                </div>
-              ))}
-              {live && (
-                <div className="agent-msg reply">
-                  {live.tools.map((t, i) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: Tool lines only append.
-                    <small key={i} className={`agent-tool ${t.status}`}>
-                      {t.status === "started" ? "Using" : t.status === "done" ? "Used" : "Failed:"}{" "}
-                      {TOOL_LABEL(t.name)}
-                    </small>
-                  ))}
-                  {live.text ? (
-                    <Markdown text={live.text} />
-                  ) : (
-                    <output className="note">Thinking…</output>
-                  )}
-                  {live.changes.map((c) => (
-                    <div key={c.id} className="agent-card card pad">
-                      <b>Drafted: {c.summary}</b>
-                      <small className="note">For {p.entity.name}</small>
+            <div className="agent-logwrap">
+              <div
+                className="agent-log"
+                ref={log}
+                aria-busy={Boolean(live)}
+                // Scrolling up is felt before its scroll event arrives, so stop following at once:
+                // otherwise the next words of the reply pull the log back down.
+                onWheel={(event) => {
+                  if (event.deltaY < 0) follow.current = false;
+                }}
+                onTouchMove={() => {
+                  follow.current = false;
+                }}
+                onKeyDown={(event) => {
+                  if (["ArrowUp", "PageUp", "Home"].includes(event.key)) follow.current = false;
+                }}
+                onScroll={() => {
+                  const el = log.current;
+                  if (!el) return;
+                  // Reading past the question frees the log to follow to the end.
+                  if (el.scrollTop > target() + NEAR / 2) anchor.current = null;
+                  follow.current = el.scrollTop >= target() - NEAR / 2;
+                  measure();
+                }}
+              >
+                {messages.length === 0 && !live && !ended && (
+                  <p className="note">
+                    Ask about your finances, or ask me to categorize the inbox. Changes I draft wait
+                    for you as cards; nothing is recorded until you apply it.
+                  </p>
+                )}
+                {messages.map((m, i) => (
+                  <div
+                    key={m.id}
+                    className={`agent-msg ${m.role === "owner" ? "owner" : "reply"}`}
+                    data-turn={m.role === "owner" ? String(i) : undefined}
+                  >
+                    {m.role === "owner" ? <p>{m.content}</p> : <Markdown text={m.content} />}
+                    {m.image_count > 0 && (
+                      <small className="note">{m.image_count} image(s) sent, not kept</small>
+                    )}
+                    {cards(m.pending_change_ids)}
+                  </div>
+                ))}
+                {ended && (
+                  <>
+                    <div className="agent-msg owner" data-turn="ended">
+                      <p>{ended.content}</p>
+                      {ended.image_count > 0 && (
+                        <small className="note">{ended.image_count} image(s) attached</small>
+                      )}
                     </div>
-                  ))}
-                </div>
+                    <div className="agent-msg reply">
+                      {parts(ended.parts, false)}
+                      <div className="agent-ended" role={ended.ended?.retry ? "alert" : undefined}>
+                        <small className={ended.ended?.retry ? "bad" : "note"}>
+                          {ended.ended?.note}
+                        </small>
+                        {ended.ended?.retry && (
+                          <button
+                            type="button"
+                            className="btn sm"
+                            disabled={Boolean(live)}
+                            onClick={() => void send(ended.content, images)}
+                          >
+                            Retry
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+                {live && (
+                  <div className="agent-msg reply">
+                    {parts(live.parts, true)}
+                    {thinking(live.parts) && <span className="note agent-thinking">Thinking…</span>}
+                  </div>
+                )}
+                {!recordMode && pending.length > 0 && (
+                  <p className="note">
+                    Propose only: apply drafted changes from <b>Pending changes</b>.
+                  </p>
+                )}
+              </div>
+              {below && (
+                <button type="button" className="btn sm agent-latest" onClick={toLatest}>
+                  <Icon name="down" />
+                  {live ? "Reply continues" : "Latest"}
+                </button>
               )}
-              {!recordMode && pending.length > 0 && (
-                <p className="note">
-                  Propose only: apply drafted changes from <b>Pending changes</b>.
-                </p>
-              )}
+              {/* biome-ignore lint/a11y/useSemanticElements: An <output> here would read as a result. */}
+              <p className="sr-only" role="status">
+                {announce}
+              </p>
             </div>
           )}
           {error && (
@@ -372,7 +774,7 @@ export function AgentPanel(p: AgentPanelProps) {
           >
             <textarea
               ref={input}
-              className="input"
+              aria-keyshortcuts="ArrowUp"
               aria-label="Message the assistant"
               maxLength={4000}
               rows={2}
@@ -383,37 +785,78 @@ export function AgentPanel(p: AgentPanelProps) {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
                   void send();
+                } else if (event.key === "ArrowUp" && !text && !live) {
+                  // Up in an empty box brings back the last question to edit and send again.
+                  const last = [...messages].reverse().find((m) => m.role === "owner");
+                  if (last) {
+                    event.preventDefault();
+                    setText(last.content);
+                  }
                 }
               }}
             />
-            <label className="btn agent-attach">
-              <span>{images.length ? `${images.length} image(s)` : "Attach"}</span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                multiple
-                aria-label="Attach receipt images"
-                disabled={Boolean(live)}
-                onChange={(event) => {
-                  const files = [...(event.target.files ?? [])];
-                  event.target.value = "";
-                  if (files.length > 4) return setError("Attach at most 4 images.");
-                  if (files.some((f) => f.size > 5 * 1024 * 1024))
-                    return setError("Each image must be 5 MB or smaller.");
-                  setError("");
-                  setImages(files);
-                }}
-              />
-            </label>
-            {live ? (
-              <button type="button" className="btn" onClick={() => abort.current?.abort()}>
-                Stop
-              </button>
-            ) : (
-              <button type="submit" className="btn pri" disabled={!text.trim() && !images.length}>
-                Send
-              </button>
-            )}
+            <div className="agent-compose-bar">
+              <label className="icon-btn agent-attach" title="Attach receipt images">
+                <Icon name="clip" />
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  multiple
+                  aria-label="Attach receipt images"
+                  disabled={Boolean(live)}
+                  onChange={(event) => {
+                    const files = [...images, ...(event.target.files ?? [])];
+                    event.target.value = "";
+                    if (files.length > 4) return setError("Attach at most 4 images.");
+                    if (files.some((f) => f.size > 5 * 1024 * 1024))
+                      return setError("Each image must be 5 MB or smaller.");
+                    setError("");
+                    setImages(files);
+                  }}
+                />
+              </label>
+              {images.map((file, i) => (
+                <span key={thumbs[i]} className="agent-thumb">
+                  <img src={thumbs[i]} alt={file.name} />
+                  <button
+                    type="button"
+                    className="x"
+                    aria-label={`Remove ${file.name}`}
+                    disabled={Boolean(live)}
+                    onClick={() => setImages(images.filter((_, j) => j !== i))}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <small className="agent-hint">
+                {text.length > 3600
+                  ? `${4000 - text.length} characters left`
+                  : "Enter to send · Shift+Enter for a new line"}
+              </small>
+              {live ? (
+                <button
+                  type="button"
+                  className="icon-btn agent-send"
+                  aria-label="Stop"
+                  title="Stop (Esc)"
+                  aria-keyshortcuts="Escape"
+                  onClick={() => abort.current?.abort()}
+                >
+                  <Icon name="stop" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="icon-btn agent-send"
+                  aria-label="Send"
+                  title="Send (Enter)"
+                  disabled={!text.trim() && !images.length}
+                >
+                  <Icon name="send" />
+                </button>
+              )}
+            </div>
           </form>
         </>
       )}

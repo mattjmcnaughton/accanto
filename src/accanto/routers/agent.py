@@ -16,7 +16,7 @@ from accanto.db import async_session
 from accanto.dtos.agent import AgentSettingsInput, ApplyInput, DismissInput
 from accanto.routers.authentication import BrowserToken, Session
 from accanto.services import agent_images, agent_settings, agent_writes, tools
-from accanto.services.agent import AgentTurns
+from accanto.services.agent import LATEST, AgentTurns
 from accanto.services.openrouter import provider_label
 from accanto.services.sse import SSE_HEADERS, SSE_MEDIA_TYPE
 
@@ -115,6 +115,29 @@ class ReleasingStream(StreamingResponse):
             self.release()
 
 
+# Assistant conversations (TDD 08): several per User and Entity. Archive hides one;
+# retention deletes it 30 days after its latest turn.
+@router.get("/conversations")
+async def list_conversations(entity_id: UUID, request: Request, actor: BrowserToken):
+    return await turns(request).conversations(actor, entity_id)
+
+
+@router.get("/conversations/{conversation_id}")
+async def get_conversation_by_id(
+    entity_id: UUID, conversation_id: UUID, request: Request, actor: BrowserToken
+):
+    return await turns(request).read(actor, entity_id, conversation_id)
+
+
+@router.post("/conversations/{conversation_id}/archive")
+async def archive_conversation(
+    entity_id: UUID, conversation_id: UUID, request: Request, actor: BrowserToken
+):
+    await turns(request).archive(actor, entity_id, conversation_id)
+    return {"archived": True}
+
+
+# The TDD 03 routes act on the latest active conversation.
 @router.get("/conversation")
 async def get_conversation(entity_id: UUID, request: Request, actor: BrowserToken):
     return await turns(request).read(actor, entity_id)
@@ -122,9 +145,37 @@ async def get_conversation(entity_id: UUID, request: Request, actor: BrowserToke
 
 @router.delete("/conversation")
 async def clear_conversation(entity_id: UUID, request: Request, actor: BrowserToken):
-    """Hard-deletes the conversation; Pending changes it drafted stay listed."""
-    await turns(request).clear(actor, entity_id)
-    return {"cleared": True}
+    """Archives the latest conversation; Pending changes it drafted stay listed."""
+    archived = await turns(request).archive(actor, entity_id)
+    return {"cleared": archived}
+
+
+Message = Annotated[str, Form(max_length=4000)]
+Screen = Annotated[str | None, Form(max_length=40)]
+Month = Annotated[date | None, Form()]
+Images = Annotated[list[UploadFile] | None, File()]
+
+
+async def stream_turn(
+    request, actor, entity_id, conversation, content, screen, month, images
+):
+    """Admit before the first byte, then stream SSE: delta, tool, pending_change,
+    done (with conversation_id) or error, with a ': ping' heartbeat. Images are
+    normalised in memory and passed to this turn only."""
+    service = turns(request)
+    # Read one byte past the limit so an oversized file is refused, not buffered whole.
+    raw = [await f.read(agent_images.MAX_IMAGE_BYTES + 1) for f in images or []]
+    normalised = await asyncio.to_thread(agent_images.normalise_all, raw)
+    turn = await service.admit(
+        actor,
+        entity_id,
+        content,
+        images=normalised,
+        screen=screen,
+        month=month,
+        conversation=conversation,
+    )
+    return ReleasingStream(service.stream(turn), lambda: service.release(turn))
 
 
 @router.post("/conversation/messages")
@@ -132,19 +183,44 @@ async def send_message(
     entity_id: UUID,
     request: Request,
     actor: BrowserToken,
-    content: Annotated[str, Form(max_length=4000)] = "",
-    screen: Annotated[str | None, Form(max_length=40)] = None,
-    month: Annotated[date | None, Form()] = None,
-    images: Annotated[list[UploadFile] | None, File()] = None,
+    content: Message = "",
+    screen: Screen = None,
+    month: Month = None,
+    images: Images = None,
 ):
-    """Admit before the first byte, then stream SSE: delta, tool, pending_change,
-    done or error, with a ': ping' heartbeat. Images are normalised in memory and
-    passed to this turn only."""
-    service = turns(request)
-    # Read one byte past the limit so an oversized file is refused, not buffered whole.
-    raw = [await f.read(agent_images.MAX_IMAGE_BYTES + 1) for f in images or []]
-    normalised = await asyncio.to_thread(agent_images.normalise_all, raw)
-    turn = await service.admit(
-        actor, entity_id, content, images=normalised, screen=screen, month=month
+    """Continues the latest conversation, or starts one."""
+    return await stream_turn(
+        request, actor, entity_id, LATEST, content, screen, month, images
     )
-    return ReleasingStream(service.stream(turn), lambda: service.release(turn))
+
+
+@router.post("/conversations/messages")
+async def start_conversation(
+    entity_id: UUID,
+    request: Request,
+    actor: BrowserToken,
+    content: Message = "",
+    screen: Screen = None,
+    month: Month = None,
+    images: Images = None,
+):
+    """Starts a conversation with this message; done carries its id."""
+    return await stream_turn(
+        request, actor, entity_id, None, content, screen, month, images
+    )
+
+
+@router.post("/conversations/{conversation_id}/messages")
+async def continue_conversation(
+    entity_id: UUID,
+    conversation_id: UUID,
+    request: Request,
+    actor: BrowserToken,
+    content: Message = "",
+    screen: Screen = None,
+    month: Month = None,
+    images: Images = None,
+):
+    return await stream_turn(
+        request, actor, entity_id, conversation_id, content, screen, month, images
+    )

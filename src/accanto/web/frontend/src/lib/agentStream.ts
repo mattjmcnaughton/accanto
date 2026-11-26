@@ -32,7 +32,16 @@ export interface AgentMessage {
   pending_change_ids: UUID[];
   created_at: string;
 }
+/** One of the Entity's active conversations (TDD 08), titled by its first question. */
+export interface ConversationSummary {
+  id: UUID;
+  title: string;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+}
 export interface StreamDone {
+  conversation_id: UUID;
   owner_message_id: UUID;
   agent_message_id: UUID;
   pending_change_ids: UUID[];
@@ -47,6 +56,8 @@ export interface StreamHandlers {
   onPendingChange?: (change: PendingChange) => void;
 }
 export interface SendInput {
+  /** The conversation to continue; null starts one. */
+  conversation: UUID | null;
   content: string;
   screen?: string;
   month?: string;
@@ -69,12 +80,16 @@ const csrf = (session: BrowserSession) => ({ "X-CSRF-Token": session.csrf_token 
 export const agent = {
   settingsPath: (entityId: UUID) => `${root(entityId)}/settings`,
   settings: (entityId: UUID) => fetchJson<AgentSettings>(`${root(entityId)}/settings`),
-  conversation: (entityId: UUID) => fetchJson<AgentMessage[]>(`${root(entityId)}/conversation`),
-  clear: (session: BrowserSession, entityId: UUID) =>
-    fetchJson<{ cleared: boolean }>(`${root(entityId)}/conversation`, {
-      method: "DELETE",
-      headers: csrf(session),
-    }),
+  conversations: (entityId: UUID) =>
+    fetchJson<ConversationSummary[]>(`${root(entityId)}/conversations`),
+  conversation: (entityId: UUID, id: UUID) =>
+    fetchJson<AgentMessage[]>(`${root(entityId)}/conversations/${encodeURIComponent(id)}`),
+  /** Hides the conversation; its messages stay until retention removes them. */
+  archive: (session: BrowserSession, entityId: UUID, id: UUID) =>
+    fetchJson<{ archived: boolean }>(
+      `${root(entityId)}/conversations/${encodeURIComponent(id)}/archive`,
+      { method: "POST", headers: csrf(session) },
+    ),
   pending: (entityId: UUID) => fetchJson<PendingChange[]>(`${root(entityId)}/pending-changes`),
   applyPath: (entityId: UUID, id: UUID) =>
     `${root(entityId)}/pending-changes/${encodeURIComponent(id)}/apply`,
@@ -107,7 +122,10 @@ export async function streamReply(
   for (const image of input.images ?? []) form.append("images", image);
   let response: Response;
   try {
-    response = await fetch(`${root(entityId)}/conversation/messages`, {
+    const path = input.conversation
+      ? `conversations/${encodeURIComponent(input.conversation)}`
+      : "conversations";
+    response = await fetch(`${root(entityId)}/${path}/messages`, {
       method: "POST",
       headers: csrf(session),
       body: form,

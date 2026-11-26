@@ -104,10 +104,22 @@
   container-type: inline-size;
 }
 /* The open Assistant narrows the main column, so the top bar compacts by its width. */
-@container (max-width: 780px) {
+@container (max-width: 900px) {
   .day,
   .jump span {
     display: none;
+  }
+}
+/* A widened Assistant leaves room for the actions' icons; their names stay for assistive tech. */
+@container (max-width: 700px) {
+  .top-agent,
+  .top-add {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 .top {
