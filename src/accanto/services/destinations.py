@@ -17,6 +17,11 @@ from accanto.services.access import RejectionError
 from accanto.services.monthly import authorize, check_revision, scoped
 
 
+def assignment_field(kind):
+    """The entry field naming a contribution's assignment."""
+    return "investment_id" if kind == "investment" else "giving_recipient_id"
+
+
 def resources(kind):
     if kind == "investment":
         return d.investments, d.investment_entries, "investment_id", "investing"
@@ -197,6 +202,7 @@ async def entry_snapshot(session, kind, entry):
     )
     from accanto.models import savings as s
     from accanto.services.savings import current_link
+    from accanto.services.tags import entry_tag_uuids
 
     link = await current_link(session, entry["id"])
     if link is None and entry["deleted_at"] is not None:
@@ -228,9 +234,10 @@ async def entry_snapshot(session, kind, entry):
         "is_adjustment": entry["is_adjustment"],
         "is_refund": entry["is_refund"],
         "revision": entry["revision"],
-        "destination_id": str(destination_uuid) if destination_uuid else None,
+        assignment_field(kind): str(destination_uuid) if destination_uuid else None,
         "funding_origin": "savings" if link else "income",
-        "saving_goal_id": str(goal_uuid) if goal_uuid else None,
+        "funding_goal_id": str(goal_uuid) if goal_uuid else None,
+        "tag_ids": await entry_tag_uuids(session, entry["id"]),
     }
 
 
@@ -259,6 +266,15 @@ async def read_contributions(session, token, entity_uuid, kind):
 async def write_contribution(session, entity, operation, payload, target, audit):
     action, kind, _ = operation.split("_", 2)
     table, assignment, foreign_key, category = resources(kind)
+    other = "giving_recipient_id" if kind == "investment" else "investment_id"
+    if payload.get(other):
+        raise RejectionError(
+            "invalid_contribution",
+            f"A {kind} contribution names its assignment as {assignment_field(kind)}.",
+            422,
+        )
+    if payload.get("destination_id"):  # transition: the old shared field
+        payload = {**payload, assignment_field(kind): payload["destination_id"]}
     old = None
     before = None
     previous_id = None
@@ -313,10 +329,9 @@ async def write_contribution(session, entity, operation, payload, target, audit)
         response = await entry_snapshot(session, kind, updated)
         await audit(m.entries, updated["uuid"], before, response)
         return response
+    assigned = payload.get(assignment_field(kind))
     destination = (
-        await scoped(session, table, entity["id"], payload["destination_id"])
-        if payload.get("destination_id")
-        else None
+        await scoped(session, table, entity["id"], assigned) if assigned else None
     )
     if destination and (old is None or destination["id"] != previous_id):
         try:
@@ -363,9 +378,7 @@ async def write_contribution(session, entity, operation, payload, target, audit)
         entity,
         updated,
         previous_link,
-        payload.get("saving_goal_id")
-        if payload.get("funding_origin") == "savings"
-        else None,
+        payload.get("funding_goal_id"),
         audit,
         category if old else None,
     )
@@ -385,6 +398,9 @@ async def write_contribution(session, entity, operation, payload, target, audit)
         await session.execute(
             delete(assignment).where(assignment.c.actual_entry_id == updated["id"])
         )
+    from accanto.services.tags import tag_entry
+
+    await tag_entry(session, entity, updated, payload.get("tag_ids"), audit)
     response = await entry_snapshot(session, kind, updated)
     await audit(m.entries, updated["uuid"], before, response)
     return response

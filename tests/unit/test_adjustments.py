@@ -1,6 +1,7 @@
 """Independently worked known-total examples."""
 
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -37,3 +38,36 @@ def test_only_explicit_adjustments_allow_signed_amounts():
     )
     with pytest.raises(ValueError):
         money("-10")
+
+
+GOAL = "11111111-1111-4111-8111-111111111111"
+OTHER = "22222222-2222-4222-8222-222222222222"
+
+
+def test_outflow_funding_goal_accepts_the_legacy_pair_until_retired():
+    spent: dict[str, Any] = {
+        "date": "2026-10-16",
+        "category": "spending",
+        "amount": "10",
+    }
+    legacy = ActivityInput(**spent, funding_origin="savings", saving_goal_id=GOAL)
+    assert str(legacy.funding_goal_id) == GOAL
+    assert legacy.saving_goal_id is None
+    assert "funding_origin" not in legacy.model_dump()
+    assert ActivityInput(**spent, funding_origin="income").funding_goal_id is None
+    with pytest.raises(ValueError, match="different goals"):
+        ActivityInput(**spent, saving_goal_id=GOAL, funding_goal_id=OTHER)
+    with pytest.raises(ValueError, match="funding_goal_id"):
+        ActivityInput(**spent, saving_goal_id=GOAL)  # goal with no origin is ambiguous
+    with pytest.raises(ValueError, match="current income"):
+        ActivityInput(
+            date="2026-10-16",
+            category="saving",
+            amount="10",
+            saving_goal_id=GOAL,
+            funding_goal_id=OTHER,
+        )
+    saved = ActivityInput(
+        date="2026-10-16", category="saving", amount="10", saving_goal_id=GOAL
+    )
+    assert str(saved.saving_goal_id) == GOAL and saved.funding_goal_id is None

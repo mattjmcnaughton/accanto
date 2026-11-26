@@ -264,8 +264,10 @@ async def get_plans(entity_id: UUID, session: Session, token: Token):
 
 
 @router.get("/activity")
-async def get_activity(entity_id: UUID, session: Session, token: Token):
+async def get_activity(
+    entity_id: UUID, session: Session, token: Token, tag_id: UUID | None = None
+):
     try:
-        return public_result(await read_activity(session, token, entity_id))
+        return public_result(await read_activity(session, token, entity_id, tag_id))
     except RejectionError as error:
         raise HTTPException(error.status, error.message) from None

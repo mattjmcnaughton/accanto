@@ -6,6 +6,8 @@ import {
   type ContributionInput,
   type Destination,
   type DestinationKind,
+  assignmentField,
+  assignmentOf,
   destinations,
 } from "../../lib/destinations";
 import { fmtDate, formatMoney, plural } from "../../lib/format";
@@ -40,6 +42,11 @@ type DestinationForm = {
   openingDate: string;
   openingAmount: string;
 };
+/** The contribution being edited; `savings` keeps the origin choice while no goal is picked. */
+type EntryForm = Omit<ContributionInput, "investment_id" | "giving_recipient_id"> & {
+  destination: string | null;
+  savings: boolean;
+};
 type Form =
   | {
       type: "destination";
@@ -47,7 +54,7 @@ type Form =
       record: Destination | null;
       value: DestinationForm;
     }
-  | { type: "entry"; kind: DestinationKind; record: Contribution | null; value: ContributionInput }
+  | { type: "entry"; kind: DestinationKind; record: Contribution | null; value: EntryForm }
   | { type: "observation"; record: Observation | null; value: ObservationInput };
 
 const COPY = {
@@ -96,7 +103,7 @@ function problem(form: Form): string {
       return e.is_adjustment
         ? "Enter a signed USD amount with up to two decimals."
         : "Enter a nonnegative USD amount with up to two decimals.";
-    if (e.funding_origin === "savings" && !e.saving_goal_id) return "Choose a saving goal.";
+    if (e.savings && !e.funding_goal_id) return "Choose a saving goal.";
     return "";
   }
   return validMoney(form.value.amount)
@@ -175,21 +182,21 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
         ? {
             date: row.financial_date,
             amount: row.amount,
-            destination_id: row.destination_id,
+            destination: assignmentOf(kind, row),
             note: row.note,
             is_adjustment: row.is_adjustment,
             expected_revision: row.revision,
-            funding_origin: row.funding_origin ?? "income",
-            saving_goal_id: row.saving_goal_id ?? null,
+            savings: Boolean(row.funding_goal_id),
+            funding_goal_id: row.funding_goal_id ?? null,
           }
         : {
             date: p.entity.today,
             amount: "",
-            destination_id: destination,
+            destination,
             note: "",
             is_adjustment: false,
-            funding_origin: "income",
-            saving_goal_id: null,
+            savings: false,
+            funding_goal_id: null,
           },
     });
   }
@@ -266,7 +273,13 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
             }),
       );
     } else if (form.type === "entry") {
-      const v = { ...form.value, amount: form.value.amount.trim() };
+      const { destination, savings, ...rest } = form.value;
+      const v: ContributionInput = {
+        ...rest,
+        amount: rest.amount.trim(),
+        [assignmentField(form.kind)]: destination,
+        funding_goal_id: savings ? rest.funding_goal_id : null,
+      };
       editor.submit(
         error,
         form.record
@@ -332,7 +345,7 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
     { header: "Date", cell: (row) => <Day iso={row.financial_date} /> },
     {
       header: kind === "investment" ? "Investment" : "Recipient",
-      cell: (row) => nameOf(kind, row.destination_id),
+      cell: (row) => nameOf(kind, assignmentOf(kind, row)),
     },
     {
       header: "Kind",
@@ -351,7 +364,7 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
       wide: true,
       cell: (row) =>
         row.funding_origin === "savings"
-          ? (savingGoals.find(({ goal }) => goal.uuid === row.saving_goal_id)?.label ??
+          ? (savingGoals.find(({ goal }) => goal.uuid === row.funding_goal_id)?.label ??
             "Historical saving goal")
           : "Income",
     },
@@ -402,7 +415,9 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
 
   const cards = (kind: DestinationKind) =>
     ready(rows[kind]).map((row) => {
-      const entries = ready(history[kind]).filter((entry) => entry.destination_id === row.uuid);
+      const entries = ready(history[kind]).filter(
+        (entry) => assignmentOf(kind, entry) === row.uuid,
+      );
       const investment = kind === "investment";
       const name = row.name;
       return (
@@ -684,7 +699,7 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
                       kind={form.kind}
                       record={form.record}
                       value={form.value}
-                      set={set<ContributionInput>}
+                      set={set<EntryForm>}
                       destinations={ready(rows[form.kind])}
                       goals={savingGoals}
                     />
@@ -872,8 +887,8 @@ function EntryFields({
 }: {
   kind: DestinationKind;
   record: Contribution | null;
-  value: ContributionInput;
-  set: (patch: Partial<ContributionInput>) => void;
+  value: EntryForm;
+  set: (patch: Partial<EntryForm>) => void;
   destinations: Destination[];
   goals: {
     account: { active: boolean; opening_date: string };
@@ -889,12 +904,12 @@ function EntryFields({
       <Field label="Destination">
         <select
           name={`${kind}-destination`}
-          value={value.destination_id ?? ""}
-          onChange={(event) => set({ destination_id: event.target.value || null })}
+          value={value.destination ?? ""}
+          onChange={(event) => set({ destination: event.target.value || null })}
         >
           <option value="">Unassigned</option>
           {named
-            .filter((row) => row.active || row.uuid === record?.destination_id)
+            .filter((row) => row.active || (record && row.uuid === assignmentOf(kind, record)))
             .map((row) => (
               <option key={row.uuid} value={row.uuid}>
                 {row.name}
@@ -919,23 +934,20 @@ function EntryFields({
       </label>
       <Field label="Funding origin">
         <select
-          value={value.funding_origin ?? "income"}
+          value={value.savings ? "savings" : "income"}
           onChange={(event) =>
-            set({
-              funding_origin: event.target.value as "income" | "savings",
-              saving_goal_id: null,
-            })
+            set({ savings: event.target.value === "savings", funding_goal_id: null })
           }
         >
           <option value="income">Current income</option>
           <option value="savings">Previously saved money</option>
         </select>
       </Field>
-      {value.funding_origin === "savings" && (
+      {value.savings && (
         <Field label="Saving goal">
           <select
-            value={value.saving_goal_id ?? ""}
-            onChange={(event) => set({ saving_goal_id: event.target.value || null })}
+            value={value.funding_goal_id ?? ""}
+            onChange={(event) => set({ funding_goal_id: event.target.value || null })}
           >
             <option value="">Choose a goal</option>
             {goals

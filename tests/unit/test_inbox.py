@@ -63,6 +63,20 @@ def test_ynab_mapping_splits_lines_and_derives_kind():
 
 OUT = StagedFacts(date(2026, 11, 6), Decimal("-640.00"), "Sample Plumbing Co", None)
 IN = StagedFacts(date(2026, 11, 9), Decimal("48.00"), "Example Outfitters", "Return")
+TRIP = "7e7c1b0a-5d1f-4c1e-9c44-2a1d6f3b9a10"
+
+
+def test_proposed_tags_reach_the_command_but_never_a_refund_or_skip():
+    giving = command_for(
+        OUT, Completion(category="giving", assignment="unassigned", tag_ids=(TRIP,))
+    )
+    assert giving.kind == "giving" and giving.fields["tag_ids"] == [TRIP]
+    for completion in (
+        Completion(refund_of=GOAL, tag_ids=(TRIP,)),
+        Completion(skip=True, tag_ids=(TRIP,)),
+    ):
+        with pytest.raises(InboxRejectionError, match="refund|skip"):
+            command_for(IN, completion)
 
 
 def test_outflow_with_savings_funding_maps_to_entry_command():
@@ -73,8 +87,7 @@ def test_outflow_with_savings_funding_maps_to_entry_command():
         "amount": "640.00",
         "note": "Sample Plumbing Co",
         "category": "spending",
-        "funding_origin": "savings",
-        "saving_goal_id": GOAL,
+        "funding_goal_id": GOAL,
     }
 
 
@@ -86,12 +99,13 @@ def test_each_category_maps_to_its_existing_command():
         == LINE
     )
     giving = command_for(OUT, Completion(category="giving", assignment="unassigned"))
-    assert (giving.kind, giving.fields["destination_id"]) == ("giving", None)
+    assert (giving.kind, giving.fields["giving_recipient_id"]) == ("giving", None)
     invest = command_for(OUT, Completion(category="investing", assignment=LINE))
-    assert (invest.kind, invest.fields["funding_origin"]) == ("investment", "income")
+    assert (invest.kind, invest.fields["investment_id"]) == ("investment", LINE)
+    assert invest.fields["funding_goal_id"] is None
     saving = command_for(OUT, Completion(category="saving", assignment=GOAL))
     assert saving.fields["saving_goal_id"] == GOAL
-    assert "funding_origin" not in saving.fields
+    assert "funding_goal_id" not in saving.fields
     refund = command_for(IN, Completion(refund_of=LINE))
     assert refund.kind == "refund"
     assert refund.fields == {

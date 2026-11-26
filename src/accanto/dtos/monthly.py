@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from accanto.domains.monthly import money
 
@@ -13,6 +14,26 @@ Name = Annotated[str, Field(min_length=1, max_length=120)]
 
 class Input(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+# Before 2026-11-25 an outflow named its funding as `funding_origin: "savings"` plus
+# `saving_goal_id`. Inputs still accept that pair, outside the published schema, so
+# older API callers and stored Pending changes keep working; it maps here.
+LegacyOrigin = SkipJsonSchema[Literal["income", "savings"] | None]
+
+
+def funding_goal(origin, legacy_goal, goal):
+    """The goal funding an outflow (None means current income), from either form."""
+    if legacy_goal is not None and goal is not None and legacy_goal != goal:
+        raise ValueError("funding_goal_id and saving_goal_id name different goals.")
+    if origin is None:
+        if legacy_goal is not None:
+            raise ValueError("Name the goal that funds an outflow as funding_goal_id.")
+        return goal
+    chosen = goal or legacy_goal
+    if (origin == "savings") != (chosen is not None):
+        raise ValueError("Savings funding requires exactly one saving goal.")
+    return chosen
 
 
 class IncomeLine(Input):
@@ -101,11 +122,14 @@ class ActivityInput(Input):
     source_id: UUID | None = None
     fixed_cost_id: UUID | None = None
     debt_account_id: UUID | None = None
+    saving_goal_id: UUID | None = None
+    funding_goal_id: UUID | None = None
     note: str = Field(default="", max_length=2000)
     expected_revision: int | None = Field(default=None, ge=1)
     is_adjustment: bool = False
-    funding_origin: Literal["income", "savings"] = "income"
-    saving_goal_id: UUID | None = None
+    funding_origin: LegacyOrigin = Field(default=None, exclude=True)
+    # Replaces the entry's tags; omit to leave them unchanged.
+    tag_ids: list[UUID] | None = Field(default=None, max_length=20)
 
     @field_validator("amount")
     @classmethod
@@ -116,22 +140,20 @@ class ActivityInput(Input):
     def ordinary_amount(self):
         if not self.is_adjustment:
             money(self.amount)
-        if self.category == "saving":
-            if self.saving_goal_id is None:
-                raise ValueError(
-                    "Choose a saving goal, including for zero adjustments."
-                )
-            if self.funding_origin != "income":
-                raise ValueError("New saving must come from current income.")
-        elif self.category in {"spending", "fixed_cost"}:
-            if (self.funding_origin == "savings") != (self.saving_goal_id is not None):
-                raise ValueError("Savings funding requires exactly one saving goal.")
-            if self.funding_origin == "savings" and self.amount.startswith("-"):
-                raise ValueError("Savings-funded spending cannot be negative.")
-        elif self.saving_goal_id is not None or self.funding_origin != "income":
-            raise ValueError(
-                "Income receipts cannot use a saving goal or funding origin."
+        if self.category in {"spending", "fixed_cost"}:
+            self.funding_goal_id = funding_goal(
+                self.funding_origin, self.saving_goal_id, self.funding_goal_id
             )
+            self.saving_goal_id = None
+            if self.funding_goal_id is not None and self.amount.startswith("-"):
+                raise ValueError("Savings-funded spending cannot be negative.")
+        elif self.funding_goal_id is not None or self.funding_origin == "savings":
+            raise ValueError("New saving and income receipts come from current income.")
+        self.funding_origin = None
+        if self.category == "saving" and self.saving_goal_id is None:
+            raise ValueError("Choose a saving goal, including for zero adjustments.")
+        if self.category == "income" and self.saving_goal_id is not None:
+            raise ValueError("Income receipts cannot use a saving goal.")
         if self.debt_account_id is not None and self.category != "fixed_cost":
             raise ValueError("Only fixed-cost payments can select a Debt account.")
         if self.fixed_cost_id is not None and self.category != "fixed_cost":
@@ -213,3 +235,23 @@ class ReviewEditInput(Input):
     note: str = Field(max_length=4000)
     reviewed: bool
     checkpoint: bool = False
+
+
+class TagInput(Input):
+    name: Name
+
+
+class TagEditInput(Input):
+    name: Name
+    active: bool
+    expected_revision: int = Field(ge=1)
+
+
+class EntryTagsChange(Input):
+    entry_id: UUID
+    expected_revision: int = Field(ge=1)
+    tag_ids: list[UUID] = Field(max_length=20)
+
+
+class EntryTagsInput(Input):
+    entries: list[EntryTagsChange] = Field(min_length=1, max_length=200)

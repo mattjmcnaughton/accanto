@@ -42,7 +42,7 @@ record nothing. Setting them is allowed in both Agent modes.
 | --- | --- | --- | --- | --- |
 | Catalog only: excluded operations are unreachable by agents | PRD AG-05 | All agent and MCP calls | No tool exists for them; a test asserts the exact tool list on both surfaces | Unit: tool-name snapshot; integration: MCP `tools/list` |
 | Agent mode gates writes | PRD AG-06 | Every catalog write except reads, `sync_source`, `set_proposals` | `services/agent_writes.dispatch` reads the mode inside the write transaction | Integration: propose mode stores a Pending change and no entry; record mode records one entry |
-| Irreversible deletes always pend | PRD AG-06 | `delete_savings_movement`, `delete_observation` | Same dispatcher, regardless of mode | Integration in both modes |
+| Irreversible deletes always pend | PRD AG-06 | `delete_savings_movement`, `delete_observation`, `delete_tag` | Same dispatcher, regardless of mode | Integration in both modes |
 | Pending change applies at most once | Constitution §7 | Apply | Server key `agent:{pending_id}`; existing `idempotency_outcome` uniqueness | Replay returns same outcome, one audit row; changed payload is `key_reuse` |
 | Stale edits reject | Constitution §7 | Edit, delete, apply of a stale pending change | `expected_revision` captured from a service read when drafted; `check_revision` | Integration: edit entry after drafting, apply returns `stale_revision`, nothing changes |
 | Agent cannot change its own permissions | PRD AG-05, AG-08 | Settings endpoints | Agent settings endpoints require a browser session, not an API key, and are absent from the catalog | Integration: API key gets 403 on agent settings |
@@ -104,7 +104,8 @@ About 45 tools; `kind` parameters merge investment/giving and debt/investment
 pairs, and `save_*` creates or, given `id` and `expected_revision`, edits.
 
 - **Reads:** `get_context`, `list_plans`, `get_plan`, `get_monthly_review`,
-  `list_activity(month, category?)` (with notes and payees, capped), `list_savings`,
+  `list_activity(month, category?, tag_id?)` (with notes and payees, capped),
+  `list_tags`, `list_savings`,
   `list_destinations(kind)`, `list_debts`, `list_investment_observations`,
   `list_income_estimates`, `list_inbox(status?, month?)`, `get_inbox_item`,
   `list_sources` (no token), `list_pending_changes`.
@@ -113,6 +114,7 @@ pairs, and `save_*` creates or, given `id` and `expected_revision`, edits.
   `resolve_inbox_conflict`.
 - **Activity:** `save_activity`, `record_known_total`, `delete_activity`,
   `save_refund`, `delete_refund`.
+- **Tags ([TDD 05](05-tags.md)):** `save_tag`, `delete_tag`, `set_entry_tags`.
 - **Plans and Reviews:** `create_plan(copy_of?)`, `edit_plan_draft`,
   `save_plan_version`, `start_review`, `update_review`.
 - **Savings:** `save_savings_account`, `set_savings_account_status`, `save_goal`,

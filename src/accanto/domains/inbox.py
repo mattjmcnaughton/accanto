@@ -50,6 +50,7 @@ class Completion:
     funding: str | None = None
     refund_of: str | None = None
     skip: bool = False
+    tag_ids: tuple[str, ...] = ()  # Tag UUID strings; a refund takes its purchase's
 
 
 @dataclass(frozen=True)
@@ -111,16 +112,16 @@ class EntryCommand:
 
 def validate_shape(c: Completion) -> None:
     """Combinations that can never be recorded, independent of the transaction."""
-    if c.skip and (c.category or c.assignment or c.funding or c.refund_of):
+    if c.skip and (c.category or c.assignment or c.funding or c.refund_of or c.tag_ids):
         raise InboxRejectionError("invalid_proposal", "A skip proposes nothing else.")
     if c.category is not None and c.category not in CATEGORIES:
         raise InboxRejectionError(
             "invalid_proposal", "Choose one of the six categories."
         )
-    if c.refund_of and (c.category or c.assignment or c.funding):
+    if c.refund_of and (c.category or c.assignment or c.funding or c.tag_ids):
         raise InboxRejectionError(
             "invalid_proposal",
-            "A refund keeps its purchase's category and funding origin.",
+            "A refund keeps its purchase's category, funding origin and tags.",
         )
     if c.assignment and not c.category:
         raise InboxRejectionError(
@@ -158,6 +159,7 @@ def command_for(facts: StagedFacts, c: Completion) -> EntryCommand:
     amount = str(abs(facts.amount))
     note = entry_note(facts.payee, facts.memo)
     base = {"date": facts.financial_date.isoformat(), "amount": amount, "note": note}
+    tags = {"tag_ids": list(c.tag_ids)} if c.tag_ids else {}
     if c.refund_of:
         if not inflow:
             raise InboxRejectionError(
@@ -187,16 +189,16 @@ def command_for(facts: StagedFacts, c: Completion) -> EntryCommand:
         )
     line = None if c.assignment in (None, UNASSIGNED) else c.assignment
     goal = None if c.funding in (None, "income") else c.funding
-    funding = {
-        "funding_origin": "savings" if goal else "income",
-        "saving_goal_id": goal,
-    }
-    if c.category in {"investing", "giving"}:
+    funding = {"funding_goal_id": goal}
+    if c.category == "investing":
         return EntryCommand(
-            "investment" if c.category == "investing" else "giving",
-            {**base, "destination_id": line, **funding},
+            "investment", {**base, "investment_id": line, **funding, **tags}
         )
-    fields = {**base, "category": c.category}
+    if c.category == "giving":
+        return EntryCommand(
+            "giving", {**base, "giving_recipient_id": line, **funding, **tags}
+        )
+    fields = {**base, "category": c.category, **tags}
     if c.category == "income":
         fields["source_id"] = line
     elif c.category == "saving":

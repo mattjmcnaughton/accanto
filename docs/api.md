@@ -71,7 +71,7 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | POST | `/plans/{plan_id}/versions` | Expected draft revision; freezes snapshot and creates next draft |
 | POST | `/activity` | Income/fixed-cost/spending/saving with explicit date, amount, optional source/fixed-cost/goal and note; `is_adjustment` for signed corrections; one savings funding origin on spending |
 | POST | `/activity/known-total` | Desired total and contributing-entry fingerprint; fixed-cost totals remain category-level and unassigned; saving requires a goal; creates one signed adjustment |
-| GET | `/activity` | Current entries ordered by financial date and recording order |
+| GET | `/activity` | Current entries ordered by financial date and recording order; optional `?tag_id=` keeps entries with that tag |
 | PUT | `/activity/{entry_id}` | Replacement entry plus expected revision |
 | DELETE | `/activity/{entry_id}` | Expected revision in JSON body; soft deletes |
 | POST | `/reviews` | Month's first date and saved version UUID |
@@ -94,10 +94,13 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | DELETE | `/savings-accounts/movements/{movement_id}` | Soft delete with `{kind, expected_revision}`; replay later history |
 | GET/POST | `/investments`, `/giving-recipients` | List/create named destinations with optional positive cumulative target; investments may have an optional dated opening observation |
 | PUT | `/investments/{destination_id}`, `/giving-recipients/{destination_id}` | Name, target, active state and `expected_revision` |
-| GET/POST | `/investment-activity`, `/giving-activity` | Current history or create contribution/adjustment with optional `destination_id` |
+| GET/POST | `/investment-activity`, `/giving-activity` | Current history or create contribution/adjustment with optional `investment_id` or `giving_recipient_id` |
 | PUT/DELETE | `/investment-activity/{entry_id}`, `/giving-activity/{entry_id}` | Correct entry or soft delete with `expected_revision` |
 | POST | `/activity/{purchase_id}/refunds` | Record a linked refund using positive `amount`, `date`, and optional `note` |
 | PUT/DELETE | `/activity/refunds/{refund_id}` | Correct a linked refund's date, amount or note, or soft delete it; both require `expected_revision` |
+| GET/POST | `/tags` | Current tags with entry counts, or create one from `name` |
+| PUT/DELETE | `/tags/{tag_id}` | Rename or archive (`name`, `active`, `expected_revision`), or delete with `expected_revision` |
+| POST | `/activity/tags` | Label-only: `entries: [{entry_id, expected_revision, tag_ids}]` replaces each entry's tags, all or none |
 
 Amounts are USD decimal **strings**, exact cents, maximum absolute value
 `999999999.99` per entered amount. Ordinary entries and known totals are
@@ -107,10 +110,11 @@ JSON values reject.
 Zero is explicit, absence is unknown. Dates are `YYYY-MM-DD`; there is no implicit
 today. Month selection uses dates, independently of UTC recording timestamps.
 
-Investment and giving contribution commands take `date`, `amount`, optional
-`destination_id`, `note`, `is_adjustment`, `funding_origin`, and
-`saving_goal_id` when savings funded; corrections also take
-`expected_revision`. An omitted destination is Unassigned. Ordinary investment
+Investment and giving contribution commands take `date`, `amount`, an optional
+assignment (`investment_id` on investment routes, `giving_recipient_id` on
+giving routes; the other field rejects), `note`, `is_adjustment`, and
+`funding_goal_id` when savings funded; corrections also take
+`expected_revision`. An omitted assignment is Unassigned. Ordinary investment
 contributions are nonnegative; signed adjustments can correct recorded totals.
 Giving refunds use the linked purchase refund command. Inactive destinations reject new assigned entries
 but permit correction of their existing assigned entries. Soft deletion removes
@@ -121,6 +125,33 @@ activity cannot predate its opening. Progress sums current assigned entries,
 separately from observed market value or tax eligibility. Monthly Reviews expose
 recorded investing and giving totals when entries exist; full comparison metrics
 are a later increment.
+
+## Tags
+
+A Tag is an Entity-defined label. Any actual entry can carry zero or more:
+income, fixed costs, guilt-free spending, saving, investing and giving,
+including adjustments and inbox recordings. Tags change no amount, category,
+funding origin, Plan or total. Tags overlap, so tagged amounts are never shares
+of a category total.
+
+Entry and contribution commands (`/activity`, `/investment-activity`,
+`/giving-activity`) take an optional `tag_ids` list of tag UUIDs (at most 20).
+It replaces the entry's tags; omit it to leave them unchanged. Every entry
+response includes `tag_ids`. Repeats collapse to one. A deleted tag or one from
+another Entity returns `404 tag_not_found`; an archived tag can stay on an entry
+that has it but returns `422 archived_tag` when added.
+
+A linked refund always carries its purchase's current tags. A new refund copies
+them, and changing the purchase's tags changes its refunds' tags in the same
+transaction (each refund's revision and audit advance). Setting a refund's tags
+returns `422 refund_tags`.
+
+Tag names are 1–120 characters after whitespace collapses, unique per Entity
+ignoring case (`409 tag_exists`). Rename, archive (`active: false`) and restore
+use `PUT /tags/{tag_id}`. `DELETE /tags/{tag_id}` removes the tag from every
+entry (each entry's revision and audit advance) and frees its name. Any change
+to an entry's tags advances its revision, so a reviewed month shows
+`checkpoint_changed`. An unchanged tag set leaves the revision as it was.
 
 ## Savings accounts and goals
 
@@ -167,12 +198,22 @@ independent edit or lifecycle command. All writes require the shared
 reusing the key with different input conflicts. Financial change, complete audit
 snapshot and retry outcome commit together under the Entity lock.
 
+**Field transition (2026-11-25).** Entry inputs and responses use
+`funding_goal_id` for an outflow's funding goal, and `investment_id` /
+`giving_recipient_id` for contribution assignments. Requests in the earlier form,
+`funding_origin: "savings"` plus `saving_goal_id` on an outflow, or the shared
+`destination_id` on a contribution, are still accepted and mapped during a
+transition period. They are not in the published schema. A request that sends
+both forms with different goals rejects. Responses use only the new names.
+
 Saving contributions and savings-funded outflows use `/activity`. Each saving
-entry, including a zero or signed adjustment, supplies `saving_goal_id`. An
-outflow uses `funding_origin: "income"` by default. Spending, fixed costs,
-debt payments, giving, and investing can use previously saved money by sending
-`funding_origin: "savings"` and one `saving_goal_id`; the
-goal determines its account. For example, with a synthetic Laptop goal holding
+entry, including a zero or signed adjustment, supplies `saving_goal_id`: the goal
+the money goes to. Only saving entries take `saving_goal_id`. An outflow is funded
+from current income unless it sends `funding_goal_id`. Spending, fixed costs,
+debt payments, giving, and investing use previously saved money by sending one
+`funding_goal_id`, including an account's Unallocated goal; the goal determines
+its account. Responses include `funding_goal_id` and a read-only
+`funding_origin` (`"income"` or `"savings"`) derived from it. For example, with a synthetic Laptop goal holding
 `800.00`, a `1000.00` savings-funded purchase rejects. Record a `200.00` saving
 contribution on the same date first, then the purchase succeeds. The month has
 `200.00` new saving and `1000.00` spending; the purchase also appears as
@@ -687,7 +728,8 @@ A **proposal** (and a record `completion`) is any subset of `category`
 (`income`, `fixed_cost`, `spending`, `saving`, `investing`, `giving`),
 `assignment` (an Income source, fixed cost, saving goal, investment or giving
 recipient UUID, or `"unassigned"`), `funding` (`"income"` or a saving goal UUID),
-`refund_of` (a purchase entry UUID), or `skip: true`, plus `rationale` and
+`refund_of` (a purchase entry UUID), or `skip: true`, optional `tag_ids` (not
+with `refund_of` or `skip`), plus `rationale` and
 `expected_revision`. Setting a proposal checks its shape and that every reference
 exists in the Entity, then runs the record command's checks as a dry run and
 stores any rejection in `proposal_rejection` without failing the request. It never

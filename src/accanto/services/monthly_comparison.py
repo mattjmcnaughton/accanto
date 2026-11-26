@@ -25,7 +25,7 @@ def explain_review(version, entries):
         (
             "investing",
             "investments",
-            "destination_id",
+            "investment_id",
             "destination_name",
             "amount",
             "investing_total",
@@ -33,7 +33,7 @@ def explain_review(version, entries):
         (
             "giving",
             "giving",
-            "destination_id",
+            "giving_recipient_id",
             "destination_name",
             "amount",
             "giving_total",
@@ -41,7 +41,11 @@ def explain_review(version, entries):
     )
     comparisons = {}
     for category, collection, identity, label, amount, total_key in specification:
-        source_key = "goal_id" if category == "saving" else identity
+        source_key = {
+            "saving": "goal_id",
+            "investing": "destination_id",
+            "giving": "destination_id",
+        }.get(category, identity)
         expected = [
             {
                 "id": str(line[source_key]),

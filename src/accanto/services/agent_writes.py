@@ -22,7 +22,9 @@ from accanto.services.inbox import Hook, keep_rejection
 from accanto.services.monthly import DryRun, authorize, json_values, scoped, write
 
 # Deletes that cannot be restored always pend, in both Agent modes (PRD AG-06).
-IRREVERSIBLE = frozenset({"delete_savings_movement", "delete_observation"})
+IRREVERSIBLE = frozenset(
+    {"delete_savings_movement", "delete_observation", "delete_tag"}
+)
 
 
 @dataclass

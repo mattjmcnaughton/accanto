@@ -28,7 +28,10 @@ financial decisions under Open decisions instead of inventing defaults.
 ## Implementation and data
 
 Describe the smallest suitable domain functions/objects, service operations,
-persistence records/relationships, and API/UI changes. Identify stored facts
+persistence records/relationships, and API/UI changes. For a data model change,
+cover every interface: migration, domain and services, API and `docs/api.md`,
+agent tool catalog and MCP, UI, and CONTEXT.md; record any interface left out
+and why (constitution §2). Identify stored facts
 versus derived values and historical snapshots. Specify relevant money rounding,
 financial dates, and same-day ordering. Use existing structure and dependencies.
 No generic rules engine or event infrastructure is implied by this template.

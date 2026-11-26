@@ -56,11 +56,8 @@ async def validate_purchase_edit(session, old, before, payload, *, deleting=Fals
     def public_id(value):
         return str(value) if value is not None else None
 
-    new_origin = (
-        payload.get("funding_origin", "income"),
-        public_id(payload.get("saving_goal_id")),
-    )
-    old_origin = (before["funding_origin"], before["saving_goal_id"])
+    new_origin = public_id(payload.get("funding_goal_id"))
+    old_origin = before.get("funding_goal_id")
     try:
         require_purchase_change_allowed(
             has_refunds=True,
@@ -76,7 +73,7 @@ async def validate_purchase_edit(session, old, before, payload, *, deleting=Fals
                 raise ValueError(
                     "Delete linked refunds before changing purchase into an adjustment."
                 )
-            for key in ("fixed_cost_id", "debt_account_id", "destination_id"):
+            for key in ("fixed_cost_id", "debt_account_id", "giving_recipient_id"):
                 if public_id(payload.get(key)) != public_id(before.get(key)):
                     raise ValueError(
                         "Delete linked refunds before changing destination or debt."
@@ -215,6 +212,9 @@ async def write_refund(session, entity, operation, payload, target, audit):
                 .one()
             )
             await audit(r.refunds, link["uuid"], None, dict(link))
+            from accanto.services.tags import copy_purchase_tags
+
+            await copy_purchase_tags(session, entity, purchase["id"], record["id"])
             # Copy original associations once; they cannot be edited via refund DTO.
             for table, column in (
                 (m.fixed_cost_assignments, "fixed_cost_id"),

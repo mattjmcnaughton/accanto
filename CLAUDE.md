@@ -62,6 +62,12 @@ tests/
 - Source code lives in `src/accanto/` (src layout).
 - **Layering:** routers -> services -> repositories.
 - **Placement:** read `docs/architecture.md` before adding modules. Keep pure financial rules independent of HTTP and persistence; introduce narrow interfaces only at useful testing or integration boundaries.
+- **Data model changes flow through every layer** in the same change: migration
+  and models, domain rules and services, routers and `docs/api.md`, the agent
+  tool catalog and MCP (`dtos/tools.py`, `services/tools.py`), the frontend, and
+  `CONTEXT.md`. Skip a layer only when the TDD records that decision (see
+  CONSTITUTION.md §2).
+- **Field names** for a reference are named after the specific record (`fixed_cost_id`, `investment_id`, `funding_goal_id`), never a generic name shared by several record types or one field carrying two meanings. An entry's assignment and its funding origin are separate fields.
 - **DTOs** are Pydantic models for API I/O, always separate from DB models.
 - **Frontend** is composed into `src/accanto/web/frontend/` using the `frontend-react` template.
 - Tests are organized by type in `tests/unit/`, `tests/integration/`, `tests/e2e/`.

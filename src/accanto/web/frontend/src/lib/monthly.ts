@@ -44,8 +44,12 @@ export interface ActivityInput {
   note?: string;
   expected_revision?: number;
   is_adjustment?: boolean;
-  funding_origin?: "income" | "savings";
+  /** Saving entries only: the goal the money goes to. */
   saving_goal_id?: UUID | null;
+  /** Outflows only: the saving goal that pays; null is current income. */
+  funding_goal_id?: UUID | null;
+  /** Replaces the entry's tags; omit to leave them unchanged. */
+  tag_ids?: UUID[];
 }
 export interface RevisionInput {
   expected_revision: number;
@@ -116,12 +120,16 @@ export interface Activity {
   note: string;
   revision: number;
   is_adjustment: boolean;
+  /** Read-only: "savings" exactly when funding_goal_id is set. */
   funding_origin: "income" | "savings";
   saving_goal_id: UUID | null;
-  destination_id?: UUID | null;
+  funding_goal_id: UUID | null;
+  investment_id?: UUID | null;
+  giving_recipient_id?: UUID | null;
   is_refund?: boolean;
   refund_of?: UUID | null;
   remaining_refundable?: DecimalString | null;
+  tag_ids?: UUID[];
 }
 export interface RefundInput {
   date: IsoDate;

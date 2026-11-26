@@ -365,12 +365,12 @@ async def populate(command, day):
         await command(
             "POST",
             "/investment-activity",
-            {"date": month, "amount": "800.00", "destination_id": investment["uuid"]},
+            {"date": month, "amount": "800.00", "investment_id": investment["uuid"]},
         )
         await command(
             "POST",
             "/giving-activity",
-            {"date": month, "amount": "450.00", "destination_id": giving["uuid"]},
+            {"date": month, "amount": "450.00", "giving_recipient_id": giving["uuid"]},
         )
         await command(
             "POST",

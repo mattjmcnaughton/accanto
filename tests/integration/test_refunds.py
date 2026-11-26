@@ -95,8 +95,7 @@ async def scenario(race_case):
             "category": "spending",
             "amount": "1000.00",
             "note": "Synthetic item",
-            "funding_origin": "savings",
-            "saving_goal_id": goal["uuid"],
+            "funding_goal_id": goal["uuid"],
         }
         purchase_result = await command("POST", "/activity", purchase_body)
         assert purchase_result.status_code == 200, purchase_result.text
@@ -123,7 +122,7 @@ async def scenario(race_case):
         first = first_result.json()
         assert first["refund_of"] == purchase["uuid"]
         assert first["funding_origin"] == "savings"
-        assert first["saving_goal_id"] == goal["uuid"]
+        assert first["funding_goal_id"] == goal["uuid"]
         assert first["amount"] == "-300.00"
         assert first["remaining_refundable"] == "700.00"
         harmless = await command(
@@ -192,8 +191,7 @@ async def scenario(race_case):
             {**purchase_body, "amount": "299.00", "expected_revision": 2},
             {
                 **purchase_body,
-                "funding_origin": "income",
-                "saving_goal_id": None,
+                "funding_goal_id": None,
                 "expected_revision": 2,
             },
         ):
@@ -378,8 +376,7 @@ async def scenario(race_case):
                 "category": "fixed_cost",
                 "amount": "100.00",
                 "debt_account_id": loan_result.json()["uuid"],
-                "funding_origin": "savings",
-                "saving_goal_id": reserve["uuid"],
+                "funding_goal_id": reserve["uuid"],
             },
         )
         assert fixed.status_code == 200, fixed.text
@@ -413,6 +410,8 @@ async def scenario(race_case):
                 {
                     "date": "2026-10-16",
                     "amount": "100.00",
+                    # The retired shared destination_id and funding pair still
+                    # record correctly during the transition.
                     "destination_id": destination["uuid"],
                     "funding_origin": "savings",
                     "saving_goal_id": reserve["uuid"],
@@ -454,7 +453,7 @@ async def scenario(race_case):
             {"date": "2026-11-01", "amount": "40.00"},
         )
         assert gift_refund.status_code == 200, gift_refund.text
-        assert gift_refund.json()["destination_id"] == gift_result.json()["uuid"]
+        assert gift_refund.json()["giving_recipient_id"] == gift_result.json()["uuid"]
         assert gift_refund.json()["funding_origin"] == "savings"
         assert (await client.get(prefix + "/giving-recipients")).json()[0][
             "contribution_progress"

@@ -250,7 +250,7 @@ const entry = (uuid: string, date: string, amount: string, note: string): Activi
   is_adjustment: false,
   funding_origin: "income",
   saving_goal_id: null,
-  destination_id: null,
+  funding_goal_id: null,
   is_refund: false,
   refund_of: null,
   remaining_refundable: amount,

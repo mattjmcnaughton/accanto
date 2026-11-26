@@ -75,7 +75,7 @@ it("records a payment assigned to a saved cost removed from the current draft", 
         category: "fixed_cost",
         fixed_cost_id: "fixed-a",
         amount: "12.00",
-        funding_origin: "income",
+        funding_goal_id: null,
       }),
     }),
     expect.any(Function),
@@ -90,7 +90,8 @@ it("shows named investment and giving destinations in shared Activity", async ()
       amount: "100.00",
       source_id: null,
       saving_goal_id: null,
-      destination_id: "investment-1",
+      funding_goal_id: null,
+      investment_id: "investment-1",
       funding_origin: "income",
       note: "",
       revision: 1,
@@ -103,7 +104,8 @@ it("shows named investment and giving destinations in shared Activity", async ()
       amount: "50.00",
       source_id: null,
       saving_goal_id: null,
-      destination_id: "recipient-1",
+      funding_goal_id: null,
+      giving_recipient_id: "recipient-1",
       funding_origin: "income",
       note: "",
       revision: 1,
@@ -123,7 +125,7 @@ it("shows named investment and giving destinations in shared Activity", async ()
   expect(await screen.findByText("Example recipient")).toBeDefined();
   expect(screen.getAllByText("Read only")).toHaveLength(2);
   fireEvent.click(screen.getByRole("gridcell", { name: /Example recipient/ }));
-  expect(screen.getByText("Correct this entry in Giving.")).toBeDefined();
+  expect(screen.getByText("Change its tags here. Correct anything else in Giving.")).toBeDefined();
   expect(screen.queryByRole("button", { name: /Save/ })).toBeNull();
 });
 it("shows both the destination and savings origin for funded outflows", async () => {
@@ -135,7 +137,7 @@ it("shows both the destination and savings origin for funded outflows", async ()
       amount: "100.00",
       fixed_cost_name: "Synthetic service",
       debt_account_id: "loan-1",
-      saving_goal_id: "goal-1",
+      funding_goal_id: "goal-1",
       funding_origin: "savings",
       note: "",
       revision: 1,
@@ -146,8 +148,8 @@ it("shows both the destination and savings origin for funded outflows", async ()
       financial_date: "2026-11-04",
       category: "giving",
       amount: "50.00",
-      destination_id: "recipient-1",
-      saving_goal_id: "goal-1",
+      giving_recipient_id: "recipient-1",
+      funding_goal_id: "goal-1",
       funding_origin: "savings",
       note: "",
       revision: 1,
@@ -335,10 +337,75 @@ it("records guilt-free spending from one line and keeps the text until the save 
         category: "spending",
         amount: "1042.50",
         note: "Weekly groceries",
-        funding_origin: "income",
+        funding_goal_id: null,
       }),
     }),
     expect.any(Function),
   );
   expect((line as HTMLInputElement).value).toBe("$1,042.5 weekly groceries");
+});
+it("shows tags, filters by one, and saves a contribution's tags label-only", async () => {
+  const tagRows = [
+    { uuid: "tag-trip", name: "Italy trip", active: true, revision: 1, entries: 1 },
+    { uuid: "tag-kids", name: "Kids", active: true, revision: 1, entries: 1 },
+  ];
+  const base = {
+    source_id: null,
+    fixed_cost_id: null,
+    fixed_cost_name: null,
+    debt_account_id: null,
+    saving_goal_id: null,
+    funding_origin: "income",
+    revision: 3,
+    is_adjustment: false,
+  };
+  const entries = [
+    {
+      ...base,
+      uuid: "dinner",
+      financial_date: "2026-11-02",
+      category: "spending",
+      amount: "90.00",
+      note: "Synthetic dinner",
+      tag_ids: ["tag-trip"],
+    },
+    {
+      ...base,
+      uuid: "gift",
+      financial_date: "2026-11-04",
+      category: "giving",
+      amount: "50.00",
+      note: "",
+      giving_recipient_id: null,
+      tag_ids: ["tag-kids"],
+    },
+  ];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    if (url.endsWith("/activity")) return json(entries);
+    if (url.endsWith("/tags")) return json(tagRows);
+    return json([]);
+  });
+  const p = props();
+  render(<ActivityScreen {...p} />);
+  const dinner = await screen.findByRole("gridcell", { name: /Synthetic dinner/ });
+  expect(within(dinner).getByText("Italy trip")).toBeDefined();
+  fireEvent.change(screen.getByRole("combobox", { name: "Show tag" }), {
+    target: { value: "tag-kids" },
+  });
+  expect(screen.queryByText("Synthetic dinner")).toBeNull();
+  fireEvent.click(screen.getByRole("gridcell", { name: /Unassigned/ }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Add a tag (Tags)" }), {
+    target: { value: "tag-trip" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Remove tag Kids" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save tags" }));
+  expect(p.save).toHaveBeenCalledWith(
+    {
+      method: "POST",
+      path: "/api/entities/entity/activity/tags",
+      body: { entries: [{ entry_id: "gift", expected_revision: 3, tag_ids: ["tag-trip"] }] },
+    },
+    expect.any(Function),
+  );
 });

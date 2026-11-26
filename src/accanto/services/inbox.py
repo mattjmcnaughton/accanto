@@ -102,6 +102,7 @@ def completion_of(proposal: dict | None) -> Completion:
         funding=p.get("funding"),
         refund_of=p.get("refund_of"),
         skip=bool(p.get("skip")),
+        tag_ids=tuple(p.get("tag_ids") or ()),
     )
 
 
@@ -437,6 +438,7 @@ async def write_inbox(session, entity, actor, operation, payload, target, audit)
                 key: payload[key]
                 for key in ("category", "assignment", "funding", "refund_of", "skip")
             }
+            | {"tag_ids": payload.get("tag_ids") or []}
             | {"rationale": payload["rationale"]},
             proposal_rejection=payload["proposal_rejection"],
             proposed_by_user_id=actor.user_id,
@@ -769,7 +771,12 @@ async def record(session, token, entity_uuid, item_uuid, request_key, body, **ex
     hook = RecordHook(
         item_uuid,
         body["expected_revision"],
-        Completion(**{k: v for k, v in completion.items() if k != "rationale"})
+        Completion(
+            **{
+                k: v for k, v in completion.items() if k not in {"rationale", "tag_ids"}
+            },
+            tag_ids=tuple(completion.get("tag_ids") or ()),
+        )
         if completion
         else None,
     )
@@ -855,6 +862,7 @@ async def propose(session, token, entity_uuid, item_uuid, request_key, body):
         funding=body.get("funding"),
         refund_of=body.get("refund_of"),
         skip=bool(body.get("skip")),
+        tag_ids=tuple(body.get("tag_ids") or ()),
     )
     try:
         validate_shape(completion)

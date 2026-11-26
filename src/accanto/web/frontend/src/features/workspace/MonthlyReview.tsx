@@ -90,7 +90,6 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
         fixed_cost_id: category === "fixed_cost" ? id : null,
         debt_account_id: null,
         note: amount === "0.00" ? "Nothing this month" : "",
-        funding_origin: "income",
         saving_goal_id: category === "saving" ? id : null,
       }),
       // The shell clears the unsaved flag on any confirmed write; an unsaved note keeps it.

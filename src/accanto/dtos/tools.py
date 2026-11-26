@@ -25,12 +25,15 @@ from accanto.dtos.inbox import BulkProposal, BulkRecordItem
 from accanto.dtos.income_estimates import DuplicateInput, EstimateInput
 from accanto.dtos.monthly import (
     ActivityInput,
+    EntryTagsInput,
     Input,
     PlanCopyInput,
     PlanInput,
     RefundInput,
     ReviewEditInput,
     ReviewInput,
+    TagEditInput,
+    TagInput,
 )
 from accanto.dtos.savings import (
     CompleteGoal,
@@ -321,13 +324,16 @@ class Entry(Output):
     note: Untrusted
     is_adjustment: bool
     funding_origin: str
+    funding_goal_id: UUID | None
     source_id: UUID | None
     fixed_cost_id: UUID | None
     debt_account_id: UUID | None
     saving_goal_id: UUID | None
-    destination_id: UUID | None
+    investment_id: UUID | None
+    giving_recipient_id: UUID | None
     refund_of: UUID | None
     remaining_refundable: Money | None
+    tag_ids: list[UUID]
     revision: int
 
 
@@ -429,6 +435,7 @@ class Proposal(Output):
     funding: str | None
     refund_of: UUID | None
     skip: bool
+    tag_ids: list[UUID]
     rationale: Untrusted
     interface: str | None
     rejection: str | None
@@ -596,13 +603,16 @@ def project_entry(row) -> Entry:
         note=row["note"] or "",
         is_adjustment=row["is_adjustment"],
         funding_origin=row["funding_origin"],
+        funding_goal_id=_id(row["funding_goal_id"]),
         source_id=_id(row["source_id"]),
         fixed_cost_id=_id(row["fixed_cost_id"]),
         debt_account_id=_id(row["debt_account_id"]),
         saving_goal_id=_id(row["saving_goal_id"]),
-        destination_id=_id(row["destination_id"]),
+        investment_id=_id(row["investment_id"]),
+        giving_recipient_id=_id(row["giving_recipient_id"]),
         refund_of=_id(row["refund_of"]),
         remaining_refundable=row["remaining_refundable"],
+        tag_ids=row.get("tag_ids", []),
         revision=row["revision"],
     )
 
@@ -725,6 +735,7 @@ def project_item(row) -> InboxItem:
             funding=proposal.get("funding"),
             refund_of=_id(proposal.get("refund_of")),
             skip=bool(proposal.get("skip")),
+            tag_ids=proposal.get("tag_ids") or [],
             rationale=proposal.get("rationale") or "",
             interface=(row["proposed_by"] or {}).get("interface"),
             rejection=(rejection or {}).get("code"),
@@ -804,6 +815,7 @@ class MonthInput(Input):
 class ActivityQuery(Input):
     month: FirstDay
     category: Category | None = None
+    tag_id: UUID | None = Field(default=None, description="Only entries with this tag.")
 
 
 class KindInput(Input):
@@ -975,3 +987,48 @@ class SaveEstimate(Input):
 
 class DuplicateEstimate(DuplicateInput):
     id: UUID
+
+
+# --- Tags (TDD 05) ----------------------------------------------------------------
+
+
+class Tag(Output):
+    id: UUID
+    name: Untrusted
+    active: bool
+    entries: int
+    revision: int
+
+
+class TagList(Output):
+    tags: list[Tag]
+
+
+def project_tags(rows) -> TagList:
+    return TagList(
+        tags=[
+            Tag(
+                id=r["uuid"],
+                name=r["name"],
+                active=r["active"],
+                entries=r["entries"],
+                revision=r["revision"],
+            )
+            for r in rows
+        ]
+    )
+
+
+class SaveTag(Input):
+    id: UUID | None = Field(
+        default=None, description="Omit to create a tag; set to rename or archive one."
+    )
+    values: TagEditInput | TagInput
+
+
+class DeleteTag(DeleteRecord):
+    pass
+
+
+class SetEntryTags(EntryTagsInput):
+    pass

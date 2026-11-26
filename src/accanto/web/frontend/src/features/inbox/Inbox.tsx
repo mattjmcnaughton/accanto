@@ -12,6 +12,7 @@ import {
 } from "../../lib/inbox";
 import { monthly } from "../../lib/monthly";
 import { savings } from "../../lib/savings";
+import { tags } from "../../lib/tags";
 import { tint } from "../../ui";
 import { LoadProblem, LoadingCard } from "../workspace/Activity";
 import { type ScreenProps, sourceChoices, useLoad } from "../workspace/shared";
@@ -40,7 +41,7 @@ import "./inbox.css";
 import { ConnectSource } from "./ConnectSource";
 
 type Picker = {
-  kind: "line" | "funding" | "refund" | "resolve";
+  kind: "line" | "funding" | "refund" | "resolve" | "tag";
   title: string;
   placeholder: string;
   options: Option[];
@@ -89,6 +90,7 @@ export function Inbox(
   const activity = useSettled(useLoad(() => monthly.activity(p.entity.id), deps));
   const investments = useSettled(useLoad(() => destinations.list(p.entity.id, "investment"), deps));
   const recipients = useSettled(useLoad(() => destinations.list(p.entity.id, "giving"), deps));
+  const tagState = useSettled(useLoad(() => tags.list(p.entity.id), deps));
   const [view, setView] = useState<View>("waiting");
   const [cur, setCur] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -172,8 +174,9 @@ export function Inbox(
                 Number(e.amount) > 0,
             )
           : [],
+      tags: tagState.kind === "ready" ? tagState.data : [],
     } satisfies Choices;
-  }, [plans, accounts, activity, investments, recipients]);
+  }, [plans, accounts, activity, investments, recipients, tagState]);
 
   /** What a row shows: the recorded entry once recorded, else the edit or proposal. */
   const shownAs = (it: StagedTransaction): Completion => {
@@ -183,8 +186,7 @@ export function Inbox(
       ? { refund_of: entry.refund_of }
       : {
           category: entry?.category ?? null,
-          funding:
-            entry?.saving_goal_id && entry.category !== "saving" ? entry.saving_goal_id : null,
+          funding: entry?.funding_goal_id ?? null,
         };
   };
   const shown = rows(all, view);
@@ -389,6 +391,7 @@ export function Inbox(
             assignment: null,
             funding:
               isInflow(it) || category === "saving" || category === "income" ? null : "income",
+            tag_ids: c.tag_ids,
           };
     setDraft(it, next);
     if (CATEGORY[category].line && !next.assignment) openPicker("line", it, next);
@@ -431,6 +434,23 @@ export function Inbox(
           })),
         ],
       });
+    } else if (kind === "tag") {
+      const chosen = c.tag_ids ?? [];
+      setPicker({
+        ...base,
+        kind,
+        title: `Tags for ${it.payee}`,
+        placeholder: "Type to filter tags",
+        options: (choices.tags ?? [])
+          .filter((tag) => tag.active || chosen.includes(tag.uuid))
+          .map((tag) => ({
+            id: tag.uuid,
+            name: tag.name,
+            note: chosen.includes(tag.uuid) ? "added, choose to remove" : undefined,
+          })),
+        foot: "An entry can carry several tags. Choose one to add or remove it.",
+        none: "No tags yet. Create them in Activity with Manage tags.",
+      });
     } else if (kind === "refund") {
       const options = refundCandidates(it, choices.purchases);
       if (c.refund_of) options.push({ id: "", name: "Remove the refund link" });
@@ -466,7 +486,15 @@ export function Inbox(
     const c = effective(it, drafts[it.id]);
     if (kind === "line") setDraft(it, { ...c, assignment: option.id });
     else if (kind === "funding") setDraft(it, { ...c, funding: option.id });
-    else if (kind === "refund") setDraft(it, option.id ? { refund_of: option.id } : {});
+    else if (kind === "tag") {
+      const chosen = c.tag_ids ?? [];
+      setDraft(it, {
+        ...c,
+        tag_ids: chosen.includes(option.id)
+          ? chosen.filter((id) => id !== option.id)
+          : [...chosen, option.id],
+      });
+    } else if (kind === "refund") setDraft(it, option.id ? { refund_of: option.id } : {});
     else if (await run(inbox.resolve(p.entity.id, it, option.id as "keep" | "delete"))) {
       advance([it.id]);
       setToast({
@@ -566,6 +594,15 @@ export function Inbox(
             tone: "warn",
           });
         return openPicker("funding", current);
+      case "t":
+        if (!current || !waiting) return notHere();
+        if (c.refund_of)
+          return setToast({
+            text: "A refund carries its purchase's tags. Change them on the purchase in Activity.",
+            tone: "warn",
+          });
+        if (c.skip) return setToast({ text: "A skipped item records nothing.", tone: "warn" });
+        return openPicker("tag", current);
       case "r":
         if (!current || !waiting) return notHere();
         if (!isInflow(current))
@@ -1183,6 +1220,22 @@ function Detail({
           fundingName(choices, c),
           goal ? `${goal.name} has ${goal.note}.` : undefined,
         )}
+      {!c.skip &&
+        (purchase
+          ? field("t", "Tags", "From the purchase")
+          : Boolean(c.category || c.tag_ids?.length) &&
+            field(
+              "t",
+              "Tags",
+              c.tag_ids?.length
+                ? c.tag_ids
+                    .map(
+                      (id) => choices.tags?.find((tag) => tag.uuid === id)?.name ?? "Deleted tag",
+                    )
+                    .join(", ")
+                : null,
+              c.tag_ids?.length ? undefined : "Optional. Several are allowed.",
+            ))}
       <div className="ix-do">
         {waiting ? (
           <>
@@ -1242,6 +1295,7 @@ const HELP: Array<[string, string]> = [
   ],
   ["a", "Choose the assignment. Type to filter."],
   ["f", "Choose the funding origin: current income or a saving goal."],
+  ["t", "Add or remove tags. A refund carries its purchase's tags."],
   ["r", "Link an inflow as a refund from ranked purchase candidates."],
   ["s", "Skip. Under Skipped, return the item to the inbox."],
   ["x", "Select or deselect for Enter. Esc clears the selection."],

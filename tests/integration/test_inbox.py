@@ -423,7 +423,9 @@ async def scenario():
         )
         assert donated.status_code == 200, donated.text
         assert donated.json()["entry"]["category"] == "giving"
-        assert donated.json()["entry"]["destination_id"] == recipient.json()["uuid"]
+        assert (
+            donated.json()["entry"]["giving_recipient_id"] == recipient.json()["uuid"]
+        )
 
         # Skip and return to waiting.
         second = await item("t-return2")
