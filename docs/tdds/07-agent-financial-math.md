@@ -1,6 +1,6 @@
 # 07 — Agent financial math: calculator, summaries and projections
 
-Status: Implemented (tool groups for context size pending)
+Status: Implemented
 Updated: 2026-11-26
 
 ## Purpose and scope
@@ -182,5 +182,10 @@ PostgreSQL.
 ## Delivery
 
 Delivered in chunks, each a commit: calculator; activity summaries and target
-gaps; projections; position; investment returns; then sidebar tool groups that
-load related tools on demand to reduce context.
+gaps; projections; position; investment returns; assistant step labels and a
+scripted stub turn (`mortgage`) that exercises `project` and `calculate` end
+to end.
+
+Not done: loading tool groups on demand. Grouping thirteen functions into four
+tools added about 2.5k tokens to a catalog of about 14k; on-demand loading is
+worth doing only if the whole catalog's size becomes a problem.

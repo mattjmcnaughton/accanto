@@ -12,6 +12,9 @@ Behaviors, keyed on the owner's message (case-insensitive):
 - "receipt" or an attached image: save one save_activity entry dated by the
                 YYYY-MM-DD in the message (drafted or recorded per the Agent
                 mode), or ask for the date if there is none.
+- "mortgage"    project a 100,000.00 loan at 6% over 360 months with 100.00
+                extra a month, then calculate the total of payment and extra,
+                and quote both results (TDD 07).
 - "budget"      say a sentence, call get_context in the same response, then
                 answer: two text parts around a tool call.
 - "[stub-fail]" fail mid-stream after a few deltas.
@@ -221,6 +224,31 @@ def _next_step(messages: Sequence[ModelMessage], info: AgentInfo):
         return (
             f"I proposed categories for {done} inbox items. Nothing is recorded "
             "until you record them from the inbox."
+        )
+
+    if "mortgage" in lowered:
+        if "project" not in called:
+            loan = {
+                "operation": "loan",
+                "principal": "100000",
+                "annual_rate_percent": "6",
+                "term_months": 360,
+                "extra_monthly": "100",
+                "schedule": "none",
+            }
+            return _call(("project", {"projection": loan}))
+        figures = next(_content(p) for p in returns if p.tool_name == "project")[
+            "figures"
+        ]
+        if "calculate" not in called:
+            return _call(("calculate", {"expression": f"{figures['payment']} + 100"}))
+        total = next(_content(p) for p in returns if p.tool_name == "calculate")
+        return (
+            f"Projected: the payment is {figures['payment']} a month, so with the "
+            f"extra you pay {total['cents']}. The loan is repaid in "
+            f"{figures['months']} months instead of 360, saving "
+            f"{figures['interest_saved']} in interest. This assumes 6% for the "
+            "whole term; it is a projection, not recorded activity."
         )
 
     if has_image or "receipt" in lowered:
