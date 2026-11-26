@@ -129,7 +129,7 @@ it("shows no newer-version notice on the latest saved version", async () => {
   await waitFor(() => expect(target.options.length).toBe(2));
   expect(screen.queryByText(/A newer version is saved/)).toBeNull();
 });
-it("edits an incomplete Review with same-Plan version, notes, and annotation", async () => {
+it("saves a changed compared version at once, leaving an unsaved note unsaved", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
     String(path).endsWith("/plans")
       ? json(plans)
@@ -141,7 +141,36 @@ it("edits an incomplete Review with same-Plan version, notes, and annotation", a
   render(<MonthlyReview {...p} />);
   const target = (await screen.findByLabelText("Compared with")) as HTMLSelectElement;
   await waitFor(() => expect(target.value).toBe("v1"));
+  fireEvent.change(screen.getByLabelText("Review note"), { target: { value: "Draft thought" } });
   fireEvent.change(target, { target: { value: "v2" } });
+  expect(p.save).toHaveBeenCalledTimes(1);
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      body: {
+        expected_revision: 1,
+        version_id: "v2",
+        note: "",
+        reviewed: false,
+        checkpoint: false,
+      },
+    }),
+    expect.any(Function),
+  );
+  vi.mocked(p.save).mock.calls[0][1](undefined);
+  expect(p.dirty).toHaveBeenLastCalledWith(true);
+});
+it("edits an incomplete Review with notes and annotation", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/plans")
+      ? json(plans)
+      : String(path).endsWith("2026-11-01")
+        ? json(review)
+        : absent(),
+  );
+  const p = props();
+  render(<MonthlyReview {...p} />);
+  const target = (await screen.findByLabelText("Compared with")) as HTMLSelectElement;
+  await waitFor(() => expect(target.value).toBe("v1"));
   fireEvent.change(screen.getByLabelText("Review note"), {
     target: { value: "Synthetic takeaway" },
   });
@@ -154,7 +183,7 @@ it("edits an incomplete Review with same-Plan version, notes, and annotation", a
     expect.objectContaining({
       body: {
         expected_revision: 1,
-        version_id: "v2",
+        version_id: "v1",
         note: "Synthetic takeaway",
         reviewed: true,
         checkpoint: false,
