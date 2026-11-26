@@ -16,7 +16,8 @@ import logfire
 import structlog
 from cryptography.fernet import Fernet, InvalidToken
 from pydantic import ValidationError
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import BigInteger, String, func, insert, literal, select, tuple_, update
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import DBAPIError
 
 from accanto.domains.inbox import (
@@ -119,7 +120,7 @@ def facts_of(row) -> StagedFacts:
     )
 
 
-async def item_view(session, row, splits=None):
+async def item_view(session, row):
     source_uuid = await session.scalar(
         select(st.sources.c.uuid).where(st.sources.c.id == row["source_id"])
     )
@@ -137,12 +138,20 @@ async def item_view(session, row, splits=None):
         if row["proposed_by_user_id"]
         else None
     )
-    latest = row["latest"]
     split = None
     if row["parent_ref"]:
-        if splits is None:
-            splits = await split_totals(session, row["source_id"], [row["parent_ref"]])
+        splits = await split_totals(
+            session,
+            row["entity_id"],
+            st.staged.c.source_id == row["source_id"],
+            st.staged.c.parent_ref == row["parent_ref"],
+        )
         split = splits.get((row["source_id"], row["parent_ref"]))
+    return render_item(row, source_uuid, entry_uuid, proposer, split)
+
+
+def render_item(row, source_uuid, entry_uuid, proposer, split):
+    latest = row["latest"]
     return json_values(
         {
             "id": row["uuid"],
@@ -180,15 +189,15 @@ async def item_view(session, row, splits=None):
     )
 
 
-async def split_totals(session, source_id, parents):
+async def split_totals(session, entity_id, *groups):
     """Each split's line count and total across every line still in its source."""
     from decimal import Decimal
 
     query = select(
         st.staged.c.source_id, st.staged.c.parent_ref, st.staged.c.latest
-    ).where(st.staged.c.parent_ref.in_(parents), st.staged.c.status != "removed")
-    if source_id is not None:
-        query = query.where(st.staged.c.source_id == source_id)
+    ).where(
+        st.staged.c.entity_id == entity_id, st.staged.c.status != "removed", *groups
+    )
     result: dict = {}
     for source, parent, latest in (await session.execute(query)).all():
         entry = result.setdefault((source, parent), {"lines": 0, "total": Decimal(0)})
@@ -259,10 +268,22 @@ async def read_inbox(session, token, entity_uuid, *, statuses, month, source):
         if source is not None:
             src = await scoped(session, st.sources, entity["id"], source)
             query = query.where(st.staged.c.source_id == src["id"])
+        views = (
+            query.add_columns(
+                st.sources.c.uuid.label("source_uuid"),
+                m.entries.c.uuid.label("entry_uuid"),
+                m.users.c.uuid.label("proposer_uuid"),
+            )
+            .join_from(st.staged, st.sources)
+            .outerjoin_from(st.staged, m.entries)
+            .outerjoin_from(
+                st.staged, m.users, m.users.c.id == st.staged.c.proposed_by_user_id
+            )
+        )
         rows = (
             (
                 await session.execute(
-                    query.order_by(
+                    views.order_by(
                         st.staged.c.financial_date,
                         st.staged.c.parent_ref,
                         st.staged.c.source_ref,
@@ -272,10 +293,34 @@ async def read_inbox(session, token, entity_uuid, *, statuses, month, source):
             .mappings()
             .all()
         )
-        parents = list({row["parent_ref"] for row in rows if row["parent_ref"]})
-        splits = await split_totals(session, None, parents) if parents else {}
+        groups = {
+            (row["source_id"], row["parent_ref"]) for row in rows if row["parent_ref"]
+        }
+        splits = {}
+        if groups:
+            # Use exactly the groups returned by the list and pass them as two
+            # arrays so the bind count does not grow with the Inbox.
+            source_ids, parents = zip(*groups, strict=True)
+            pairs = select(
+                func.unnest(literal(list(source_ids), ARRAY(BigInteger))),
+                func.unnest(literal(list(parents), ARRAY(String))),
+            )
+            splits = await split_totals(
+                session,
+                entity["id"],
+                tuple_(st.staged.c.source_id, st.staged.c.parent_ref).in_(pairs),
+            )
         with logfire.span("inbox.item_views", item_count=len(rows)):
-            return [await item_view(session, row, splits) for row in rows]
+            return [
+                render_item(
+                    row,
+                    row["source_uuid"],
+                    row["entry_uuid"],
+                    row["proposer_uuid"],
+                    splits.get((row["source_id"], row["parent_ref"])),
+                )
+                for row in rows
+            ]
 
 
 async def read_item(session, token, entity_uuid, item_uuid):

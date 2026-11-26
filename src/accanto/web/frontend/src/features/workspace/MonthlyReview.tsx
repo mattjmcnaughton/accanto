@@ -14,16 +14,22 @@ const versionLabel = (r: PlanRevision) =>
 /** The shell owns the month: changing it remounts the Review, after the unsaved-change guard. */
 export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Screen) => void }) {
   const month = p.month ?? p.entity.today.slice(0, 7);
+  const priorMonth = previousMonth(month);
   const [reload, setReload] = useState(0);
   const state = useLoad(
     () => monthly.review(p.entity.id, `${month}-01`),
     [p.entity.id, month, p.refresh, reload],
+    { enabled: !p.concealed, share: `review:${month}-01` },
   );
   const previous = useLoad(
-    () => monthly.review(p.entity.id, previousMonth(month)),
-    [p.entity.id, month, p.refresh, reload],
+    () => monthly.review(p.entity.id, priorMonth),
+    [p.entity.id, priorMonth, p.refresh, reload],
+    { enabled: !p.concealed && state.kind === "empty", share: `review:${priorMonth}` },
   );
-  const plans = useLoad(() => monthly.plans(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const plans = useLoad(() => monthly.plans(p.entity.id), [p.entity.id, p.refresh, reload], {
+    enabled: !p.concealed,
+    share: "plans",
+  });
   const [choice, setChoice] = useState("");
   const [target, setTarget] = useState("");
   const [note, setNote] = useState("");

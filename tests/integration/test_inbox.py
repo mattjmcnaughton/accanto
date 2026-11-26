@@ -7,23 +7,27 @@ entry/refund commands, failures change nothing, and retries do not duplicate.
 
 import asyncio
 import os
-from uuid import uuid4
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
-from sqlalchemy import func, insert, select
+from sqlalchemy import event, func, insert, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from accanto.app import create_app
 from accanto.config import settings
 from accanto.db import get_session
+from accanto.domains.inbox import StagedTransactionInput
 from accanto.models import inbox as st
 from accanto.models import monthly as m
-from accanto.services.access import issue_session
+from accanto.services.access import RejectionError, issue_session
 from accanto.services.api_keys import issue_key
 from accanto.services.browser_auth import csrf_token
+from accanto.services.inbox import read_inbox, read_item
 from tests.fakes import ynab_server as y
 
 URL = os.environ.get("ACCANTO_TEST_DATABASE_URL")
@@ -522,3 +526,215 @@ async def scenario():
         assert orphaned.json()["detail"]["code"] == "provider_not_configured"
         assert (await client.get(prefix + "/sources")).json()[0]["connected"]
     await engine.dispose()
+
+
+def test_inbox_reads_batch_item_views():
+    asyncio.run(batch_read_scenario())
+
+
+async def batch_read_scenario():
+    assert URL and URL.rsplit("/", 1)[-1].endswith("_test")
+    engine = create_async_engine(URL)
+    sessions = async_sessionmaker(engine)
+    month = date(2026, 11, 1)
+    proposed_at = datetime(2026, 11, 2, tzinfo=UTC)
+    parent_ref = "synthetic-split"
+
+    async def add_source(session, entity_id, ref):
+        return (
+            await session.execute(
+                insert(st.sources)
+                .values(
+                    entity_id=entity_id,
+                    kind="ynab",
+                    external_ref=ref,
+                    name=ref,
+                    start_date=month,
+                )
+                .returning(st.sources.c.id, st.sources.c.uuid)
+            )
+        ).one()
+
+    def line(
+        entity_id, source_id, ref, amount, *, day=month, parent=parent_ref, **fields
+    ):
+        facts = StagedTransactionInput(
+            ref,
+            "synthetic-account",
+            "Test account",
+            day,
+            Decimal(amount),
+            "Test payee",
+            "ordinary",
+            parent_ref=parent,
+            deleted=fields.get("status") == "removed",
+        )
+        return dict(
+            entity_id=entity_id,
+            source_id=source_id,
+            source_ref=ref,
+            parent_ref=parent,
+            financial_date=day,
+            latest=facts.latest(),
+            **fields,
+        )
+
+    try:
+        async with sessions.begin() as session:
+            user_id, user_uuid = (
+                await session.execute(
+                    insert(m.users)
+                    .values(issuer="inbox-test", subject=str(uuid4()))
+                    .returning(m.users.c.id, m.users.c.uuid)
+                )
+            ).one()
+            token = (await issue_key(session, user_id, "Synthetic batch test"))["key"]
+            entity_id, entity = (
+                await session.execute(
+                    insert(m.entities)
+                    .values(owner_id=user_id, name="Batch test", time_zone="UTC")
+                    .returning(m.entities.c.id, m.entities.c.uuid)
+                )
+            ).one()
+            other_entity = await session.scalar(
+                insert(m.entities)
+                .values(owner_id=user_id, name="Other Entity", time_zone="UTC")
+                .returning(m.entities.c.id)
+            )
+            source_id, source = await add_source(session, entity_id, "Synthetic A")
+            second_id, second = await add_source(session, entity_id, "Synthetic B")
+            foreign_id, foreign = await add_source(session, other_entity, "Synthetic C")
+            entry_id, entry_uuid = (
+                await session.execute(
+                    insert(m.entries)
+                    .values(
+                        entity_id=entity_id,
+                        financial_date=month,
+                        category="spending",
+                        amount=Decimal("3.25"),
+                        note="Synthetic",
+                    )
+                    .returning(m.entries.c.id, m.entries.c.uuid)
+                )
+            ).one()
+            for values in (
+                line(
+                    entity_id,
+                    source_id,
+                    "a-recorded",
+                    "-3.25",
+                    status="recorded",
+                    actual_entry_id=entry_id,
+                    proposal={"category": "spending"},
+                    proposed_by_user_id=user_id,
+                    proposed_interface="web",
+                    proposed_at=proposed_at,
+                ),
+                line(entity_id, source_id, "a-skipped", "-1.05", status="skipped"),
+                line(
+                    entity_id, source_id, "a-next-month", "0.30", day=date(2026, 12, 1)
+                ),
+                line(entity_id, source_id, "a-removed", "-8.00", status="removed"),
+                line(entity_id, second_id, "b-waiting", "-2.71"),
+                line(other_entity, foreign_id, "c-waiting", "-19.00"),
+            ):
+                await session.execute(insert(st.staged).values(values))
+
+        async with sessions() as session:
+            filters = dict(statuses=["recorded", "waiting"], month=month, source=None)
+            statements = 0
+
+            def count_statement(*_args):
+                nonlocal statements
+                statements += 1
+
+            async def measured_list():
+                nonlocal statements
+                statements = 0
+                event.listen(
+                    engine.sync_engine, "before_cursor_execute", count_statement
+                )
+                try:
+                    rows = await read_inbox(session, token, entity, **filters)
+                    return rows, statements
+                finally:
+                    event.remove(
+                        engine.sync_engine, "before_cursor_execute", count_statement
+                    )
+
+            small, small_count = await measured_list()
+            assert [r["source_ref"] for r in small] == ["a-recorded", "b-waiting"]
+            recorded, waiting = small
+            assert recorded["source_id"] == str(source)
+            assert recorded["actual_entry_id"] == str(entry_uuid)
+            assert recorded["proposed_by"] == {
+                "user_id": str(user_uuid),
+                "interface": "web",
+                "at": str(proposed_at),
+            }
+            assert recorded["split"] == {"lines": 3, "total": "-4.00"}
+            assert waiting["source_id"] == str(second)
+            assert waiting["actual_entry_id"] is None and waiting["proposed_by"] is None
+            assert waiting["split"] == {"lines": 1, "total": "-2.71"}
+            for row in small:
+                assert await read_item(session, token, entity, UUID(row["id"])) == row
+            assert await read_inbox(
+                session, token, entity, **(filters | {"source": source})
+            ) == [recorded]
+            with pytest.raises(RejectionError, match="Record is unavailable"):
+                await read_inbox(
+                    session, token, entity, **(filters | {"source": foreign})
+                )
+
+            async with session.begin():
+                entries = (
+                    await session.execute(
+                        insert(m.entries).returning(
+                            m.entries.c.id,
+                            m.entries.c.uuid,
+                            sort_by_parameter_order=True,
+                        ),
+                        [
+                            dict(
+                                entity_id=entity_id,
+                                financial_date=month,
+                                category="spending",
+                                amount=Decimal("1.09"),
+                                note="Synthetic",
+                            )
+                            for _ in range(150)
+                        ],
+                    )
+                ).all()
+                await session.execute(
+                    insert(st.staged),
+                    [
+                        line(
+                            entity_id,
+                            source_id,
+                            f"z-{i:03}",
+                            "-1.09",
+                            parent=None,
+                            status="recorded",
+                            actual_entry_id=id_,
+                            proposal={"category": "spending"},
+                            proposed_by_user_id=user_id,
+                        )
+                        for i, (id_, _) in enumerate(entries)
+                    ],
+                )
+            large, large_count = await measured_list()
+            assert large[:2] == small
+            assert [r["source_ref"] for r in large[2:]] == [
+                f"z-{i:03}" for i in range(150)
+            ]
+            assert [r["actual_entry_id"] for r in large[2:]] == [
+                str(uuid) for _, uuid in entries
+            ]
+            assert all(
+                r["split"] is None and r["proposed_by"]["user_id"] == str(user_uuid)
+                for r in large[2:]
+            )
+            assert large_count <= small_count + 1, (small_count, large_count)
+    finally:
+        await engine.dispose()

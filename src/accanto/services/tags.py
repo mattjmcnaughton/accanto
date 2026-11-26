@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import delete, func, insert, select, update
 
+from accanto.db import read_snapshot
 from accanto.domains.tags import (
     TagRejectionError,
     TagState,
@@ -51,8 +52,8 @@ async def entry_counts(session, entity_id) -> dict[int, int]:
 
 
 async def read_tags(session, token, entity_uuid):
-    async with session.begin():
-        _, entity = await authorize(session, token, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
         rows = (
             (
                 await session.execute(

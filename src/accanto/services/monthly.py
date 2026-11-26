@@ -10,6 +10,7 @@ import logfire
 from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from accanto.db import read_snapshot
 from accanto.domains.entity import entity_settings
 from accanto.domains.monthly import (
     fixed_cost_monthly,
@@ -1472,9 +1473,8 @@ async def destination_comparisons(session, version, entries):
 
 
 async def read_review(session, token, entity_uuid, month: date):
-    async with session.begin():
-        # Same Entity lock gives a consistent multi-query view of current records.
-        _, entity = await authorize(session, token, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
         review = (
             (
                 await session.execute(
@@ -1642,8 +1642,8 @@ async def inbox_waiting(session, entity_id, month):
 
 
 async def read_plans(session, token, entity_uuid):
-    async with session.begin():
-        _, entity = await authorize(session, token, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
         plans = (
             (
                 await session.execute(
@@ -1678,8 +1678,8 @@ async def read_plans(session, token, entity_uuid):
 
 
 async def read_activity(session, token, entity_uuid, tag_id: UUID | None = None):
-    async with session.begin():
-        _, entity = await authorize(session, token, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
         query = select(m.entries)
         if tag_id is not None:
             query = query.join(

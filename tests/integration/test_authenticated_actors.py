@@ -12,13 +12,14 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from accanto.models import monthly as m
+from accanto.services import monthly
 from accanto.services.access import (
     RejectionError,
     issue_session,
     resolve_actor,
     revoke_session,
 )
-from accanto.services.api_keys import issue_key
+from accanto.services.api_keys import issue_key, manage_key
 from accanto.services.monthly import read_plans, write
 
 URL = os.environ.get("ACCANTO_TEST_DATABASE_URL")
@@ -173,6 +174,10 @@ async def actor_scenario():
         with pytest.raises(RejectionError) as rejected:
             await create(credential)
         assert rejected.value.status == 404
+        async with sessions() as db:
+            with pytest.raises(RejectionError) as rejected:
+                await read_plans(db, credential, entity)
+            assert rejected.value.status == 404
     async with sessions() as db, db.begin():
         await db.execute(
             update(m.entities).where(m.entities.c.uuid == entity).values(owner_id=user)
@@ -242,6 +247,109 @@ async def actor_scenario():
                 await read_plans(db, credential, entity)
             assert rejected.value.status == 401
     await engine.dispose()
+
+
+def test_plan_reads_overlap_a_write_and_keep_one_snapshot(monkeypatch):
+    asyncio.run(plan_read_race(monkeypatch))
+
+
+async def plan_read_race(monkeypatch):
+    assert URL and "test" in URL.rsplit("/", 1)[-1]
+    engine = create_async_engine(URL)
+    sessions = async_sessionmaker(engine)
+    try:
+        async with sessions() as db, db.begin():
+            user = await db.scalar(
+                insert(m.users)
+                .values(issuer="test", subject=str(uuid4()))
+                .returning(m.users.c.id)
+            )
+            entity = await db.scalar(
+                insert(m.entities)
+                .values(owner_id=user, name="Synthetic", time_zone="UTC")
+                .returning(m.entities.c.uuid)
+            )
+            browser = await issue_session(db, user)
+            actor = await resolve_actor(db, browser["token"], "session")
+            key = await issue_key(db, user, "Synthetic key")
+            key_actor = await resolve_actor(db, key["key"])
+
+        async def command(operation, payload, target=None):
+            async with sessions() as db:
+                return await write(
+                    db, actor, entity, operation, str(uuid4()), payload, target
+                )
+
+        async def read(credential=actor):
+            async with sessions() as db:
+                return (await read_plans(db, credential, entity))[0]["revisions"][0]
+
+        name = "Synthetic Plan"
+        created = await command(
+            "create_plan",
+            {
+                "name": name,
+                "spending": "500",
+                "incomes": [{"name": "Synthetic income", "amount": "2000"}],
+            },
+        )
+        original = created["draft"]
+        parent_read, continue_read = asyncio.Event(), asyncio.Event()
+        snapshot = monthly.plan_snapshot
+
+        async with sessions() as first_reader:
+
+            async def pause_snapshot(db, record):
+                if db is first_reader:
+                    # Pause after loading the draft, before querying its children.
+                    parent_read.set()
+                    await continue_read.wait()
+                return await snapshot(db, record)
+
+            monkeypatch.setattr(monthly, "plan_snapshot", pause_snapshot)
+            async with asyncio.TaskGroup() as tasks:
+                first = tasks.create_task(read_plans(first_reader, actor, entity))
+                try:
+                    async with asyncio.timeout(5):
+                        await parent_read.wait()
+                        # Both rows may already be locked by a writer; even then a
+                        # second read of the same Entity with the same session runs.
+                        async with sessions() as db, db.begin():
+                            await monthly.authorize(db, actor, entity, lock=True)
+                            assert await read() == original
+                        edited = await command(
+                            "edit_plan",
+                            {
+                                "name": name,
+                                "expected_revision": 1,
+                                "spending": "620",
+                                "incomes": [
+                                    {
+                                        "source_id": original["incomes"][0][
+                                            "source_id"
+                                        ],
+                                        "name": "Synthetic income",
+                                        "amount": "2300",
+                                    }
+                                ],
+                            },
+                            UUID(created["plan_id"]),
+                        )
+                        assert await read() == edited["draft"]
+                        async with sessions() as db:
+                            await manage_key(
+                                db, actor, revoke=key_actor.credential_uuid
+                            )
+                            await revoke_session(db, actor)
+                        for credential in (actor, key_actor, key["key"]):
+                            with pytest.raises(RejectionError) as rejected:
+                                await read(credential)
+                            assert rejected.value.status == 401
+                finally:
+                    continue_read.set()
+            assert first.result()[0]["revisions"][0] == original
+    finally:
+        await engine.dispose()
 
 
 def test_logout_waits_for_inflight_financial_command():

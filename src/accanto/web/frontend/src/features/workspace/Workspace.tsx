@@ -23,7 +23,7 @@ import { ActivityScreen } from "./Activity";
 import { CreateEntityDialog, EntitySwitcher, createEntity } from "./Entities";
 import { MonthlyReview } from "./MonthlyReview";
 import { Plans } from "./Plans";
-import { useTheme } from "./shared";
+import { WorkspaceReads, useTheme } from "./shared";
 
 /** Every screen has its own address; "more" is the phone's list of the screens without a tab. */
 export const SCREENS = [
@@ -159,6 +159,10 @@ export function Workspace({
   const [creating, setCreating] = useState(false);
   const streaming = useRef(false);
   const entity = own(session);
+  // A pending read started before a write or credential change cannot satisfy a new load.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A new scope invalidates pending reads.
+  const reads = useMemo(() => new Map(), [entity?.id, session.csrf_token, refresh, concealed]);
+  const changed = () => setRefresh((x) => x + 1);
   // Several Entities: links carry the Entity so a copied or new-tab address opens the same one.
   const linkEntity = session.entities.length > 1 ? entity?.id : undefined;
   useEffect(() => {
@@ -672,7 +676,7 @@ export function Workspace({
             </div>
           )}
           {entity && (
-            <>
+            <WorkspaceReads.Provider value={reads}>
               <div hidden={screen !== "home" && screen !== "plans"}>
                 <Plans
                   {...props}
@@ -699,7 +703,12 @@ export function Workspace({
                 <MonthlyReview key={month} {...props} month={month} go={(to) => go(to)} />
               )}
               {screen === "inbox" && (
-                <Inbox {...props} credentials={credentials} openSettings={() => go("settings")} />
+                <Inbox
+                  {...props}
+                  credentials={credentials}
+                  changed={changed}
+                  openSettings={() => go("settings")}
+                />
               )}
               {screen === "estimates" && <IncomeEstimates {...props} />}
               {screen === "savings" && <Savings {...props} />}
@@ -762,7 +771,7 @@ export function Workspace({
                   </div>
                 </div>
               )}
-            </>
+            </WorkspaceReads.Provider>
           )}
         </main>
       </div>
@@ -780,7 +789,7 @@ export function Workspace({
             streaming.current = on;
           }}
           openSettings={() => go("settings")}
-          changed={() => setRefresh((x) => x + 1)}
+          changed={changed}
         />
       )}
       {entity && (
