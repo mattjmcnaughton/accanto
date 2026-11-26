@@ -93,8 +93,10 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | POST | `/savings-accounts/movements` | Create one movement or one goal-level reconciliation |
 | PUT | `/savings-accounts/movements/{movement_id}` | Correct an existing record with its kind and `expected_revision`; original recording order is retained |
 | DELETE | `/savings-accounts/movements/{movement_id}` | Soft delete with `{kind, expected_revision}`; replay later history |
-| GET/POST | `/investments`, `/giving-recipients` | List/create named destinations with optional positive cumulative target; investments may have an optional dated opening observation |
-| PUT | `/investments/{destination_id}`, `/giving-recipients/{destination_id}` | Name, target, active state and `expected_revision`; investments also take optional `opening_date` |
+| GET/POST | `/investments`, `/giving-recipients` | List/create named destinations with optional positive cumulative target; investments may have an optional dated opening observation and [projection assumptions](#projections) |
+| PUT | `/investments/{destination_id}`, `/giving-recipients/{destination_id}` | Name, target, active state and `expected_revision`; investments also take optional `opening_date` and projection assumptions, and an omitted assumption is left unchanged |
+| GET | `/projections?years=N` | A Projection of investments and net worth, 1–100 years ([Projections](#projections)) |
+| GET/PUT | `/fire-assumptions` | Annual spending and withdrawal rate for the FIRE target ([Projections](#projections)) |
 | GET/POST | `/investment-activity`, `/giving-activity` | Current history or create contribution/adjustment with optional `investment_id` or `giving_recipient_id` |
 | PUT/DELETE | `/investment-activity/{entry_id}`, `/giving-activity/{entry_id}` | Correct entry or soft delete with `expected_revision` |
 | POST | `/activity/{purchase_id}/refunds` | Record a linked refund using positive `amount`, `date`, and optional `note` |
@@ -613,11 +615,47 @@ connected to only one of the User's Entities at a time: connecting a plan that i
 connected (not disconnected) in another of them returns `409
 source_connected_elsewhere` naming that Entity. Disconnect it there first.
 
+## Projections
+
+Illustrative figures from explicit assumptions ([TDD 14](tdds/14-projections.md)),
+never activity, observations or balances. Nominal dollars only: inflation is not
+modelled yet ([#44](https://github.com/mattjmcnaughton/accanto/issues/44)).
+
+Investments carry three optional assumptions on create and edit:
+`expected_return_percent` (annual percent, −10 to 30, two decimals; null uses the
+Entity's `default_return_percent` from settings), `expected_contribution` (USD,
+nonnegative) and `expected_contribution_frequency` (`monthly`, the default, or
+`annual`). An edit that omits one leaves it unchanged; null clears it. Giving
+recipients refuse them (422).
+
+`GET /projections?years=N` (1–100, default 20) projects from the Entity's today:
+each investment starts at its latest observed value and compounds monthly at the
+effective rate (1 + R)^(1/12) − 1, with its contribution (annual ÷ 12, none for
+an inactive investment) added at each month's end. Savings remaining saved and
+loans' latest observations stay at today's amounts. It returns `as_of`,
+`default_return_percent`, `today {investments, savings, loans, net_worth}`,
+`timeline` (one row per year from 0), `milestones` (always 5, 10 and 20 years),
+each row `{years, date, investments, net_worth, contributed}`; `investments` per
+investment with `status` (`projected` or `no_value`), `return_percent`,
+`return_source` (`investment` or `default`), `monthly_contribution` and
+milestone `amount`s; and `fire`. An active investment without an observed value
+makes every total and the FIRE date null (unknown, never zero). Amounts round
+half-even to cents at reporting.
+
+`GET /fire-assumptions` returns `{annual_spending, withdrawal_percent, revision}`
+(defaults null and `4.00`); `PUT` takes them with `expected_revision` (the
+Entity's revision) and an `Idempotency-Key`. With annual spending set, `fire` is
+`{annual_spending, withdrawal_percent, target, months_to_target, reached_on}`:
+the target is spending ÷ withdrawal rate, rounded up, and the date is the first
+month projected investments (not cash savings) reach it, null beyond 100 years.
+
 ## Entity settings and API key metadata
 
-`GET /api/entities/{id}/settings` returns `id`, `name`, `time_zone`, `revision`
+`GET /api/entities/{id}/settings` returns `id`, `name`, `time_zone`,
+`default_return_percent` (projection default, `6.00` for a new Entity), `revision`
 and Entity-zone `today`. To update, send `PUT` to the same path with
-`Idempotency-Key` and `{name, time_zone, expected_revision}`. The response returns
+`Idempotency-Key` and `{name, time_zone, expected_revision}`, optionally with
+`default_return_percent` (omit to keep it). The response returns
 current `id`, `name`, `time_zone` and the incremented `revision`; reload settings
 or session metadata for current date defaults. A valid IANA zone is required.
 A zone change affects future defaults only; existing financial dates, Review

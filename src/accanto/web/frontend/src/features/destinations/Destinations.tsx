@@ -376,18 +376,11 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
             cell: (row: Destination) => (row.latest ? <Day iso={row.latest.date} /> : dash),
           },
           {
-            header: "Expected return",
-            numeric: true,
-            cell: (row: Destination) =>
-              row.expected_return_percent ? `${row.expected_return_percent}%` : dash,
-          },
-          {
-            header: "Expected contribution",
-            numeric: true,
-            cell: (row: Destination) =>
-              row.expected_contribution
-                ? `${formatMoney(row.expected_contribution)} ${PER[row.expected_contribution_frequency ?? "monthly"]}`
-                : dash,
+            header: "Assumptions",
+            wide: true,
+            cell: (row: Destination) => (
+              <span className="rec-wrap">{expectationText(row) ?? dash}</span>
+            ),
           },
         ]
       : []),

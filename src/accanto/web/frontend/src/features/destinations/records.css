@@ -28,6 +28,7 @@
 }
 .rec-records {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
 }
 .rec-alert {
@@ -166,6 +167,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: bottom;
+}
+.rec-grid .rec-wrap {
+  white-space: normal;
 }
 .rec-grid time {
   white-space: nowrap;

@@ -407,6 +407,15 @@ class Destination(Output):
     # Investments only: the opening observation's date, which edits may move.
     opening_date: date | None = None
     revision: int
+    expected_return_percent: Amount | None = Field(
+        default=None,
+        description="Investments only: expected annual return used by "
+        "Projections; null uses the Entity's default. An assumption, not a result.",
+    )
+    expected_contribution: Money | None = Field(
+        default=None, description="Investments only: expected contribution."
+    )
+    expected_contribution_frequency: Literal["monthly", "annual"] | None = None
 
 
 class DestinationList(Output):
@@ -681,6 +690,11 @@ def project_destinations(kind, rows) -> DestinationList:
                 **_gap(r["target"], r["contribution_progress"]),
                 opening_date=(r.get("opening") or {}).get("date"),
                 revision=r["revision"],
+                expected_return_percent=r.get("expected_return_percent"),
+                expected_contribution=r.get("expected_contribution"),
+                expected_contribution_frequency=r.get(
+                    "expected_contribution_frequency"
+                ),
             )
             for r in rows
         ],

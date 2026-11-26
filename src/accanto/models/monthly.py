@@ -53,6 +53,14 @@ entities = table(
     Column("name", String(120), nullable=False),
     Column("time_zone", String, nullable=False),
     Column("revision", Integer, nullable=False, server_default="1"),
+    # Projection assumptions (TDD 14); not financial activity.
+    Column(
+        "default_return_percent", Numeric(5, 2), nullable=False, server_default="6.00"
+    ),
+    Column("fire_annual_spending", Numeric(14, 2)),
+    Column(
+        "fire_withdrawal_percent", Numeric(4, 2), nullable=False, server_default="4.00"
+    ),
 )
 keys = table(
     "api_key",

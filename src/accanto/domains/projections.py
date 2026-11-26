@@ -261,3 +261,175 @@ def prepay_or_invest(
         "invest": invest,
         "difference": invest["net_position"] - prepay["net_position"],
     }
+
+
+# Entity projections (TDD 14): net worth and FIRE from each investment's
+# expected return and contribution. Nominal dollars only; inflation is not
+# modelled yet (issue #44).
+
+MILESTONES = (5, 10, 20)
+RETURN_RANGE = (Decimal("-10"), Decimal("30"))
+WITHDRAWAL_RANGE = (Decimal("0"), Decimal("10"))
+
+
+def percent(value: str, low: Decimal, high: Decimal, *, low_open=False) -> Decimal:
+    """An annual percent with up to two decimals, within its range."""
+    try:
+        result = Decimal(str(value).strip())
+    except ArithmeticError:
+        raise ValueError("Enter a percent with up to two decimals.") from None
+    if not result.is_finite() or result != result.quantize(CENT):
+        raise ValueError("Enter a percent with up to two decimals.")
+    if result > high or result < low or (low_open and result == low):
+        raise ValueError(f"Enter a percent from {low} to {high}.")
+    return result.quantize(CENT)
+
+
+def expected_return(value: str) -> Decimal:
+    return percent(value, *RETURN_RANGE)
+
+
+def withdrawal_rate(value: str) -> Decimal:
+    return percent(value, *WITHDRAWAL_RANGE, low_open=True)
+
+
+def _add_months(day, months: int):
+    import calendar
+
+    year, month = divmod(day.month - 1 + months, 12)
+    year += day.year
+    return day.replace(
+        year=year,
+        month=month + 1,
+        day=min(day.day, calendar.monthrange(year, month + 1)[1]),
+    )
+
+
+def project_entity(
+    investments: list[dict],
+    *,
+    savings: Decimal,
+    loans: Decimal | None,
+    today,
+    years: int,
+    default_return: Decimal,
+    annual_spending: Decimal | None = None,
+    withdrawal_percent: Decimal = Decimal("4.00"),
+) -> dict:
+    """Projected investments and net worth by year, milestones and FIRE.
+
+    Each investment dict has id, name, active, latest ({date, amount} or None),
+    expected_return_percent, expected_contribution and
+    expected_contribution_frequency. From today, each observed investment
+    compounds monthly at its own expected return, or default_return without
+    one, plus its expected contribution at each month's end (an annual amount
+    is a twelfth each month; inactive investments take no new contributions).
+    Savings and loans stay at today's amounts. An active investment without an
+    observed value, or loans that are unknown, make every total unknown (None):
+    unknown is never projected from zero.
+    """
+    if not 1 <= years <= 100:
+        raise ValueError("Projections cover 1 to 100 years.")
+    span = max(years, *MILESTONES) * 12
+    fire = annual_spending is not None
+    if fire:
+        target = fire_target(annual_spending, withdrawal_percent)
+        span = MAX_MONTHS
+    lines, series = [], []
+    for inv in investments:
+        own = inv["expected_return_percent"]
+        rate_percent = default_return if own is None else Decimal(own)
+        entered = inv["expected_contribution"]
+        frequency = inv["expected_contribution_frequency"]
+        monthly = ZERO
+        if entered is not None and inv["active"]:
+            monthly = (
+                Decimal(entered) / 12 if frequency == "annual" else Decimal(entered)
+            )
+        balances = None
+        if inv["latest"] is not None:
+            balances = grow(
+                Decimal(inv["latest"]["amount"]),
+                monthly,
+                rate_percent,
+                months=span,
+            )["balances"]
+            balances = [Decimal(inv["latest"]["amount"]), *balances]
+            series.append((balances, monthly))
+        lines.append(
+            {
+                "investment_id": inv["id"],
+                "name": inv["name"],
+                "status": "projected" if balances is not None else "no_value",
+                "latest": inv["latest"],
+                "expected_return_percent": own,
+                "return_percent": str(rate_percent.quantize(CENT)),
+                "return_source": "default" if own is None else "investment",
+                "expected_contribution": entered,
+                "expected_contribution_frequency": frequency,
+                "monthly_contribution": str(cents(monthly)),
+                "milestones": [
+                    {
+                        "years": y,
+                        "amount": None
+                        if balances is None
+                        else str(cents(balances[y * 12])),
+                    }
+                    for y in MILESTONES
+                ],
+            }
+        )
+    known = loans is not None and all(
+        line["status"] == "projected"
+        for line, inv in zip(lines, investments, strict=True)
+        if inv["active"]
+    )
+
+    owed = ZERO if loans is None else loans
+
+    def invested(month: int) -> Decimal:
+        with localcontext() as context:
+            context.prec = PRECISION
+            return sum((b[month] for b, _ in series), Decimal(0))
+
+    def row(y: int) -> dict:
+        month = y * 12
+        total = invested(month)
+        return {
+            "years": y,
+            "date": _add_months(today, month).isoformat(),
+            "investments": str(cents(total)) if known else None,
+            "net_worth": str(cents(total + savings - owed)) if known else None,
+            "contributed": str(cents(sum((m * month for _, m in series), ZERO))),
+        }
+
+    result = {
+        "as_of": today.isoformat(),
+        "default_return_percent": str(default_return.quantize(CENT)),
+        "today": {
+            "investments": str(cents(invested(0))) if known else None,
+            "savings": str(savings),
+            "loans": None if loans is None else str(loans),
+            "net_worth": str(cents(invested(0) + savings - owed)) if known else None,
+        },
+        "timeline": [row(y) for y in range(years + 1)],
+        "milestones": [row(y) for y in MILESTONES],
+        "investments": lines,
+        "fire": None,
+    }
+    if fire:
+        reached = (
+            next((m for m in range(span + 1) if invested(m) >= target), None)
+            if known
+            else None
+        )
+        result["fire"] = {
+            "annual_spending": str(annual_spending),
+            "withdrawal_percent": str(withdrawal_percent),
+            "target": str(target),
+            "months_to_target": reached,
+            "reached_on": None
+            if reached is None
+            else _add_months(today, reached).isoformat(),
+        }
+    return result

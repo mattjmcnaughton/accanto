@@ -1,13 +1,14 @@
 """Destination and investment opening API contracts."""
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 from accanto.domains.monthly import money
+from accanto.domains.projections import expected_return
 from accanto.dtos.monthly import LegacyOrigin, funding_goal
 
 Name = Annotated[str, Field(min_length=1, max_length=120)]
@@ -27,7 +28,39 @@ class Opening(Input):
         return str(money(value))
 
 
-class CreateDestination(Input):
+Frequency = Literal["monthly", "annual"]
+EXPECTATIONS = (
+    "expected_return_percent",
+    "expected_contribution",
+    "expected_contribution_frequency",
+)
+
+
+class Expectations(Input):
+    """Projection assumptions (TDD 14), investments only. Never activity."""
+
+    expected_return_percent: str | None = Field(
+        default=None,
+        description="Expected annual return, a percent from -10 to 30; blank "
+        "uses the Entity's default return.",
+    )
+    expected_contribution: str | None = Field(
+        default=None, description="Expected contribution in USD, per frequency."
+    )
+    expected_contribution_frequency: Frequency = "monthly"
+
+    @field_validator("expected_return_percent")
+    @classmethod
+    def valid_return(cls, value: str | None) -> str | None:
+        return None if value is None else str(expected_return(value))
+
+    @field_validator("expected_contribution")
+    @classmethod
+    def valid_contribution(cls, value: str | None) -> str | None:
+        return None if value is None else str(money(value))
+
+
+class CreateDestination(Expectations):
     name: Name
     target: str | None = None
     opening: Opening | None = None
@@ -43,18 +76,26 @@ class CreateDestination(Input):
         return str(result)
 
 
-class EditDestination(Input):
+class EditDestination(Expectations):
     name: Name
     target: str | None = None
     active: bool
     expected_revision: int = Field(ge=1)
     # Investments only: moves the opening observation's date; omit to keep it.
     opening_date: date | None = None
+    # Set from the request: the assumptions it left out stay as they are, so a
+    # client that only renames an investment does not clear them.
+    unchanged: SkipJsonSchema[list[str]] = []
 
     @field_validator("target")
     @classmethod
     def valid_target(cls, value: str | None) -> str | None:
         return CreateDestination.valid_target(value)
+
+    @model_validator(mode="after")
+    def omitted_expectations(self):
+        self.unchanged = [f for f in EXPECTATIONS if f not in self.model_fields_set]
+        return self
 
 
 class LatestObservation(BaseModel):
@@ -71,6 +112,9 @@ class DestinationResult(BaseModel):
     contribution_progress: str
     opening: Opening | None = None
     latest: LatestObservation | None = None
+    expected_return_percent: str | None = None
+    expected_contribution: str | None = None
+    expected_contribution_frequency: Frequency | None = None
 
 
 class ContributionInput(Input):
