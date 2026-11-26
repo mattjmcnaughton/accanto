@@ -6,7 +6,7 @@ the existing service command and go through agent_writes.dispatch, which
 enforces the Agent mode. Excluded on purpose (PRD AG-05): API keys, source
 setup, agent enablement and mode, Entity settings, sign-in and health. No tool
 here reaches them, and tests assert the exact tool list. AGENT.md is readable,
-and an agent may only propose a new one as a Pending change (TDD 09).
+and an agent may only propose a new one as a Pending change (TDD 10).
 """
 
 import json

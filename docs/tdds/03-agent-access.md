@@ -22,7 +22,7 @@ validation, Entity lock, audit, idempotency outcome, and revision check.
 
 Excluded: hosted MCP OAuth, scheduled sync, YNAB write-back, stored images.
 AGENT.md over MCP, excluded here, is added by
-[TDD 09](09-agent-md-interview.md): read access and agent-drafted Pending changes.
+[TDD 10](10-agent-md-interview.md): read access and agent-drafted Pending changes.
 
 ## Domain terms (add to CONTEXT.md)
 

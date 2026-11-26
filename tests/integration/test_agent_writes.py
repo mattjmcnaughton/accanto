@@ -391,7 +391,7 @@ async def scenario():
         )
     assert missing.value.status == 404
 
-    # AGENT.md (TDD 09): any caller reads it; an agent only drafts a new one,
+    # AGENT.md (TDD 10): any caller reads it; an agent only drafts a new one,
     # which pends even in Apply directly and changes neither enablement nor mode.
     await set_mode("apply_directly")
     read = await call(mcp, "get_agent_instructions", {})

@@ -1,4 +1,4 @@
-# 09 — AGENT.md interview and agent read access
+# 10 — AGENT.md interview and agent read access
 
 Status: Draft, awaiting the owner's review
 Updated: 2026-11-26

@@ -741,7 +741,7 @@ drafted; API keys get `403 browser_session_required`.
 ## AGENT.md
 
 The Entity's AGENT.md is the owner's standing instructions for agents
-([TDD 09](tdds/09-agent-md-interview.md)). Reading it is open to any caller with
+([TDD 10](tdds/10-agent-md-interview.md)). Reading it is open to any caller with
 Entity access, including API keys; changing it is browser-session only, through
 `PUT /agent/settings`. Agents may only draft a new AGENT.md as a Pending change
 (`propose_agent_instructions`), which pends in every Agent mode and changes only

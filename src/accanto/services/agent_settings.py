@@ -1,4 +1,4 @@
-"""Agent enablement, Agent mode and AGENT.md per Entity (TDD 03, TDD 09).
+"""Agent enablement, Agent mode and AGENT.md per Entity (TDD 03, TDD 10).
 
 Only a browser session may change these settings (the routers enforce it), so an
 agent cannot widen its own permissions. AGENT.md alone is readable by any caller

@@ -29,7 +29,7 @@ from accanto.services.monthly import DryRun, authorize, json_values, scoped, wri
 IRREVERSIBLE = frozenset(
     {"delete_savings_movement", "delete_observation", "delete_tag"}
 )
-# So does AGENT.md: no agent changes its own instructions (TDD 09).
+# So does AGENT.md: no agent changes its own instructions (TDD 10).
 ALWAYS_PENDS = IRREVERSIBLE | {"propose_agent_instructions"}
 
 

@@ -2,7 +2,7 @@
 
 API keys are refused here, so no agent (MCP or built-in) can change its own
 mode, AGENT.md or enablement, or apply the changes it drafted. The one exception
-is reading AGENT.md (TDD 09), which any caller with Entity access may do.
+is reading AGENT.md (TDD 10), which any caller with Entity access may do.
 """
 
 import asyncio
