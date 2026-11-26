@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+import logfire
 from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,14 +48,16 @@ async def authorize(
     *,
     lock: bool,
 ):
-    actor = await revalidate_actor(session, token, lock=lock)
-    query = select(m.entities).where(m.entities.c.uuid == entity_uuid)
-    if lock:
-        query = query.with_for_update()
-    entity = (await session.execute(query)).mappings().first()
-    if actor.credential_kind == "oauth" and lock:
-        # A provider may revoke while this request waits for Entity serialization.
-        actor = await revalidate_actor(session, actor, lock=lock)
+    # Its duration includes waiting for the credential and Entity row locks.
+    with logfire.span("access.authorize", lock=lock):
+        actor = await revalidate_actor(session, token, lock=lock)
+        query = select(m.entities).where(m.entities.c.uuid == entity_uuid)
+        if lock:
+            query = query.with_for_update()
+        entity = (await session.execute(query)).mappings().first()
+        if actor.credential_kind == "oauth" and lock:
+            # A provider may revoke while this request waits for Entity serialization.
+            actor = await revalidate_actor(session, actor, lock=lock)
     if not entity or entity["owner_id"] != actor.user_id:
         raise RejectionError("entity_not_found", "Entity is unavailable.", 404)
     return actor, entity
@@ -1527,7 +1530,8 @@ async def read_review(session, token, entity_uuid, month: date):
         from accanto.services.monthly_comparison import explain_review
 
         version_view = await plan_snapshot(session, version)
-        entry_views = [await entry_snapshot(session, entry) for entry in entries]
+        with logfire.span("monthly.entry_snapshots", entry_count=len(entries)):
+            entry_views = [await entry_snapshot(session, entry) for entry in entries]
         explanation = explain_review(version_view, entry_views)
         actual: dict = {"savings_used": str(savings_used)}
         for category, comparison in explanation["comparison"].items():
@@ -1666,4 +1670,5 @@ async def read_activity(session, token, entity_uuid, tag_id: UUID | None = None)
             .mappings()
             .all()
         )
-        return [await entry_snapshot(session, row) for row in entries]
+        with logfire.span("monthly.entry_snapshots", entry_count=len(entries)):
+            return [await entry_snapshot(session, row) for row in entries]

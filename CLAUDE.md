@@ -41,6 +41,7 @@ src/accanto/
   app.py                    # FastAPI app factory
   config.py                 # Pydantic-settings based config
   logging.py                # structlog setup
+  telemetry.py              # Logfire/OpenTelemetry tracing (see CONSTITUTION §6)
   routers/                  # HTTP endpoint definitions
     health.py               # /healthz, /readyz
   services/                 # Business logic
@@ -83,6 +84,17 @@ tests/
 - `docs/development.md` — read for environment setup, debugging, or common tasks
 - `docs/api.md` — API endpoint reference
 - `docs/technical/box-operations.md` — read before deploying or debugging the live Amp Box deployment
+- `docs/technical/telemetry.md` — read before adding spans, span attributes, tracing integrations or telemetry dependencies
+
+## Telemetry
+
+Tracing and metrics go to Logfire over OpenTelemetry. Follow
+[CONSTITUTION.md §6](CONSTITUTION.md#6-keep-financial-data-out-of-operational-telemetry)
+and [docs/technical/telemetry.md](docs/technical/telemetry.md): spans carry only
+operation names, timings, placeholder SQL, identifiers, counts and codes. Use
+`logfire.span` with a constant name, never `@logfire.instrument` (it records
+every argument, including credentials). Any new span, attribute or integration
+extends `tests/integration/test_trace_privacy.py` and its reviewed key list.
 
 ## Privacy and committing
 

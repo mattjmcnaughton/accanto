@@ -3,6 +3,7 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+import logfire
 from sqlalchemy import delete, func, insert, select, update
 
 from accanto.domains.destinations import (
@@ -260,7 +261,8 @@ async def read_contributions(session, token, entity_uuid, kind):
             .mappings()
             .all()
         )
-        return [await entry_snapshot(session, kind, row) for row in rows]
+        with logfire.span("destinations.entry_snapshots", entry_count=len(rows)):
+            return [await entry_snapshot(session, kind, row) for row in rows]
 
 
 async def write_contribution(session, entity, operation, payload, target, audit):

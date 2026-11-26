@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime
 from typing import Protocol
 from uuid import UUID, uuid4
 
+import logfire
 import structlog
 from cryptography.fernet import Fernet, InvalidToken
 from pydantic import ValidationError
@@ -273,7 +274,8 @@ async def read_inbox(session, token, entity_uuid, *, statuses, month, source):
         )
         parents = list({row["parent_ref"] for row in rows if row["parent_ref"]})
         splits = await split_totals(session, None, parents) if parents else {}
-        return [await item_view(session, row, splits) for row in rows]
+        with logfire.span("inbox.item_views", item_count=len(rows)):
+            return [await item_view(session, row, splits) for row in rows]
 
 
 async def read_item(session, token, entity_uuid, item_uuid):
@@ -1035,4 +1037,5 @@ async def sync(session, token, entity_uuid, source_uuid, source: TransactionSour
         ms=round((time.monotonic() - started) * 1000),
         **counts,
     )
+    logfire.info("inbox.sync_counts", source_id=str(source_uuid), counts=counts)
     return {"source": view, "counts": counts}

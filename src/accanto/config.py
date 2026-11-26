@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     source_secret_key: SecretStr = SecretStr("")
     ynab_api_url: str = "https://api.ynab.com/v1"
 
+    # Logfire write token for performance traces (accanto.telemetry). Unset means
+    # nothing is exported. See docs/technical/telemetry.md.
+    logfire_token: SecretStr = SecretStr("")
+    logfire_environment: str = "development"
+
     database_url: str = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/accanto"
 
     # Built-in agent (TDD 03). AGENT_MODEL is an OpenRouter model id, or "stub"

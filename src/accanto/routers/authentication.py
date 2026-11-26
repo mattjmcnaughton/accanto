@@ -3,6 +3,7 @@
 import hmac
 from typing import Annotated
 
+import logfire
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,8 +34,9 @@ async def credential(request: Request, session: Session) -> str | AuthenticatedA
                 raise RejectionError(
                     "csrf_rejected", "Refresh your session before trying again.", 403
                 )
-        async with session.begin():
-            return await resolve_actor(session, token, "session")
+        with logfire.span("access.credential"):
+            async with session.begin():
+                return await resolve_actor(session, token, "session")
     if not authorization or not authorization.startswith("Bearer "):
         raise RejectionError(
             "invalid_credential", "Sign in or supply a Bearer API key.", 401

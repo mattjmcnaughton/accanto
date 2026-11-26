@@ -16,6 +16,7 @@ src/accanto/
   app.py               # FastAPI app factory
   config.py            # Pydantic-settings config from env vars
   logging.py           # structlog setup
+  telemetry.py         # Logfire/OpenTelemetry tracing (docs/technical/telemetry.md)
   routers/             # HTTP endpoint definitions
     health.py          # /healthz, /readyz
   services/            # Business logic
