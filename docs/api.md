@@ -2,13 +2,12 @@
 
 The production API supports direct net-income Plans, named fixed costs, planned savings funding, destination allocations and guilt-free spending,
 dated income/fixed-cost/spending/saving entries, monthly Reviews against saved versions,
-independent income estimates, savings account openings/goals, and investment/giving
+savings account openings/goals, and investment/giving
 destinations with recorded contributions, plus savings movements and goal-level
 reconciliation. The production browser uses these commands with cookie sessions;
 the preserved standalone prototype remains a separate reference. Linked refunds, lifecycle and separate investment/debt observations
 are implemented by the routes below. Unsupported categories/fields
 reject rather than approximate.
-Income estimates do not calculate tax or populate Plans.
 
 ## Local setup and credentials
 
@@ -77,11 +76,6 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | POST | `/reviews` | Month's first date and saved version UUID |
 | GET | `/reviews/{YYYY-MM-01}` | Saved expectations, current entries and partial actuals |
 | PUT | `/reviews/{YYYY-MM-01}` | Expected revision, same-Plan saved version, note, reviewed flag and optional checkpoint refresh |
-| GET | `/income-estimates` | Entity's saved estimate scenarios and authoritative results |
-| GET | `/income-estimates/{estimate_id}` | One scenario with ordered assumption lines |
-| POST | `/income-estimates` | New named scenario and lines; no previous revision |
-| PUT | `/income-estimates/{estimate_id}` | Full replacement assumptions with `expected_revision` |
-| POST | `/income-estimates/{estimate_id}/duplicate` | New independent scenario with `{name, expected_revision}` |
 | GET | `/savings-accounts` | Entity's savings accounts and goals |
 | GET | `/savings-accounts/{account_id}` | One savings account with goal identities and opening positions |
 | POST | `/savings-accounts` | Create account, protected Unallocated goal and opening designations atomically |
@@ -291,40 +285,6 @@ The record, full audit snapshots and retry outcome commit atomically under the
 Entity lock. A stale revision conflicts; retrying the same request key and input
 returns its recorded result, while reusing a key with changed input conflicts.
 Deleted movements stay stored for audit; there is no restoration endpoint.
-
-## Independent income estimates
-
-An estimate is an optional assumption scenario, separate from actual receipts and
-Plan Income sources. A line contains per-payment gross, entered withholding and
-payroll deductions. Create one with `POST /income-estimates`:
-
-```json
-{
-  "name": "Two synthetic roles",
-  "lines": [
-    {"name":"Role A","gross":"6000.00","withholding":"1200.00","payroll":"300.00","frequency":"monthly"},
-    {"name":"Role B","gross":"4000.00","withholding":"800.00","payroll":"200.00","frequency":"monthly"}
-  ]
-}
-```
-
-The returned lines have `uuid` and `monthly_net` values of `4500.00` and
-`3000.00`, and `monthly_total` is `7500.00`. Frequencies are `annual` (1/year),
-`monthly` (12/year), `twice_monthly` (24/year), `weekly` (52/year), and `daily`
-(explicit nonnegative `paid_days` per year, including zero). Enter paid days as
-integer digits; responses serialize the count as an exact string. Non-daily lines omit
-`paid_days`. Entered amounts are exact nonnegative cents; monthly line results
-are rounded half-even to cents before totaling. Negative estimated net is not
-clamped. The smoothed result is not an exact payment schedule or a tax calculation.
-
-To edit, send the whole name and lines plus `expected_revision`. Include
-`line_id` with a previously returned line `uuid` to retain that line identity;
-omitting it creates a new line, and omitted old lines are removed from the
-current scenario. Stale edits reject without modifying inputs. Duplicate with a
-new name and the current expected revision; it copies assumptions into new
-estimate and line identities. These editable scenarios have audit history but
-no immutable estimate versions. Users manually copy or type the result into a
-Plan; there is no `Use in Plan` command, link, or automatic synchronization.
 
 ## Plan → activity → Review
 
@@ -733,7 +693,7 @@ drafted; API keys get `403 browser_session_required`.
 
 | Method | Suffix | Body / result |
 | --- | --- | --- |
-| GET | `/agent/pending-changes?status=pending` | Pending changes, newest first; `labels` maps each record id in a change's `input` to that record's current name (accounts, goals, fixed costs, tags, spending subcategories, investments, giving recipients, debts, income estimates) |
+| GET | `/agent/pending-changes?status=pending` | Pending changes, newest first; `labels` maps each record id in a change's `input` to that record's current name (accounts, goals, fixed costs, tags, spending subcategories, investments, giving recipients, debts) |
 | POST | `/agent/pending-changes/{pending_id}/apply` | `{input?}` (owner edits); runs the drafted command once with key `agent:{pending_id}`; a retry returns the same outcome |
 | POST | `/agent/pending-changes/apply-all` | `{changes: [{id, input?}]}` (1–100); applies them oldest drafted first, each as its own apply, and stops at the first rejection. Returns `{results: [{id, status, result?, error?}]}` in applied order, `status` `applied`, `failed` (with `error.code` and `error.message`) or `not_applied`; failed and not-applied changes stay pending. Any id not in the Entity refuses the whole request with `404 record_not_found`. Resending replays the ones already applied |
 | POST | `/agent/pending-changes/{pending_id}/dismiss` | `{expected_revision}` |

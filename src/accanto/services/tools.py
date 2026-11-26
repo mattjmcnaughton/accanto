@@ -30,7 +30,6 @@ from accanto.services.agent_writes import Command
 from accanto.services.balances import read_debts, read_observations
 from accanto.services.browser_auth import account_metadata
 from accanto.services.destinations import read_destinations
-from accanto.services.income_estimates import read_estimates
 from accanto.services.monthly import (
     authorize,
     read_activity,
@@ -410,11 +409,6 @@ async def get_position(ctx, entity_id, args: t.PositionQuery, key):
     savings = sum((Decimal(a["balance"]) for a in accounts), Decimal("0.00"))
     net = position.net_position(savings, investments, loans)
     return t.project_position(today, accounts, investments, loans, net)
-
-
-async def list_income_estimates(ctx, entity_id, args, key):
-    async with ctx.sessions() as session:
-        return t.project_estimates(await read_estimates(session, ctx.actor, entity_id))
 
 
 async def list_inbox(ctx, entity_id, args: t.InboxQuery, key):
@@ -969,23 +963,6 @@ def build_delete_observation(args: t.DeleteObservation):
     )
 
 
-def build_estimate(args: t.SaveEstimate):
-    action = "edit" if args.id else "create"
-    return (
-        Command(f"{action}_estimate", _json(args.values), args.id),
-        f"{'Edit' if args.id else 'Create'} income estimate {args.values.name}",
-    )
-
-
-def build_duplicate_estimate(args: t.DuplicateEstimate):
-    return (
-        Command(
-            "duplicate_estimate", args.model_dump(mode="json", exclude={"id"}), args.id
-        ),
-        f"Duplicate an income estimate as {args.name}",
-    )
-
-
 def build_agent_instructions(args: t.ProposeAgentInstructions):
     return (
         Command(
@@ -1148,13 +1125,6 @@ CATALOG: tuple[CatalogTool, ...] = (
         t.PositionQuery,
         t.Position,
         get_position,
-    ),
-    _read(
-        "list_income_estimates",
-        "Saved income estimates and monthly results.",
-        t.NoInput,
-        t.EstimateList,
-        list_income_estimates,
     ),
     _read(
         "list_inbox",
@@ -1406,18 +1376,6 @@ CATALOG: tuple[CatalogTool, ...] = (
         t.DeleteObservation,
         build_delete_observation,
         "delete",
-    ),
-    _write(
-        "save_income_estimate",
-        "Create or edit an income estimate.",
-        t.SaveEstimate,
-        build_estimate,
-    ),
-    _write(
-        "duplicate_income_estimate",
-        "Duplicate an income estimate.",
-        t.DuplicateEstimate,
-        build_duplicate_estimate,
     ),
 )
 

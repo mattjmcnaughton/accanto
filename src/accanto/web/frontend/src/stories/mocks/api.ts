@@ -67,7 +67,6 @@ const resources = {
     loaded: data.investmentObservations,
     empty: [],
   },
-  incomeEstimates: { path: `${entity}/income-estimates`, loaded: data.incomeEstimates, empty: [] },
   tags: { path: `${entity}/tags`, loaded: data.tags, empty: [] },
   spendingSubcategories: {
     path: `${entity}/spending-subcategories`,

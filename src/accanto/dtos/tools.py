@@ -25,7 +25,6 @@ from accanto.dtos.destinations import (
     EditDestination,
 )
 from accanto.dtos.inbox import BulkProposal, BulkRecordItem
-from accanto.dtos.income_estimates import DuplicateInput, EstimateInput
 from accanto.dtos.monthly import (
     ActivityInput,
     EntryTagsInput,
@@ -438,27 +437,6 @@ class ObservationList(Output):
     observations: list[Observation]
 
 
-class EstimateLine(Output):
-    name: Untrusted
-    gross: Money
-    withholding: Money
-    payroll: Money
-    frequency: str
-    monthly_net: Money
-
-
-class Estimate(Output):
-    id: UUID
-    name: Untrusted
-    monthly_total: Money
-    revision: int
-    lines: list[EstimateLine]
-
-
-class EstimateList(Output):
-    estimates: list[Estimate]
-
-
 class Proposal(Output):
     category: str | None
     assignment: str | None
@@ -729,23 +707,6 @@ def project_debts(debts, observations) -> DebtList:
             for d in debts
         ],
         observations=[project_observation(o) for o in observations],
-    )
-
-
-def project_estimates(rows) -> EstimateList:
-    return EstimateList(
-        estimates=[
-            Estimate(
-                id=r["uuid"],
-                name=r["name"],
-                monthly_total=r["monthly_total"],
-                revision=r["revision"],
-                lines=[
-                    EstimateLine(**_select(EstimateLine, line)) for line in r["lines"]
-                ],
-            )
-            for r in rows
-        ]
     )
 
 
@@ -1385,15 +1346,6 @@ class SaveObservation(Input):
 
 class DeleteObservation(DeleteRecord):
     kind: Literal["investment", "debt"]
-
-
-class SaveEstimate(Input):
-    id: UUID | None = None
-    values: EstimateInput
-
-
-class DuplicateEstimate(DuplicateInput):
-    id: UUID
 
 
 # --- Tags (TDD 05) ----------------------------------------------------------------

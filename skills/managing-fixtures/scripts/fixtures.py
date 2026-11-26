@@ -414,29 +414,6 @@ async def populate(command, day):
             "note": "Synthetic goal adjustment",
         },
     )
-    await command(
-        "POST",
-        "/income-estimates",
-        {
-            "name": "Fixture income estimate",
-            "lines": [
-                {
-                    "name": "Regular work",
-                    "gross": "4100.00",
-                    "withholding": "800.00",
-                    "payroll": "200.00",
-                    "frequency": "twice_monthly",
-                },
-                {
-                    "name": "Project work",
-                    "gross": "550.00",
-                    "withholding": "100.00",
-                    "payroll": "0.00",
-                    "frequency": "monthly",
-                },
-            ],
-        },
-    )
 
 
 async def run(args):
@@ -596,7 +573,6 @@ async def run(args):
                         ("investments", 2),
                         ("giving-recipients", 2),
                         ("debts", 2),
-                        ("income-estimates", 1),
                     ):
                         if len(await command("GET", f"/{path}")) != count:
                             raise ValueError(f"Fixture {path} inventory is incomplete.")

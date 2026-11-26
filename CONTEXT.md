@@ -18,17 +18,13 @@ acceptance criteria; this file defines their shared domain meanings.
 | Entity | A User’s named financial workspace and the planning boundary for Income sources, Plans, Reviews, saving goals, savings accounts, investments, debt accounts, giving recipients, Spending subcategories, Tags, and recorded activity. Its finances are viewed and totaled together. Income sources belong to individual Plans within the Entity, not to a shared Entity source catalog. |
 | Entity time zone | The time zone used for defaults such as today and this month across browser, API, and MCP. Financial activity belongs to the calendar date selected for it, not the date of entry or a time-zone conversion. Changing the time zone does not move existing activity between dates or Periods. |
 | Currency | All monetary amounts use U.S. dollars (USD): Plan inputs and results, actual entries and adjustments, funding origins, saving goals, contribution targets, investment balance observations, and projections. Mixed-currency records and currency conversion are outside current scope. |
-| Income source | A Plan's named, stable identity for a source of money, scoped to that Plan's Entity. Identity persists across edits and saved versions of that Plan; changing salary amounts requires no relinking. Copying a Plan creates new Income source identities. Each monthly Plan specifies a directly entered planned net amount for each included source. Salary, withholding, and payroll assumptions belong to a separate optional estimation workflow. A generic label such as “Primary salary” can distinguish a source without a separate Individual record. An Income source and its planned amounts are distinct from money actually received. Existing Plan copy may shorten Income source to Income. |
-| Income frequency | How often an income occurs: annually, monthly, twice a month (24 payments per year), weekly, or daily. |
-| Plan cadence | The interval a Plan uses for its allocation inputs: monthly in current scope. Income frequency belongs to the optional estimator; fixed-cost frequency remains a separate Plan input. Annual Plans are future work. Saved versions preserve the cadence used when saved. |
-| Period | One calendar month for actual activity and Reviews. Plans and Reviews are monthly in current scope. Annual salary inputs belong to the estimator; annual expense inputs remain supported; annual Plans and annual rollups are deferred. |
-| Planned gross income | An input to the separate income-estimation workflow, before expected withholding and payroll deductions. It is not a monthly Plan funding input. |
+| Income source | A Plan's named, stable identity for a source of money, scoped to that Plan's Entity. Identity persists across edits and saved versions of that Plan; changing salary amounts requires no relinking. Copying a Plan creates new Income source identities. Each monthly Plan specifies a directly entered planned net amount for each included source. A generic label such as “Primary salary” can distinguish a source without a separate Individual record. An Income source and its planned amounts are distinct from money actually received. Existing Plan copy may shorten Income source to Income. |
+| Plan cadence | The interval a Plan uses for its allocation inputs: monthly in current scope. Fixed-cost frequency is a separate Plan input. Annual Plans are future work. Saved versions preserve the cadence used when saved. |
+| Period | One calendar month for actual activity and Reviews. Plans and Reviews are monthly in current scope. Annual expense inputs remain supported; annual Plans and annual rollups are deferred. |
 | Plan | An Entity's named intention for income, fixed costs, giving, guilt-free spending, saving, and investing for a month. It accepts multiple named sources of monthly net income directly. Its editable draft can be saved as a new Plan version. It shows the calculated tithe as a giving target, sets guilt-free spending, and allocates monthly amounts to individual saving goals, investment destinations, and giving recipients. Destination allocations roll up into their category totals. Saving allocations target goals or a named savings account’s Unallocated savings. |
 | Plan version | An immutable saved snapshot of a Plan's intention, including its cadence, assumptions, and calculation results. Older prototype versions may also contain tax-estimate fields, which remain preserved. A Review targets one version for comparison. |
 | Tax year | Deferred beyond v1. The year whose tax rules and standard deduction apply to a Plan's Entity tax estimate. It is saved with each Plan version. |
 | Filing status | Deferred beyond v1. The tax-return status selected in a Plan for its Entity tax estimate. It determines which tax rules and standard deduction apply; it is not inferred from Income labels. |
-| Saved income estimate | An Entity's named, saved scenario containing multiple income lines and their estimation assumptions, kept independently of Plans and actual Income sources. An Entity can save multiple estimates and reopen them to calculate monthly net income. Copying a result into a Plan is manual and establishes no relationship or synchronization. |
-| Monthly net-income estimate | The output of a separate optional page/workflow that estimates monthly net income from salary, expected withholding, payroll deductions, and payment frequency. It can inform a Plan but is not actual income or a live link that rewrites Plans. |
 | Take-home override | A legacy prototype field preserved in historical saved versions. New monthly Plans directly accept net income per source and do not need a total override. |
 | Planned net income / planned take-home income | The sum of directly entered monthly net amounts across a Plan’s named Income sources. Used for income allocations and the tithe target; distinct from actual receipts and planned use of savings. |
 | Actual net income | The net amount actually received from one Income source during a Review's Period, after taxes and payroll deductions. Dated receipts and adjustments roll up by source. It remains separate from planned gross Income. |
@@ -341,12 +337,9 @@ establish a match. Fixed-cost identity behavior is unchanged by this income deci
 - Monthly Plans accept multiple named Income sources with directly entered monthly
   net amounts. Reviews compare each source's actual net receipts with its planned
   net amount from the linked saved version.
-- Salary, expected withholding, payroll deductions, and income frequencies belong
-  to a separate optional monthly net-income estimation page/workflow. Annual
-  salary inputs can inform a monthly estimate without introducing annual Plans.
-  Using an estimate in a Plan is an explicit choice; later estimator edits never
-  silently change a draft, saved version, or actual receipt. Withholding remains
-  an entered assumption, not a calculation of final tax owed.
+- Accanto does not estimate net income from salary, withholding, payroll
+  deductions, or payment frequency. The optional income estimator was removed
+  (see Decisions 10–12); people enter monthly net amounts directly.
 - The prototype implements this separation. Preserve
   historical gross-income inputs, take-home overrides, and saved results; do not
   silently reinterpret or recompute existing versions.
@@ -410,8 +403,8 @@ establish a match. Fixed-cost identity behavior is unchanged by this income deci
   UI calls this “Twice a month,” distinct from every two weeks (26 payments).
   Daily income requires an
   explicit number of paid days per year; it never silently assumes every
-  calendar or working day is paid. These are estimation conventions, not actuals. Under the agreed separation,
-  frequency conversion belongs to the estimator rather than monthly Plan entry.
+  calendar or working day is paid. These are estimation conventions, not actuals. Monthly Plan
+  entry does not convert income frequencies.
 - Plans and projections describe intentions and scenarios. Reviews and
   dated balances describe recorded results. A Review targets one saved
   Plan version; editing the Plan draft or saving a later version does not rewrite
@@ -791,7 +784,7 @@ generic funding model. Cross-month guidance and overcommitment checks still need
 design, without confusing independent scenarios with cumulative commitments.
 
 The prototype replaces receipt-linked lump-sum spreading with generic savings
-funding and separates income estimates from direct monthly net-income entry.
+funding and keeps direct monthly net-income entry.
 Historical saved inputs and results must be preserved. Annual Plans and annual
 Reviews remain deferred.
 
@@ -1044,7 +1037,10 @@ validate this same ordered history and all affected subsequent balances. Editing
 an entry must not silently reset its recording order to bypass sufficient-funds
 checks. A transfer is one atomic operation across both goals/accounts.
 
-### Decision 10 — Save multiple income estimates (agreed)
+### Decision 10 — Save multiple income estimates (superseded: estimator removed)
+
+Superseded: the income estimator was removed because it was not helpful
+and confused direct monthly net-income entry. Kept for history.
 
 The separate income estimator supports multiple named saved estimates per Entity.
 Persist each estimate's entered assumptions so it can be reopened without
@@ -1058,7 +1054,10 @@ automatic application, linking, or synchronization. Existing Plan version
 immutability remains unchanged. This decision does not introduce immutable
 estimate versions or an estimate-to-Plan relationship.
 
-### Decision 11 — Multiple incomes within an estimate (agreed)
+### Decision 11 — Multiple incomes within an estimate (superseded: estimator removed)
+
+Superseded: the income estimator was removed because it was not helpful
+and confused direct monthly net-income entry. Kept for history.
 
 Each saved estimate supports multiple named income lines, each with gross amount,
 payment frequency, entered expected withholding, and payroll deductions. Show
@@ -1077,7 +1076,10 @@ not automatically linked Plan Income sources. Manual copy/paste into Plans
 remains the only required handoff. Editing one saved scenario does not alter
 another scenario, a Plan, or actual activity.
 
-### Decision 12 — Edit and duplicate saved income estimates (agreed)
+### Decision 12 — Edit and duplicate saved income estimates (superseded: estimator removed)
+
+Superseded: the income estimator was removed because it was not helpful
+and confused direct monthly net-income entry. Kept for history.
 
 Saved income estimates are ordinary editable named scenarios. Saving changes
 updates the selected estimate and its income lines with audit history; it does

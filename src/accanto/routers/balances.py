@@ -13,7 +13,7 @@ from accanto.dtos.balances import (
 )
 from accanto.dtos.monthly import RevisionInput
 from accanto.routers.authentication import Session, Token
-from accanto.routers.income_estimates import RequestKey
+from accanto.routers.monthly import RequestKey
 from accanto.services.balances import read_debts, read_observations
 from accanto.services.monthly import write
 

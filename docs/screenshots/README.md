@@ -12,7 +12,6 @@ screen changes. Never capture them from a real workspace.
 | Activity | [light](activity-light.png) | [dark](activity-dark.png) | [390 px](activity-phone.png) |
 | Review | [light](review-light.png) | [dark](review-dark.png) | [390 px](review-phone.png) |
 | Plans | [light](plans-light.png) | [dark](plans-dark.png) | [390 px](plans-phone.png) |
-| Income estimates | [light](estimates-light.png) | [dark](estimates-dark.png) | [390 px](estimates-phone.png) |
 | Savings | [light](savings-light.png) | [dark](savings-dark.png) | [390 px](savings-phone.png) |
 | Investments | [light](investments-light.png) | [dark](investments-dark.png) | [390 px](investments-phone.png) |
 | Giving | [light](giving-light.png) | [dark](giving-dark.png) | [390 px](giving-phone.png) |

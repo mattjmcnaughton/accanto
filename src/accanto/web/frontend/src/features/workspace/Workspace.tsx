@@ -14,7 +14,6 @@ import { Dialog, Icon, useDialogSlot } from "../../ui";
 import { AgentPanel } from "../agent/AgentPanel";
 import { Balances } from "../balances/Balances";
 import { Destinations } from "../destinations/Destinations";
-import { IncomeEstimates } from "../estimates/IncomeEstimates";
 import { Inbox } from "../inbox/Inbox";
 import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice";
 import { Savings } from "../savings/Savings";
@@ -33,7 +32,6 @@ export const SCREENS = [
   "inbox",
   "review",
   "plans",
-  "estimates",
   "savings",
   "investments",
   "giving",
@@ -67,10 +65,7 @@ const NAV: { group: string; items: [Screen, string][] }[] = [
   },
   {
     group: "Planning",
-    items: [
-      ["plans", "Plans"],
-      ["estimates", "Income estimates"],
-    ],
+    items: [["plans", "Plans"]],
   },
   {
     group: "Balances",
@@ -735,7 +730,6 @@ export function Workspace({
                   openSettings={() => go("settings")}
                 />
               )}
-              {screen === "estimates" && <IncomeEstimates {...props} />}
               {screen === "savings" && <Savings {...props} />}
               {screen === "investments" && <Destinations {...props} kind="investment" />}
               {screen === "giving" && <Destinations {...props} kind="giving" />}
@@ -752,15 +746,7 @@ export function Workspace({
                 <div className="screen">
                   <div className="card">
                     {(
-                      [
-                        "inbox",
-                        "estimates",
-                        "savings",
-                        "investments",
-                        "giving",
-                        "loans",
-                        "settings",
-                      ] as const
+                      ["inbox", "savings", "investments", "giving", "loans", "settings"] as const
                     ).map((to) => (
                       <a
                         key={to}
