@@ -133,6 +133,9 @@ pairs, and `save_*` creates or, given `id` and `expected_revision`, edits.
 - **Debts and balances:** `save_debt`, `save_observation(kind)`,
   `delete_observation(kind)`.
 - **Estimates:** `save_income_estimate`, `duplicate_income_estimate`.
+- **Routines ([TDD 13](13-routines.md)):** `save_routine` is gated;
+  `set_routine_step` and `set_routine_occurrence` run directly like
+  `set_proposals`, and `list_routines` and `get_routine_occurrence` read.
 
 Each maps to the operation names in `services/monthly.write` or the inbox and
 source services from TDD 02. Inputs reuse the existing DTOs

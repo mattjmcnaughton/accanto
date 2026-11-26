@@ -16,6 +16,7 @@ import { Balances } from "../balances/Balances";
 import { Destinations } from "../destinations/Destinations";
 import { Inbox } from "../inbox/Inbox";
 import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice";
+import { Routines } from "../routines/Routines";
 import { Savings } from "../savings/Savings";
 import { Settings } from "../settings/Settings";
 import { ActivityScreen } from "./Activity";
@@ -32,6 +33,7 @@ export const SCREENS = [
   "inbox",
   "review",
   "plans",
+  "routines",
   "savings",
   "investments",
   "giving",
@@ -61,6 +63,7 @@ const NAV: { group: string; items: [Screen, string][] }[] = [
       ["activity", "Activity"],
       ["inbox", "Transactions inbox"],
       ["review", "Review"],
+      ["routines", "Routines"],
     ],
   },
   {
@@ -87,7 +90,9 @@ const TITLES = Object.fromEntries([
  * itself for categories, and leaving it out keeps every other screen's number unchanged.
  */
 const ORDER: Screen[] = [
-  ...NAV.flatMap((g) => g.items.map(([to]) => to)).filter((to) => to !== "inbox"),
+  ...NAV.flatMap((g) => g.items.map(([to]) => to)).filter(
+    (to) => to !== "inbox" && to !== "routines",
+  ),
   "settings",
 ];
 const TABBED: Screen[] = ["home", "activity", "review", "plans"];
@@ -308,6 +313,11 @@ export function Workspace({
     move(to, false, m);
     return true;
   }
+  // Home's Continue opens one routine occurrence; any other arrival opens the list.
+  const [routineStart, setRoutineStart] = useState<{ routine: string; on: string }>();
+  useEffect(() => {
+    if (screen !== "routines") setRoutineStart(undefined);
+  }, [screen]);
   function addActivity() {
     if (screen === "activity") setAdd((x) => x + 1);
     else if (go("activity")) setAdd(1);
@@ -703,6 +713,9 @@ export function Workspace({
                   month={month}
                   showPlans={() => go("plans", true)}
                   go={(to) => go(to)}
+                  openRoutine={(routine, on) => {
+                    if (go("routines")) setRoutineStart({ routine, on });
+                  }}
                   retainedDirty={(value) => {
                     planDirty.current = value;
                   }}
@@ -730,6 +743,14 @@ export function Workspace({
                   openSettings={() => go("settings")}
                 />
               )}
+              {screen === "routines" && (
+                <Routines
+                  {...props}
+                  credentials={credentials}
+                  start={routineStart}
+                  open={(to, m) => go(to, false, m ?? month)}
+                />
+              )}
               {screen === "savings" && <Savings {...props} />}
               {screen === "investments" && <Destinations {...props} kind="investment" />}
               {screen === "giving" && <Destinations {...props} kind="giving" />}
@@ -746,7 +767,15 @@ export function Workspace({
                 <div className="screen">
                   <div className="card">
                     {(
-                      ["inbox", "savings", "investments", "giving", "loans", "settings"] as const
+                      [
+                        "inbox",
+                        "routines",
+                        "savings",
+                        "investments",
+                        "giving",
+                        "loans",
+                        "settings",
+                      ] as const
                     ).map((to) => (
                       <a
                         key={to}

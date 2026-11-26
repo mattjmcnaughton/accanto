@@ -39,6 +39,7 @@ from accanto.dtos.monthly import (
     TagEditInput,
     TagInput,
 )
+from accanto.dtos.routines import OccurrenceInput, RoutineInput, StepTick
 from accanto.dtos.savings import (
     CompleteGoal,
     CreateAccount,
@@ -1447,4 +1448,126 @@ class ProposeAgentInstructions(Input):
     )
     expected_revision: int = Field(
         ge=0, description="revision from get_agent_instructions."
+    )
+
+
+# --- Routines (TDD 13): checklists, not financial records -----------------------
+
+
+class RoutinesQuery(Input):
+    due_only: bool = Field(
+        default=False, description="Only routines due today or overdue."
+    )
+
+
+class RoutineOccurrenceSummary(Output):
+    scheduled_on: date
+    state: Literal["upcoming", "due", "overdue", "missed", "done", "skipped"]
+    done: int
+    total: int
+
+
+class RoutineStepInfo(Output):
+    id: UUID
+    title: Untrusted
+    link_screen: str | None
+    link_month_offset: int | None
+    link_url: Untrusted | None
+
+
+class RoutineInfo(Output):
+    id: UUID
+    name: Untrusted
+    cadence: dict
+    starts_on: date
+    active: bool
+    revision: int
+    steps: list[RoutineStepInfo]
+    current: RoutineOccurrenceSummary | None
+    next_on: date | None
+
+
+class RoutineList(Output):
+    routines: list[RoutineInfo]
+
+
+class OccurrenceRef(Input):
+    routine_id: UUID
+    scheduled_on: date | None = Field(
+        default=None,
+        description="Omit for the current occurrence (or the next, before the first).",
+    )
+
+
+class OccurrenceStepInfo(Output):
+    step_id: UUID
+    title: Untrusted
+    status: Literal["done", "skipped"] | None
+    note: Untrusted
+    link_screen: str | None
+    link_url: Untrusted | None
+
+
+class RoutineOccurrence(Output):
+    routine_id: UUID
+    scheduled_on: date
+    next_on: date | None
+    state: Literal["upcoming", "due", "overdue", "missed", "done", "skipped"]
+    skipped: bool
+    completed_on: date | None
+    note: Untrusted
+    revision: int
+    steps: list[OccurrenceStepInfo]
+    entity: EntityRef | None = None
+
+
+class SetRoutineStep(StepTick):
+    routine_id: UUID
+    scheduled_on: date
+    step_id: UUID
+
+
+class SetRoutineOccurrence(OccurrenceInput):
+    routine_id: UUID
+    scheduled_on: date
+
+
+class SaveRoutine(Input):
+    id: UUID | None = None
+    values: RoutineInput
+
+
+def project_routine(row) -> RoutineInfo:
+    return RoutineInfo(
+        id=row["uuid"],
+        name=row["name"],
+        cadence=row["cadence"],
+        starts_on=row["starts_on"],
+        active=row["active"],
+        revision=row["revision"],
+        steps=[
+            RoutineStepInfo(
+                id=s["uuid"],
+                title=s["title"],
+                link_screen=s["link_screen"],
+                link_month_offset=s["link_month_offset"],
+                link_url=s["link_url"],
+            )
+            for s in row["steps"]
+        ],
+        current=row["current"],
+        next_on=row["next_on"],
+    )
+
+
+def project_occurrence(row) -> RoutineOccurrence:
+    return RoutineOccurrence(
+        **{
+            key: row[key]
+            for key in RoutineOccurrence.model_fields
+            if key not in {"steps", "entity"}
+        },
+        steps=[
+            OccurrenceStepInfo(**_select(OccurrenceStepInfo, s)) for s in row["steps"]
+        ],
     )

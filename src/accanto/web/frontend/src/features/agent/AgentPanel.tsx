@@ -77,6 +77,8 @@ const LOOKS_AT: Record<string, string> = {
   list_destinations: "investments and giving",
   list_debts: "loans",
   list_investment_observations: "investment balances",
+  list_routines: "your routines",
+  get_routine_occurrence: "a routine",
   list_inbox: "the inbox",
   get_inbox_item: "an inbox item",
   list_sources: "transaction sources",

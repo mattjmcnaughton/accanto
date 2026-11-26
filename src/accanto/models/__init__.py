@@ -5,3 +5,4 @@ from accanto.models import inbox as inbox
 from accanto.models import jobs as jobs
 from accanto.models import monthly as monthly
 from accanto.models import refunds as refunds
+from accanto.models import routines as routines

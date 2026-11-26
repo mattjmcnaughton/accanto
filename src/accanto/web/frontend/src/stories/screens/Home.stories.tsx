@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { Plans } from "../../features/workspace/Plans";
-import { screenArgs, stateStory } from "../mocks/api";
+import { mockApi, screenArgs, stateStory } from "../mocks/api";
+import { routinesApi } from "../mocks/routines";
 
 // Home is the Plans screen with `home` set, as Workspace renders it.
 const meta = {
@@ -13,6 +14,7 @@ const meta = {
     visible: true,
     showPlans: fn().mockName("showPlans"),
     go: fn().mockName("go"),
+    openRoutine: fn().mockName("openRoutine"),
   },
 } satisfies Meta<typeof Plans>;
 export default meta;
@@ -21,6 +23,15 @@ type Story = StoryObj<typeof meta>;
 export const Loaded: Story = {};
 /** A past month chosen in the top bar: its figures, without today's pace marker. */
 export const AnotherMonth: Story = { args: { month: "2026-09" } };
+export const LoadedPhone: Story = { globals: { viewport: { value: "phone", isRotated: false } } };
+/** Routines: one overdue, the rest with their next date. Continue opens the occurrence. */
+export const RoutineDueToday: Story = {
+  parameters: { msw: [...routinesApi({ dueToday: true }).handlers, ...mockApi()] },
+};
+/** Nothing due: the section collapses to the next routine. */
+export const RoutinesCaughtUp: Story = {
+  parameters: { msw: [...routinesApi({ allDone: true }).handlers, ...mockApi()] },
+};
 export const Empty: Story = stateStory("empty");
 export const Loading: Story = stateStory("loading");
 export const Failed: Story = stateStory("failed");

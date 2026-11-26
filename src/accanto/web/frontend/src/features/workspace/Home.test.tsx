@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ComparisonGroup, ReviewResult } from "../../lib/monthly";
+import type { Routine } from "../../lib/routines";
 import { Home } from "./Home";
 
 afterEach(cleanup);
@@ -101,4 +102,37 @@ it("takes what is left from the API's difference and never shows a missing figur
       name: "$1,000.00 is planned for guilt-free spending this month",
     }),
   ).toBeDefined();
+});
+it("shows a due routine before the Entity has a Plan", () => {
+  const routine = {
+    uuid: "r1",
+    name: "Synthetic check-in",
+    cadence: {
+      frequency: "weekly",
+      interval: 1,
+      weekdays: [4],
+      month_day: null,
+      week: null,
+      weekday: null,
+    },
+    starts_on: "2026-11-01",
+    active: true,
+    revision: 1,
+    steps: [],
+    current: { scheduled_on: "2026-11-10", state: "due", done: 0, total: 1 },
+    next_on: "2026-11-17",
+    history: [],
+  } as unknown as Routine;
+  const openRoutine = vi.fn();
+  render(
+    <Home
+      {...props(review(group("1.00", "1.00", "0.00"), "0.00"))}
+      plans={0}
+      routines={{ kind: "ready", data: [routine] }}
+      openRoutine={openRoutine}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "Create your first Plan" })).toBeDefined();
+  fireEvent.click(within(screen.getByRole("list", { name: "Routines" })).getByRole("button"));
+  expect(openRoutine).toHaveBeenCalledWith("r1", "2026-11-10");
 });
