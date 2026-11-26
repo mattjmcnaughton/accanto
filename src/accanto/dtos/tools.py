@@ -1471,3 +1471,22 @@ class SaveSpendingSubcategory(Input):
         description="Omit to create a subcategory; set to rename, archive or restore.",
     )
     values: SpendingSubcategoryEditInput | SpendingSubcategoryInput
+
+
+class AgentInstructions(Output):
+    """The Entity's AGENT.md: the owner's standing instructions (trusted)."""
+
+    instructions: str
+    # 0 before AGENT.md (or any assistant setting) was first saved.
+    revision: int
+
+
+class ProposeAgentInstructions(Input):
+    instructions: str = Field(
+        max_length=20_000,
+        description="The whole new AGENT.md in Markdown. Keep what the current "
+        "text says unless the owner asked to change it; this replaces it.",
+    )
+    expected_revision: int = Field(
+        ge=0, description="revision from get_agent_instructions."
+    )

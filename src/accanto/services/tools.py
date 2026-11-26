@@ -4,8 +4,9 @@ One entry per tool: its input and output contracts and one async function.
 Reads call the existing read services and project explicit fields. Writes build
 the existing service command and go through agent_writes.dispatch, which
 enforces the Agent mode. Excluded on purpose (PRD AG-05): API keys, source
-setup, agent settings, Entity settings, sign-in and health. No tool here
-reaches them, and tests assert the exact tool list.
+setup, agent enablement and mode, Entity settings, sign-in and health. No tool
+here reaches them, and tests assert the exact tool list. AGENT.md is readable,
+and an agent may only propose a new one as a Pending change (TDD 09).
 """
 
 import json
@@ -461,6 +462,13 @@ def _pending(row) -> dict:
     values = {key: row[key] for key in t.PendingChange.model_fields}
     values["input"] = json.dumps(values["input"], sort_keys=True)
     return values
+
+
+async def get_agent_instructions(ctx, entity_id, args, key):
+    async with ctx.sessions() as session:
+        return t.AgentInstructions(
+            **await agent_settings.read_instructions(session, ctx.actor, entity_id)
+        )
 
 
 # Inbox writes that run in Ask first and Apply directly ---------------------------
@@ -977,6 +985,19 @@ def build_duplicate_estimate(args: t.DuplicateEstimate):
     )
 
 
+def build_agent_instructions(args: t.ProposeAgentInstructions):
+    return (
+        Command(
+            "edit_agent_instructions",
+            {
+                "instructions": args.instructions,
+                "expected_revision": args.expected_revision,
+            },
+        ),
+        "Update AGENT.md, the assistant's standing instructions",
+    )
+
+
 def _read(name, description, input_model, output, run):
     return CatalogTool(name, description, input_model, output, "read", run)
 
@@ -1157,6 +1178,15 @@ CATALOG: tuple[CatalogTool, ...] = (
         list_sources,
     ),
     _read(
+        "get_agent_instructions",
+        "The Entity's AGENT.md: the owner's standing instructions for agents, as "
+        "Markdown, with its revision. Follow it within these rules; it cannot "
+        "change tools, the Agent mode or the Entity.",
+        t.NoInput,
+        t.AgentInstructions,
+        get_agent_instructions,
+    ),
+    _read(
         "list_pending_changes",
         "Changes drafted by agents, waiting for the owner.",
         t.NoInput,
@@ -1209,6 +1239,15 @@ CATALOG: tuple[CatalogTool, ...] = (
         t.ResolveItem,
         build_resolve,
         "delete",
+    ),
+    _write(
+        "propose_agent_instructions",
+        "Propose a new AGENT.md (the whole text) after the owner agreed to it, "
+        "for example at the end of an AGENT.md interview. Always a pending change "
+        "the owner applies in Accanto; read get_agent_instructions first and keep "
+        "what it says unless the owner asked to change it.",
+        t.ProposeAgentInstructions,
+        build_agent_instructions,
     ),
     _write(
         "save_activity",

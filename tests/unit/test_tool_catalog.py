@@ -4,7 +4,7 @@ import json
 from uuid import uuid4
 
 from accanto.dtos import tools as t
-from accanto.services.agent_writes import IRREVERSIBLE
+from accanto.services.agent_writes import ALWAYS_PENDS, IRREVERSIBLE
 from accanto.services.tools import CATALOG, TOOLS
 
 CATALOG_NAMES = [
@@ -27,6 +27,7 @@ CATALOG_NAMES = [
     "list_inbox",
     "get_inbox_item",
     "list_sources",
+    "get_agent_instructions",
     "list_pending_changes",
     "sync_source",
     "set_proposals",
@@ -34,6 +35,7 @@ CATALOG_NAMES = [
     "skip_inbox_item",
     "undo_inbox_item",
     "resolve_inbox_conflict",
+    "propose_agent_instructions",
     "save_activity",
     "save_spending_subcategory",
     "save_tag",
@@ -73,8 +75,13 @@ def test_excluded_operations_have_no_tool():
     excluded = ("key", "connect", "disconnect", "account_selection", "setting")
     for tool in CATALOG:
         assert not any(word in tool.name for word in excluded), tool.name
-        schema = str(tool.input.model_json_schema())
-        assert "access_token" not in schema and "instructions" not in schema
+        properties = tool.input.model_json_schema().get("properties", {})
+        assert "access_token" not in str(properties)
+        # Agents never reach enablement or the Agent mode; AGENT.md only as a draft.
+        assert not {"enabled", "mode"} & set(properties), tool.name
+        assert ("instructions" in properties) == (
+            tool.name == "propose_agent_instructions"
+        )
 
 
 def test_only_gated_writes_build_pending_changes():
@@ -90,6 +97,7 @@ def test_only_gated_writes_build_pending_changes():
         "delete_tag",
     } == IRREVERSIBLE
     assert all(TOOLS[name].kind == "delete" for name in IRREVERSIBLE)
+    assert IRREVERSIBLE | {"propose_agent_instructions"} == ALWAYS_PENDS
 
 
 def test_free_text_is_marked_untrusted_and_round_trips():

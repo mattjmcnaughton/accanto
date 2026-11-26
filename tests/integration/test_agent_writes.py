@@ -391,6 +391,55 @@ async def scenario():
         )
     assert missing.value.status == 404
 
+    # AGENT.md (TDD 09): any caller reads it; an agent only drafts a new one,
+    # which pends even in Apply directly and changes neither enablement nor mode.
+    await set_mode("apply_directly")
+    read = await call(mcp, "get_agent_instructions", {})
+    assert read.instructions == "Synthetic standing instruction."
+    revision = read.revision
+    new_md = "## Categories\n- Synthetic Grocer is groceries."
+    baseline = await audits()
+    drafts = [
+        (
+            await call(
+                ctx,
+                "propose_agent_instructions",
+                {"instructions": new_md, "expected_revision": revision},
+            )
+        ).pending_change
+        for ctx in (mcp, sidebar)
+    ]
+    assert all(drafts)
+    assert await audits() == baseline
+    assert (await call(owner_ctx, "get_agent_instructions", {})).revision == revision
+    from_mcp, from_sidebar = drafts
+    assert from_mcp and from_sidebar
+    applied_md = await apply_pending(owner_ctx, entity, from_sidebar.id)
+    assert applied_md.status == "recorded"
+    async with sessions() as db:
+        after = await agent_settings.read_settings(db, owner, entity)
+    assert after["instructions"] == new_md and after["revision"] == revision + 1
+    assert after["mode"] == "apply_directly" and after["enabled"] is True
+    assert await audits() == baseline + 1
+    # The MCP draft was based on the old revision: applying it is stale, and a
+    # new draft against the old revision is rejected when drafted.
+    with pytest.raises(RejectionError) as outdated:
+        await apply_pending(owner_ctx, entity, from_mcp.id)
+    assert outdated.value.code == "stale_revision"
+    with pytest.raises(RejectionError) as late:
+        await call(
+            mcp,
+            "propose_agent_instructions",
+            {"instructions": "Synthetic overwrite.", "expected_revision": revision},
+        )
+    assert late.value.code == "stale_revision"
+    async with sessions() as db:
+        await agent_writes.dismiss(db, owner, entity, from_mcp.id, 1)
+    async with sessions() as db:
+        unchanged = await agent_settings.read_settings(db, owner, entity)
+    assert unchanged["instructions"] == new_md
+    await set_mode("ask_first")
+
     # Agent settings and source setup refuse API keys; the session may use them.
     config = Settings(
         browser_origin="https://test",
@@ -449,6 +498,9 @@ async def scenario():
         assert (
             await client.get(prefix + "/sources", headers=bearer)
         ).status_code == 200
+        md = await client.get(prefix + "/agent/instructions", headers=bearer)
+        assert md.status_code == 200, md.text
+        assert md.json()["instructions"] == "Synthetic standing instruction."
         cookie = {"accanto_session": browser["token"]}
         client.cookies.update(cookie)
         settings = await client.get(prefix + "/agent/settings")

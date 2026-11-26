@@ -1239,6 +1239,10 @@ async def write(
             from accanto.services.agent_settings import write_agent_settings
 
             response = await write_agent_settings(session, entity, payload, audit)
+        elif operation == "edit_agent_instructions":
+            from accanto.services.agent_settings import write_agent_instructions
+
+            response = await write_agent_instructions(session, entity, payload, audit)
         elif operation == "draft_pending_change":
             # Not financial activity: no audit row, only the retry outcome.
             from accanto.services.agent_writes import store_pending

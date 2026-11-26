@@ -199,6 +199,7 @@ async def drive(origin, secrets, suffix):
     amount = "765.43"  # invented; the stub agent shows it as $765.43
     invalid = f"synthetic-invalid-{suffix}"
     prompt = f"synthetic-canary-prompt-{suffix} what did I spend in October?"
+    agent_md = f"synthetic-canary-agent-md-{suffix} Example Grocer is groceries."
     code = f"synthetic-oidc-code-{suffix}"
     config = settings.model_copy(
         update={"browser_csrf_secret": SecretStr(secrets["csrf"])}
@@ -209,7 +210,7 @@ async def drive(origin, secrets, suffix):
     browser = {**cookie, "Origin": origin, "X-CSRF-Token": csrf_token(session, config)}
     year = datetime.now(UTC).year - 1
     month = datetime.now(UTC).date().replace(day=1).isoformat()
-    private = [note, amount, "765,43", invalid, prompt, code, key, session]
+    private = [note, amount, "765,43", invalid, prompt, agent_md, code, key, session]
     private += [f"Synthetic canary {suffix}", y.FAKE_TOKEN, *secrets.values()]
 
     async with httpx.AsyncClient(base_url=origin, trust_env=False) as client:
@@ -331,11 +332,31 @@ async def drive(origin, secrets, suffix):
             {
                 "enabled": True,
                 "mode": "ask_first",
-                "instructions": note,
+                "instructions": agent_md,
                 "expected_revision": 0,
             },
             headers=browser,
         )
+        # AGENT.md over REST (API key) and MCP.
+        assert (await call("GET", "/agent/instructions"))["instructions"] == agent_md
+        instructions = await client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_agent_instructions",
+                    "arguments": {"entity_id": str(entity)},
+                },
+            },
+            headers={
+                **api,
+                "MCP-Protocol-Version": "2025-03-26",
+                "Accept": "application/json, text/event-stream",
+            },
+        )
+        assert instructions.status_code == 200 and agent_md in instructions.text
         reply = await client.post(
             prefix + "/agent/conversation/messages",
             data={"content": prompt},
@@ -429,6 +450,7 @@ def check(found, documents, keys, private):
     assert len(statements) > 20 and any("$1" in s for s in statements)
     tools = {a.get("gen_ai.tool.name") for a in attributes}
     assert {"list_activity", "get_monthly_review"} <= tools  # MCP and agent
+    assert "get_agent_instructions" in tools
     assert any("/v1/plans/" in str(a.get("http.url", "")) for a in attributes)
     rejected = [
         json.loads(e) if isinstance(e := a["fastapi.arguments.errors"], str) else e

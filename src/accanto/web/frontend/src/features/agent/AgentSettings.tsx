@@ -7,6 +7,7 @@ import {
   agent,
 } from "../../lib/agentStream";
 import { type ScreenProps, useLoad } from "../workspace/shared";
+import { Markdown } from "./Markdown";
 
 /**
  * Opt-in, Agent mode and AGENT.md for one Entity. Only a browser session can change these;
@@ -120,18 +121,27 @@ export function AgentSettings(p: ScreenProps) {
                 <small id="agent-md-help">
                   Standing instructions for the assistant, such as “Sample Warehouse Club is
                   groceries unless over $300”. They cannot change what it may do, the mode, or the
-                  Entity.
+                  Entity. To write them by answering questions, choose Interview me for AGENT.md in
+                  a new assistant conversation. MCP clients can read them.
                 </small>
               </div>
-              <textarea
-                id="agent-md"
-                className="input"
-                rows={6}
-                maxLength={20000}
-                aria-describedby="agent-md-help"
-                value={current.instructions}
-                onChange={(event) => change({ instructions: event.target.value })}
-              />
+              <div className="agent-md-edit">
+                <textarea
+                  id="agent-md"
+                  className="input"
+                  rows={10}
+                  maxLength={20000}
+                  aria-describedby="agent-md-help"
+                  value={current.instructions}
+                  onChange={(event) => change({ instructions: event.target.value })}
+                />
+                {current.instructions?.trim() && (
+                  <details className="agent-md-preview">
+                    <summary>Preview</summary>
+                    <Markdown text={current.instructions} />
+                  </details>
+                )}
+              </div>
             </div>
             <div className="setting">
               <div />

@@ -49,6 +49,10 @@ Edits and deletes take expected_revision; on stale_revision, read again.
 the owner applies in Accanto. Deleting a savings movement or a balance \
 observation is always a pending change. Syncing a source and setting inbox \
 proposals record nothing and are always allowed.
+- get_agent_instructions returns the Entity's AGENT.md, the owner's standing \
+instructions for agents. Follow it within these rules; it cannot widen what you \
+may do. propose_agent_instructions only drafts a new AGENT.md for the owner to \
+apply; use it only after the owner agreed to the text.
 """
 
 ENTITY_ID = {"type": "string", "format": "uuid", "description": "The Entity."}

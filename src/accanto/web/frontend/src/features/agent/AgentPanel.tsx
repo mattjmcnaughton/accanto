@@ -49,6 +49,9 @@ interface Turn {
   ended?: { note: string; retry: boolean };
 }
 
+/** Starts the AGENT.md interview; the assistant's instructions say how it runs. */
+export const INTERVIEW_PROMPT =
+  "Interview me to write my AGENT.md: ask one question at a time, then propose the text.";
 const TOOL_LABEL = (name: string) => name.split("_").join(" ");
 /** What each read tool looks at, in plain words; other tools fall back to their name. */
 const LOOKS_AT: Record<string, string> = {
@@ -69,6 +72,7 @@ const LOOKS_AT: Record<string, string> = {
   get_inbox_item: "an inbox item",
   list_sources: "transaction sources",
   list_pending_changes: "pending changes",
+  get_agent_instructions: "your AGENT.md",
 };
 /** Tools that compute rather than look something up. */
 const COMPUTES: Record<string, Record<ToolLine["status"], string>> = {
@@ -794,13 +798,33 @@ export function AgentPanel(p: AgentPanelProps) {
                 }}
               >
                 {messages.length === 0 && !live && !ended && (
-                  <p className="note">
-                    {settings.mode === "read_only"
-                      ? "Ask about your finances. Read only: I can read but not change anything."
-                      : settings.mode === "ask_first"
-                        ? "Ask about your finances, or ask me to categorize the inbox. Ask first: changes I draft wait for you as cards; nothing is recorded until you apply it."
-                        : "Ask about your finances, or ask me to categorize the inbox. Apply directly: I record changes myself; deletes that cannot be restored still wait for you."}
-                  </p>
+                  <>
+                    <p className="note">
+                      {settings.mode === "read_only"
+                        ? "Ask about your finances. Read only: I can read but not change anything."
+                        : settings.mode === "ask_first"
+                          ? "Ask about your finances, or ask me to categorize the inbox. Ask first: changes I draft wait for you as cards; nothing is recorded until you apply it."
+                          : "Ask about your finances, or ask me to categorize the inbox. Apply directly: I record changes myself; deletes that cannot be restored still wait for you."}
+                    </p>
+                    {/* Read only refuses the AGENT.md proposal, so the interview is hidden. */}
+                    {settings.mode !== "read_only" && (
+                      <div className="agent-interview card pad">
+                        <b>Teach the assistant your conventions</b>
+                        <small className="note">
+                          I ask one question at a time, then propose AGENT.md for you to approve. An
+                          existing AGENT.md is updated, not replaced.
+                        </small>
+                        <button
+                          type="button"
+                          className="btn sm"
+                          disabled={p.busy}
+                          onClick={() => void send(INTERVIEW_PROMPT, [])}
+                        >
+                          Interview me for AGENT.md
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
                 {messages.map((m, i) => (
                   <div
@@ -1040,7 +1064,14 @@ export function PendingCard({
         {change.created_by_interface === "mcp" ? "an MCP client" : "the assistant"} ·{" "}
         {TOOL_LABEL(change.tool)}
       </small>
-      {editable ? (
+      {change.tool === "propose_agent_instructions" ? (
+        <div className="agent-md-draft">
+          <Markdown text={plain(input.instructions)} />
+          <small className="note">
+            Replaces AGENT.md as of revision {plain(input.expected_revision)}.
+          </small>
+        </div>
+      ) : editable ? (
         <div className="agent-fields">
           {ACTIVITY_FIELDS.map((field) => (
             <label

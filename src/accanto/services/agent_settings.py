@@ -1,7 +1,9 @@
-"""Agent enablement, Agent mode and AGENT.md per Entity (TDD 03).
+"""Agent enablement, Agent mode and AGENT.md per Entity (TDD 03, TDD 09).
 
-Only a browser session may read or change these (the routers enforce it); no
-agent tool reaches them, so an agent cannot widen its own permissions.
+Only a browser session may change these settings (the routers enforce it), so an
+agent cannot widen its own permissions. AGENT.md alone is readable by any caller
+with Entity access, and agents may draft a new AGENT.md only as a Pending change
+the owner applies (edit_agent_instructions); they never change enablement or mode.
 """
 
 from sqlalchemy import insert, select, update
@@ -41,6 +43,11 @@ async def read_settings(session, actor, entity_uuid) -> dict:
     async with session.begin():
         _, entity = await authorize(session, actor, entity_uuid, lock=False)
         return await current(session, entity["id"])
+
+
+async def read_instructions(session, actor, entity_uuid) -> dict:
+    settings = await read_settings(session, actor, entity_uuid)
+    return {"instructions": settings["instructions"], "revision": settings["revision"]}
 
 
 async def update_settings(session, actor, entity_uuid, request_key, payload):
@@ -84,3 +91,19 @@ async def write_agent_settings(session, entity, payload, audit):
     after = {key: record[key] for key in DEFAULTS}
     await audit(a.settings, record["uuid"], before, after)
     return after
+
+
+async def write_agent_instructions(session, entity, payload, audit):
+    """AGENT.md only, from an applied Pending change: enablement and mode stay."""
+    before = await current(session, entity["id"])
+    return await write_agent_settings(
+        session,
+        entity,
+        {
+            "enabled": before["enabled"],
+            "mode": before["mode"],
+            "instructions": payload["instructions"],
+            "expected_revision": payload["expected_revision"],
+        },
+        audit,
+    )
