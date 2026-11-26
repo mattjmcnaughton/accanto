@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { Plans } from "../../features/workspace/Plans";
-import { mockApi, screenArgs, stateStory } from "../mocks/api";
+import { mockApi, projection, screenArgs, stateStory } from "../mocks/api";
 import { routinesApi } from "../mocks/routines";
 
 // Home is the Plans screen with `home` set, as Workspace renders it.
@@ -21,6 +21,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Loaded: Story = {};
+/** An active investment with no observation: net worth and its projection stay unknown. */
+export const NetWorthUnknown: Story = {
+  parameters: { msw: mockApi("loaded", { projections: projection.projectionsUnknown }) },
+};
 /** A past month chosen in the top bar: its figures, without today's pace marker. */
 export const AnotherMonth: Story = { args: { month: "2026-09" } };
 export const LoadedPhone: Story = { globals: { viewport: { value: "phone", isRotated: false } } };

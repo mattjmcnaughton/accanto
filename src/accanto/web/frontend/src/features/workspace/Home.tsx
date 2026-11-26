@@ -12,10 +12,12 @@ import {
   plural,
 } from "../../lib/format";
 import type { ComparisonGroup, ReviewResult } from "../../lib/monthly";
+import type { Projection } from "../../lib/projections";
 import type { Routine } from "../../lib/routines";
 import type { SavingsAccount } from "../../lib/savings";
 import { Band, type BandPart, Empty, tint } from "../../ui";
 import { RoutinesCard } from "../routines/RoutinesCard";
+import { share } from "./PlanBreakdown";
 import type { Screen } from "./Workspace";
 import { LoadMessage } from "./shared";
 
@@ -80,6 +82,7 @@ export function Home({
   accounts,
   investments,
   loans,
+  worth,
   open,
   newPlan,
   showPlans,
@@ -100,6 +103,7 @@ export function Home({
   accounts: LoadState<SavingsAccount[]>;
   investments: LoadState<Destination[]>;
   loans: LoadState<Loan[]>;
+  worth: LoadState<Projection>;
   open: (id: string) => void;
   newPlan: () => void;
   showPlans: () => void;
@@ -189,6 +193,8 @@ export function Home({
             today={today}
             spending={comparison.spending}
             difference={result.spending_difference}
+            fixed={comparison.fixed_cost}
+            fixedDifference={result.fixed_cost_difference}
           />
         )
       ) : review.kind === "not_found" || review.kind === "empty" || review.kind === "ready" ? (
@@ -215,6 +221,18 @@ export function Home({
       ) : (
         <div className="card pad">
           <LoadMessage state={review} retry={retry} />
+        </div>
+      )}
+      {(comparison || worth.kind !== "empty") && (
+        <div className="grid2 glance">
+          {result && comparison && (
+            <PlanSplit
+              comparison={comparison}
+              version={result.version}
+              funding={result.expected?.funding ?? comparison.income.planned}
+            />
+          )}
+          {worth.kind !== "empty" && <NetWorthCard worth={worth} retry={retry} />}
         </div>
       )}
       {result && comparison && (
@@ -367,11 +385,16 @@ export function Hero({
   today,
   spending,
   difference,
+  fixed,
+  fixedDifference,
 }: {
   month: string;
   today: string;
   spending: ComparisonGroup;
   difference: string | null;
+  /** Fixed costs, shown as a second line under guilt-free spending when given. */
+  fixed?: ComparisonGroup;
+  fixedDifference?: string | null;
 }) {
   const days = daysInMonth(month);
   const day = Number(today.slice(8, 10));
@@ -415,6 +438,153 @@ export function Hero({
         )}
         <span>{fmtShort(`${month}-${days}`)}</span>
       </div>
+      {fixed && <FixedLine fixed={fixed} difference={fixedDifference ?? null} />}
+    </div>
+  );
+}
+
+/** What is left of the month's fixed costs, with unpaid lines kept as unknown rather than zero. */
+function FixedLine({ fixed, difference }: { fixed: ComparisonGroup; difference: string | null }) {
+  const planned = cents(fixed.planned) ?? 0;
+  const recorded = cents(fixed.recorded) ?? 0;
+  const over = cents(difference);
+  const missing = fixed.items.filter((item) => item.recorded === null).length;
+  return (
+    <div className="hero-fixed" style={tint("fixed")}>
+      <p>
+        <span className="dot" />{" "}
+        <b>
+          {over !== null && over > 0
+            ? `${money(over)} over on fixed costs`
+            : `${money(Math.max(0, planned - recorded))} left on fixed costs`}
+        </b>{" "}
+        <span className="muted">
+          {money(recorded)} of {formatMoney(fixed.planned)} paid
+          {missing ? `, ${plural(missing, "line")} not recorded yet` : ""}
+        </span>
+      </p>
+      <div className="meter" role="presentation">
+        <i style={{ width: `${planned ? Math.min(1, recorded / planned) * 100 : 0}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/** The active Plan version's split of monthly funding, as percentages. */
+function PlanSplit({
+  comparison,
+  version,
+  funding,
+}: {
+  comparison: NonNullable<ReviewResult["comparison"]>;
+  version: ReviewResult["version"];
+  funding: string | null;
+}) {
+  const total = cents(funding);
+  const rows = OUT.map(({ key, kind, name }) => {
+    const planned = cents(comparison[key].planned);
+    return { key, kind, name, planned, share: share(planned, total) };
+  });
+  return (
+    <div className="card pad glance-card">
+      <span className="cap">
+        Plan split{" "}
+        <span className="muted">
+          {version.name}, version {version.number}
+        </span>
+      </span>
+      <Band
+        label="Share of monthly funding by category"
+        parts={rows.map(
+          (row): BandPart => ({
+            key: row.key,
+            kind: row.kind,
+            weight: row.planned ?? 0,
+            title: `${row.name}: ${row.share === null ? "Unavailable" : `${row.share.toFixed(1)}%`}`,
+          }),
+        )}
+      />
+      <ul className="split-rows">
+        {rows.map((row) => (
+          <li key={row.key} style={tint(row.kind)}>
+            <span className="dot" />
+            <span className="t">{row.name}</span>
+            <span className="muted">{row.planned === null ? "Unknown" : money(row.planned)}</span>
+            <b>{row.share === null ? "—" : `${row.share.toFixed(1)}%`}</b>
+          </li>
+        ))}
+      </ul>
+      <p className="note">Of {formatMoney(funding)} monthly funding</p>
+    </div>
+  );
+}
+
+/** Net worth today and its Projection; an unobserved account leaves both unknown. */
+function NetWorthCard({ worth, retry }: { worth: LoadState<Projection>; retry: () => void }) {
+  if (worth.kind === "loading")
+    return (
+      <div className="card pad glance-card" aria-busy="true" aria-label="Loading net worth">
+        <div className="sk" style={{ width: "40%", height: 14 }} />
+        <div className="sk" style={{ width: "60%", height: 28 }} />
+        <div className="sk" style={{ height: 60 }} />
+      </div>
+    );
+  if (worth.kind !== "ready")
+    return (
+      <div className="card pad glance-card">
+        <span className="cap">Net worth</span>
+        {worth.kind !== "empty" && <LoadMessage state={worth} retry={retry} />}
+      </div>
+    );
+  const { today, milestones, investments, default_return_percent } = worth.data;
+  const missing = investments.filter((i) => i.status === "no_value");
+  const defaulted = investments.filter((i) => i.return_source === "default").length;
+  return (
+    <div className="card pad glance-card">
+      <span className="cap">Net worth today</span>
+      {today.net_worth === null ? (
+        <>
+          <p className="big">Unknown</p>
+          <p className="note">
+            {missing.map((m) => m.name).join(", ")} {missing.length === 1 ? "has" : "have"} no
+            balance observation yet. Record one to see net worth and its projection.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="big">{formatMoney(today.net_worth)}</p>
+          <p className="note">
+            Savings {formatMoney(today.savings)} + investments {formatMoney(today.investments)} −
+            loans {formatMoney(today.loans)}
+          </p>
+        </>
+      )}
+      {today.net_worth !== null && (
+        <>
+          <span className="cap projected">Projected</span>
+          <ul className="split-rows proj-rows">
+            {milestones.map((p) => (
+              <li key={p.years}>
+                <span className="t">
+                  In {p.years} years{" "}
+                  <small>
+                    {fmtShort(p.date)}, {p.date.slice(0, 4)}
+                  </small>
+                </span>
+                <b>{formatMoney(p.net_worth)}</b>
+              </li>
+            ))}
+          </ul>
+          <p className="note">
+            A Projection, not a balance: each investment grows at its expected return with its
+            expected contribution; savings and loans stay as they are today. Inflation is not
+            included.
+            {defaulted
+              ? ` ${plural(defaulted, "investment")} ${defaulted === 1 ? "uses" : "use"} the default ${default_return_percent}% return.`
+              : ""}
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -487,7 +657,7 @@ function Standing({
   return (
     <section aria-labelledby="home-stand">
       <h2 className="h2" id="home-stand">
-        Where things stand <span>Separate measures as of today, not one total</span>
+        Where things stand <span>The accounts behind net worth</span>
       </h2>
       <div className="grid3">
         {cards.map((card) => (

@@ -15,6 +15,17 @@ export interface Destination {
   contribution_progress: string;
   opening: Opening | null;
   latest: Opening | null;
+  /** Investments only: projection assumptions, each optional. */
+  expected_return_percent?: string | null;
+  expected_contribution?: string | null;
+  expected_contribution_frequency?: ContributionFrequency;
+}
+export type ContributionFrequency = "monthly" | "annual";
+/** The projection assumptions an investment carries; giving recipients have none. */
+export interface Expectations {
+  expected_return_percent: string | null;
+  expected_contribution: string | null;
+  expected_contribution_frequency: ContributionFrequency;
 }
 export interface Contribution {
   uuid: string;
@@ -59,7 +70,7 @@ export const destinations = {
   create: (
     entity: string,
     kind: DestinationKind,
-    body: { name: string; target: string | null; opening?: Opening | null },
+    body: { name: string; target: string | null; opening?: Opening | null } & Partial<Expectations>,
   ): WriteSpec<Destination> => ({
     method: "POST",
     path: root(entity, kind),
@@ -76,7 +87,7 @@ export const destinations = {
       expected_revision: number;
       /** Investments with an opening only; omit to keep the opening date. */
       opening_date?: string;
-    },
+    } & Partial<Expectations>,
   ): WriteSpec<Destination> => ({
     method: "PUT",
     path: `${root(entity, kind)}/${encodeURIComponent(destination)}`,

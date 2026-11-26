@@ -38,15 +38,24 @@ export const settings: {
   id: string;
   name: string;
   time_zone: string;
+  default_return_percent: string;
   revision: number;
   today: string;
 } = {
   id: "e22db039-37c5-4fcc-b002-8b6ca44f2d35",
   name: "Synthetic fixture workspace",
   time_zone: "UTC",
+  default_return_percent: "6.00",
   revision: 1,
   today: "2026-11-10",
-} as { id: string; name: string; time_zone: string; revision: number; today: string };
+} as {
+  id: string;
+  name: string;
+  time_zone: string;
+  default_return_percent: string;
+  revision: number;
+  today: string;
+};
 
 export const plans: PlanGroup[] = [
   {
@@ -2044,6 +2053,9 @@ export const investments: Destination[] = [
       date: "2026-11-01",
       amount: "30900.00",
     },
+    expected_return_percent: "7.00",
+    expected_contribution: "800.00",
+    expected_contribution_frequency: "monthly",
   },
   {
     uuid: "f2d5cf5d-2b35-441e-b763-21f417f9e1ed",
@@ -2052,8 +2064,17 @@ export const investments: Destination[] = [
     active: true,
     revision: 1,
     contribution_progress: "0.00",
-    opening: null,
-    latest: null,
+    opening: {
+      date: "2026-10-15",
+      amount: "18000.00",
+    },
+    latest: {
+      date: "2026-11-01",
+      amount: "19250.00",
+    },
+    expected_return_percent: null,
+    expected_contribution: "6000.00",
+    expected_contribution_frequency: "annual",
   },
 ] as Destination[];
 
@@ -2288,6 +2309,24 @@ export const investmentObservations: Observation[] = [
     financial_date: "2026-11-01",
     amount: "30900.00",
     account_id: "848f2d7d-0096-42de-a4e1-c492fba6f588",
+    is_opening: false,
+    revision: 1,
+    deleted: false,
+  },
+  {
+    uuid: "5d0f6c2e-8a41-4f3b-9c7e-2b1a6e4d9f10",
+    financial_date: "2026-10-15",
+    amount: "18000.00",
+    account_id: "f2d5cf5d-2b35-441e-b763-21f417f9e1ed",
+    is_opening: true,
+    revision: 1,
+    deleted: false,
+  },
+  {
+    uuid: "a3c9e1b7-4d62-4f08-8e5a-7c3b2d1f0e94",
+    financial_date: "2026-11-01",
+    amount: "19250.00",
+    account_id: "f2d5cf5d-2b35-441e-b763-21f417f9e1ed",
     is_opening: false,
     revision: 1,
     deleted: false,

@@ -4,7 +4,14 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Settings } from "./Settings";
 const navLink = (name: string | RegExp) =>
   within(screen.getByRole("navigation", { name: "Workspace" })).getByRole("link", { name });
-const entity = { id: "entity", name: "Synthetic", time_zone: "UTC", today: "2026-11-01" };
+// Settings responses carry the projection assumptions; the session ignores them.
+const entity = {
+  id: "entity",
+  name: "Synthetic",
+  time_zone: "UTC",
+  today: "2026-11-01",
+  default_return_percent: "6.00",
+};
 const session = { user: { id: "owner" }, entities: [entity], csrf_token: "synthetic" };
 const json = (data: unknown) => new Response(JSON.stringify(data));
 const props = () => ({
@@ -33,7 +40,14 @@ it("submits loaded revision and preserves attempted settings through refreshed r
   });
   fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
   expect(p.save).toHaveBeenCalledWith(
-    expect.objectContaining({ body: { name: "Changed", time_zone: "UTC", expected_revision: 4 } }),
+    expect.objectContaining({
+      body: {
+        name: "Changed",
+        time_zone: "UTC",
+        default_return_percent: "6.00",
+        expected_revision: 4,
+      },
+    }),
     expect.any(Function),
   );
   view.rerender(<Settings {...p} refresh={1} />);

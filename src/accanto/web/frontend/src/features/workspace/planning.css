@@ -25,6 +25,69 @@
 .home-hero .pace-labels span:nth-child(2) {
   text-align: center;
 }
+.hero-fixed {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+}
+.hero-fixed p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+.hero-fixed b {
+  font-weight: 650;
+}
+.glance-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+.glance-card .cap {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.glance-card .big {
+  font-size: 27px;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  line-height: 1.1;
+}
+.glance-card .projected {
+  margin-top: 6px;
+}
+.split-rows li {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto 56px;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+}
+.split-rows li:first-child {
+  border-top: 0;
+}
+.split-rows b {
+  text-align: right;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.split-rows .muted {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.proj-rows li {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.proj-rows small {
+  color: var(--ink3);
+  font-size: 12.5px;
+  margin-left: 6px;
+}
 .buckets {
   width: 100%;
   border-collapse: collapse;

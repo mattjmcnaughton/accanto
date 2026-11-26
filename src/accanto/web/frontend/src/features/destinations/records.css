@@ -198,3 +198,33 @@
 .records .two {
   align-items: end;
 }
+.rec-expect {
+  margin: 0;
+}
+.rec-assume {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 4px 0 0;
+  padding: 14px 0 0;
+  display: grid;
+  gap: 10px;
+}
+.rec-assume legend {
+  font-weight: 600;
+  padding: 0;
+  float: left;
+}
+.rec-assume .note {
+  margin: 0;
+}
+.rec-contrib {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.rec-contrib .seg-control {
+  justify-self: start;
+}
+.rec-assume .two {
+  align-items: start;
+}

@@ -150,7 +150,16 @@ it("permits a destination without a target or opening", async () => {
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Example fund" } });
   fireEvent.click(screen.getByRole("button", { name: "Save investment" }));
   expect(p.save).toHaveBeenCalledWith(
-    expect.objectContaining({ body: { name: "Example fund", target: null, opening: null } }),
+    expect.objectContaining({
+      body: {
+        name: "Example fund",
+        target: null,
+        opening: null,
+        expected_return_percent: null,
+        expected_contribution: null,
+        expected_contribution_frequency: "monthly",
+      },
+    }),
     expect.any(Function),
   );
 });
