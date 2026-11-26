@@ -37,6 +37,11 @@ from accanto.services.monthly import (
     read_review,
     write,
 )
+from accanto.services.routines import (
+    occurrence_target,
+    read_occurrence,
+    read_routines,
+)
 from accanto.services.savings import read_accounts
 from accanto.services.spending_subcategories import read_spending_subcategories
 from accanto.services.tags import read_tags
@@ -411,6 +416,38 @@ async def get_position(ctx, entity_id, args: t.PositionQuery, key):
     return t.project_position(today, accounts, investments, loans, net)
 
 
+async def list_routines(ctx, entity_id, args: t.RoutinesQuery, key):
+    async with ctx.sessions() as session:
+        rows = await read_routines(session, ctx.actor, entity_id)
+    if args.due_only:
+        rows = [
+            r
+            for r in rows
+            if r["active"] and r["current"] and r["current"]["state"] in DUE
+        ]
+    return t.RoutineList(routines=[t.project_routine(r) for r in rows])
+
+
+DUE = ("due", "overdue")
+
+
+async def get_routine_occurrence(ctx, entity_id, args: t.OccurrenceRef, key):
+    on = args.scheduled_on
+    if on is None:
+        async with ctx.sessions() as session:
+            row = await read_routines(session, ctx.actor, entity_id, args.routine_id)
+        when = (row["current"] or {}).get("scheduled_on") or row["next_on"]
+        if when is None:
+            raise RejectionError(
+                "occurrence_not_found", "This routine has no occurrence.", 404
+            )
+        on = date.fromisoformat(when)
+    async with ctx.sessions() as session:
+        return t.project_occurrence(
+            await read_occurrence(session, ctx.actor, entity_id, args.routine_id, on)
+        )
+
+
 async def list_inbox(ctx, entity_id, args: t.InboxQuery, key):
     async with ctx.sessions() as session:
         rows = await inbox.read_inbox(
@@ -533,6 +570,37 @@ async def set_proposals(ctx, entity_id, args: t.SetProposals, key):
                 raise
             results.append(_failed(proposal.item_id, error))
     return t.ItemOutcomes(results=results)
+
+
+async def set_routine_step(ctx, entity_id, args: t.SetRoutineStep, key):
+    """Not financial and reversible, so it runs unless the Agent mode is read_only."""
+    async with ctx.sessions() as session:
+        occurrence = await write(
+            session,
+            ctx.actor,
+            entity_id,
+            "set_routine_step",
+            key,
+            args.model_dump(mode="json", include={"status", "note"}),
+            occurrence_target(args.routine_id, args.scheduled_on, args.step_id),
+        )
+    return t.project_occurrence(occurrence)
+
+
+async def set_routine_occurrence(ctx, entity_id, args: t.SetRoutineOccurrence, key):
+    async with ctx.sessions() as session:
+        occurrence = await write(
+            session,
+            ctx.actor,
+            entity_id,
+            "set_routine_occurrence",
+            key,
+            args.model_dump(
+                mode="json", include={"skipped", "note", "expected_revision"}
+            ),
+            occurrence_target(args.routine_id, args.scheduled_on),
+        )
+    return t.project_occurrence(occurrence)
 
 
 def _failed(item_id, error: RejectionError) -> t.ItemOutcome:
@@ -963,6 +1031,14 @@ def build_delete_observation(args: t.DeleteObservation):
     )
 
 
+def build_routine(args: t.SaveRoutine):
+    action = "edit" if args.id else "create"
+    return (
+        Command(f"{action}_routine", _json(args.values), args.id),
+        f"{'Edit' if args.id else 'Create'} routine {args.values.name}",
+    )
+
+
 def build_agent_instructions(args: t.ProposeAgentInstructions):
     return (
         Command(
@@ -1127,6 +1203,22 @@ CATALOG: tuple[CatalogTool, ...] = (
         get_position,
     ),
     _read(
+        "list_routines",
+        "Routines (checklists on a schedule) with their cadence, steps, next "
+        "date and current occurrence: its state and how many steps are done. "
+        "Routines are not financial records.",
+        t.RoutinesQuery,
+        t.RoutineList,
+        list_routines,
+    ),
+    _read(
+        "get_routine_occurrence",
+        "One occurrence of a routine: each step with its status, note and link.",
+        t.OccurrenceRef,
+        t.RoutineOccurrence,
+        get_routine_occurrence,
+    ),
+    _read(
         "list_inbox",
         "Staged transactions in the Transactions inbox (default: all but removed), "
         "with source facts, proposal and revision. Capped at 200.",
@@ -1183,6 +1275,27 @@ CATALOG: tuple[CatalogTool, ...] = (
         t.ItemOutcomes,
         "write",
         set_proposals,
+    ),
+    CatalogTool(
+        "set_routine_step",
+        "Tick a routine step done or skipped, or clear it (status null), with "
+        "an optional note. Only when the owner says the step is done or to "
+        "skip it; never because recorded activity seems to match. Records "
+        "nothing financial; allowed unless the Agent mode is read_only.",
+        t.SetRoutineStep,
+        t.RoutineOccurrence,
+        "write",
+        set_routine_step,
+    ),
+    CatalogTool(
+        "set_routine_occurrence",
+        "Skip a whole routine occurrence (such as away this week) with a note, "
+        "or reopen it. Only when the owner asks. Records nothing financial; "
+        "allowed unless the Agent mode is read_only.",
+        t.SetRoutineOccurrence,
+        t.RoutineOccurrence,
+        "write",
+        set_routine_occurrence,
     ),
     _write(
         "record_inbox_items",
@@ -1376,6 +1489,14 @@ CATALOG: tuple[CatalogTool, ...] = (
         t.DeleteObservation,
         build_delete_observation,
         "delete",
+    ),
+    _write(
+        "save_routine",
+        "Create or edit a routine: its name, cadence, start date and steps, each "
+        "with an optional accanto screen or https link; or archive it "
+        "(active false).",
+        t.SaveRoutine,
+        build_routine,
     ),
 )
 

@@ -23,6 +23,8 @@ CATALOG_NAMES = [
     "list_debts",
     "list_investment_observations",
     "get_position",
+    "list_routines",
+    "get_routine_occurrence",
     "list_inbox",
     "get_inbox_item",
     "list_sources",
@@ -30,6 +32,8 @@ CATALOG_NAMES = [
     "list_pending_changes",
     "sync_source",
     "set_proposals",
+    "set_routine_step",
+    "set_routine_occurrence",
     "record_inbox_items",
     "skip_inbox_item",
     "undo_inbox_item",
@@ -61,6 +65,7 @@ CATALOG_NAMES = [
     "save_debt",
     "save_observation",
     "delete_observation",
+    "save_routine",
 ]
 
 
@@ -82,7 +87,12 @@ def test_excluded_operations_have_no_tool():
 
 
 def test_only_gated_writes_build_pending_changes():
-    always_run = {"sync_source", "set_proposals"}
+    always_run = {
+        "sync_source",
+        "set_proposals",
+        "set_routine_step",
+        "set_routine_occurrence",
+    }
     for tool in CATALOG:
         if tool.kind == "read" or tool.name in always_run:
             assert tool.build is None, tool.name

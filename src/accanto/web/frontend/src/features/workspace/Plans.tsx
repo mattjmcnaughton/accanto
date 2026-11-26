@@ -5,6 +5,7 @@ import { destinations } from "../../lib/destinations";
 import { fmtDate } from "../../lib/format";
 import { type PlanGroup, type PlanRevision, monthly } from "../../lib/monthly";
 import { confirmInAppNavigation } from "../../lib/recoverableWrite";
+import { routines } from "../../lib/routines";
 import { savings } from "../../lib/savings";
 import { spendingSubcategories } from "../../lib/spendingSubcategories";
 import { parseTimestamp } from "../../lib/timestamp";
@@ -47,6 +48,8 @@ export function Plans(
     showPlans?: () => void;
     /** Opens another screen, for Home's links. */
     go?: (to: Screen) => void;
+    /** Opens a routine's occurrence from Home. */
+    openRoutine?: (routine: string, on: string) => void;
     retainedDirty?: (value: boolean) => void;
   },
 ) {
@@ -77,6 +80,10 @@ export function Plans(
   const loans = useLoad(() => balances.loans(p.entity.id), deps, {
     enabled: home || worksheet,
     share: "loans",
+  });
+  const routineList = useLoad(() => routines.list(p.entity.id), deps, {
+    enabled: home,
+    share: "routines",
   });
   // Home compares the shell's month with its Review, read exactly as the Review screen reads it.
   const month = p.month ?? p.entity.today.slice(0, 7);
@@ -367,6 +374,8 @@ export function Plans(
             p.showPlans?.();
           }}
           go={p.go}
+          routines={routineList}
+          openRoutine={p.openRoutine}
           retry={() => setReload((n) => n + 1)}
         />
       )}

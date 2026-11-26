@@ -834,6 +834,28 @@ def test_signed_in_workspace(tmp_path):
         go("Review")
         browser("wait", "section[aria-label='Planned and actual metrics']")
         assert "Synthetic month v1" in browser("get", "text", "#main")
+        # Routines (TDD 13): create one due today, tick its step by hand, and Home
+        # then shows nothing due.
+        weekday = datetime.now(UTC).strftime("%A")
+        go("Routines")
+        button("New routine")
+        browser("find", "label", "Name", "fill", "Synthetic routine", "--exact")
+        if weekday != "Saturday":
+            button(weekday)
+            button("Saturday")
+        browser("find", "label", "Step 1", "fill", "Synthetic step", "--exact")
+        button("Create routine")
+        browser("wait", "--text", "Due today. 0 of 1 step done.")
+        button("Continue")
+        browser("wait", "--text", "0 of 1 step done")
+        button("Synthetic step")
+        browser("wait", "--text", "1 of 1 step done")
+        until(
+            "document.querySelector('.rt-check')"
+            "?.getAttribute('aria-pressed') === 'true'"
+        )
+        go("Home")
+        browser("wait", "--text", "All caught up. Next: Synthetic routine")
         browser("set", "viewport", "320", "760")
         assert fits()
         # Below 760 px the sidebar is hidden; More holds Sign out.

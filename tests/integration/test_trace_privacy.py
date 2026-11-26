@@ -287,6 +287,49 @@ async def drive(origin, secrets, suffix):
         )
         assert listed.status_code == 200 and note in listed.text
 
+        # Routines (TDD 13): names, step titles and tick notes are typed text.
+        routine_note = f"synthetic-canary-routine-{suffix}"
+        private.append(routine_note)
+        today = datetime.now(UTC).date()
+        weekday = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[today.weekday()]
+        routine = await call(
+            "POST",
+            "/routines",
+            {
+                "name": note,
+                "cadence": {"frequency": "weekly", "weekdays": [weekday]},
+                "starts_on": today.isoformat(),
+                "steps": [{"title": note, "link_url": "https://bank.example.com"}],
+            },
+        )
+        step = routine["steps"][0]["uuid"]
+        await call(
+            "PUT",
+            f"/routines/{routine['uuid']}/occurrences/{today}/steps/{step}",
+            {"status": "done", "note": routine_note},
+        )
+        ticked = await client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_routine_occurrence",
+                    "arguments": {
+                        "entity_id": str(entity),
+                        "routine_id": routine["uuid"],
+                    },
+                },
+            },
+            headers={
+                **api,
+                "MCP-Protocol-Version": "2025-03-26",
+                "Accept": "application/json, text/event-stream",
+            },
+        )
+        assert ticked.status_code == 200 and routine_note in ticked.text
+
         # YNAB: a rejected token must not surface in errors, logs or spans.
         rejected_token = f"synthetic-wrong-ynab-token-{suffix}"
         wrong = await client.put(

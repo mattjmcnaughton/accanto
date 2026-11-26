@@ -76,6 +76,13 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | POST | `/reviews` | Month's first date and saved version UUID |
 | GET | `/reviews/{YYYY-MM-01}` | Saved expectations, current entries and partial actuals |
 | PUT | `/reviews/{YYYY-MM-01}` | Expected revision, same-Plan saved version, note, reviewed flag and optional checkpoint refresh |
+| GET | `/routines` | Routines with cadence, steps, current occurrence, next date and the last 12 occurrences ([Routines](#routines)) |
+| GET | `/routines/{routine_id}` | One routine, same shape |
+| POST | `/routines` | Name, cadence, `starts_on` and steps; no previous revision |
+| PUT | `/routines/{routine_id}` | Full replacement with `expected_revision`; `active: false` archives |
+| GET | `/routines/{routine_id}/occurrences/{scheduled_on}` | One occurrence's checklist; 404 on a date the cadence does not schedule |
+| PUT | `/routines/{routine_id}/occurrences/{scheduled_on}` | `{skipped, note, expected_revision}` skips or reopens the occurrence (0 before it is stored) |
+| PUT | `/routines/{routine_id}/occurrences/{scheduled_on}/steps/{step_id}` | `{status, note?}`: `done`, `skipped` or `null` to clear |
 | GET | `/savings-accounts` | Entity's savings accounts and goals |
 | GET | `/savings-accounts/{account_id}` | One savings account with goal identities and opening positions |
 | POST | `/savings-accounts` | Create account, protected Unallocated goal and opening designations atomically |
@@ -285,6 +292,48 @@ The record, full audit snapshots and retry outcome commit atomically under the
 Entity lock. A stale revision conflicts; retrying the same request key and input
 returns its recorded result, while reusing a key with changed input conflicts.
 Deleted movements stay stored for audit; there is no restoration endpoint.
+
+## Routines
+
+A routine is a checklist on a schedule ([TDD 13](tdds/13-routines.md)). It is not
+a financial record: ticking a step records nothing, and only a person's command
+ticks one. Recorded activity never does. Create one with `POST /routines`:
+
+```json
+{
+  "name": "Saturday money check",
+  "cadence": {"frequency": "weekly", "interval": 1, "weekdays": ["sat"]},
+  "starts_on": "2026-11-07",
+  "steps": [
+    {"title": "Process transactions", "link_screen": "inbox"},
+    {"title": "Review last month", "link_screen": "review", "link_month_offset": -1},
+    {"title": "Pay the card", "link_url": "https://bank.example.com"}
+  ]
+}
+```
+
+Cadences: `weekly` with `weekdays`; `monthly` with `month_day` (1–28, or −1 for
+the last day) or `week` (1–4, or −1 for the last) and `weekday`; `yearly` with
+`month` and `month_day`. `interval` (1–52) repeats every so many weeks, months
+or years, counted from `starts_on`'s week, month or year. Other fields are null
+or empty. Dates are calendar dates in the Entity time zone.
+
+A step has at most one link: an accanto screen (`home`, `activity`, `inbox`,
+`review`, `plans`, `routines`, `savings`, `investments`, `giving`,
+`loans`, `settings`) or an `https` URL. `link_month_offset` (−12 to 12) applies
+to `home`, `activity` and `review` and counts from the occurrence's scheduled
+date. To edit, send the whole routine with `expected_revision`; include `step_id`
+to keep a step. An omitted step leaves the routine, but occurrences that ticked
+it keep it with the title it had then.
+
+An occurrence is stored at the first action on it. Its `state` is derived:
+`upcoming` before its date, `due` on it, `overdue` until the next scheduled date,
+then `missed`; `done` once every step is ticked or skipped (`completed_on` is
+that day, later than `next_on` when finished late) and `skipped` when the whole
+occurrence is skipped. Ticks are accepted on any scheduled date up to the first
+one after today; later dates return `422 not_scheduled`. Ticking a skipped
+occurrence returns `409 occurrence_skipped`. Routine commands are audited and
+retried like every write.
 
 ## Plan → activity → Review
 

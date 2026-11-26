@@ -11,6 +11,7 @@ import { http, HttpResponse, delay } from "msw";
 import { fn } from "storybook/test";
 import type { ScreenProps } from "../../features/workspace/shared";
 import * as data from "./fixtures";
+import { routineList } from "./routines";
 
 export { data };
 export type State = "loaded" | "empty" | "loading" | "failed";
@@ -67,6 +68,7 @@ const resources = {
     loaded: data.investmentObservations,
     empty: [],
   },
+  routines: { path: `${entity}/routines`, loaded: routineList(), empty: [] },
   tags: { path: `${entity}/tags`, loaded: data.tags, empty: [] },
   spendingSubcategories: {
     path: `${entity}/spending-subcategories`,

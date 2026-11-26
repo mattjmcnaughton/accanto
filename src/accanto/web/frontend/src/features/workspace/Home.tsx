@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { LoadState } from "../../lib/api";
 import type { Loan } from "../../lib/balances";
 import type { Destination } from "../../lib/destinations";
@@ -11,8 +12,10 @@ import {
   plural,
 } from "../../lib/format";
 import type { ComparisonGroup, ReviewResult } from "../../lib/monthly";
+import type { Routine } from "../../lib/routines";
 import type { SavingsAccount } from "../../lib/savings";
 import { Band, type BandPart, Empty, tint } from "../../ui";
+import { RoutinesCard } from "../routines/RoutinesCard";
 import type { Screen } from "./Workspace";
 import { LoadMessage } from "./shared";
 
@@ -81,6 +84,8 @@ export function Home({
   newPlan,
   showPlans,
   go,
+  routines,
+  openRoutine,
   retry,
 }: {
   /** The month Home shows, YYYY-MM. */
@@ -100,9 +105,20 @@ export function Home({
   showPlans: () => void;
   /** Opens another screen; without it, items say where to go instead of linking. */
   go?: (to: Screen) => void;
+  routines?: LoadState<Routine[]>;
+  openRoutine?: (routine: string, on: string) => void;
   retry: () => void;
 }) {
-  if (!plans) return <Welcome newPlan={newPlan} />;
+  // A routine is due whether or not the Entity has a Plan yet.
+  const routineCard = routines && (
+    <RoutinesCard
+      state={routines}
+      today={today}
+      open={(id, on) => openRoutine?.(id, on)}
+      all={() => go?.("routines")}
+    />
+  );
+  if (!plans) return <Welcome newPlan={newPlan}>{routineCard}</Welcome>;
   const toReview = go && (() => go("review"));
   const name = monthName(month);
   // An empty mocked or legacy body is treated as no Review rather than as zeros.
@@ -212,6 +228,7 @@ export function Home({
           <MonthBreakdown comparison={comparison} name={name} />
         </section>
       )}
+      {routineCard}
       {items.length > 0 && (
         <section aria-labelledby="home-needs">
           <h2 className="h2" id="home-needs">
@@ -503,7 +520,7 @@ function Standing({
 }
 
 /** First run: say what the app is for and offer the first action. */
-function Welcome({ newPlan }: { newPlan: () => void }) {
+function Welcome({ newPlan, children }: { newPlan: () => void; children?: ReactNode }) {
   return (
     <div className="screen home">
       <div>
@@ -547,6 +564,7 @@ function Welcome({ newPlan }: { newPlan: () => void }) {
           </div>
         </li>
       </ol>
+      {children}
     </div>
   );
 }

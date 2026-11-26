@@ -116,7 +116,7 @@ async def write(
     operation: str,
     request_key: str,
     payload: dict,
-    target: UUID | date | None = None,
+    target: UUID | date | str | None = None,
     *,
     hook=None,
     scope: str | None = None,
@@ -1122,6 +1122,18 @@ async def write(
             )
             response = json_values(dict(record))
             await audit(m.reviews, record["uuid"], dict(old), response)
+        elif operation in {"create_routine", "edit_routine"}:
+            from accanto.services.routines import write_routine
+
+            response = await write_routine(
+                session, entity, operation, payload, target, audit
+            )
+        elif operation in {"set_routine_step", "set_routine_occurrence"}:
+            from accanto.services.routines import write_occurrence
+
+            response = await write_occurrence(
+                session, entity, operation, payload, target, audit
+            )
         elif operation in {
             "create_refund",
             "edit_refund",
