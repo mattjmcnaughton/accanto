@@ -7,7 +7,7 @@ is reading AGENT.md (TDD 10), which any caller with Entity access may do.
 
 import asyncio
 from datetime import date
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, Header, Request, UploadFile
@@ -23,9 +23,11 @@ from accanto.dtos.agent import (
 from accanto.routers.authentication import BrowserToken, Session, Token
 from accanto.services import agent_images, agent_settings, agent_writes, tools
 from accanto.services.access import RejectionError
-from accanto.services.agent import LATEST, AgentTurns
 from accanto.services.openrouter import provider_label
 from accanto.services.sse import SSE_HEADERS, SSE_MEDIA_TYPE
+
+if TYPE_CHECKING:
+    from accanto.services.agent import AgentTurns
 
 router = APIRouter(prefix="/api/entities/{entity_id}/agent", tags=["agent"])
 RequestKey = Annotated[
@@ -37,9 +39,13 @@ def sessions_of(request: Request):
     return getattr(request.app.state, "sessions", None) or async_session
 
 
-def turns(request: Request) -> AgentTurns:
+def turns(request: Request) -> "AgentTurns":
     state = request.app.state
     if getattr(state, "agent_turns", None) is None:
+        # Loaded on the first assistant request: pydantic-ai costs seconds of CPU
+        # on the Box, longer than a deploy waits for the port.
+        from accanto.services.agent import AgentTurns
+
         state.agent_turns = AgentTurns(state.auth_settings, sessions_of(request))
     return state.agent_turns
 
@@ -234,6 +240,8 @@ async def send_message(
     after: After = 0,
 ):
     """Continues the latest conversation, or starts one."""
+    from accanto.services.agent import LATEST
+
     return await stream_turn(
         request, actor, entity_id, LATEST, content, screen, month, images, key, after
     )

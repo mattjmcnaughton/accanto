@@ -39,6 +39,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.run import AgentRunResultEvent
 
+from accanto import telemetry
 from accanto.agents.sidebar import SidebarDeps, ToolRejectedError, build_sidebar_agent
 from accanto.repositories import agent as conversations
 from accanto.services import agent_settings
@@ -53,6 +54,8 @@ from accanto.services.monthly import authorize
 from accanto.services.openrouter import AgentUnavailableError, resolve_model
 from accanto.services.sse import sse_event, sse_heartbeat
 from accanto.services.tools import TOOLS, ToolContext
+
+telemetry.instrument_agents()
 
 # pydantic-ai prints a start-up banner; keep diagnostics to our own events.
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")

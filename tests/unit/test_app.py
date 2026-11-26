@@ -1,5 +1,8 @@
 """Check the application boundary shared by development and production."""
 
+import subprocess
+import sys
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -13,6 +16,25 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(serve, "FRONTEND_DIST", tmp_path)
     with TestClient(create_app()) as client:
         yield client
+
+
+def test_startup_does_not_import_the_agent_or_mcp_stack():
+    # A deploy waits about 12 s for the port, and these imports take seconds of CPU
+    # on the Box; the assistant and /mcp load them on their first request.
+    # A fresh interpreter, because other tests import them into this one.
+    heavy = ["pydantic_ai", "openai", "fastmcp", "mcp"]
+    loaded = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, accanto.app; "
+            f"print(sorted(m for m in {heavy!r} if m in sys.modules))",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert loaded == "[]"
 
 
 def test_liveness_is_available_with_frontend_mounted(client):

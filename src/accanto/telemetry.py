@@ -131,6 +131,13 @@ class SafeSpanExporter(SpanExporter):
         return self.exporter.force_flush(timeout_millis)
 
 
+def instrument_agents() -> None:
+    """Trace agent runs without content. Called when the agent service loads, not
+    at startup, because importing pydantic-ai takes seconds on the Box. Logfire's
+    proxy provider sends these spans to the exporter configured in instrument()."""
+    logfire.instrument_pydantic_ai(include_content=False, include_binary_content=False)
+
+
 def instrument(app: FastAPI) -> None:
     """Configure export once per process and trace this app."""
     global _configured
@@ -169,9 +176,6 @@ def instrument(app: FastAPI) -> None:
         )
         logfire.instrument_sqlalchemy(engine=db.engine)
         logfire.instrument_httpx()
-        logfire.instrument_pydantic_ai(
-            include_content=False, include_binary_content=False
-        )
         _configured = True
     logfire.instrument_fastapi(
         app, request_attributes_mapper=request_attributes, excluded_urls=EXCLUDED_URLS
