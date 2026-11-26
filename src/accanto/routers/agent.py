@@ -13,7 +13,12 @@ from fastapi import APIRouter, File, Form, Header, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from accanto.db import async_session
-from accanto.dtos.agent import AgentSettingsInput, ApplyInput, DismissInput
+from accanto.dtos.agent import (
+    AgentSettingsInput,
+    ApplyAllInput,
+    ApplyInput,
+    DismissInput,
+)
 from accanto.routers.authentication import BrowserToken, Session
 from accanto.services import agent_images, agent_settings, agent_writes, tools
 from accanto.services.agent import LATEST, AgentTurns
@@ -86,6 +91,20 @@ async def apply_pending(
     context = tools.ToolContext(sessions_of(request), actor)
     result = await tools.apply_pending(context, entity_id, pending_id, body.input)
     return result.model_dump(mode="json")
+
+
+@router.post("/pending-changes/apply-all")
+async def apply_all_pending(
+    entity_id: UUID,
+    body: ApplyAllInput,
+    request: Request,
+    actor: BrowserToken,
+):
+    """Apply the listed changes oldest first; stop at the first rejection."""
+    context = tools.ToolContext(sessions_of(request), actor)
+    return await tools.apply_all_pending(
+        context, entity_id, {change.id: change.input for change in body.changes}
+    )
 
 
 @router.post("/pending-changes/{pending_id}/dismiss")

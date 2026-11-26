@@ -23,6 +23,16 @@ export interface PendingChange {
   input: Record<string, unknown>;
   created_at: string;
   revision: number;
+  /** Current names of the records the input refers to by id (absent while a reply streams). */
+  labels?: Record<UUID, string>;
+}
+/** Apply all's outcome per change, in the order they were applied. */
+export interface ApplyAllResult {
+  results: {
+    id: UUID;
+    status: "applied" | "failed" | "not_applied";
+    error?: { code: string; message: string };
+  }[];
 }
 export interface AgentMessage {
   id: UUID;
@@ -91,8 +101,8 @@ export const agent = {
       { method: "POST", headers: csrf(session) },
     ),
   pending: (entityId: UUID) => fetchJson<PendingChange[]>(`${root(entityId)}/pending-changes`),
-  applyPath: (entityId: UUID, id: UUID) =>
-    `${root(entityId)}/pending-changes/${encodeURIComponent(id)}/apply`,
+  /** Applies the listed changes oldest first and stops at the first that is rejected. */
+  applyAllPath: (entityId: UUID) => `${root(entityId)}/pending-changes/apply-all`,
   dismiss: (session: BrowserSession, entityId: UUID, change: PendingChange) =>
     fetchJson<PendingChange>(
       `${root(entityId)}/pending-changes/${encodeURIComponent(change.id)}/dismiss`,

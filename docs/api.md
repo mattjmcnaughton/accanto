@@ -725,6 +725,19 @@ ratios use only same-month recorded amounts. `planned_metrics` on Plan snapshots
 is derived presentation; it does not rewrite immutable saved results or inputs.
 Selected planned savings funding includes its saved account labels and amounts.
 
+## Pending changes
+
+Writes an agent drafts wait as Pending changes ([TDD 03](tdds/03-agent-access.md)).
+Applying and dismissing them is browser session only, so no agent applies what it
+drafted; API keys get `403 browser_session_required`.
+
+| Method | Suffix | Body / result |
+| --- | --- | --- |
+| GET | `/agent/pending-changes?status=pending` | Pending changes, newest first; `labels` maps each record id in a change's `input` to that record's current name (accounts, goals, fixed costs, tags, spending subcategories, investments, giving recipients, debts, income estimates) |
+| POST | `/agent/pending-changes/{pending_id}/apply` | `{input?}` (owner edits); runs the drafted command once with key `agent:{pending_id}`; a retry returns the same outcome |
+| POST | `/agent/pending-changes/apply-all` | `{changes: [{id, input?}]}` (1–100); applies them oldest drafted first, each as its own apply, and stops at the first rejection. Returns `{results: [{id, status, result?, error?}]}` in applied order, `status` `applied`, `failed` (with `error.code` and `error.message`) or `not_applied`; failed and not-applied changes stay pending. Any id not in the Entity refuses the whole request with `404 record_not_found`. Resending replays the ones already applied |
+| POST | `/agent/pending-changes/{pending_id}/dismiss` | `{expected_revision}` |
+
 ## Assistant conversations
 
 Browser session only, like every `/agent` route: API keys are refused. Each User

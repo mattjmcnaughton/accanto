@@ -25,7 +25,12 @@ from accanto.services.access import RejectionError, issue_session, resolve_actor
 from accanto.services.api_keys import issue_key
 from accanto.services.browser_auth import csrf_token
 from accanto.services.monthly import write
-from accanto.services.tools import TOOLS, ToolContext, apply_pending
+from accanto.services.tools import (
+    TOOLS,
+    ToolContext,
+    apply_all_pending,
+    apply_pending,
+)
 
 URL = os.environ.get("ACCANTO_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="Requires isolated Postgres")
@@ -264,23 +269,65 @@ async def scenario():
         "set_savings_account_status",
         {"account_id": account_id, "status": "archived", "expected_revision": 1},
     )
-    for draft in goal_drafts:
-        assert draft.pending_change
-        result = await apply_pending(owner_ctx, entity, draft.pending_change.id)
-        assert result.status == "recorded"
-    assert archive.pending_change
-    with pytest.raises(RejectionError) as stale_archive:
-        await apply_pending(owner_ctx, entity, archive.pending_change.id)
-    assert stale_archive.value.code == "stale_revision"
+    gifts = await call(
+        mcp,
+        "save_goal",
+        {
+            "account_id": account_id,
+            "values": {
+                "name": "Synthetic gifts",
+                "kind": "finite",
+                "target": "300.00",
+                "expected_account_revision": 1,
+            },
+        },
+    )
+    # Apply all runs in drafted order whatever order it is sent in, and stops at
+    # the stale archive: the gifts draft after it is left pending, untouched.
+    drafted = [d.pending_change for d in (*goal_drafts, archive, gifts)]
+    assert all(drafted)
+    drafted_ids = [change.id for change in drafted if change]
+    batch = {pending_id: None for pending_id in reversed(drafted_ids)}
+    applied_all = await apply_all_pending(owner_ctx, entity, batch)
+    assert [(r["id"], r["status"]) for r in applied_all["results"]] == [
+        (str(drafted_ids[0]), "applied"),
+        (str(drafted_ids[1]), "applied"),
+        (str(drafted_ids[2]), "failed"),
+        (str(drafted_ids[3]), "not_applied"),
+    ]
+    assert applied_all["results"][0]["result"]["status"] == "recorded"
+    assert applied_all["results"][2]["error"]["code"] == "stale_revision"
+    # Sending the same batch again replays the applied goals instead of adding more.
+    resent = await apply_all_pending(owner_ctx, entity, batch)
+    assert [r["status"] for r in resent["results"]] == [
+        "applied",
+        "applied",
+        "failed",
+        "not_applied",
+    ]
+    with pytest.raises(RejectionError) as unknown:
+        await apply_all_pending(owner_ctx, entity, {**batch, uuid4(): None})
+    assert unknown.value.status == 404
     async with sessions() as db:
-        await agent_writes.dismiss(db, owner, entity, archive.pending_change.id, 1)
+        await agent_writes.dismiss(db, owner, entity, drafted_ids[2], 1)
+    async with sessions() as db:
+        left = await agent_writes.read_pending(db, owner, entity, status="pending")
+    assert {str(i) for i in drafted_ids} & {c["id"] for c in left} == {
+        str(drafted_ids[3])
+    }
+    # The list names the records a draft refers to, so the card shows no ids.
+    [gifts_view] = [c for c in left if c["id"] == str(drafted_ids[3])]
+    assert gifts_view["labels"] == {str(account_id): "Synthetic reserve"}
+    last = await apply_all_pending(owner_ctx, entity, {drafted_ids[3]: None})
+    assert last["results"][0]["status"] == "applied"
     [reserve] = [
         account
         for account in (await call(mcp, "list_savings", {})).accounts
         if account.id == account_id
     ]
-    assert reserve.active and reserve.revision == 3
+    assert reserve.active and reserve.revision == 4
     assert sorted(g.target for g in reserve.goals if g.role == "ordinary") == [
+        "300.00",
         "450.00",
         "600.00",
     ]
@@ -323,6 +370,11 @@ async def scenario():
                 "POST",
                 f"/agent/pending-changes/{correction.pending_change.id}/apply",
                 {},
+            ),
+            (
+                "POST",
+                "/agent/pending-changes/apply-all",
+                {"changes": [{"id": str(correction.pending_change.id)}]},
             ),
             ("GET", "/sources/ynab/plans", None),
             ("POST", "/sources/ynab", {"plan_id": "p", "start_date": "2026-11-01"}),

@@ -224,6 +224,19 @@
   display: flex;
   gap: 6px;
 }
+/* Apply all sits above the list; its confirmation replaces the button in place. */
+.agent-apply-all {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.agent-apply-all.card {
+  align-items: stretch;
+}
+.agent-apply-all p {
+  margin: 0;
+}
 /* A full-width box that grows with what is typed, with its actions beneath it. */
 .agent-compose {
   display: flex;
@@ -395,4 +408,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.agent-problem {
+  margin: 0;
+  font-size: 12px;
 }

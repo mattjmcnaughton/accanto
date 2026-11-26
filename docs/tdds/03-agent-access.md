@@ -359,6 +359,29 @@ from the design above. None changes a financial rule.
   revision under the Entity lock: the create overwrites nothing on the account,
   and the command still rejects a missing or inactive account. Edits, status
   changes and deletes keep their drafted revision and reject when stale.
+- **Apply all** (`POST /agent/pending-changes/apply-all`) takes the ids the owner
+  saw, with any card edits, and runs the single apply for each, oldest drafted
+  first, so each keeps its own Entity-locked transaction, key `agent:{id}`, audit
+  row and goal-create rebase. It stops at the first rejection rather than
+  continuing: a rejection usually means the records moved on since drafting, so
+  the owner reviews it before the later drafts land, and "applied up to here,
+  the rest untouched" is simple to resend or finish by hand. The failed and later changes stay
+  pending; the response gives each change's status and the rejection's code and
+  message. It is not one all-or-nothing transaction, because applied changes are
+  ordinary recorded commands that a resend replays. Like single apply it is
+  browser session only, and there is no MCP tool, so agents still cannot apply
+  their own drafts (AG-06). The *Pending changes* tab shows Apply all when two or
+  more changes wait, asks to confirm with the count and Entity, then reports
+  "Applied n of m" and marks the change it stopped at.
+- **The UI applies through Apply all**, a single card as a one-change batch. A
+  rejection, such as a real `stale_revision`, is then that change's result, shown
+  on its card to dismiss, instead of a failed save the workspace keeps for Retry
+  or *Discard pending save*: a stale draft can never succeed on retry. A dropped
+  connection still recovers through `RecoverableWrite`, since each apply replays.
+- **Card fields are readable.** The list adds `labels`, the current names of the
+  records a draft's input refers to (one query across the named record tables).
+  Cards show nested values inline, ids as those names, money formatted, goal kinds
+  as the Savings screen words them, and leave out `expected_*` revision checks.
 - **`write()` extension.** `write()` gained `guard` (runs under the Entity lock
   after the retry lookup; the apply path checks the draft is still pending) and
   `finish` (runs in the same transaction before the outcome; marks the draft
