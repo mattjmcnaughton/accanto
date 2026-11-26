@@ -4,7 +4,8 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import logfire
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import BigInteger, any_, bindparam, delete, func, insert, select, update
+from sqlalchemy.dialects.postgresql import ARRAY
 
 from accanto.db import read_snapshot
 from accanto.domains.destinations import (
@@ -32,72 +33,63 @@ def resources(kind):
     raise ValueError("Unsupported destination type")
 
 
-async def snapshot(session, kind, row):
-    table, assignments, foreign_key, category = resources(kind)
-    progress = await session.scalar(
-        select(func.coalesce(func.sum(m.entries.c.amount), 0))
-        .select_from(
-            m.entries.join(assignments, assignments.c.actual_entry_id == m.entries.c.id)
-        )
-        .where(
-            assignments.c[foreign_key] == row["id"],
-            m.entries.c.deleted_at.is_(None),
-            m.entries.c.category == category,
-        )
+async def snapshots(session, kind, rows):
+    if not rows:
+        return []
+    _, assignments, foreign_key, category = resources(kind)
+    ids = any_(bindparam("ids", [row["id"] for row in rows], type_=ARRAY(BigInteger)))
+    destination = assignments.c[foreign_key]
+    totals = dict(
+        (
+            await session.execute(
+                select(destination, func.sum(m.entries.c.amount))
+                .select_from(
+                    m.entries.join(
+                        assignments, assignments.c.actual_entry_id == m.entries.c.id
+                    )
+                )
+                .where(
+                    destination == ids,
+                    m.entries.c.deleted_at.is_(None),
+                    m.entries.c.category == category,
+                )
+                .group_by(destination)
+            )
+        ).all()
     )
-    opening = None
-    latest = None
+    openings = {}
+    latest = {}
     if kind == "investment":
-        observation = (
-            (
-                await session.execute(
-                    select(d.observations).where(
-                        d.observations.c.investment_id == row["id"],
-                        d.observations.c.is_opening,
-                    )
-                )
-            )
-            .mappings()
-            .first()
+        obs = d.observations.c
+        query = select(obs.investment_id, obs.financial_date, obs.amount).where(
+            obs.investment_id == ids
         )
-        if observation:
-            opening = {
-                "date": observation["financial_date"].isoformat(),
-                "amount": str(observation["amount"]),
-            }
-        latest_row = (
+        for result, statement in (
+            (openings, query.where(obs.is_opening)),
             (
-                await session.execute(
-                    select(d.observations)
-                    .where(
-                        d.observations.c.investment_id == row["id"],
-                        d.observations.c.deleted_at.is_(None),
-                    )
-                    .order_by(
-                        d.observations.c.financial_date.desc(),
-                        d.observations.c.is_opening.asc(),
-                    )
-                    .limit(1)
-                )
-            )
-            .mappings()
-            .first()
-        )
-        if latest_row:
-            latest = {
-                "date": latest_row["financial_date"].isoformat(),
-                "amount": str(latest_row["amount"]),
-            }
-    return {
-        "uuid": str(row["uuid"]),
-        "name": row["name"],
-        "target": str(row["target"]) if row["target"] is not None else None,
-        "active": row["active"],
-        "revision": row["revision"],
-        "contribution_progress": str(Decimal(progress).quantize(Decimal("0.01"))),
-        "opening": opening,
-        "latest": latest,
-    }
+                latest,
+                query.where(obs.deleted_at.is_(None))
+                .distinct(obs.investment_id)
+                .order_by(
+                    obs.investment_id, obs.financial_date.desc(), obs.is_opening.asc()
+                ),
+            ),
+        ):
+            for investment, day, amount in await session.execute(statement):
+                result[investment] = {"date": day.isoformat(), "amount": str(amount)}
+    return [
+        {
+            "uuid": str(row["uuid"]),
+            "name": row["name"],
+            "target": str(row["target"]) if row["target"] is not None else None,
+            "active": row["active"],
+            "revision": row["revision"],
+            "contribution_progress": str(totals.get(row["id"], Decimal("0.00"))),
+            "opening": openings.get(row["id"]),
+            "latest": latest.get(row["id"]),
+        }
+        for row in rows
+    ]
 
 
 async def read_destinations(session, token, entity_uuid, kind):
@@ -115,7 +107,7 @@ async def read_destinations(session, token, entity_uuid, kind):
             .mappings()
             .all()
         )
-        return [await snapshot(session, kind, row) for row in rows]
+        return await snapshots(session, kind, rows)
 
 
 async def write_destination(session, entity, operation, payload, target, audit):
@@ -165,7 +157,7 @@ async def write_destination(session, entity, operation, payload, target, audit):
                 .one()
             )
             await audit(d.observations, observation["uuid"], None, dict(observation))
-        return await snapshot(session, kind, row)
+        return (await snapshots(session, kind, [row]))[0]
     row = await scoped(session, table, entity["id"], target)
     check_revision(row, payload["expected_revision"])
     updated = (
@@ -186,7 +178,7 @@ async def write_destination(session, entity, operation, payload, target, audit):
         .one()
     )
     await audit(table, row["uuid"], dict(row), dict(updated))
-    return await snapshot(session, kind, updated)
+    return (await snapshots(session, kind, [updated]))[0]
 
 
 async def entry_snapshot(session, kind, entry):
