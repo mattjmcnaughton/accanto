@@ -20,14 +20,12 @@ validates references and dry-runs the record checks. Nothing is recorded.
 import hashlib
 import json
 import re
+from functools import cache
+from typing import TYPE_CHECKING
 
 import structlog
-from pydantic_ai.messages import ModelResponse, ToolCallPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
-from pydantic_ai.usage import UsageLimits
 from sqlalchemy import func, select
 
-from accanto.agents.inbox_proposer import build_proposer_agent
 from accanto.dtos import tools as t
 from accanto.models import inbox as st
 from accanto.models import monthly as m
@@ -47,10 +45,21 @@ from accanto.services.savings import read_accounts
 from accanto.services.spending_subcategories import read_spending_subcategories
 from accanto.services.tags import read_tags
 
+if TYPE_CHECKING:
+    from pydantic_ai.messages import ModelResponse
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
 KIND = "inbox_proposals"
 CHUNK = 25
 log = structlog.get_logger(__name__)
-_agent = build_proposer_agent()
+
+
+@cache
+def _agent():
+    # pydantic-ai loads on the first run, not at app startup (see app.py).
+    from accanto.agents.inbox_proposer import build_proposer_agent
+
+    return build_proposer_agent()
 
 
 # Start, read and stop ---------------------------------------------------------
@@ -278,8 +287,10 @@ def proposal_step(config, sessions, model_resolver=None):
                 await read_spending_subcategories(session, actor, entity_uuid),
                 await read_tags(session, actor, entity_uuid),
             )
+        from pydantic_ai.usage import UsageLimits
+
         try:
-            result = await _agent.run(
+            result = await _agent().run(
                 _prompt(items, options, agent_md),
                 model=model(),
                 usage_limits=UsageLimits(request_limit=2),
@@ -346,7 +357,7 @@ async def _propose(sessions, actor, entity_uuid, run, it, body):
 _ITEMS = re.compile(r"^ITEMS:\n(.*)$", re.M)
 
 
-def _stub(messages, info: AgentInfo) -> ModelResponse:
+def _stub(messages, info: "AgentInfo") -> "ModelResponse":
     """Transfers are skipped, payees with "Unknown" stay unsure, other outflows
     are guilt-free spending and inflows unassigned income."""
     text = "".join(
@@ -378,10 +389,14 @@ def _stub(messages, info: AgentInfo) -> ModelResponse:
                     "rationale": "Stub: an inflow.",
                 }
             )
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+
     return ModelResponse(
         parts=[ToolCallPart(info.output_tools[0].name, {"proposals": proposals})]
     )
 
 
-def build_stub_proposer() -> FunctionModel:
+def build_stub_proposer() -> "FunctionModel":
+    from pydantic_ai.models.function import FunctionModel
+
     return FunctionModel(_stub)
