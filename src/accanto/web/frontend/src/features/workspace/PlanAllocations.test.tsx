@@ -154,3 +154,88 @@ it("reports a failed reference catalog instead of silently offering an empty lis
   expect(screen.getByText(/Destinations are not loaded/)).toBeDefined();
   expect(screen.queryByText(/No available destinations/)).toBeNull();
 });
+
+it("lists active spending subcategories under guilt-free spending without planned amounts", async () => {
+  const draft = {
+    uuid: "draft",
+    name: "Subcategory Plan",
+    number: 1,
+    revision: 2,
+    saved: false,
+    saved_at: null,
+    rule_version: "2",
+    incomes: [{ source_id: "income", name: "Income", amount: "3000.00" }],
+    fixed_costs: [],
+    spending: "900.00",
+    income: "3000.00",
+    fixed_cost_total: "0.00",
+    tithe_target: "300.00",
+    unassigned: "2100.00",
+  };
+  const subcategory = (uuid: string, name: string, active: boolean) => ({
+    uuid,
+    name,
+    active,
+    revision: 1,
+    entries: 0,
+  });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    const data = url.endsWith("/plans")
+      ? [{ plan_id: "plan", revisions: [draft] }]
+      : url.endsWith("/spending-subcategories")
+        ? [
+            subcategory("books", "Books", true),
+            subcategory("old", "Retired hobby", false),
+            subcategory("eating", "Eating out", true),
+          ]
+        : [];
+    return new Response(JSON.stringify(data), { status: 200 });
+  });
+  const save = vi.fn();
+  render(
+    <Plans
+      entity={{ id: "entity", name: "Synthetic Entity", today: "2026-10-18", time_zone: "UTC" }}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={vi.fn()}
+      save={save}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Subcategory Plan" }));
+  const books = await screen.findByText("Books");
+  const grid = screen.getByRole("grid", { name: "Monthly Plan worksheet" });
+  const rows = Array.from(grid.querySelectorAll("tbody tr")).map((row) => row.id);
+  const spendingRow = rows.indexOf("row-spending");
+  // Subcategories follow guilt-free spending directly, active ones only, before saving.
+  expect(rows.slice(spendingRow + 1, spendingRow + 3)).toEqual([
+    "row-subcategory-books",
+    "row-subcategory-eating",
+  ]);
+  expect(rows[spendingRow + 3]).toBe("row-group-saving");
+  expect(screen.queryByText("Retired hobby")).toBeNull();
+  expect(books.closest("tr")?.textContent).not.toMatch(/\$/);
+  expect(document.getElementById("cell-spending-3")?.textContent).toBe("$900.00");
+
+  fireEvent.click(screen.getByRole("button", { name: "Add Guilt-free spending subcategory" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "New subcategory name" }), {
+    target: { value: "Hobbies" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add subcategory" }));
+  expect(save).toHaveBeenLastCalledWith(
+    {
+      method: "POST",
+      path: "/api/entities/entity/spending-subcategories",
+      body: { name: "Hobbies" },
+    },
+    expect.any(Function),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+
+  fireEvent.click(screen.getByRole("button", { name: "Rename or archive Eating out" }));
+  const manager = screen.getByRole("list", { name: "Spending subcategories" });
+  expect(manager.textContent).toContain("Retired hobby");
+  expect(screen.getAllByRole("button", { name: "Rename" }).length).toBe(3);
+});

@@ -327,7 +327,8 @@
   width: 96px;
 }
 .plan-grid .action-col {
-  width: 44px;
+  /* Guilt-free spending's row has two actions: add a subcategory and details. */
+  width: 64px;
 }
 .plan-grid thead th {
   font-size: 12.5px;
@@ -445,6 +446,10 @@
 }
 .plan-grid td input[aria-invalid="true"] {
   border-color: var(--bad);
+}
+.plan-grid .row-actions {
+  display: inline-flex;
+  gap: 2px;
 }
 .plan-grid .icon-btn {
   width: 26px;
@@ -608,7 +613,7 @@
   }
   .plan-grid tr {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto 34px;
+    grid-template-columns: minmax(0, 1fr) auto minmax(34px, auto);
     align-items: center;
   }
   .plan-grid tr.section-row {

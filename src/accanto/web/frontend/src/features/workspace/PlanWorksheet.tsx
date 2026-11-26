@@ -1,6 +1,7 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlanRevision } from "../../lib/monthly";
+import type { SpendingSubcategory } from "../../lib/spendingSubcategories";
 import { Band, Dialog, Icon, tint } from "../../ui";
 import { PlanBreakdown, share } from "./PlanBreakdown";
 import {
@@ -32,6 +33,8 @@ import { composing } from "./shared";
 type DisplayRow = { id: string; group: Group } & (
   | { heading: true }
   | { heading: false; line: Line }
+  // A Spending subcategory under guilt-free spending: Entity-wide, with no planned amount.
+  | { heading: "subcategory"; subcategory: SpendingSubcategory }
 );
 const groups: Group[] = ["income", "funding", "fixed", "spending", "saving", "investing", "giving"];
 /** Section captions shown above the first group of each half of the worksheet. */
@@ -47,6 +50,8 @@ export function PlanWorksheet({
   catalog,
   unavailable = [],
   loans,
+  subcategories = [],
+  onSubcategories,
   busy,
   timeZone,
   onChange,
@@ -62,6 +67,10 @@ export function PlanWorksheet({
   /** Reference data still loading or failed: unknown, not empty or inactive. */
   unavailable?: ReadonlyArray<Group | "loans">;
   loans: Choice[];
+  /** Active Spending subcategories, listed under guilt-free spending without amounts. */
+  subcategories?: SpendingSubcategory[];
+  /** Opens the Spending subcategories manager (add, rename, archive). */
+  onSubcategories?: () => void;
   busy: boolean;
   timeZone: string;
   onChange: (draft: WorksheetDraft) => void;
@@ -138,9 +147,17 @@ export function PlanWorksheet({
     () =>
       groups.flatMap<DisplayRow>((group) =>
         group === "spending"
-          ? lines
-              .filter((line) => line.group === "spending")
-              .map((line) => ({ id: line.id, group, heading: false as const, line }))
+          ? [
+              ...lines
+                .filter((line) => line.group === "spending")
+                .map((line) => ({ id: line.id, group, heading: false as const, line })),
+              ...subcategories.map((subcategory) => ({
+                id: `subcategory-${subcategory.uuid}`,
+                group,
+                heading: "subcategory" as const,
+                subcategory,
+              })),
+            ]
           : [
               { id: `group-${group}`, group, heading: true },
               ...(collapsed.includes(group)
@@ -150,7 +167,7 @@ export function PlanWorksheet({
                     .map((line) => ({ id: line.id, group, heading: false, line }))),
             ],
       ),
-    [lines, collapsed],
+    [lines, collapsed, subcategories],
   );
   const notify = useRef(onChange);
   notify.current = onChange;
@@ -182,6 +199,10 @@ export function PlanWorksheet({
   const toggle = (group: Group) =>
     setCollapsed((cs) => (cs.includes(group) ? cs.filter((g) => g !== group) : [...cs, group]));
   function begin(row: DisplayRow, col: number) {
+    if (row.heading === "subcategory") {
+      if (col === 4) add(row.group);
+      return;
+    }
     if (row.heading) {
       if (col === 0) toggle(row.group);
       if (col === 4) add(row.group);
@@ -254,7 +275,8 @@ export function PlanWorksheet({
   function add(group: Group) {
     if (readOnly || busy) return;
     if (group === "spending") {
-      setNotice("Spending is one monthly amount. Press i on its amount to edit it.");
+      // Subcategories are Entity records with no planned amount; the draft does not change.
+      if (commit()) onSubcategories?.();
       return;
     }
     if (!commit()) return;
@@ -705,8 +727,11 @@ export function PlanWorksheet({
               </thead>
               <tbody>
                 {display.flatMap((row) => {
+                  const sub = row.heading === "subcategory" ? row.subcategory : null;
                   const caption =
-                    row.heading || row.group === "spending" ? sections[row.group] : undefined;
+                    row.heading === true || (row.heading === false && row.group === "spending")
+                      ? sections[row.group]
+                      : undefined;
                   const total = groupTotal(row.group);
                   const ratio =
                     allocations.some((group) => group === row.group) && total !== null
@@ -718,7 +743,7 @@ export function PlanWorksheet({
                       key={row.id}
                       style={tint(kinds[row.group])}
                       data-group={row.group}
-                      className={`${row.heading || row.group === "spending" ? "group-row" : "line-row"} ${selection.id === row.id ? "selected-row" : ""}`}
+                      className={`${row.heading === true || (row.heading === false && row.group === "spending") ? "group-row" : "line-row"} ${selection.id === row.id ? "selected-row" : ""}`}
                     >
                       {[0, 1, 2, 3, 4].map((col) => {
                         const active = selection.id === row.id && selection.col === col;
@@ -727,7 +752,7 @@ export function PlanWorksheet({
                           <td
                             id={`cell-${row.id}-${col}`}
                             key={col}
-                            aria-label={`${row.heading ? titles[row.group] : row.line?.name}, ${["Item", "Entered amount", "Frequency", "Monthly amount", "Actions"][col]}`}
+                            aria-label={`${sub ? sub.name : row.heading ? titles[row.group] : row.line?.name}, ${["Item", "Entered amount", "Frequency", "Monthly amount", "Actions"][col]}`}
                             aria-selected={active}
                             tabIndex={active ? 0 : -1}
                             className={`c${col} ${col === 1 || col === 3 ? "num" : ""} ${active ? "selected-cell" : ""} ${editing ? "editing" : ""}`}
@@ -741,6 +766,35 @@ export function PlanWorksheet({
                           >
                             {editing ? (
                               editor(row)
+                            ) : sub ? (
+                              col === 0 ? (
+                                <span className="line-name">
+                                  <span className="nm">{sub.name}</span>
+                                </span>
+                              ) : col === 4 ? (
+                                !readOnly && (
+                                  <button
+                                    type="button"
+                                    tabIndex={-1}
+                                    aria-label={`Rename or archive ${sub.name}`}
+                                    title="Rename or archive"
+                                    className="icon-btn"
+                                    onClick={() => {
+                                      setSelection({ id: row.id, col: 4 });
+                                      add(row.group);
+                                    }}
+                                  >
+                                    <Icon name="more" />
+                                  </button>
+                                )
+                              ) : col === 3 ? (
+                                <span
+                                  className="muted"
+                                  title="Subcategories have no planned amount"
+                                >
+                                  —
+                                </span>
+                              ) : null
                             ) : row.heading ? (
                               col === 0 ? (
                                 <button
@@ -783,6 +837,9 @@ export function PlanWorksheet({
                                 <span className="group-name">
                                   <span className="dot" />
                                   {row.line.name}
+                                  {subcategories.length > 0 && (
+                                    <small className="muted">{subcategories.length}</small>
+                                  )}
                                   {ratio !== null && (
                                     <span className="share">{ratio.toFixed(2)}% of funding</span>
                                   )}
@@ -822,19 +879,36 @@ export function PlanWorksheet({
                                 <span className="ink2">{money(previewMonthly(row.line))}</span>
                               )
                             ) : (
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                aria-label={`Details for ${row.line?.name}`}
-                                title="Details"
-                                className="icon-btn"
-                                onClick={() => {
-                                  setSelection({ id: row.id, col: 4 });
-                                  openDetails(row.id);
-                                }}
-                              >
-                                <Icon name="more" />
-                              </button>
+                              <span className="row-actions">
+                                {row.group === "spending" && !readOnly && (
+                                  <button
+                                    type="button"
+                                    tabIndex={-1}
+                                    aria-label="Add Guilt-free spending subcategory"
+                                    title="Add Guilt-free spending subcategory"
+                                    className="icon-btn"
+                                    onClick={() => {
+                                      setSelection({ id: row.id, col: 4 });
+                                      add(row.group);
+                                    }}
+                                  >
+                                    <Icon name="plus" />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  tabIndex={-1}
+                                  aria-label={`Details for ${row.line?.name}`}
+                                  title="Details"
+                                  className="icon-btn"
+                                  onClick={() => {
+                                    setSelection({ id: row.id, col: 4 });
+                                    openDetails(row.id);
+                                  }}
+                                >
+                                  <Icon name="more" />
+                                </button>
+                              </span>
                             )}
                           </td>
                         );
@@ -1071,7 +1145,10 @@ export function PlanWorksheet({
                 ["0 / $ · Home / End", "First / last cell in row"],
                 ["gg / G", "First / last visible row"],
                 ["i / Enter", "Edit a draft value or activate a control"],
-                ["a / A", "Add a line in the current category"],
+                [
+                  "a / A",
+                  "Add a line in the current category, or a guilt-free spending subcategory",
+                ],
                 ["dd", "Remove selected line, with confirmation"],
                 ["Escape / Enter", "Keep a valid cell edit; return to normal"],
                 ["↑ / ↓ in a selector", "Choose an option while editing"],

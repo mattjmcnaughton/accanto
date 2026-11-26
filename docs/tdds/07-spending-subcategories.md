@@ -79,7 +79,9 @@ Rejections leave every record unchanged and return a code:
   `CategoryComparison.breakdown`; gated write `save_spending_subcategory`
   (create, rename, archive, restore), a Pending change in propose mode, like
   `save_tag`. Entries take it through `save_activity` and `set_proposals`.
-- **UI:** a Spending subcategories manager on Activity; a Subcategory picker in
+- **UI:** a Spending subcategories manager on Activity, also opened from the Plan
+  worksheet, which lists active subcategories under guilt-free spending without
+  amounts (its + adds one, a row's ⋯ renames or archives); a Subcategory picker in
   the guilt-free spending entry form; the subcategory in each row's description;
   the Inbox `a` key and Subcategory field for guilt-free spending (optional, shown
   as Unassigned); in the Review, guilt-free spending's lines are its subcategory
