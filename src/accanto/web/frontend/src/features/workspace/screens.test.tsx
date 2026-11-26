@@ -61,6 +61,7 @@ it.each([
       "activity",
       "giving-recipients",
       "inbox",
+      "inbox/proposal-run",
       "investments",
       "plans",
       "savings-accounts",

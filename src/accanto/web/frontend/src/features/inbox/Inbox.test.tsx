@@ -276,11 +276,103 @@ it("filters to items with a proposal with p, keeping the Review's waiting count"
   );
   expect(screen.queryByText("Example Coffee Cart", { selector: ".ix-row *" })).toBeNull();
   expect(screen.getByText("Sample Hardware", { selector: ".ix-d-t" })).toBeDefined();
-  expect(screen.getByRole("button", { name: /^Skipped/ }).textContent).toBe("Skipped 0");
+  expect(screen.getByRole("button", { name: /^Ignored/ }).textContent).toBe("Ignored 0");
   // The strip mirrors the month's Review, so it still counts every waiting item.
   expect(document.querySelector(".ix-strip")?.textContent).toContain(
     "2 transactions waiting in the inbox",
   );
   fireEvent.click(screen.getByRole("button", { name: "All" }));
   await waitFor(() => expect(waiting()).toBe("Waiting 2"));
+});
+
+it("steps through a pass in flow with one request per key and no list reloads", async () => {
+  const proposal = (category: Proposal["category"], rationale: string) =>
+    ({ category, rationale, skip: false, tag_ids: [] }) as unknown as Proposal;
+  const a = item({
+    id: "a",
+    payee: "Example Coffee Cart",
+    proposal: proposal("spending", "Coffee."),
+  });
+  const b = item({
+    id: "b",
+    source_ref: "tx-2",
+    payee: "Unknown Vendor",
+    financial_date: "2026-11-10",
+    proposal: proposal(null, "Not sure: no memo."),
+  });
+  const c = item({
+    id: "c",
+    source_ref: "tx-3",
+    payee: "Sample Street Market",
+    financial_date: "2026-11-11",
+    proposal: proposal("spending", "Groceries."),
+  });
+  const writes: Array<{ path: string; body: { expected_revision?: number } }> = [];
+  let listReads = 0;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      writes.push({ path: url, body });
+      const revision = body.expected_revision + 1;
+      if (url.endsWith("/a/record"))
+        return new Response(JSON.stringify({ item: { ...a, status: "recorded", revision } }));
+      if (url.endsWith("/c/skip"))
+        return new Response(JSON.stringify({ ...c, status: "skipped", revision }));
+      if (url.endsWith("/c/unskip"))
+        return new Response(JSON.stringify({ ...c, status: "waiting", revision }));
+      return new Response("{}", { status: 500 });
+    }
+    if (url.endsWith("/inbox")) {
+      listReads++;
+      return new Response(JSON.stringify([a, b, c]));
+    }
+    if (url.endsWith("/sources"))
+      return new Response(
+        JSON.stringify([{ id: "s", name: "Example Plan", connected: true, accounts: ["x"] }]),
+      );
+    return new Response("[]");
+  });
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+    />,
+  );
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  const reads = listReads;
+  const press = (key: string) => fireEvent.keyDown(document.body, { key });
+  const card = (name: string) => screen.findByRole("article", { name: new RegExp(`^${name}`) });
+
+  press("F");
+  await card("Example Coffee Cart");
+  press("Enter");
+  // Recorded from the proposal; the unsure item comes next.
+  await card("Unknown Vendor");
+  expect(writes.map((w) => w.path)).toEqual(["/api/entities/e/inbox/a/record"]);
+  press("Enter");
+  // Unsure: Enter opens edit instead of sending anything.
+  expect(await screen.findByText(/The agent was not sure/)).toBeDefined();
+  expect(writes).toHaveLength(1);
+  press("Escape");
+  press("l");
+  await card("Sample Street Market");
+  press("s");
+  expect(await screen.findByText("Pass complete")).toBeDefined();
+  expect(screen.getByText(/1 recorded · 1 ignored · 1 left for later/)).toBeDefined();
+  press("z");
+  await card("Sample Street Market");
+  // Undo used the revision the ignore returned (4), without reading the list again.
+  expect(writes.map((w) => [w.path.split("/inbox/")[1], w.body.expected_revision])).toEqual([
+    ["a/record", 3],
+    ["c/skip", 3],
+    ["c/unskip", 4],
+  ]);
+  expect(listReads).toBe(reads);
 });

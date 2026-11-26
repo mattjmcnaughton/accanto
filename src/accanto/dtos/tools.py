@@ -1226,6 +1226,12 @@ class InboxQuery(Input):
         default=None,
         description="true: only items with a proposal; false: only items without one.",
     )
+    limit: int | None = Field(
+        default=None,
+        ge=1,
+        le=200,
+        description="At most this many items, oldest first, to work in chunks.",
+    )
 
 
 class ItemRef(Input):

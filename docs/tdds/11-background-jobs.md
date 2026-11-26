@@ -263,7 +263,8 @@ layers, and records why:
 - Migration `6i029` is additive. `6h028` code ignores `job_run`; roll back the
   app before downgrading. After upgrading, reapply the runtime grants in
   [api.md](../api.md#local-setup-and-credentials) so `accanto_app` can use
-  `job_run`. `/readyz` pins `6i029`.
+  `job_run`. `/readyz` pinned `6i029`; TDD 12's `6j030` adds the run's
+  credential columns and is now the pinned revision.
 - `.amp/box.yaml` declares the `jobs` service; it starts on the next
   `amp boxes deploy`. Its command was checked in a locally built release
   against a test database. It has not run on the Box yet: after the first

@@ -44,6 +44,14 @@ class Step:
     done: bool = True
 
 
+class StepError(Exception):
+    """A step that cannot continue, with a fixed code stored on the run."""
+
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
+
+
 StepHandler = Callable[[JobRun], Awaitable[Step]]
 
 # Job kinds this process advances. Empty until a job owner adds one, such as
@@ -143,6 +151,8 @@ class JobRunner:
                 counts = {str(k): int(v) for k, v in step.counts.items()}
             except TimeoutError:
                 code = "step_timeout"
+            except StepError as error:
+                code = error.code
             except asyncio.CancelledError:
                 await self._release(run)
                 log.info("job_step", kind=run.kind, run_id=str(run.uuid),

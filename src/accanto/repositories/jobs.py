@@ -29,6 +29,8 @@ class JobRun:
     entity_id: int
     kind: str
     user_id: int | None
+    credential_kind: str | None
+    credential_uuid: UUID | None
     claims: int
     steps: int
     counts: dict[str, int]
@@ -46,7 +48,13 @@ def claimable(stale_after: float):
     )
 
 
-async def start(session, entity_id: int, kind: str, user_id: int | None = None):
+async def start(
+    session,
+    entity_id: int,
+    kind: str,
+    user_id: int | None = None,
+    credential: tuple[str, UUID] | None = None,
+):
     """Queue a run, or return the active one for this Entity and kind.
 
     Returns (uuid, created). The partial unique index `job_run_active` keeps one
@@ -54,7 +62,13 @@ async def start(session, entity_id: int, kind: str, user_id: int | None = None):
     """
     created = await session.scalar(
         pg_insert(r)
-        .values(entity_id=entity_id, kind=kind, user_id=user_id)
+        .values(
+            entity_id=entity_id,
+            kind=kind,
+            user_id=user_id,
+            credential_kind=credential[0] if credential else None,
+            credential_uuid=credential[1] if credential else None,
+        )
         .on_conflict_do_nothing(
             index_elements=[r.c.entity_id, r.c.kind],
             index_where=r.c.state.in_(j.ACTIVE),
@@ -104,6 +118,8 @@ async def claim(session, kinds, *, stale_after: float) -> JobRun | None:
                 r.c.entity_id,
                 r.c.kind,
                 r.c.user_id,
+                r.c.credential_kind,
+                r.c.credential_uuid,
                 r.c.claims,
                 r.c.steps,
                 r.c.counts,
@@ -207,3 +223,14 @@ async def read(session, entity_id: int, run_uuid: UUID):
         )
     ).one_or_none()
     return dict(row._mapping) if row else None
+
+
+async def latest(session, entity_id: int, kind: str):
+    """The Entity's newest run of this kind, as read() shows it, or None."""
+    run_uuid = await session.scalar(
+        select(r.c.uuid)
+        .where(r.c.entity_id == entity_id, r.c.kind == kind)
+        .order_by(r.c.id.desc())
+        .limit(1)
+    )
+    return None if run_uuid is None else await read(session, entity_id, run_uuid)

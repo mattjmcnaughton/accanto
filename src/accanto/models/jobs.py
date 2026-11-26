@@ -13,6 +13,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Uuid,
     func,
     text,
 )
@@ -28,6 +29,9 @@ runs = table(
     Column("kind", String(80), nullable=False),
     # The User who started the run; null for a scheduled run.
     Column("user_id", ForeignKey("app_user.id")),
+    # The session or API key that started it, re-checked by every step (6j030).
+    Column("credential_kind", String(20)),
+    Column("credential_uuid", Uuid),
     Column("state", String, nullable=False, server_default="queued"),
     # Lease: set by the database clock when a step is claimed.
     Column("claimed_at", DateTime(timezone=True)),

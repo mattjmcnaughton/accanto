@@ -167,6 +167,7 @@ def server(tmp_path, telemetry_env):
         SOURCE_SECRET_KEY=secrets["fernet"],
         YNAB_API_URL=f"http://127.0.0.1:{ynab_port}/v1",
         AGENT_MODEL="stub",
+        JOB_RECONCILER_INTERVAL="0.2",
     )
     log = (tmp_path / "server.log").open("w")
     ynab = subprocess.Popen(
@@ -338,6 +339,16 @@ async def drive(origin, secrets, suffix):
             },
             headers=browser,
         )
+        # The inbox proposal run (TDD 12): its steps send payees and AGENT.md to
+        # the model in the background and log counts only.
+        started = await client.post(prefix + "/inbox/proposal-run", headers=api)
+        assert started.status_code == 202, started.text
+        for _ in range(100):
+            run = await call("GET", "/inbox/proposal-run")
+            if run["run"]["state"] not in {"queued", "running"}:
+                break
+            await asyncio.sleep(0.1)
+        assert run["run"]["state"] == "succeeded" and run["proposed"] == run["waiting"]
         # AGENT.md over REST (API key) and MCP.
         assert (await call("GET", "/agent/instructions"))["instructions"] == agent_md
         instructions = await client.post(

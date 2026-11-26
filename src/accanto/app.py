@@ -28,6 +28,7 @@ from accanto.routers import (
     spending_subcategories,
     tags,
 )
+from accanto.services import inbox_proposals
 from accanto.services.access import RejectionError
 from accanto.services.jobs import HANDLERS, JobRunner
 from accanto.web.serve import mount_frontend
@@ -108,7 +109,13 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler; runs the MCP app's session manager too."""
     configure_logging()
     # Background job runs (TDD 11): claims leased runs until shutdown.
-    runner = JobRunner(settings, db.async_session, HANDLERS)
+    handlers = {
+        **HANDLERS,
+        inbox_proposals.KIND: inbox_proposals.proposal_step(
+            app.state.auth_settings, db.async_session
+        ),
+    }
+    runner = JobRunner(settings, db.async_session, handlers)
     await runner.start()
     app.state.job_runner = runner
     try:
