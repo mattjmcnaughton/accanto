@@ -10,6 +10,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request
 from accanto.dtos.inbox import (
     BulkProposalInput,
     BulkRecordInput,
+    BulkRevisionInput,
     ProposalInput,
     RecordInput,
     ResolveInput,
@@ -186,6 +187,72 @@ async def record_many(
                 raise
             results.append(outcome(item.item_id, error))
     return {"results": results}
+
+
+async def act_on_many(
+    session, token, entity_id, request_key, body: BulkRevisionInput, action
+):
+    """Ignore, return or undo many items; each is its own write with its own key."""
+    results = []
+    for item in body.items:
+        key = item_key(request_key, item.item_id)
+        fields = {"expected_revision": item.expected_revision}
+        try:
+            if action == "undo":
+                result = await inbox.remove_entry(
+                    session, token, entity_id, item.item_id, key, fields, "undo"
+                )
+            else:
+                result = {
+                    "item": await write(
+                        session,
+                        token,
+                        entity_id,
+                        f"inbox_{action}",
+                        key,
+                        fields,
+                        item.item_id,
+                    )
+                }
+            results.append({"item_id": str(item.item_id), "ok": True, **result})
+        except RejectionError as error:
+            if error.status == 401:
+                raise
+            results.append(outcome(item.item_id, error))
+    return {"results": results}
+
+
+@router.post("/skip")
+async def skip_many(
+    entity_id: UUID,
+    body: BulkRevisionInput,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await act_on_many(session, token, entity_id, request_key, body, "skip")
+
+
+@router.post("/unskip")
+async def unskip_many(
+    entity_id: UUID,
+    body: BulkRevisionInput,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await act_on_many(session, token, entity_id, request_key, body, "unskip")
+
+
+@router.post("/undo")
+async def undo_many(
+    entity_id: UUID,
+    body: BulkRevisionInput,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    return await act_on_many(session, token, entity_id, request_key, body, "undo")
 
 
 @router.post("/{item_id}/record")

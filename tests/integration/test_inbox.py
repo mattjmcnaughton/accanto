@@ -479,6 +479,78 @@ async def scenario():
         )
         assert unskipped.json()["status"] == "waiting"
 
+        # Batch resolve: each item is its own write, so one rejection keeps the rest.
+        coffee, second = await item("t-coffee"), await item("t-return2")
+        audits = await count(m.audit, m.audit.c.entity_id == entity_id)
+        batch = {
+            "items": [
+                {"item_id": coffee["id"], "expected_revision": coffee["revision"]},
+                {"item_id": second["id"], "expected_revision": second["revision"] + 5},
+            ]
+        }
+        ignored = await command("POST", "/inbox/skip", batch, request_key="batch-1")
+        retried = await command("POST", "/inbox/skip", batch, request_key="batch-1")
+        assert ignored.status_code == retried.status_code == 200, ignored.text
+        assert ignored.json() == retried.json()
+        first_result, stale = ignored.json()["results"]
+        assert first_result["ok"] and first_result["item"]["status"] == "skipped"
+        assert stale == {
+            "item_id": second["id"],
+            "ok": False,
+            "error": {"code": "stale_revision", "message": stale["error"]["message"]},
+        }
+        assert (await item("t-return2"))["status"] == "waiting"
+        assert await count(m.audit, m.audit.c.entity_id == entity_id) == audits + 1
+        returned = await command(
+            "POST",
+            "/inbox/unskip",
+            {
+                "items": [
+                    {
+                        "item_id": coffee["id"],
+                        "expected_revision": first_result["item"]["revision"],
+                    }
+                ]
+            },
+        )
+        assert returned.json()["results"][0]["item"]["status"] == "waiting"
+
+        # One choice for several items records the valid ones; undo returns them.
+        coffee, second = await item("t-coffee"), await item("t-return2")
+        before_entries = await entries()
+        batch_record = await client.post(
+            prefix + "/inbox/record",
+            json={
+                "items": [
+                    {
+                        "item_id": it["id"],
+                        "expected_revision": it["revision"],
+                        "completion": {"category": "spending", "funding": "income"},
+                    }
+                    for it in (coffee, second)
+                ]
+            },
+        )
+        coffee_result, inflow_result = batch_record.json()["results"]
+        assert coffee_result["ok"] and coffee_result["entry"]["amount"] == "6.50"
+        assert inflow_result["error"]["code"] == "needs_refund_link"
+        assert await entries() == before_entries + 1
+        assert (await item("t-return2"))["rejection"]["code"] == "needs_refund_link"
+        undone = await command(
+            "POST",
+            "/inbox/undo",
+            {
+                "items": [
+                    {
+                        "item_id": coffee["id"],
+                        "expected_revision": coffee_result["item"]["revision"],
+                    }
+                ]
+            },
+        )
+        assert undone.json()["results"][0]["item"]["status"] == "waiting"
+        assert await entries() == before_entries
+
         # Retries don't duplicate: Enter twice records one entry and one audit.
         coffee = await item("t-coffee")
         body = {

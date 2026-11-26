@@ -72,6 +72,14 @@ class RevisionInput(Input):
     expected_revision: int = Field(ge=1)
 
 
+class BulkRevisionItem(RevisionInput):
+    item_id: UUID
+
+
+class BulkRevisionInput(Input):
+    items: list[BulkRevisionItem] = Field(min_length=1, max_length=200)
+
+
 class ResolveInput(Input):
     expected_revision: int = Field(ge=1)
     resolution: Literal["keep", "delete"]

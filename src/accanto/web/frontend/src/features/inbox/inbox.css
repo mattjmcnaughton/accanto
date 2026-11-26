@@ -77,7 +77,31 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
 }
+.ix-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ix-selbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 10px 16px 0;
+  padding: 4px 12px 4px 4px;
+  min-height: 40px;
+  font-size: 13px;
+  color: var(--ink2);
+  border-bottom: 1px solid var(--line);
+}
+.ix-selbar-do {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
 .ix-list {
+  flex: 1;
   overflow: auto;
   padding: 0 16px 14px;
   min-height: 0;
@@ -177,6 +201,24 @@
 }
 .ix .good {
   color: var(--good);
+}
+/* The box keeps its 16px look inside a 32px tap target. */
+.ix-pick {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -8px -6px -8px -8px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.ix-row .t small .ix-why-row {
+  color: var(--warn);
 }
 .ix-chk {
   width: 16px;

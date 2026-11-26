@@ -104,7 +104,9 @@ it("records with Enter, keeps 1–6 inside the inbox, and sends the item's revis
   );
   await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
   fireEvent.keyDown(document.body, { key: "Enter" });
-  expect(await screen.findByText(/There is no proposal to accept/)).toBeDefined();
+  expect(
+    await screen.findByText(/There is no proposal to accept/, { selector: ".ix-msg" }),
+  ).toBeDefined();
   expect(writes).toEqual([]);
   fireEvent.keyDown(document.body, { key: "3" });
   expect(workspaceKeys).not.toHaveBeenCalledWith("3");
@@ -415,4 +417,101 @@ it("steps through a pass in flow with one request per key and no list reloads", 
     ["c/unskip", 4],
   ]);
   expect(listReads).toBe(reads);
+});
+
+it("batch resolves a shift-click range with one choice and keeps only failures selected", async () => {
+  const proposal = { category: "spending", rationale: "Synthetic" } as unknown as Proposal;
+  const a = item({ id: "a", payee: "Example Software Co" });
+  const b = item({ id: "b", source_ref: "tx-2", payee: "Example Software Co", revision: 5 });
+  const c = item({ id: "c", source_ref: "tx-3", payee: "Sample Hardware", proposal });
+  const d = item({ id: "d", source_ref: "tx-4", payee: "Example Bakery" });
+  const writes: Array<{ path: string; body: { items: Array<Record<string, unknown>> } }> = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      writes.push({ path: url, body });
+      if (url.endsWith("/inbox/record"))
+        return new Response(
+          JSON.stringify({
+            results: [
+              { item_id: "a", ok: true, item: { ...a, status: "recorded", revision: 4 } },
+              {
+                item_id: "b",
+                ok: false,
+                error: { code: "stale_revision", message: "Synthetic: changed elsewhere." },
+              },
+              { item_id: "c", ok: true, item: { ...c, status: "recorded", revision: 4 } },
+            ],
+          }),
+        );
+      return new Response(
+        JSON.stringify({
+          results: [{ item_id: "b", ok: true, item: { ...b, status: "skipped", revision: 6 } }],
+        }),
+      );
+    }
+    if (url.endsWith("/inbox")) return new Response(JSON.stringify([a, b, c, d]));
+    if (url.endsWith("/spending-subcategories"))
+      return new Response(
+        JSON.stringify([{ uuid: "sub-tools", name: "Tools", active: true, revision: 1 }]),
+      );
+    return new Response("[]");
+  });
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+    />,
+  );
+  await screen.findByText("Example Software Co", { selector: ".ix-d-t" });
+  const box = (name: RegExp) => screen.getByRole("checkbox", { name });
+  fireEvent.click(screen.getAllByRole("checkbox", { name: /^Select Example Software Co/ })[0]);
+  // Shift-click selects the rows between, not only the two ends; d stays out.
+  fireEvent.click(box(/^Select Sample Hardware/), { shiftKey: true });
+  expect(await screen.findByText("3 selected", { selector: ".ix-d-t" })).toBeDefined();
+  expect(box(/^Select Example Bakery/).getAttribute("aria-checked")).toBe("false");
+  expect(box(/^Select all 4/).getAttribute("aria-checked")).toBe("mixed");
+
+  // One category and one subcategory for all three, then one request records them.
+  fireEvent.keyDown(document.body, { key: "3" });
+  fireEvent.keyDown(document.body, { key: "a" });
+  await screen.findByText("Subcategory for 3 selected");
+  fireEvent.click(screen.getByText("Tools"));
+  expect(await screen.findByText("Tools", { selector: ".fv" })).toBeDefined();
+  fireEvent.keyDown(document.body, { key: "Enter" });
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(writes[0].path).toBe("/api/entities/e/inbox/record");
+  expect(writes[0].body.items).toEqual(
+    [
+      [a, { funding: "income" }],
+      [b, { funding: "income" }],
+      // c's proposal already had this category, so its other choices stay, as with one item.
+      [c, { skip: false }],
+    ].map(([it, rest]) => ({
+      item_id: (it as StagedTransaction).id,
+      expected_revision: (it as StagedTransaction).revision,
+      completion: { category: "spending", assignment: "sub-tools", ...rest },
+    })),
+  );
+  // The rejected item stays selected with its reason; the recorded ones leave.
+  expect(await screen.findByText(/Recorded 2\. 1 stayed selected/)).toBeDefined();
+  expect(
+    await screen.findByText(/Synthetic: changed elsewhere/, { selector: ".ix-why-row" }),
+  ).toBeDefined();
+  expect(screen.getByText("1 selected", { selector: ".ix-d-t" })).toBeDefined();
+  expect(screen.queryByText("Sample Hardware", { selector: ".ix-row *" })).toBeNull();
+
+  fireEvent.keyDown(document.body, { key: "s" });
+  await waitFor(() => expect(writes).toHaveLength(2));
+  expect(writes[1]).toEqual({
+    path: "/api/entities/e/inbox/skip",
+    body: { items: [{ item_id: "b", expected_revision: 5 }] },
+  });
 });
