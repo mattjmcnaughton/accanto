@@ -127,6 +127,7 @@ it("refreshes only visible Activity after a write and restores the unsaved Plan"
     "investments",
     "plans",
     "savings-accounts",
+    "spending-subcategories",
   ]);
 });
 

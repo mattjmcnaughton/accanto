@@ -6,8 +6,10 @@ import { fmtDate } from "../../lib/format";
 import { type PlanGroup, type PlanRevision, monthly } from "../../lib/monthly";
 import { confirmInAppNavigation } from "../../lib/recoverableWrite";
 import { savings } from "../../lib/savings";
+import { spendingSubcategories } from "../../lib/spendingSubcategories";
 import { parseTimestamp } from "../../lib/timestamp";
 import { Band, Dialog, Empty, Icon, Skeleton } from "../../ui";
+import { SubcategoriesDialog } from "../tags/Subcategories";
 import { Home } from "./Home";
 import { CopyPlan } from "./PlanScenarios";
 import { PlanWorksheet } from "./PlanWorksheet";
@@ -67,6 +69,11 @@ export function Plans(
     enabled: worksheet,
     share: "giving",
   });
+  const subcategories = useLoad(() => spendingSubcategories.list(p.entity.id), deps, {
+    enabled: worksheet,
+    share: "spending-subcategories",
+  });
+  const [managingSubcategories, setManagingSubcategories] = useState(false);
   const loans = useLoad(() => balances.loans(p.entity.id), deps, {
     enabled: home || worksheet,
     share: "loans",
@@ -637,6 +644,7 @@ export function Plans(
                 { name: "Investments", state: investments },
                 { name: "Giving recipients", state: giving },
                 { name: "Loan accounts", state: loans },
+                { name: "Spending subcategories", state: subcategories },
               ].map((item) =>
                 item.state.kind === "ready" || item.state.kind === "empty" ? null : (
                   <div key={item.name} className="plan-alert plan-catalog">
@@ -661,6 +669,12 @@ export function Plans(
                       }))
                     : []
                 }
+                subcategories={
+                  subcategories.kind === "ready"
+                    ? subcategories.data.filter((sub) => sub.active)
+                    : []
+                }
+                onSubcategories={() => setManagingSubcategories(true)}
                 busy={p.busy}
                 timeZone={p.entity.time_zone}
                 onBack={() => setActive(null)}
@@ -695,6 +709,15 @@ export function Plans(
             </div>
           );
         })}
+      {managingSubcategories && worksheet && (
+        <SubcategoriesDialog
+          entityId={p.entity.id}
+          subcategories={subcategories.kind === "ready" ? subcategories.data : []}
+          busy={p.busy}
+          save={p.save}
+          onClose={() => setManagingSubcategories(false)}
+        />
+      )}
       {copying && !home && (
         <Dialog title="Copy a Plan" onClose={closeCopy} className="plan-copy-dlg">
           <CopyPlan
