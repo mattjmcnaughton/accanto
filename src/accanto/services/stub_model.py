@@ -14,7 +14,7 @@ Behaviors, keyed on the owner's message (case-insensitive):
                 mode), or ask for the date if there is none.
 - "mortgage"    project a 100,000.00 loan at 6% over 360 months with 100.00
                 extra a month, then calculate the total of payment and extra,
-                and quote both results (TDD 07).
+                and quote both results (TDD 09).
 - "budget"      say a sentence, call get_context in the same response, then
                 answer: two text parts around a tool call.
 - "[stub-fail]" fail mid-stream after a few deltas.

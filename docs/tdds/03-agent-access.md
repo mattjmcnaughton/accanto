@@ -48,7 +48,7 @@ rejected in Read only.
 | Stale edits reject | Constitution §7 | Edit, delete, apply of a stale pending change | `expected_revision` captured from a service read when drafted; `check_revision` | Integration: edit entry after drafting, apply returns `stale_revision`, nothing changes |
 | Agent cannot change its own permissions | PRD AG-05, AG-08 | Settings endpoints | Agent settings endpoints require a browser session, not an API key, and are absent from the catalog | Integration: API key gets 403 on agent settings |
 | Entity boundary | Constitution §2 | All | Sidebar binds one Entity per turn; MCP tools take `entity_id`; `authorize()` and `scoped()` on every call | Foreign Entity or record id is 404 |
-| Unknown is not zero | Constitution §1 | All reads | Projections carry `null`/`incomplete`; instructions forbid arithmetic in the model's head, and `calculate` and server-side summaries do it instead ([TDD 07](07-agent-financial-math.md)) | Eval and unit: null actual reported as unknown |
+| Unknown is not zero | Constitution §1 | All reads | Projections carry `null`/`incomplete`; instructions forbid arithmetic in the model's head, and `calculate` and server-side summaries do it instead ([TDD 09](09-agent-financial-math.md)) | Eval and unit: null actual reported as unknown |
 
 ## Trusted and untrusted content
 
@@ -110,7 +110,7 @@ pairs, and `save_*` creates or, given `id` and `expected_revision`, edits.
   `list_destinations(kind)`, `list_debts`, `list_investment_observations`,
   `list_income_estimates`, `list_inbox(status?, month?, proposed?)`, `get_inbox_item`,
   `list_sources` (no token), `list_pending_changes`.
-- **Math ([TDD 07](07-agent-financial-math.md)):** `calculate(expression)`,
+- **Math ([TDD 09](09-agent-financial-math.md)):** `calculate(expression)`,
   and `project(projection)`, which take no Entity;
   `summarize_activity(start, end, …filters)`, `get_position(since?)`. Goals and
   destinations carry `remaining_to_target` and `percent_of_target`.

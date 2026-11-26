@@ -1,4 +1,4 @@
-# 07 — Agent financial math: calculator, summaries and projections
+# 09 — Agent financial math: calculator, summaries and projections
 
 Status: Implemented
 Updated: 2026-11-26

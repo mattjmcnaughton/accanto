@@ -80,7 +80,7 @@ class CatalogTool:
     run: Run
     # Writes: args -> (command, summary). Pending changes are rebuilt from it.
     build: Callable[[Any], tuple[Command, str]] | None = None
-    # Computes from its arguments alone: no Entity, no records (TDD 07).
+    # Computes from its arguments alone: no Entity, no records (TDD 09).
     pure: bool = False
 
 

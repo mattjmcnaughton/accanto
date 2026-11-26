@@ -1,4 +1,4 @@
-"""Exact decimal arithmetic for agents (TDD 07): an allowlisted expression evaluator.
+"""Exact decimal arithmetic for agents (TDD 09): an allowlisted expression evaluator.
 
 Numbers are read from the expression's own text into Decimal, never through a
 float. Only arithmetic and a few functions are allowed; there are no names,

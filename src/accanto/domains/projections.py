@@ -1,4 +1,4 @@
-"""Projections from explicit assumptions (TDD 07): loans, growth and FIRE.
+"""Projections from explicit assumptions (TDD 09): loans, growth and FIRE.
 
 A Projection is an illustrative result, never activity or an observation
 (CONTEXT.md). Rates are annual percents. Loan interest is rounded half-even to

@@ -219,7 +219,7 @@ async def scenario():
         assert failed[-1][0] == "error"
         assert len((await client.get(prefix + "/agent/conversation")).json()) == 2
 
-        # Math (TDD 07): the agent projects a loan, then calculates on the
+        # Math (TDD 09): the agent projects a loan, then calculates on the
         # result. $100,000 at 6% over 360 months is $599.55 a month; with $100
         # extra it is $699.55 and repaid in 252 months.
         math = frames((await send("What if I pay $100 extra on the mortgage?")).text)

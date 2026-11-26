@@ -1,4 +1,4 @@
-"""Position snapshot and change between observations (TDD 07).
+"""Position snapshot and change between observations (TDD 09).
 
 Savings are remaining saved, derived from recorded activity. Investments and
 loans are their latest dated observations: an account without one is unknown,

@@ -1,4 +1,4 @@
-"""Activity summaries and target gaps (TDD 07), with hand-worked amounts."""
+"""Activity summaries and target gaps (TDD 09), with hand-worked amounts."""
 
 from datetime import date
 from decimal import Decimal
