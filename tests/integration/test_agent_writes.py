@@ -20,7 +20,7 @@ from accanto.dtos import tools as t
 from accanto.dtos.monthly import ActivityInput
 from accanto.models import agent as a
 from accanto.models import monthly as m
-from accanto.services import agent_settings
+from accanto.services import agent_settings, agent_writes
 from accanto.services.access import RejectionError, issue_session, resolve_actor
 from accanto.services.api_keys import issue_key
 from accanto.services.browser_auth import csrf_token
@@ -222,6 +222,68 @@ async def scenario():
         pended = await call(mcp, "delete_observation", delete)
         assert pended.status == "pending", mode
         assert len((await call(mcp, "list_investment_observations", {})).observations)
+
+    # Goal creates drafted together apply in a row: each create bumps the
+    # account revision, so applying rebases onto it. Edits stay strict.
+    opened = await call(
+        mcp,
+        "save_savings_account",
+        {
+            "values": {
+                "name": "Synthetic reserve",
+                "opening_date": "2026-11-01",
+                "opening_amount": "0.00",
+            }
+        },
+    )
+    assert opened.pending_change
+    account_id = (
+        await apply_pending(owner_ctx, entity, opened.pending_change.id)
+    ).record_id
+    goal_drafts = [
+        await call(
+            mcp,
+            "save_goal",
+            {
+                "account_id": account_id,
+                "values": {
+                    "name": name,
+                    "kind": "finite",
+                    "target": target,
+                    "expected_account_revision": 1,
+                },
+            },
+        )
+        for name, target in (
+            ("Synthetic repairs", "600.00"),
+            ("Synthetic trip", "450.00"),
+        )
+    ]
+    archive = await call(
+        mcp,
+        "set_savings_account_status",
+        {"account_id": account_id, "status": "archived", "expected_revision": 1},
+    )
+    for draft in goal_drafts:
+        assert draft.pending_change
+        result = await apply_pending(owner_ctx, entity, draft.pending_change.id)
+        assert result.status == "recorded"
+    assert archive.pending_change
+    with pytest.raises(RejectionError) as stale_archive:
+        await apply_pending(owner_ctx, entity, archive.pending_change.id)
+    assert stale_archive.value.code == "stale_revision"
+    async with sessions() as db:
+        await agent_writes.dismiss(db, owner, entity, archive.pending_change.id, 1)
+    [reserve] = [
+        account
+        for account in (await call(mcp, "list_savings", {})).accounts
+        if account.id == account_id
+    ]
+    assert reserve.active and reserve.revision == 3
+    assert sorted(g.target for g in reserve.goals if g.role == "ordinary") == [
+        "450.00",
+        "600.00",
+    ]
 
     # Foreign Entity is unavailable to every tool.
     with pytest.raises(RejectionError) as missing:

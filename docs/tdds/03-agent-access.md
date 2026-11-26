@@ -351,6 +351,12 @@ from the design above. None changes a financial rule.
   is rejected with `stale_revision` before anything is stored, so the stored value
   is always the current revision at draft time. A draft that fails any domain
   check stores nothing.
+- **Goal creates rebase on apply.** Creating a goal bumps its account's revision,
+  so several goals drafted against one account would leave all but the first
+  stale. Applying a `create_saving_goal` draft takes the account's current
+  revision under the Entity lock: the create overwrites nothing on the account,
+  and the command still rejects a missing or inactive account. Edits, status
+  changes and deletes keep their drafted revision and reject when stale.
 - **`write()` extension.** `write()` gained `guard` (runs under the Entity lock
   after the retry lookup; the apply path checks the draft is still pending) and
   `finish` (runs in the same transaction before the outcome; marks the draft

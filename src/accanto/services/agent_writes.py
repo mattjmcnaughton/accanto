@@ -16,6 +16,7 @@ from uuid import UUID
 from sqlalchemy import insert, select, update
 
 from accanto.models import agent as a
+from accanto.models import savings as s
 from accanto.services import agent_settings
 from accanto.services.access import AuthenticatedActor, RejectionError
 from accanto.services.inbox import Hook, keep_rejection
@@ -259,6 +260,14 @@ async def apply(
                     "pending_change_resolved",
                     "This pending change was already applied or dismissed.",
                 )
+            # A goal create overwrites nothing on its account, and the command
+            # re-checks what it needs (account present and active). Rebase it so
+            # goals drafted together still apply after each bumps the revision.
+            if command.operation == "create_saving_goal":
+                account = await scoped(
+                    session, s.accounts, entity["id"], command.target
+                )
+                command.payload["expected_account_revision"] = account["revision"]
 
         async def finish(session, entity, response):
             await session.execute(
