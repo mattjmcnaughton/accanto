@@ -865,6 +865,11 @@ function Palette({ commands: all, close }: { commands: Command[]; close: () => v
           }
         }}
       />
+      <output className="sr-only">
+        {commands[at]
+          ? `${commands[at].text}, ${at + 1} of ${commands.length}`
+          : "No matching commands"}
+      </output>
       {commands.length ? (
         <div className="pal-list">
           {commands.map((c, i) => (
