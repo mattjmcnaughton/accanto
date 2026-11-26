@@ -770,6 +770,14 @@ affected.
 | GET | `/agent/conversation` | Messages of the latest active conversation (`[]` when none) |
 | POST | `/agent/conversation/messages` | Continues the latest active conversation, or starts one |
 | DELETE | `/agent/conversation` | Archives the latest active conversation; `{"cleared": false}` when none |
+| POST | `/agent/turn/stop` | Stops the running reply, which stores nothing and ends with an `error` frame, code `stopped`; `{"stopped": false}` when none runs |
+
+A turn outlives its connection: closing the stream does not stop it. Send an
+`Idempotency-Key` with each message. Posting the same key again, with `after`
+set to the number of data frames already handled (heartbeats are not counted),
+follows that turn from there instead of starting another, while it runs and for
+10 minutes after it ends. A nonzero `after` with a key the server no longer has
+returns `409 turn_gone`.
 
 ## Transactions inbox and sources
 

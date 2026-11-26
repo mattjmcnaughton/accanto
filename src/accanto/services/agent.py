@@ -1,18 +1,20 @@
-"""Built-in agent turns: admit, stream, settle (TDD 03), after aleph's tutor.py.
+"""Built-in agent turns: admit, run, follow, settle (TDD 03), after aleph's tutor.py.
 
 admit() checks everything before the first byte: browser session, enablement,
-daily cap, one reply per conversation, the concurrency limit. stream() runs the
-agent with the model injected and yields SSE frames; tool calls open their own
-short sessions bound to this owner and Entity, so no transaction spans a model
-call. settle() stores both messages in one transaction; a failed or abandoned
-turn stores no messages.
+daily cap, one reply per conversation, the concurrency limit. start() runs the
+agent with the model injected in its own task, which records SSE frames on the
+turn's Run; tool calls open their own short sessions bound to this owner and
+Entity, so no transaction spans a model call. follow() streams a Run's frames to
+one connection. A turn outlives its connection: iOS drops a backgrounded page's
+stream, and the client follows the same Run again from the frames it already
+has, so nothing runs twice. Only stop() or a failure ends a turn early. settle()
+stores both messages in one transaction; a failed or stopped turn stores none.
 
 Telemetry is operation names, tool names, timings, token counts and error codes.
 Never prompts, replies, tool results or images.
 """
 
 import asyncio
-import contextlib
 import json
 import os
 import time
@@ -57,6 +59,8 @@ os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 log = structlog.get_logger(__name__)
 REQUEST_LIMIT = 12  # inbox triage reads Plans, goals and destinations first
 MAX_MESSAGE = 4000
+# How long a finished turn's frames wait for a client that lost its connection.
+KEEP_FINISHED_SECONDS = 600
 # Rejections the model can fix by changing its arguments.
 RETRYABLE = {
     "invalid_record",
@@ -106,6 +110,28 @@ class Reply:
     pending_ids: list[str]
 
 
+@dataclass(eq=False)
+class Run:
+    """One turn's SSE frames in order, kept apart from any connection. key is the
+    client's Idempotency-Key for the turn; a connection follows from an index."""
+
+    key: str | None
+    frames: list[str] = field(default_factory=list)
+    finished: bool = False
+    task: asyncio.Task | None = None
+    wake: asyncio.Event = field(default_factory=asyncio.Event)
+
+    async def put(self, frame: str | None) -> None:
+        """Record a frame; None ends the turn. Never suspends, so it completes
+        even while the producing task is being cancelled."""
+        if frame is None:
+            self.finished = True
+        else:
+            self.frames.append(frame)
+        self.wake.set()
+        self.wake = asyncio.Event()
+
+
 class AgentTurns:
     """One per application; holds the in-flight claims and the reply limit."""
 
@@ -113,6 +139,8 @@ class AgentTurns:
         self.config, self.sessions = config, sessions
         self.resolve_model = model_resolver
         self.in_flight: set[tuple[int, int]] = set()
+        # The latest turn per (user id, Entity UUID), running or recently finished.
+        self.runs: dict[tuple[int, UUID], Run] = {}
         self.replies = asyncio.Semaphore(config.agent_concurrent_replies)
         self.agent = build_sidebar_agent(sidebar_specs())
 
@@ -207,30 +235,47 @@ class AgentTurns:
             conversation_id=row["id"] if row else None,
         )
 
-    def release(self, turn: Turn) -> None:
-        self.in_flight.discard(turn.claim)
+    def start(self, turn: Turn, key: str | None) -> Run:
+        """Runs the admitted turn to its end, whether or not anyone follows it."""
+        owner = (turn.user_id, turn.entity_uuid)
+        run = Run(key)
+        self.runs[owner] = run
+        run.task = asyncio.create_task(self._produce(turn, run, owner))
+        return run
 
-    async def stream(self, turn: Turn) -> AsyncIterator[str]:
-        queue: asyncio.Queue[str | None] = asyncio.Queue()
-        producer = asyncio.create_task(self._produce(turn, queue))
-        try:
-            while True:
-                try:
-                    frame = await asyncio.wait_for(
-                        queue.get(), timeout=self.config.agent_heartbeat_seconds
-                    )
-                except TimeoutError:
-                    yield sse_heartbeat()
-                    continue
-                if frame is None:
-                    return
-                yield frame
-        finally:
-            producer.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await producer
+    def find(self, actor, entity_uuid: UUID, key: str) -> Run | None:
+        """This owner's turn for the Entity with that Idempotency-Key, if kept."""
+        run = self.runs.get((actor.user_id, entity_uuid))
+        return run if run is not None and run.key == key else None
 
-    async def _produce(self, turn: Turn, queue) -> None:
+    async def follow(self, run: Run, after: int = 0) -> AsyncIterator[str]:
+        """The Run's frames after the first `after`, then each new one, with a
+        heartbeat while none arrive. Closing it leaves the turn running."""
+        sent = after
+        while True:
+            while sent < len(run.frames):
+                yield run.frames[sent]
+                sent += 1
+            if run.finished:
+                return
+            try:
+                await asyncio.wait_for(
+                    run.wake.wait(), timeout=self.config.agent_heartbeat_seconds
+                )
+            except TimeoutError:
+                yield sse_heartbeat()
+
+    async def stop(self, actor, entity_uuid: UUID) -> bool:
+        """Cancels this owner's running turn for the Entity; nothing is stored.
+        Returns once the turn has ended, so the next message is admitted."""
+        run = self.runs.get((actor.user_id, entity_uuid))
+        if run is None or run.finished or run.task is None:
+            return False
+        run.task.cancel()
+        await asyncio.wait([run.task])
+        return True
+
+    async def _produce(self, turn: Turn, queue: Run, owner) -> None:
         started = time.perf_counter()
         outcome = "failure"
         try:
@@ -260,6 +305,7 @@ class AgentTurns:
             await queue.put(error.frame())
         except asyncio.CancelledError:
             log.info("agent_turn", outcome="stopped")
+            await queue.put(TurnError("stopped", "You stopped this reply.").frame())
             raise
         except Exception as error:
             log.warning("agent_turn", outcome="failure", error=type(error).__name__)
@@ -268,6 +314,14 @@ class AgentTurns:
             )
         finally:
             await queue.put(None)
+            self.in_flight.discard(turn.claim)
+            asyncio.get_running_loop().call_later(
+                KEEP_FINISHED_SECONDS, self._forget, owner, queue
+            )
+
+    def _forget(self, owner, run: Run) -> None:
+        if self.runs.get(owner) is run:
+            del self.runs[owner]
 
     async def _run(self, turn: Turn, queue) -> tuple[Reply, dict]:
         pending: list[str] = []

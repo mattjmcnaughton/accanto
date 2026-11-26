@@ -22,6 +22,7 @@ from accanto.dtos.agent import (
 )
 from accanto.routers.authentication import BrowserToken, Session, Token
 from accanto.services import agent_images, agent_settings, agent_writes, tools
+from accanto.services.access import RejectionError
 from accanto.services.agent import LATEST, AgentTurns
 from accanto.services.openrouter import provider_label
 from accanto.services.sse import SSE_HEADERS, SSE_MEDIA_TYPE
@@ -127,18 +128,11 @@ async def dismiss_pending(
     )
 
 
-class ReleasingStream(StreamingResponse):
-    """Releases the turn's claim even if the stream never starts (aleph)."""
-
-    def __init__(self, content, release):
-        super().__init__(content, media_type=SSE_MEDIA_TYPE, headers=SSE_HEADERS)
-        self.release = release
-
-    async def __call__(self, scope, receive, send):
-        try:
-            await super().__call__(scope, receive, send)
-        finally:
-            self.release()
+@router.post("/turn/stop")
+async def stop_turn(entity_id: UUID, request: Request, actor: BrowserToken):
+    """Stops the running reply, which then stores nothing. Closing the stream does
+    not: a turn outlives its connection so a dropped client can follow it again."""
+    return {"stopped": await turns(request).stop(actor, entity_id)}
 
 
 # Assistant conversations (TDD 08): several per User and Entity. Archive hides one;
@@ -180,15 +174,38 @@ Message = Annotated[str, Form(max_length=4000)]
 Screen = Annotated[str | None, Form(max_length=40)]
 Month = Annotated[date | None, Form()]
 Images = Annotated[list[UploadFile] | None, File()]
+# Names one turn so a client whose connection dropped can follow it again.
+TurnKey = Annotated[
+    str | None, Header(alias="Idempotency-Key", min_length=1, max_length=120)
+]
+# Frames the client already has from that turn (heartbeats not counted).
+After = Annotated[int, Form(ge=0)]
+
+
+def sse(frames) -> StreamingResponse:
+    return StreamingResponse(frames, media_type=SSE_MEDIA_TYPE, headers=SSE_HEADERS)
 
 
 async def stream_turn(
-    request, actor, entity_id, conversation, content, screen, month, images
+    request, actor, entity_id, conversation, content, screen, month, images, key, after
 ):
     """Admit before the first byte, then stream SSE: delta, tool, pending_change,
     done (with conversation_id) or error, with a ': ping' heartbeat. Images are
-    normalised in memory and passed to this turn only."""
+    normalised in memory and passed to this turn only.
+
+    The same Idempotency-Key again follows that turn after its first `after`
+    frames instead of starting another, whether it is running or recently ended."""
     service = turns(request)
+    if key is not None:
+        run = service.find(actor, entity_id, key)
+        if run is not None:
+            return sse(service.follow(run, after))
+    if after:
+        raise RejectionError(
+            "turn_gone",
+            "That reply was lost before it finished. Send your question again.",
+            409,
+        )
     # Read one byte past the limit so an oversized file is refused, not buffered whole.
     raw = [await f.read(agent_images.MAX_IMAGE_BYTES + 1) for f in images or []]
     normalised = await asyncio.to_thread(agent_images.normalise_all, raw)
@@ -201,7 +218,7 @@ async def stream_turn(
         month=month,
         conversation=conversation,
     )
-    return ReleasingStream(service.stream(turn), lambda: service.release(turn))
+    return sse(service.follow(service.start(turn, key)))
 
 
 @router.post("/conversation/messages")
@@ -213,10 +230,12 @@ async def send_message(
     screen: Screen = None,
     month: Month = None,
     images: Images = None,
+    key: TurnKey = None,
+    after: After = 0,
 ):
     """Continues the latest conversation, or starts one."""
     return await stream_turn(
-        request, actor, entity_id, LATEST, content, screen, month, images
+        request, actor, entity_id, LATEST, content, screen, month, images, key, after
     )
 
 
@@ -229,10 +248,12 @@ async def start_conversation(
     screen: Screen = None,
     month: Month = None,
     images: Images = None,
+    key: TurnKey = None,
+    after: After = 0,
 ):
     """Starts a conversation with this message; done carries its id."""
     return await stream_turn(
-        request, actor, entity_id, None, content, screen, month, images
+        request, actor, entity_id, None, content, screen, month, images, key, after
     )
 
 
@@ -246,7 +267,18 @@ async def continue_conversation(
     screen: Screen = None,
     month: Month = None,
     images: Images = None,
+    key: TurnKey = None,
+    after: After = 0,
 ):
     return await stream_turn(
-        request, actor, entity_id, conversation_id, content, screen, month, images
+        request,
+        actor,
+        entity_id,
+        conversation_id,
+        content,
+        screen,
+        month,
+        images,
+        key,
+        after,
     )
