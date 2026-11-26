@@ -7,7 +7,8 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import logfire
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import BigInteger, any_, bindparam, delete, func, insert, select, update
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from accanto.db import read_snapshot
@@ -1268,115 +1269,117 @@ async def write(
 
 
 async def entry_snapshot(session, record):
-    source_uuid = await session.scalar(
-        select(m.sources.c.uuid)
-        .join(m.assignments, m.assignments.c.income_source_id == m.sources.c.id)
-        .where(m.assignments.c.actual_entry_id == record["id"])
-    )
-    fixed_assignment = (
-        (
-            await session.execute(
-                select(
-                    m.fixed_costs.c.uuid.label("fixed_cost_id"),
-                    m.fixed_cost_assignments.c.name.label("fixed_cost_name"),
-                )
-                .join(
-                    m.fixed_costs,
-                    m.fixed_costs.c.id == m.fixed_cost_assignments.c.fixed_cost_id,
-                )
-                .where(m.fixed_cost_assignments.c.actual_entry_id == record["id"])
-            )
-        )
-        .mappings()
-        .first()
-    )
+    return (await entry_snapshots(session, [record]))[0]
+
+
+async def entry_snapshots(session, records):
+    if not records:
+        return []
     from accanto.models import debts as b
+    from accanto.models import destinations as d
     from accanto.models import refunds as r
     from accanto.models import savings as s
 
-    debt_uuid = await session.scalar(
-        select(b.debts.c.uuid)
-        .join(b.entry_debts, b.entry_debts.c.debt_account_id == b.debts.c.id)
-        .where(b.entry_debts.c.actual_entry_id == record["id"])
+    # One array bind even for an all-history Activity list. Only requested
+    # entries participate in the two one-to-many reads (tags and refunds).
+    ids = any_(
+        bindparam("ids", [row["id"] for row in records], type_=ARRAY(BigInteger))
     )
-    from accanto.services.savings import current_link
-    from accanto.services.spending_subcategories import entry_subcategory
-    from accanto.services.tags import entry_tag_uuids
-
-    subcategory_uuid, subcategory_name = await entry_subcategory(session, record["id"])
-    link = await current_link(session, record["id"])
-    if link is None and record["deleted_at"] is not None:
-        link = (
-            (
-                await session.execute(
-                    select(s.linked_activity)
-                    .where(s.linked_activity.c.actual_entry_id == record["id"])
-                    .order_by(s.linked_activity.c.id.desc())
-                    .limit(1)
-                )
-            )
-            .mappings()
-            .first()
-        )
-    goal_uuid = (
-        await session.scalar(
-            select(s.goals.c.uuid).where(s.goals.c.id == link["goal_id"])
-        )
-        if link
-        else None
-    )
-    original_uuid = await session.scalar(
-        select(m.entries.c.uuid)
-        .join(r.refunds, r.refunds.c.original_entry_id == m.entries.c.id)
-        .where(r.refunds.c.refund_entry_id == record["id"])
-    )
-    remaining_refundable = None
-    if (
-        record["category"] in {"spending", "fixed_cost", "giving"}
-        and record["amount"] > 0
-        and not record["is_adjustment"]
+    query = select(m.entries.c.id).where(m.entries.c.id == ids)
+    for links, targets, foreign_key, field in (
+        (m.assignments, m.sources, "income_source_id", "source_id"),
+        (m.fixed_cost_assignments, m.fixed_costs, "fixed_cost_id", "fixed_cost_id"),
+        (b.entry_debts, b.debts, "debt_account_id", "debt_account_id"),
+        (
+            m.spending_subcategory_assignments,
+            m.spending_subcategories,
+            "spending_subcategory_id",
+            "spending_subcategory_id",
+        ),
+        (d.investment_entries, d.investments, "investment_id", "investment_id"),
+        (d.giving_entries, d.recipients, "giving_recipient_id", "giving_recipient_id"),
     ):
-        linked_total = await session.scalar(
-            select(func.coalesce(func.sum(-m.entries.c.amount), 0))
-            .join(r.refunds, r.refunds.c.refund_entry_id == m.entries.c.id)
-            .where(
-                r.refunds.c.original_entry_id == record["id"],
-                m.entries.c.deleted_at.is_(None),
-            )
+        query = (
+            query.outerjoin(links, links.c.actual_entry_id == m.entries.c.id)
+            .outerjoin(targets, targets.c.id == links.c[foreign_key])
+            .add_columns(targets.c.uuid.label(field))
         )
-        remaining_refundable = record["amount"] - linked_total
-    investment_uuid = recipient_uuid = None
-    if record["category"] in {"investing", "giving"}:
-        from accanto.services.destinations import entry_snapshot as destination_snapshot
-
-        kind = "investment" if record["category"] == "investing" else "giving"
-        view = await destination_snapshot(session, kind, record)
-        investment_uuid = view.get("investment_id")
-        recipient_uuid = view.get("giving_recipient_id")
-    outflow = record["category"] in {"spending", "fixed_cost", "giving", "investing"}
-    return json_values(
-        {
-            **dict(record),
-            "source_id": source_uuid,
-            "fixed_cost_id": fixed_assignment["fixed_cost_id"]
-            if fixed_assignment
-            else None,
-            "debt_account_id": debt_uuid,
-            "fixed_cost_name": fixed_assignment["fixed_cost_name"]
-            if fixed_assignment
-            else None,
-            "spending_subcategory_id": subcategory_uuid,
-            "spending_subcategory_name": subcategory_name,
-            "saving_goal_id": goal_uuid if record["category"] == "saving" else None,
-            "funding_goal_id": goal_uuid if outflow else None,
-            "investment_id": investment_uuid,
-            "giving_recipient_id": recipient_uuid,
-            "funding_origin": "savings" if outflow and link else "income",
-            "refund_of": original_uuid,
-            "remaining_refundable": remaining_refundable,
-            "tag_ids": await entry_tag_uuids(session, record["id"]),
-        }
+    original = m.entries.alias("purchase")
+    refunds = (
+        select(
+            r.refunds.c.original_entry_id, func.sum(m.entries.c.amount).label("total")
+        )
+        .join(m.entries, m.entries.c.id == r.refunds.c.refund_entry_id)
+        .where(r.refunds.c.original_entry_id == ids, m.entries.c.deleted_at.is_(None))
+        .group_by(r.refunds.c.original_entry_id)
+        .subquery()
     )
+    link = s.linked_activity
+    goal = (
+        select(s.goals.c.uuid)
+        .join(link, link.c.goal_id == s.goals.c.id)
+        .where(link.c.actual_entry_id == m.entries.c.id, link.c.deleted_at.is_(None))
+    )
+    if any(row["deleted_at"] is not None for row in records):
+        # Deletion audit snapshots retain the last funding link.
+        goal = (
+            select(s.goals.c.uuid)
+            .join(link, link.c.goal_id == s.goals.c.id)
+            .where(
+                link.c.actual_entry_id == m.entries.c.id,
+                link.c.deleted_at.is_(None) | m.entries.c.deleted_at.is_not(None),
+            )
+            .order_by(link.c.deleted_at.is_not(None), link.c.id.desc())
+            .limit(1)
+        )
+    query = (
+        query.outerjoin(r.refunds, r.refunds.c.refund_entry_id == m.entries.c.id)
+        .outerjoin(original, original.c.id == r.refunds.c.original_entry_id)
+        .outerjoin(refunds, refunds.c.original_entry_id == m.entries.c.id)
+        .add_columns(
+            m.fixed_cost_assignments.c.name.label("fixed_cost_name"),
+            m.spending_subcategories.c.name.label("spending_subcategory_name"),
+            original.c.uuid.label("refund_of"),
+            refunds.c.total,
+            goal.scalar_subquery().label("goal"),
+        )
+    )
+    details = {
+        row["id"]: dict(row) for row in (await session.execute(query)).mappings()
+    }
+    tags: dict[int, list] = {}
+    for entry_id, uuid in await session.execute(
+        select(m.entry_tags.c.actual_entry_id, m.tags.c.uuid)
+        .join(m.tags, m.tags.c.id == m.entry_tags.c.tag_id)
+        .where(m.entry_tags.c.actual_entry_id == ids)
+        .order_by(m.entry_tags.c.id)
+    ):
+        tags.setdefault(entry_id, []).append(uuid)
+    result = []
+    for record in records:
+        row = details[record["id"]]
+        goal_uuid, refund_total = row.pop("goal"), row.pop("total")
+        category = record["category"]
+        outflow = category in {"spending", "fixed_cost", "giving", "investing"}
+        refundable = (
+            category in {"spending", "fixed_cost", "giving"}
+            and record["amount"] > 0
+            and not record["is_adjustment"]
+        )
+        result.append(
+            {
+                **record,
+                **row,
+                "saving_goal_id": goal_uuid if category == "saving" else None,
+                "funding_goal_id": goal_uuid if outflow else None,
+                "funding_origin": "savings" if outflow and goal_uuid else "income",
+                "remaining_refundable": record["amount"] + (refund_total or 0)
+                if refundable
+                else None,
+                "tag_ids": tags.get(record["id"], []),
+            }
+        )
+    return json_values(result)
 
 
 async def review_fingerprint(session, entity_id, month, version_uuid, note):
@@ -1398,78 +1401,6 @@ async def review_fingerprint(session, entity_id, month, version_uuid, note):
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode()).hexdigest()
-
-
-async def destination_comparisons(session, version, entries):
-    """Compare matching recorded destinations; missing entries remain unknown."""
-    from accanto.models import destinations as d
-    from accanto.models import savings as s
-
-    planned = await plan_allocations(session, version["id"])
-    entry_ids = [row["id"] for row in entries]
-    recorded = {}
-    if entry_ids:
-        for category, entry_category, assignment, target, column, extra_filter in (
-            (
-                "saving_goals",
-                "saving",
-                s.linked_activity,
-                s.goals,
-                "goal_id",
-                s.linked_activity.c.deleted_at.is_(None),
-            ),
-            (
-                "investments",
-                "investing",
-                d.investment_entries,
-                d.investments,
-                "investment_id",
-                True,
-            ),
-            (
-                "giving",
-                "giving",
-                d.giving_entries,
-                d.recipients,
-                "giving_recipient_id",
-                True,
-            ),
-        ):
-            rows = (
-                await session.execute(
-                    select(target.c.uuid, m.entries.c.amount)
-                    .select_from(m.entries)
-                    .join(assignment, assignment.c.actual_entry_id == m.entries.c.id)
-                    .join(target, target.c.id == assignment.c[column])
-                    .where(
-                        m.entries.c.id.in_(entry_ids),
-                        m.entries.c.category == entry_category,
-                        extra_filter,
-                    )
-                )
-            ).all()
-            amounts = {}
-            for uuid, amount in rows:
-                amounts[uuid] = amounts.get(uuid, Decimal("0.00")) + amount
-            recorded[category] = amounts
-    result = {}
-    for category, id_key in (
-        ("saving_goals", "goal_id"),
-        ("investments", "destination_id"),
-        ("giving", "destination_id"),
-    ):
-        result[category] = []
-        for line in planned[category]:
-            amount = recorded.get(category, {}).get(line[id_key])
-            result[category].append(
-                {
-                    **line,
-                    "planned": line["amount"],
-                    "recorded": amount,
-                    "difference": None if amount is None else amount - line["amount"],
-                }
-            )
-    return result
 
 
 async def read_review(session, token, entity_uuid, month: date):
@@ -1561,7 +1492,7 @@ async def read_review(session, token, entity_uuid, month: date):
 
         version_view = await plan_snapshot(session, version)
         with logfire.span("monthly.entry_snapshots", entry_count=len(entries)):
-            entry_views = [await entry_snapshot(session, entry) for entry in entries]
+            entry_views = await entry_snapshots(session, entries)
         explanation = explain_review(version_view, entry_views)
         actual: dict = {"savings_used": str(savings_used)}
         for category, comparison in explanation["comparison"].items():
@@ -1610,11 +1541,6 @@ async def read_review(session, token, entity_uuid, month: date):
                         ("giving", "giving_total"),
                     )
                 },
-                "destination_comparisons": (
-                    None
-                    if version["saving_total"] is None
-                    else await destination_comparisons(session, version, entries)
-                ),
                 "actual": actual,
                 # Staged transactions never enter totals; the count keeps a short
                 # total from being mistaken for a complete one.
@@ -1701,4 +1627,4 @@ async def read_activity(session, token, entity_uuid, tag_id: UUID | None = None)
             .all()
         )
         with logfire.span("monthly.entry_snapshots", entry_count=len(entries)):
-            return [await entry_snapshot(session, row) for row in entries]
+            return await entry_snapshots(session, entries)

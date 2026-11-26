@@ -14,6 +14,7 @@ from accanto.db import get_session
 from accanto.models import monthly as m
 from accanto.services import monthly as service
 from accanto.services.api_keys import issue_key
+from tests.integration.read_cost import counted_get
 
 URL = os.environ.get("ACCANTO_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="Requires isolated migrated PostgreSQL")
@@ -166,6 +167,16 @@ async def scenario():
             {"date": "2026-10-05", "category": "income", "amount": "50.00"},
         )
         partial = await read()
+
+        async def entry_read_costs(size):
+            costs = []
+            for path in ("/activity", "/reviews/2026-10-01"):
+                body, statements = await counted_get(client, engine, prefix + path)
+                assert len(body if path == "/activity" else body["entries"]) == size
+                costs.append(statements)
+            return costs
+
+        small_read_costs = await entry_read_costs(2)
         assert partial["comparison"]["income"]["recorded"] == "4050.00"
         assert partial["comparison"]["income"]["incomplete"]
         assert partial["income_difference"] is None
@@ -276,6 +287,7 @@ async def scenario():
             },
         )
         complete = await read()
+        assert await entry_read_costs(10) == small_read_costs
         assert complete["summary"]["total_investing"] == "2000.00"
         assert complete["summary"]["income_funded_investing"] == "0.00"
         assert complete["summary"]["savings_used"] == "3000.00"
@@ -417,8 +429,8 @@ async def scenario():
         )
 
         # Reader pauses after monthly entry/aggregate reads; independent writer
-        # switches funding. The Entity lock must prevent a mixed response.
-        original_snapshot = service.entry_snapshot
+        # switches funding. The read snapshot must prevent a mixed response.
+        original_snapshot = service.entry_snapshots
         reader_reached = asyncio.Event()
         paused = False
 
@@ -431,7 +443,7 @@ async def scenario():
             return await original_snapshot(session, record)
 
         patch = pytest.MonkeyPatch()
-        patch.setattr(service, "entry_snapshot", pause_snapshot)
+        patch.setattr(service, "entry_snapshots", pause_snapshot)
         try:
             reader = asyncio.create_task(read())
             await asyncio.wait_for(reader_reached.wait(), timeout=3)

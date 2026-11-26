@@ -40,7 +40,7 @@ trace context and baggage sent by clients.
 | --- | --- | --- |
 | `access.credential` | session lookup in `routers/authentication.py` | none |
 | `access.authorize` | `services/monthly.authorize`, including row-lock waits | `lock` |
-| `monthly.entry_snapshots` | per-entry loops in `read_activity` and `read_review` | `entry_count` |
+| `monthly.entry_snapshots` | batch entry details in `read_activity` and `read_review` | `entry_count` |
 | `destinations.entry_snapshots` | `read_contributions` | `entry_count` |
 | `inbox.item_views` | `read_inbox` | `item_count` |
 | `inbox.sync_counts` (log) | end of a YNAB sync | `source_id` and the six sync counts |

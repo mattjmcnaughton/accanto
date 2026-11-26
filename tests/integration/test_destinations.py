@@ -15,6 +15,7 @@ from accanto.db import get_session
 from accanto.models import destinations as d
 from accanto.models import monthly as m
 from accanto.services.api_keys import issue_key
+from tests.integration.read_cost import counted_get
 
 URL = os.environ.get("ACCANTO_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(
@@ -357,6 +358,18 @@ async def scenario():
         assert (await client.get(path + "/investments")).json()[0][
             "contribution_progress"
         ] == "50.00"
+        one, small_cost = await counted_get(client, engine, path + "/investments")
+        for i in range(11):
+            created = await command("POST", "/investments", {"name": f"Synthetic {i}"})
+            assert created.status_code == 200
+        many, large_cost = await counted_get(client, engine, path + "/investments")
+        assert len(one) == 1 and len(many) == 12
+        assert many[:1] == one
+        assert all(
+            row["latest"] is None and row["contribution_progress"] == "0.00"
+            for row in many[1:]
+        )
+        assert large_cost == small_cost
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
             base_url="http://test",
