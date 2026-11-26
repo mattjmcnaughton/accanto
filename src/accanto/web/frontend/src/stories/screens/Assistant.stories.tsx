@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { HttpResponse, http } from "msw";
+import { http, HttpResponse } from "msw";
+import { useState } from "react";
 import { fn } from "storybook/test";
 import { AgentPanel } from "../../features/agent/AgentPanel";
 import { data, mockApi } from "../mocks/api";
@@ -83,3 +84,86 @@ type Story = StoryObj<typeof meta>;
 
 /** A long conversation with pending changes: the header and close button stay on screen. */
 export const WithPendingChanges: Story = {};
+
+/** A synthetic reply long enough to outgrow a phone's log, streamed a few words at a time. */
+const longReply = Array.from(
+  { length: 14 },
+  (_, i) =>
+    `Part ${i + 1}: synthetic reserve ${String.fromCharCode(65 + (i % 3))} gets an example monthly amount, so this paragraph wraps over a few lines on a phone.`,
+).join("\n\n");
+const longQuestion = "Walk me through every synthetic reserve, one paragraph each.";
+let streamed = false;
+
+/**
+ * Send a question: the reply streams for about ten seconds, longer than the log is tall. Closing
+ * leaves a button to open the assistant again.
+ */
+export const StreamingLongReply: Story = {
+  render: function Render(args) {
+    const [open, setOpen] = useState(true);
+    if (!open)
+      return (
+        <button
+          type="button"
+          className="btn pri"
+          style={{ position: "fixed", top: 12, right: 12 }}
+          onClick={() => setOpen(true)}
+        >
+          Assistant
+        </button>
+      );
+    return (
+      <AgentPanel
+        {...args}
+        close={() => {
+          args.close();
+          setOpen(false);
+        }}
+      />
+    );
+  },
+  parameters: {
+    msw: [
+      http.post(`${agentRoot}/conversations/c1/messages`, () => {
+        const words = longReply.split(/(?<= )/);
+        const encoder = new TextEncoder();
+        const frame = (event: string, data: unknown) =>
+          encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        return new HttpResponse(
+          new ReadableStream({
+            async start(controller) {
+              for (let i = 0; i < words.length; i += 3) {
+                await new Promise((resolve) => setTimeout(resolve, 90));
+                controller.enqueue(frame("delta", { text: words.slice(i, i + 3).join("") }));
+              }
+              streamed = true;
+              controller.enqueue(
+                frame("done", {
+                  conversation_id: "c1",
+                  owner_message_id: "q",
+                  agent_message_id: "a",
+                  pending_change_ids: [],
+                }),
+              );
+              controller.close();
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
+      }),
+      // Once the reply is stored, the reload shows it after the earlier turns.
+      http.get(`${agentRoot}/conversations/c1`, () =>
+        HttpResponse.json(
+          streamed
+            ? [
+                ...messages,
+                { ...messages[0], id: "q", content: longQuestion },
+                { ...messages[1], id: "a", content: longReply },
+              ]
+            : messages,
+        ),
+      ),
+      ...meta.parameters.msw,
+    ],
+  },
+};

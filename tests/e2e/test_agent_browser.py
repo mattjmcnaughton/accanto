@@ -372,6 +372,38 @@ def test_agent_journey(tmp_path):
         ask("Please categorize my inbox")
         assert "Read only" in last_reply()
         assert waiting() == before
+
+        # On a phone the sheet fits the visual viewport, which an on-screen
+        # keyboard shrinks (simulated here as iOS reports it): the header stays
+        # at the top, the composer and the latest reply stay above the keyboard,
+        # and the page behind does not scroll. Esc closes the sheet.
+        browser("set", "viewport", "390", "844")
+        keyboard = 456
+        browser(
+            "eval",
+            "(() => { const v = window.visualViewport;"
+            f" Object.defineProperty(v, 'height', {{ get: () => {keyboard} }});"
+            " v.dispatchEvent(new Event('resize'));"
+            " document.querySelector('.agent textarea').focus(); return 1; })()",
+        )
+        ask("Please categorize my inbox")
+        box = (
+            "(s) => { const r = document.querySelector(s).getBoundingClientRect();"
+            " return [r.top, r.bottom]; }"
+        )
+        until(
+            f"(({box})('.agent')[1] === {keyboard}) && "
+            f"(({box})('.agent-compose')[1] <= {keyboard})"
+        )
+        assert value(f"String(({box})('.agent-h')[0] >= 0)") == "true"
+        assert value("String(document.scrollingElement.scrollTop)") == "0"
+        until(
+            f"({box})('.agent .agent-msg.reply:last-child')[1]"
+            f" <= ({box})('.agent-log')[1] + 1"
+        )
+        browser("eval", "document.querySelector('.agent textarea').focus()")
+        browser("press", "Escape")
+        until("!document.querySelector('.agent')")
         if recording:
             browser("record", "stop")
     finally:

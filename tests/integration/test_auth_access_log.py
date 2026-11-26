@@ -4,10 +4,11 @@ import os
 import socket
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import httpx
+
+from tests.e2e.test_browser import wait_ready
 
 
 def test_callback_query_is_not_in_uvicorn_access_log(tmp_path):
@@ -33,19 +34,10 @@ def test_callback_query_is_not_in_uvicorn_access_log(tmp_path):
             stderr=subprocess.STDOUT,
         )
         try:
+            wait_ready(f"http://127.0.0.1:{port}/healthz", process)
             with httpx.Client(
                 base_url=f"http://127.0.0.1:{port}", trust_env=False
             ) as client:
-                for _ in range(100):
-                    try:
-                        response = client.get("/healthz")
-                        if response.status_code == 200:
-                            break
-                    except httpx.ConnectError:
-                        pass
-                    time.sleep(0.03)
-                else:
-                    raise AssertionError("Local uvicorn did not start")
                 response = client.get(
                     "/api/auth/callback?code=synthetic-secret-code&state=synthetic-secret-state"
                 )

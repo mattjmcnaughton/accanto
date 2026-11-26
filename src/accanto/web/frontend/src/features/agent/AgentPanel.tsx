@@ -285,6 +285,39 @@ export function AgentPanel(p: AgentPanelProps) {
   useEffect(() => {
     if (window.matchMedia?.("(pointer: fine)").matches) input.current?.focus();
   }, []);
+  /** The overlay sheet fits the visible part of the screen (see agent.css). */
+  const sheet = useRef<HTMLElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: target() reads only refs.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const el = sheet.current;
+    if (!viewport || !el) return;
+    // A phone keyboard shrinks the visual viewport, not the layout one that `position: fixed`
+    // uses, and iOS pans to the focused box until the header is off-screen. Sizing the sheet to
+    // the visual viewport keeps the header at the top and the composer just above the keyboard.
+    const fit = () => {
+      el.style.setProperty("--vvh", `${viewport.height}px`);
+      el.style.setProperty("--vvtop", `${viewport.offsetTop}px`);
+      // A shorter log keeps showing the latest words while it follows the reply.
+      requestAnimationFrame(() => {
+        if (log.current && follow.current) log.current.scrollTop = target();
+        measure();
+      });
+    };
+    fit();
+    viewport.addEventListener("resize", fit);
+    viewport.addEventListener("scroll", fit);
+    return () => {
+      viewport.removeEventListener("resize", fit);
+      viewport.removeEventListener("scroll", fit);
+    };
+  }, []);
+  /** A touch drag down from the header follows the finger and closes the sheet past this. */
+  const SWIPE_CLOSE = 80;
+  const swipe = useRef<{ id: number; y: number } | null>(null);
+  const pull = (dy: number) => {
+    sheet.current?.style.setProperty("--agent-pull", `${Math.max(0, dy)}px`);
+  };
 
   async function send(content = text.trim(), attached = images) {
     if ((!content && !images.length && !attached.length) || live) return;
@@ -531,12 +564,19 @@ export function AgentPanel(p: AgentPanelProps) {
 
   return (
     <aside
+      ref={sheet}
       className={full ? "agent full" : "agent"}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && live) {
-          event.preventDefault();
-          abort.current?.abort();
-        }
+        if (event.key !== "Escape" || event.defaultPrevented) return;
+        // Esc stops a streaming reply first; it closes only when nothing typed would be lost.
+        const field = event.target;
+        const typed =
+          (field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement) &&
+          field.value !== "";
+        if (!live && typed) return;
+        event.preventDefault();
+        if (live) abort.current?.abort();
+        else p.close();
       }}
       aria-label="Assistant"
       style={{ "--agent-width": `${width}px` } as CSSProperties}
@@ -579,7 +619,28 @@ export function AgentPanel(p: AgentPanelProps) {
           resize(next);
         }}
       />
-      <header className="agent-h">
+      <header
+        className="agent-h"
+        // On a phone the header is the sheet's handle: dragging it down far enough closes it.
+        onPointerDown={(event) => {
+          if (event.pointerType !== "touch") return;
+          swipe.current = { id: event.pointerId, y: event.clientY };
+        }}
+        onPointerMove={(event) => {
+          if (swipe.current?.id === event.pointerId) pull(event.clientY - swipe.current.y);
+        }}
+        onPointerUp={(event) => {
+          if (swipe.current?.id !== event.pointerId) return;
+          const dy = event.clientY - swipe.current.y;
+          swipe.current = null;
+          pull(0);
+          if (dy > SWIPE_CLOSE) p.close();
+        }}
+        onPointerCancel={() => {
+          swipe.current = null;
+          pull(0);
+        }}
+      >
         {/* Title and Entity stack, so the actions keep one uncrowded row. */}
         <div className="agent-title">
           <b>Assistant</b>
@@ -622,7 +683,14 @@ export function AgentPanel(p: AgentPanelProps) {
         >
           <Icon name={full ? "shrink" : "expand"} />
         </button>
-        <button type="button" className="icon-btn" aria-label="Close assistant" onClick={p.close}>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="Close assistant"
+          aria-keyshortcuts="Escape"
+          title="Close (Esc)"
+          onClick={p.close}
+        >
           <Icon name="x" />
         </button>
       </header>
@@ -874,6 +942,7 @@ export function AgentPanel(p: AgentPanelProps) {
                   </div>
                 )}
               </div>
+              {/* Below the log, not over it, so it never covers the words it points to. */}
               {below && (
                 <button type="button" className="btn sm agent-latest" onClick={toLatest}>
                   <Icon name="down" />
@@ -903,7 +972,7 @@ export function AgentPanel(p: AgentPanelProps) {
               aria-keyshortcuts="ArrowUp"
               aria-label="Message the assistant"
               maxLength={4000}
-              rows={2}
+              rows={1}
               value={text}
               placeholder="What did I spend on groceries last month?"
               onChange={(event) => setText(event.target.value)}
@@ -941,20 +1010,24 @@ export function AgentPanel(p: AgentPanelProps) {
                   }}
                 />
               </label>
-              {images.map((file, i) => (
-                <span key={thumbs[i]} className="agent-thumb">
-                  <img src={thumbs[i]} alt={file.name} />
-                  <button
-                    type="button"
-                    className="x"
-                    aria-label={`Remove ${file.name}`}
-                    disabled={Boolean(live)}
-                    onClick={() => setImages(images.filter((_, j) => j !== i))}
-                  >
-                    ×
-                  </button>
+              {images.length > 0 && (
+                <span className="agent-thumbs">
+                  {images.map((file, i) => (
+                    <span key={thumbs[i]} className="agent-thumb">
+                      <img src={thumbs[i]} alt={file.name} />
+                      <button
+                        type="button"
+                        className="x"
+                        aria-label={`Remove ${file.name}`}
+                        disabled={Boolean(live)}
+                        onClick={() => setImages(images.filter((_, j) => j !== i))}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
                 </span>
-              ))}
+              )}
               <small className="agent-hint">
                 {text.length > 3600
                   ? `${4000 - text.length} characters left`

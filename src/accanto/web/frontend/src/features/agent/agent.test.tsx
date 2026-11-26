@@ -487,7 +487,7 @@ it("resizes from its edge within bounds and remembers the width and full screen"
   await waitFor(() => expect(screen.getByText(/The assistant is off/)).toBeInTheDocument());
 });
 
-it("keeps the partial reply and puts the question back when the owner stops a reply", async () => {
+it("keeps the partial reply and puts the question back when the owner stops a reply, and closes on Escape only when nothing typed would be lost", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
     const url = String(path);
     if (url.endsWith("/settings"))
@@ -509,6 +509,7 @@ it("keeps the partial reply and puts the question back when the owner stops a re
       );
     return json([]);
   });
+  const close = vi.fn();
   render(
     <AgentPanel
       entity={entity}
@@ -518,7 +519,7 @@ it("keeps the partial reply and puts the question back when the owner stops a re
       month="2026-11"
       credentials={async () => session}
       save={vi.fn()}
-      close={vi.fn()}
+      close={close}
       openSettings={vi.fn()}
       changed={vi.fn()}
     />,
@@ -531,6 +532,14 @@ it("keeps the partial reply and puts the question back when the owner stops a re
   await screen.findByText("Stopped. Your question is back in the box.");
   expect(screen.getByText("Partial answer")).toBeInTheDocument();
   expect(box).toHaveValue("Where did November go?");
+  // Escape stopped the reply without closing; with the question back in the box it still
+  // does not close, and with the box empty it does.
+  expect(close).not.toHaveBeenCalled();
+  fireEvent.keyDown(box, { key: "Escape" });
+  expect(close).not.toHaveBeenCalled();
+  fireEvent.change(box, { target: { value: "" } });
+  fireEvent.keyDown(box, { key: "Escape" });
+  expect(close).toHaveBeenCalledTimes(1);
 });
 
 it("opens the latest conversation, reopens an older one from History, and archives", async () => {
