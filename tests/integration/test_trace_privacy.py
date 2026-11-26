@@ -35,7 +35,7 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
     ExportTraceServiceRequest,
 )
 from pydantic import SecretStr
-from sqlalchemy import insert
+from sqlalchemy import insert, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from accanto.config import settings
@@ -93,6 +93,27 @@ REVIEWED_KEYS = {
     "gen_ai.usage.output_tokens", "gen_ai.aggregated_usage.input_tokens",
     "gen_ai.aggregated_usage.output_tokens",
     "gen_ai.client.operation.time_to_first_chunk", "logfire.metrics",
+    # Exceptions: type, frames and fingerprint; telemetry.SafeSpanExporter drops
+    # exception.message and the message lines of the stack trace
+    "exception.type", "exception.stacktrace", "exception.escaped",
+    "logfire.exception.fingerprint", "recorded_by_logfire_fastapi",
+    # Real models (seen in production): provider host, response IDs, token and
+    # cache counts, cost
+    "server.address", "gen_ai.response.id", "gen_ai.response.finish_reasons",
+    "gen_ai.usage.cache_read.input_tokens", "gen_ai.usage.cache_creation.input_tokens",
+    "gen_ai.usage.details.audio_tokens", "gen_ai.usage.details.cache_read_tokens",
+    "gen_ai.usage.details.cache_write_tokens", "gen_ai.usage.details.image_tokens",
+    "gen_ai.usage.details.is_byok", "gen_ai.usage.details.reasoning_tokens",
+    "gen_ai.aggregated_usage.cache_read.input_tokens",
+    "gen_ai.aggregated_usage.cache_creation.input_tokens",
+    "gen_ai.aggregated_usage.details.audio_tokens",
+    "gen_ai.aggregated_usage.details.cache_read_tokens",
+    "gen_ai.aggregated_usage.details.cache_write_tokens",
+    "gen_ai.aggregated_usage.details.image_tokens",
+    "gen_ai.aggregated_usage.details.is_byok",
+    "gen_ai.aggregated_usage.details.reasoning_tokens",
+    "pydantic_ai.cache.established_tokens", "pydantic_ai.cache.hit_ratio",
+    "pydantic_ai.new_message_index", "operation.cost",
     # Metrics: request duration and size by route template; DB pool usage (the
     # pool name is the database URL without user or password); token usage
     "pool.name", "state", "gen_ai.token.type",
@@ -263,6 +284,20 @@ async def drive(origin, secrets, suffix):
         )
         assert listed.status_code == 200 and note in listed.text
 
+        # YNAB: a rejected token must not surface in errors, logs or spans.
+        rejected_token = f"synthetic-wrong-ynab-token-{suffix}"
+        wrong = await client.put(
+            prefix + "/transaction-provider",
+            json={
+                "kind": "ynab",
+                "access_token": rejected_token,
+                "expected_revision": 0,
+            },
+            headers={**browser, "Idempotency-Key": str(uuid4())},
+        )
+        assert wrong.json()["detail"]["code"] == "source_unauthorized"
+        private.append(rejected_token)
+
         # YNAB: token, payees and amounts cross outbound HTTP and the inbox.
         await call(
             "PUT",
@@ -311,7 +346,57 @@ async def drive(origin, secrets, suffix):
 
         # The callback's query string carries the authorization code.
         await client.get(f"/api/auth/callback?code={code}&state={code}")
+
+        # Database errors quote what failed: here a trigger raises a canary
+        # message, as Postgres errors can quote values (a duplicate key's DETAIL).
+        failure = f"synthetic-db-failure-{suffix}"
+        trigger = f"trace_failure_{suffix}"
+        assert URL
+        engine = create_async_engine(URL)
+        try:
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        f"CREATE FUNCTION {trigger}() RETURNS trigger LANGUAGE plpgsql "
+                        f"AS $$ BEGIN IF NEW.entity_id = (SELECT id FROM "
+                        f"{m.entities.name} WHERE uuid = '{entity}') THEN RAISE "
+                        f"EXCEPTION '{failure} {amount}'; END IF; RETURN NEW; END $$"
+                    )
+                )
+                await connection.execute(
+                    text(
+                        f"CREATE TRIGGER {trigger} BEFORE INSERT ON {m.audit.name} "
+                        f"FOR EACH ROW EXECUTE FUNCTION {trigger}()"
+                    )
+                )
+            failed = await client.post(
+                prefix + "/activity",
+                json={
+                    "date": f"{year}-10-20",
+                    "category": "spending",
+                    "amount": amount,
+                    "note": note,
+                },
+                headers={**api, "Idempotency-Key": str(uuid4())},
+            )
+            assert failed.status_code == 503, failed.text
+        finally:
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(f"DROP TRIGGER IF EXISTS {trigger} ON {m.audit.name}")
+                )
+                await connection.execute(text(f"DROP FUNCTION IF EXISTS {trigger}()"))
+            await engine.dispose()
+        private.append(failure)
     return private
+
+
+def check_log(tmp_path, private):
+    """The server's own stdout and stderr (uvicorn, structlog, libraries)."""
+    captured = (tmp_path / "server.log").read_text()
+    assert "Application startup complete" in captured
+    for value in private:
+        assert value not in captured, f"server log contains {value[:24]}"
 
 
 def check(found, documents, keys, private):
@@ -355,13 +440,16 @@ def check(found, documents, keys, private):
     assert not any("/api/auth/callback" in json.dumps(a) for a in attributes)
 
     everything = "\n".join(documents)
+    # The database failure is exported by type, with frames and no message.
+    assert "DBAPIError" in everything and "exception.stacktrace" in everything
+    assert "exception.message" not in everything
     for value in private:
         assert value not in everything, f"exported telemetry contains {value[:24]}"
     assert keys <= REVIEWED_KEYS, f"review new attribute keys: {keys - REVIEWED_KEYS}"
 
 
 class Receiver(BaseHTTPRequestHandler):
-    """Fake Logfire: accepts OTLP and the SDK's token check, keeps every body."""
+    """Fake Logfire: accepts OTLP and keeps every body."""
 
     received: list[tuple[str, bytes]] = []
 
@@ -372,12 +460,6 @@ class Receiver(BaseHTTPRequestHandler):
         Receiver.received.append((self.path, body))
         self.send_response(200)
         self.end_headers()
-
-    def do_GET(self):  # noqa: N802
-        self.send_response(200)
-        self.send_header("content-type", "application/json")
-        self.end_headers()
-        self.wfile.write(b'{"project_name": "synthetic", "project_url": "x"}')
 
     def log_message(self, format, *args):  # noqa: A002
         pass
@@ -443,3 +525,4 @@ def test_exported_telemetry_excludes_financial_data(tmp_path):
         receiver.shutdown()
     found, documents, keys = decoded()
     check(found, documents, keys, [*private, token, URL])
+    check_log(tmp_path, [*private, token, URL])

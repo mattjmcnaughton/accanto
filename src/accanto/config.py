@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     # nothing is exported. See docs/technical/telemetry.md.
     logfire_token: SecretStr = SecretStr("")
     logfire_environment: str = "development"
+    logfire_base_url: str = "https://logfire-us.pydantic.dev"
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/accanto"
 

@@ -16,7 +16,13 @@ from uuid import uuid4
 import pytest
 from logfire.query_client import LogfireQueryClient
 
-from tests.integration.test_trace_privacy import URL, check, drive, server
+from tests.integration.test_trace_privacy import (
+    URL,
+    check,
+    check_log,
+    drive,
+    server,
+)
 
 WRITE = os.environ.get("LOGFIRE_LIVE_WRITE_TOKEN")
 READ = os.environ.get("LOGFIRE_LIVE_READ_TOKEN")
@@ -71,3 +77,4 @@ def test_live_logfire_records_exclude_financial_data(tmp_path):
     keys |= {k for row in rows for k in row.get("otel_resource_attributes") or {}}
     documents = [json.dumps(row, default=str) for row in rows + metrics]
     check(found, documents, keys, [*private, WRITE, READ, URL])
+    check_log(tmp_path, [*private, WRITE, READ, URL])
