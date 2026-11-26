@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from accanto import telemetry
+from accanto import db, telemetry
 from accanto.config import settings
 from accanto.logging import configure_logging
 from accanto.oidc import OIDCProvider
@@ -29,6 +29,7 @@ from accanto.routers import (
     tags,
 )
 from accanto.services.access import RejectionError
+from accanto.services.jobs import HANDLERS, JobRunner
 from accanto.web.serve import mount_frontend
 
 
@@ -106,8 +107,15 @@ class MountMCP:
 async def lifespan(app: FastAPI):
     """Application lifespan handler; runs the MCP app's session manager too."""
     configure_logging()
-    async with app.state.mcp.serving():
-        yield
+    # Background job runs (TDD 11): claims leased runs until shutdown.
+    runner = JobRunner(settings, db.async_session, HANDLERS)
+    await runner.start()
+    app.state.job_runner = runner
+    try:
+        async with app.state.mcp.serving():
+            yield
+    finally:
+        await runner.stop()
 
 
 def create_app() -> FastAPI:

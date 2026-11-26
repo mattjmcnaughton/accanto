@@ -301,6 +301,8 @@ nothing. A YNAB failure changes nothing. The Review shows its waiting count.
   and rotation), and whether to use YNAB OAuth.
 - **T2.** HTTP client: thin `httpx` client (proposed) over the synchronous SDK.
 - **T3.** Manual sync only for now; a schedule is a new service under §5.
+  The background job infrastructure it would use is adopted in
+  [TDD 11](11-background-jobs.md); scheduled sync itself is not built.
 - **UI.** Accept the mockup's binding changes (`v`, `1`–`6` opening pickers,
   oldest first). Until decided, follow the mockup.
 

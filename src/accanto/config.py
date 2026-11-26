@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     agent_history_turns: int = 10
     agent_retention_days: int = 30
 
+    # Background jobs (TDD 11). The reconciler claims a queued job run every
+    # interval; a running step whose lease is older than job_stale_after is
+    # claimed again. A step must finish well inside its lease.
+    job_reconciler_interval: float = 5
+    job_concurrent_steps: int = 1
+    job_step_timeout: float = 240
+    job_stale_after: float = 600
+    # Each step of `python -m accanto.jobs.tick` has its own deadline.
+    job_tick_step_timeout: float = 300
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

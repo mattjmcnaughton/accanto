@@ -30,6 +30,20 @@ async def purge(session, user_id, entity_id, *, now=None):
     )
 
 
+async def purge_expired(session) -> int:
+    """Deletes every expired conversation, for every User and Entity.
+
+    The scheduled counterpart of purge(), which runs only when its owner reads.
+    Returns the number deleted; messages go with them (ON DELETE CASCADE).
+    """
+    deleted = await session.scalars(
+        delete(a.conversations)
+        .where(a.conversations.c.expires_at <= func.now())
+        .returning(a.conversations.c.id)
+    )
+    return len(deleted.all())
+
+
 async def active(session, user_id, entity_id, *, now=None):
     """Active conversations, latest turn first, titled by their first question."""
     await purge(session, user_id, entity_id, now=now)

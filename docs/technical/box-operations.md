@@ -16,10 +16,16 @@ needs to read financial rows, and none should.
 | --- | --- | --- |
 | Build | The orb or machine running `amp boxes deploy` | `scripts/box-build.sh` builds a relocatable CPython 3.12, the locked dependencies and the accanto wheel with the SPA into `box-release/`. No source, tests or fixtures ship. |
 | Web service | Box `mattjmcnaughton/apps`, deployment `accanto`, service `web` | Defined in `.amp/box.yaml`. Runs as the deployment's own unprivileged account. Uvicorn access logs are off. |
+| Scheduled jobs | Same deployment, service `jobs` | Also in `.amp/box.yaml`: runs `python -m accanto.jobs.tick` once, sleeps an hour and is restarted by systemd, so it runs hourly and after every deploy ([TDD 11](../tdds/11-background-jobs.md)). It never listens on a port. |
 | Deploy target | `.amp/box-deploy.json` | Box, deployment name, branch and custom domain `accanto.mattjmcnaughton.com`; the `onamp.dev` URL redirects there. |
 | Database | Neon project `accanto` | `accanto_owner` runs migrations and never reaches the Box. `accanto_app` is the restricted runtime login in the Box's `DATABASE_URL`. |
 | Sign-in | Auth0 application "Accanto" | Callback `<deployment URL>/api/auth/callback`. |
 | Access | Public URL | Accanto's Auth0 sign-in, email allowlist and provisioned users are the only gate; only login and health endpoints answer without credentials. Amp `--private` was removed: when its access lapses it redirects API requests, which the app's `fetch` refuses. |
+
+Background job runs ([TDD 11](../tdds/11-background-jobs.md)) advance inside the
+`web` service. The `jobs` service runs the scheduled tick; to run one now, use
+`amp boxes exec ... --as-app -- python/bin/python3 -m accanto.jobs.tick` (see
+"Running a command as the app"). Both log step names and counts only.
 
 Runtime configuration lives on the deployment, never in Git:
 
@@ -98,7 +104,9 @@ readiness directly, and `/api/auth/session` must return 401 without a session.
 
 ### Service logs
 
-The unit is `amp-box-deploy-<deployment-id>-svc-web.service`:
+The units are `amp-box-deploy-<deployment-id>-svc-web.service` and, for the
+scheduled tick, `...-svc-jobs.service`. A healthy tick logs `job_tick_finished`
+with `"failed": false` about once an hour:
 
 ```sh
 amp boxes exec mattjmcnaughton/apps \
