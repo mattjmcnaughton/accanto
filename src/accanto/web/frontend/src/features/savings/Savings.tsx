@@ -934,7 +934,7 @@ export function Savings(p: ScreenProps) {
             <div className="row">
               <span className="t">
                 Unallocated
-                <small>Saved in this account with no goal yet</small>
+                <small>Not assigned to a goal</small>
               </span>
               <span className="a">{formatMoney(unallocated.remaining_saved)}</span>
               {account.active && (
