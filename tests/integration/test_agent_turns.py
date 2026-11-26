@@ -415,3 +415,194 @@ async def assert_no_image_bytes(sessions, original: bytes):
                         assert png_magic not in data and jfif not in data, table.name
                     text = json.dumps(value, default=str)
                     assert not any(n in text for n in needles), table.name
+
+
+def count_frames(body: str) -> int:
+    return sum(1 for block in body.split("\n\n")[:-1] if "\ndata: " in block)
+
+
+async def post_then_drop(app, path, data, headers, drop_after):
+    """POSTs through the ASGI app and disconnects once `drop_after` frames have
+    arrived, as a phone does when iOS suspends a backgrounded page."""
+    request = httpx.Request("POST", "http://test" + path, data=data, headers=headers)
+    body = request.read()
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(k.encode(), v.encode()) for k, v in request.headers.items()],
+        "client": ("127.0.0.1", 50000),
+        "server": ("test", 80),
+    }
+    dropped, chunks, requested = asyncio.Event(), [], False
+
+    async def receive():
+        nonlocal requested
+        if not requested:
+            requested = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        await dropped.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        if message["type"] == "http.response.body":
+            chunks.append(message.get("body", b"").decode())
+            if count_frames("".join(chunks)) >= drop_after:
+                dropped.set()
+
+    await asyncio.wait_for(app(scope, receive, send), timeout=10)
+    received = "".join(chunks)
+    # Only whole frames count; the client never handles a partial one.
+    return received[: received.rfind("\n\n") + 2]
+
+
+def test_long_turn_survives_a_dropped_connection(monkeypatch):
+    monkeypatch.setattr("accanto.services.stub_model.SLOW_STEP_SECONDS", 0.2)
+    asyncio.run(long_turn_scenario())
+
+
+async def long_turn_scenario():
+    """The production failure: an eight-request turn on a phone loses its
+    connection partway. The turn finishes anyway, the client follows it again
+    from the frames it has, and no tool runs twice."""
+    assert URL and URL.rsplit("/", 1)[-1].endswith("_test")
+    engine = create_async_engine(URL)
+    sessions = async_sessionmaker(engine)
+    async with sessions() as db, db.begin():
+        user = await db.scalar(
+            insert(m.users)
+            .values(issuer="long-turn-test", subject=str(uuid4()))
+            .returning(m.users.c.id)
+        )
+        entity = await db.scalar(
+            insert(m.entities)
+            .values(owner_id=user, name="Synthetic long turn Entity", time_zone="UTC")
+            .returning(m.entities.c.uuid)
+        )
+        browser = await issue_session(db, user)
+    config = settings.model_copy(
+        update={
+            "browser_origin": "http://test",
+            "browser_csrf_secret": SecretStr("synthetic-turn-csrf-secret-long-enough"),
+            "agent_model": "stub",
+        }
+    )
+    app = create_app()
+    app.state.auth_settings = config
+    app.state.sessions = sessions
+
+    async def dependency():
+        async with sessions() as db:
+            yield db
+
+    app.dependency_overrides[get_session] = dependency
+    prefix = f"/api/entities/{entity}/agent"
+    headers = {
+        "Origin": "http://test",
+        "X-CSRF-Token": csrf_token(browser["token"], config),
+        "Cookie": f"accanto_session={browser['token']}",
+    }
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+        cookies={"accanto_session": browser["token"]},
+    ) as client:
+        enabled = await client.put(
+            prefix + "/settings",
+            json={
+                "enabled": True,
+                "mode": "apply_directly",
+                "instructions": "",
+                "expected_revision": 0,
+            },
+            headers={**headers, "Idempotency-Key": str(uuid4())},
+        )
+        assert enabled.status_code == 200, enabled.text
+
+        key = str(uuid4())
+        question = {"content": "What is my net worth? [stub-slow]"}
+        # The connection drops after get_context and get_position finished.
+        first = await post_then_drop(
+            app,
+            prefix + "/conversations/messages",
+            question,
+            {**headers, "Idempotency-Key": key},
+            drop_after=4,
+        )
+        had = count_frames(first)
+        assert had == 4, first
+        resumed = await client.post(
+            prefix + "/conversations/messages",
+            data={**question, "after": str(had)},
+            headers={**headers, "Idempotency-Key": key},
+        )
+        assert resumed.status_code == 200, resumed.text
+        events = frames(first + resumed.text)
+        assert events[-1][0] == "done", resumed.text
+        started = [d["name"] for name, d in events if d.get("status") == "started"]
+        assert started == [
+            "get_context",
+            "get_position",
+            "list_plans",
+            "list_debts",
+            "calculate",
+            "calculate",
+            "project",
+        ]
+        assert all(d["status"] != "failed" for name, d in events if name == "tool")
+        text = "".join(d["text"] for name, d in events if name == "delta")
+        # 24,000.00 a year at a 4% withdrawal rate needs 24000 * 100 / 4 = 600,000.00.
+        assert "600000.00" in text, text
+        conversation = events[-1][1]["conversation_id"]
+        stored = (await client.get(prefix + f"/conversations/{conversation}")).json()
+        assert [(s["role"], s["content"]) for s in stored] == [
+            ("owner", question["content"]),
+            ("agent", text),
+        ]
+
+        # Following the same key again replays the stored turn; nothing reruns.
+        replay = await client.post(
+            prefix + "/conversations/messages",
+            data=question,
+            headers={**headers, "Idempotency-Key": key},
+        )
+        assert frames(replay.text) == events
+        assert len((await client.get(prefix + "/conversations")).json()) == 1
+
+        # A key the server no longer has cannot resume partway: say so.
+        gone = await client.post(
+            prefix + "/conversations/messages",
+            data={**question, "after": "3"},
+            headers={**headers, "Idempotency-Key": str(uuid4())},
+        )
+        assert gone.status_code == 409
+        assert gone.json()["detail"]["code"] == "turn_gone"
+
+        # Stop is explicit now: it ends the turn, which stores nothing.
+        stop_key = str(uuid4())
+        streaming = asyncio.create_task(
+            client.post(
+                prefix + "/conversations/messages",
+                data=question,
+                headers={**headers, "Idempotency-Key": stop_key},
+            )
+        )
+        while not app.state.agent_turns.find(
+            type("Owner", (), {"user_id": user})(), entity, stop_key
+        ):
+            await asyncio.sleep(0.05)
+        stopped = await client.post(prefix + "/turn/stop", headers=headers)
+        assert stopped.json() == {"stopped": True}
+        ended = frames((await streaming).text)
+        assert ended[-1] == (
+            "error",
+            {"code": "stopped", "message": "You stopped this reply."},
+        )
+        assert len((await client.get(prefix + "/conversations")).json()) == 1
+    await engine.dispose()

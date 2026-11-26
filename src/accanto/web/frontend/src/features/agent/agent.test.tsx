@@ -1,7 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { AgentStreamError, type PendingChange, readFrames } from "../../lib/agentStream";
+import {
+  AgentStreamError,
+  type PendingChange,
+  readFrames,
+  streamReply,
+} from "../../lib/agentStream";
 import { ConnectSource } from "../inbox/ConnectSource";
 import { TransactionProviderSettings } from "../settings/TransactionProviderSettings";
 import { AgentPanel, PendingCard, plain } from "./AgentPanel";
@@ -79,6 +84,50 @@ it("surfaces an error frame, a malformed frame and a dropped stream as stream er
   ).toBe("model_failed");
   expect(await code(body("event: delta\ndata: {not json\n\n"))).toBe("malformed_frame");
   expect(await code(body('event: delta\ndata: {"text":"half"}\n\n'))).toBe("stream_dropped");
+});
+
+it("resumes a dropped reply with the same key after the frames it has, showing none twice", async () => {
+  // Safari ends a suspended page's stream with a bare TypeError("Load failed").
+  const chunks = [
+    'event: tool\ndata: {"name":"get_context","status":"started"}\n\n',
+    ': ping\n\nevent: delta\ndata: {"text":"Half "}\n\nevent: de',
+  ];
+  const dropping = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const next = chunks.shift();
+      if (next) controller.enqueue(new TextEncoder().encode(next));
+      else controller.error(new TypeError("Load failed"));
+    },
+  });
+  const sent: { key: string | null; after: FormDataEntryValue | null }[] = [];
+  const responses = [
+    new Response(dropping),
+    new Response(
+      body(
+        'event: delta\ndata: {"text":"done."}\n\n',
+        'event: done\ndata: {"conversation_id":"c","owner_message_id":"o","agent_message_id":"a","pending_change_ids":[]}\n\n',
+      ),
+    ),
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_url: string, init: RequestInit) => {
+      sent.push({
+        key: new Headers(init.headers).get("Idempotency-Key"),
+        after: (init.body as FormData).get("after"),
+      });
+      return responses.shift() as Response;
+    }),
+  );
+  const deltas: string[] = [];
+  const input = { conversation: null, content: "Net worth?", key: "turn-1", received: 0 };
+  const done = await streamReply(session, "entity", input, { onDelta: (t) => deltas.push(t) });
+  expect(done.conversation_id).toBe("c");
+  expect(sent).toEqual([
+    { key: "turn-1", after: "0" },
+    { key: "turn-1", after: "2" },
+  ]);
+  expect(deltas).toEqual(["Half ", "done."]);
 });
 
 it("renders Markdown as text only: no links, images or raw HTML", () => {

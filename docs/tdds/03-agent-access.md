@@ -233,6 +233,12 @@ zone, today, screen, month, mode, AGENT.md), model injected at run time,
   messages in one transaction; failure persists nothing. Each model text part
   after the first starts with a blank line (`\n\n`), and the stored reply is the
   streamed text, so it reads the same after a reload. Tool lines are not stored.
+- **Dropped connections:** a turn runs in its own task and outlives its stream,
+  because iOS drops a backgrounded page's fetch partway through long multi-tool
+  turns. The client names each turn with `Idempotency-Key`; resending it with
+  `after` (data frames already handled) follows the same turn from there, for 10
+  minutes after it ends, so no tool runs twice. Only `POST /agent/turn/stop` ends
+  a turn early (`error` code `stopped`, nothing stored).
 - **Images:** multipart `images[]` on the send request; up to 4, 5 MB each;
   JPEG/PNG/WebP by magic bytes; Pillow decode under a pixel cap; re-encode to
   JPEG at ≤1568 px (drops EXIF). Passed as `BinaryContent`; never stored;
@@ -289,7 +295,8 @@ synthetic source is connected through the UI (see deviations). No real data, and
     replay, `key_reuse`, `stale_revision`, domain rejection leaves no rows;
     irreversible deletes pend in Ask first and Apply directly.
   - Agent settings and source setup reject API keys.
-  - SSE framing, settle on success, nothing persisted on failure or disconnect.
+  - SSE framing, settle on success, nothing persisted on failure or stop; a long
+    turn whose connection drops finishes and is followed again without rerunning.
   - Privacy: sentinel amounts, notes, and payees never appear in captured logs;
     no image bytes in any table.
 - **End to end (stub model, synthetic data):** connect a synthetic source, Sync,

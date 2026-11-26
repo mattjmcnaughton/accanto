@@ -21,7 +21,13 @@ Behaviors, keyed on the owner's message (case-insensitive):
                 INTERVIEW questions one per reply, show the proposed text
                 (the current text plus the answers), and on "yes" call
                 propose_agent_instructions.
+- "net worth"   a long multi-tool turn like a real FIRE question: get_context,
+                get_position, list_plans, list_debts, two calculate calls
+                and a growth projection at 8% to a 4% rule target, one tool
+                per model request, then quote the results.
 - "[stub-fail]" fail mid-stream after a few deltas.
+- "[stub-slow]" wait SLOW_STEP_SECONDS before each model response, so tests
+                can drop the connection while a turn runs.
 - anything else: a short fixed reply.
 
 Scripted to obey injections, on purpose: if a tool result contains
@@ -32,6 +38,7 @@ Ask first and rejects them in Read only.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from datetime import date
@@ -57,6 +64,10 @@ if TYPE_CHECKING:
 
 INJECTION_MARKER = "IGNORE PREVIOUS INSTRUCTIONS"
 FAIL = "[stub-fail]"
+SLOW = "[stub-slow]"
+SLOW_STEP_SECONDS = 1.0
+# The synthetic yearly fixed expenses the "net worth" turn plans around.
+STUB_FIXED_YEARLY = "24000.00"
 RECEIPT_AMOUNT = "23.45"
 MONTHS = {
     name: index
@@ -361,6 +372,43 @@ def _next_step(messages: Sequence[ModelMessage], info: AgentInfo):
             "Review the card and apply it if it is right."
         )
 
+    if "net worth" in lowered:
+        reads = (
+            ("get_context", {}),
+            ("get_position", {}),
+            ("list_plans", {}),
+            ("list_debts", {}),
+        )
+        for name, args in reads:
+            if name not in called:
+                return _call((name, args))
+        position = next(_content(p) for p in returns if p.tool_name == "get_position")
+        saved = position["savings_total"]
+        sums = [_content(p) for p in returns if p.tool_name == "calculate"]
+        if not sums:
+            return _call(("calculate", {"expression": f"{saved} * 4 / 100"}))
+        if len(sums) == 1:
+            target = f"{STUB_FIXED_YEARLY} * 100 / 4"
+            return _call(("calculate", {"expression": target}))
+        if "project" not in called:
+            growth = {
+                "operation": "growth",
+                "start": saved,
+                "monthly_contribution": "1000.00",
+                "annual_return_percent": "8",
+                "basis": "nominal",
+                "target": sums[1]["cents"],
+            }
+            return _call(("project", {"projection": growth}))
+        figures = next(_content(p) for p in returns if p.tool_name == "project")[
+            "figures"
+        ]
+        return (
+            f"Your net position is {position['net_position']}. The 4% rule "
+            f"covers {STUB_FIXED_YEARLY} a year from {sums[1]['cents']}; at 8% "
+            f"and 1000.00 a month you reach it in {figures['months']} months."
+        )
+
     if "budget" in lowered:
         if "get_context" not in called:
             return ("Let me look at your budget.", _call(("get_context", {})))
@@ -398,6 +446,8 @@ def _chunks(text: str) -> list[str]:
 async def stub_stream(
     messages: list[ModelMessage], info: AgentInfo
 ) -> AsyncIterator[str | DeltaToolCalls]:
+    if SLOW in _owner_prompt(messages)[0]:
+        await asyncio.sleep(SLOW_STEP_SECONDS)
     step = _next_step(messages, info)
     if isinstance(step, tuple):
         before, step = step

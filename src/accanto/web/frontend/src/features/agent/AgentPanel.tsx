@@ -5,7 +5,10 @@ import {
   type AgentSettings,
   type ApplyAllResult,
   type ConversationSummary,
+  AgentStreamError,
   type PendingChange,
+  RESUMABLE,
+  type SendInput,
   type StreamDone,
   AGENT_MODES,
   type ToolLine,
@@ -47,6 +50,8 @@ interface Turn {
   parts: Part[];
   /** Set once the turn ends without a stored reply: why, and whether Retry can resend it. */
   ended?: { note: string; retry: boolean };
+  /** A dropped turn that may still be running: Retry follows it instead of resending. */
+  resume?: SendInput;
 }
 
 /** Starts the AGENT.md interview; the assistant's instructions say how it runs. */
@@ -195,6 +200,8 @@ export function AgentPanel(p: AgentPanelProps) {
   }, [p.entity.id]);
   const [reload, setReload] = useState(0);
   const abort = useRef<AbortController | null>(null);
+  /** The server-side stop of the last reply, which the next send waits for. */
+  const stopping = useRef<Promise<unknown> | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -319,8 +326,19 @@ export function AgentPanel(p: AgentPanelProps) {
     sheet.current?.style.setProperty("--agent-pull", `${Math.max(0, dy)}px`);
   };
 
-  async function send(content = text.trim(), attached = images) {
+  /** Stop ends the turn on the server too; closing the stream alone leaves it running. */
+  function stop() {
+    if (!abort.current) return;
+    abort.current.abort();
+    stopping.current = p
+      .credentials()
+      .then((session) => agent.stop(session, p.entity.id))
+      .catch(() => {});
+  }
+
+  async function send(content = text.trim(), attached = images, resume?: Turn) {
     if ((!content && !images.length && !attached.length) || live) return;
+    await stopping.current;
     const local = `local-${Date.now()}`;
     setError("");
     setText("");
@@ -340,7 +358,7 @@ export function AgentPanel(p: AgentPanelProps) {
         created_at: new Date().toISOString(),
       },
     ]);
-    const turn: Turn = { content, image_count: attached.length, parts: [] };
+    const turn: Turn = { content, image_count: attached.length, parts: resume?.parts ?? [] };
     const update = (parts: Part[]) => {
       turn.parts = parts;
       setLive({ ...turn });
@@ -372,12 +390,14 @@ export function AgentPanel(p: AgentPanelProps) {
       onPendingChange: (change: PendingChange) =>
         update([...turn.parts, { kind: "change", change }]),
     };
-    const input = {
+    const input: SendInput = resume?.resume ?? {
       conversation: currentRef.current ?? null,
       content,
       images: attached,
       screen: p.screen,
       month: `${p.month}-01`,
+      key: crypto.randomUUID(),
+      received: 0,
     };
     let done: StreamDone | null = null;
     try {
@@ -403,14 +423,22 @@ export function AgentPanel(p: AgentPanelProps) {
     } catch (issue) {
       // Nothing is stored for a stopped or failed turn: keep what arrived, and put the
       // question back in the box so it can be sent again or reworded.
-      const stopped = controller.signal.aborted;
+      const stopped =
+        controller.signal.aborted ||
+        (issue instanceof AgentStreamError && issue.code === "stopped");
+      // Only a dropped connection can be followed again; any other end resends afresh.
+      const resumable = issue instanceof AgentStreamError && RESUMABLE.has(issue.code);
       const note = stopped
         ? "Stopped. Your question is back in the box."
         : issue instanceof Error && issue.message
           ? issue.message
           : "The reply did not come through.";
       setMessages((m) => m.filter((message) => message.id !== local));
-      setEnded({ ...turn, ended: { note, retry: !stopped } });
+      setEnded({
+        ...turn,
+        ended: { note, retry: !stopped },
+        resume: !stopped && resumable ? input : undefined,
+      });
       anchor.current = "ended";
       setText(content);
       setImages(attached);
@@ -575,7 +603,7 @@ export function AgentPanel(p: AgentPanelProps) {
           field.value !== "";
         if (!live && typed) return;
         event.preventDefault();
-        if (live) abort.current?.abort();
+        if (live) stop();
         else p.close();
       }}
       aria-label="Assistant"
@@ -926,7 +954,7 @@ export function AgentPanel(p: AgentPanelProps) {
                             type="button"
                             className="btn sm"
                             disabled={Boolean(live)}
-                            onClick={() => void send(ended.content, images)}
+                            onClick={() => void send(ended.content, images, ended)}
                           >
                             Retry
                           </button>
@@ -1040,7 +1068,7 @@ export function AgentPanel(p: AgentPanelProps) {
                   aria-label="Stop"
                   title="Stop (Esc)"
                   aria-keyshortcuts="Escape"
-                  onClick={() => abort.current?.abort()}
+                  onClick={stop}
                 >
                   <Icon name="stop" />
                 </button>

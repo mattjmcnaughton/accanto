@@ -87,6 +87,10 @@ export interface SendInput {
   screen?: string;
   month?: string;
   images?: Blob[];
+  /** Names this turn (Idempotency-Key): sending it again follows the same turn. */
+  key: string;
+  /** Frames handled so far; streamReply counts up, and a resend continues after them. */
+  received: number;
 }
 
 export class AgentStreamError extends Error {
@@ -115,6 +119,12 @@ export const agent = {
       `${root(entityId)}/conversations/${encodeURIComponent(id)}/archive`,
       { method: "POST", headers: csrf(session) },
     ),
+  /** Ends the running reply; closing its stream does not, so a dropped one can resume. */
+  stop: (session: BrowserSession, entityId: UUID) =>
+    fetchJson<{ stopped: boolean }>(`${root(entityId)}/turn/stop`, {
+      method: "POST",
+      headers: csrf(session),
+    }),
   pending: (entityId: UUID) => fetchJson<PendingChange[]>(`${root(entityId)}/pending-changes`),
   /** Applies the listed changes oldest first and stops at the first that is rejected. */
   applyAllPath: (entityId: UUID) => `${root(entityId)}/pending-changes/apply-all`,
@@ -129,11 +139,45 @@ export const agent = {
     ),
 };
 
-const DROPPED = "The assistant didn't finish answering.";
+const DROPPED = "The connection dropped before the reply finished.";
 const MALFORMED = "The assistant's reply didn't come through.";
+/** Waits before each resume of a dropped reply; the server keeps the turn running meanwhile. */
+const RESUME_DELAYS_MS = [500, 1000, 2000, 4000, 8000];
+/** Errors where the turn may still be running on the server, so resending its key resumes it. */
+export const RESUMABLE = new Set(["stream_dropped", "network_unavailable"]);
 
-/** Send one message and stream the reply until done or error. */
+const pause = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+
+/** Send one message and stream the reply until done or error. A dropped connection (iOS
+ * suspends a backgrounded page's fetch) resumes the same turn from the frames already
+ * handled, so nothing is shown or run twice. */
 export async function streamReply(
+  session: BrowserSession,
+  entityId: UUID,
+  input: SendInput,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<StreamDone> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await streamOnce(session, entityId, input, handlers, signal);
+    } catch (error) {
+      const resumable = error instanceof AgentStreamError && RESUMABLE.has(error.code);
+      if (!resumable || signal?.aborted || attempt >= RESUME_DELAYS_MS.length) throw error;
+      await pause(RESUME_DELAYS_MS[attempt], signal);
+      if (signal?.aborted) throw error;
+    }
+  }
+}
+
+async function streamOnce(
   session: BrowserSession,
   entityId: UUID,
   input: SendInput,
@@ -142,6 +186,7 @@ export async function streamReply(
 ): Promise<StreamDone> {
   const form = new FormData();
   form.set("content", input.content);
+  form.set("after", String(input.received));
   if (input.screen) form.set("screen", input.screen);
   if (input.month) form.set("month", input.month);
   for (const image of input.images ?? []) form.append("images", image);
@@ -152,7 +197,7 @@ export async function streamReply(
       : "conversations";
     response = await fetch(`${root(entityId)}/${path}/messages`, {
       method: "POST",
-      headers: csrf(session),
+      headers: { ...csrf(session), "Idempotency-Key": input.key },
       body: form,
       credentials: "same-origin",
       cache: "no-store",
@@ -176,27 +221,37 @@ export async function streamReply(
     if (response.status === 401) throw new ApiError("unauthenticated", 401, code, message);
     throw new AgentStreamError(message, code);
   }
-  return readFrames(response.body, handlers);
+  return readFrames(response.body, handlers, input, signal);
 }
 
-/** Parse SSE frames; exported for tests. Blank-line boundaries, JSON data, `:` comments. */
+/** Parse SSE frames; exported for tests. Blank-line boundaries, JSON data, `:` comments.
+ * Counts each data frame on `progress.received` once it is handled. */
 export async function readFrames(
   body: ReadableStream<Uint8Array>,
   handlers: StreamHandlers,
+  progress: { received: number } = { received: 0 },
+  signal?: AbortSignal,
 ): Promise<StreamDone> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   try {
     for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await reader.read();
+      } catch (error) {
+        // Safari reports a dropped stream as a bare "Load failed"; say what happened.
+        if (signal?.aborted) throw error;
+        throw new AgentStreamError(DROPPED, "stream_dropped");
+      }
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
       let boundary = buffer.indexOf("\n\n");
       while (boundary !== -1) {
         const frame = buffer.slice(0, boundary);
         buffer = buffer.slice(boundary + 2);
-        const terminal = handleFrame(frame, handlers);
+        const terminal = handleFrame(frame, handlers, progress);
         if (terminal) return terminal;
         boundary = buffer.indexOf("\n\n");
       }
@@ -207,7 +262,11 @@ export async function readFrames(
   throw new AgentStreamError(DROPPED, "stream_dropped");
 }
 
-function handleFrame(frame: string, handlers: StreamHandlers): StreamDone | null {
+function handleFrame(
+  frame: string,
+  handlers: StreamHandlers,
+  progress: { received: number },
+): StreamDone | null {
   let event = "message";
   let data = "";
   for (const line of frame.split("\n")) {
@@ -222,6 +281,7 @@ function handleFrame(frame: string, handlers: StreamHandlers): StreamDone | null
   } catch {
     throw new AgentStreamError(MALFORMED, "malformed_frame");
   }
+  progress.received += 1;
   if (event === "delta" && typeof payload.text === "string") handlers.onDelta?.(payload.text);
   else if (event === "tool") handlers.onTool?.(payload as unknown as ToolLine);
   else if (event === "pending_change")
