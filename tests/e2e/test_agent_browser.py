@@ -167,10 +167,10 @@ def test_agent_journey(tmp_path):
     def ask(message):
         browser("find", "label", "Message the assistant", "fill", message)
         button("Send", ".agent")
-        until("!document.querySelector('.agent output')")
+        until("!document.querySelector('.agent-log[aria-busy=true]')")
         until(
             "Array.from(document.querySelectorAll('.agent button'))"
-            ".some(b => b.textContent.trim() === 'Send')"
+            ".some(b => b.getAttribute('aria-label') === 'Send')"
         )
         idle()
 
@@ -277,7 +277,7 @@ def test_agent_journey(tmp_path):
         # A receipt image: in propose mode its draft card has no Apply in the
         # conversation; Pending changes applies it, and Activity shows it.
         browser("upload", ".agent-attach input", str(receipt))
-        until("/1 image/.test(document.querySelector('.agent-attach').textContent)")
+        until("document.querySelectorAll('.agent-thumb').length === 1")
         ask(f"Here is a receipt from {today}")
         until("!!document.querySelector('.agent-msg .agent-card')")
         card = ".agent-msg .agent-card"

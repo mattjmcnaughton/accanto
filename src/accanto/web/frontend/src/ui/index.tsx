@@ -35,6 +35,11 @@ const PATHS: Record<string, string> = {
   trash: "M3 4.5h10M6.5 4.5v-2h3v2M4.5 4.5l.5 9h6l.5-9",
   copy: "M5.5 5.5h8v8h-8z M2.5 10.5v-8h8",
   chat: "M2.5 3.5h11v7.5H7l-3 2.5V11H2.5z M5 6.5h6M5 8.5h4",
+  expand: "M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9",
+  clip: "M10.5 5 6 9.5a1.4 1.4 0 0 0 2 2L12.6 7a2.8 2.8 0 0 0-4-4L4 7.6a4.2 4.2 0 0 0 6 6L13.5 10",
+  send: "M8 13V3M3.5 7.5 8 3l4.5 4.5",
+  stop: "M4.5 4.5h7v7h-7z",
+  shrink: "M13.5 2.5 9.5 6.5M9.5 3v3.5H13M2.5 13.5l4-4M3 9.5h3.5V13",
 };
 export const Icon = ({ name }: { name: string }) => (
   <svg className="ico" viewBox="0 0 16 16" aria-hidden="true">

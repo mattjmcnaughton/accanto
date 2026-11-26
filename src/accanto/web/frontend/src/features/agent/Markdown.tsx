@@ -26,8 +26,9 @@ export function Markdown({ text }: { text: string }) {
   };
   for (const raw of text.split("\n")) {
     const line = raw.trimEnd();
-    const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
-    const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    // A bare marker is a list item whose words have not streamed in yet.
+    const bullet = /^\s*[-*](?:\s+(.*))?$/.exec(line);
+    const numbered = /^\s*\d+[.)](?:\s+(.*))?$/.exec(line);
     const heading = /^#{1,6}\s+(.*)$/.exec(line);
     if (bullet || numbered) {
       flushParagraph();

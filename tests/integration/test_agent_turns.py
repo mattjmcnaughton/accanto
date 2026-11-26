@@ -81,7 +81,7 @@ async def scenario():
             "browser_origin": "http://test",
             "browser_csrf_secret": SecretStr("synthetic-turn-csrf-secret-long-enough"),
             "agent_model": "stub",
-            "agent_daily_message_cap": 4,
+            "agent_daily_message_cap": 5,
         }
     )
     app = create_app()
@@ -319,7 +319,16 @@ async def scenario():
         # No table holds image bytes, raw or base64, in any column.
         await assert_no_image_bytes(sessions, png.getvalue())
 
-        # Daily cap of 4 owner messages (stored turns: 3 so far; failed and
+        # Text before and after a tool call: two blocks, streamed and stored alike.
+        events = frames((await send("Where is my budget?")).text)
+        text = "".join(data["text"] for name, data in events if name == "delta")
+        assert text == (
+            "Let me look at your budget.\n\nYour budget is in the Plans screen."
+        )
+        history = (await client.get(prefix + "/agent/conversation")).json()
+        assert history[-1]["content"] == text
+
+        # Daily cap of 5 owner messages (stored turns: 4 so far; failed and
         # refused turns store nothing). One more fits, then 429.
         assert (await send("Hi")).status_code == 200
         capped = await send("One more")

@@ -302,6 +302,7 @@ class AgentTurns:
             BinaryContent(data=image, media_type="image/jpeg") for image in turn.images
         ]
         text = None
+        streamed: list[str] = []
         usage: dict = {}
         try:
             async with (
@@ -316,10 +317,17 @@ class AgentTurns:
             ):
                 async for event in events:
                     delta = _text_of(event)
+                    # Each text part is its own block: text written before a tool
+                    # call never runs into the text after it.
+                    if streamed and isinstance(event, PartStartEvent) and delta:
+                        delta = "\n\n" + delta
                     if delta:
+                        streamed.append(delta)
                         await queue.put(sse_event("delta", {"text": delta}))
                     elif isinstance(event, AgentRunResultEvent):
-                        text = str(event.result.output)
+                        # Store what was streamed, not only the final part, so the
+                        # reply does not change when the turn ends.
+                        text = "".join(streamed).strip() or str(event.result.output)
                         run_usage = event.result.usage
                         usage = {
                             "requests": run_usage.requests,

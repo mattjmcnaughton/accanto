@@ -226,7 +226,9 @@ zone, today, screen, month, mode, AGENT.md), model injected at run time,
   aleph: `delta`, `tool` (name and status only), `pending_change`, `done`,
   `error`, `: ping` every 15 s, `X-Accel-Buffering: no`. Admit (auth, CSRF,
   enabled, caps, image validation) before the first byte; settle persists both
-  messages in one transaction; failure persists nothing.
+  messages in one transaction; failure persists nothing. Each model text part
+  after the first starts with a blank line (`\n\n`), and the stored reply is the
+  streamed text, so it reads the same after a reload. Tool lines are not stored.
 - **Images:** multipart `images[]` on the send request; up to 4, 5 MB each;
   JPEG/PNG/WebP by magic bytes; Pillow decode under a pixel cap; re-encode to
   JPEG at ≤1568 px (drops EXIF). Passed as `BinaryContent`; never stored;
