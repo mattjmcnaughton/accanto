@@ -9,6 +9,7 @@ import base64
 import io
 import json
 import os
+import time
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -25,7 +26,8 @@ from accanto.db import Base, get_session
 from accanto.models import agent as a
 from accanto.models import inbox as st
 from accanto.models import monthly as m
-from accanto.services.access import issue_session
+from accanto.services.access import AuthenticatedActor, issue_session
+from accanto.services.agent import Turn
 from accanto.services.api_keys import issue_key
 from accanto.services.browser_auth import csrf_token
 from accanto.services.stub_model import INJECTION_MARKER
@@ -605,4 +607,79 @@ async def long_turn_scenario():
             {"code": "stopped", "message": "You stopped this reply."},
         )
         assert len((await client.get(prefix + "/conversations")).json()) == 1
+
+        # Separate conversations reply at once; a second message in a conversation
+        # whose reply is running is refused until that reply ends.
+        service = app.state.agent_turns
+        owner = type("Owner", (), {"user_id": user})()
+
+        def post(path, key, text=question["content"]):
+            return client.post(
+                prefix + path,
+                data={"content": text},
+                headers={**headers, "Idempotency-Key": key},
+            )
+
+        async def running(key, task):
+            while not service.find(owner, entity, key):
+                # A refused message ends at once instead of starting a turn.
+                assert not task.done(), (await task).text
+                await asyncio.sleep(0.05)
+
+        continuing = f"/conversations/{conversation}/messages"
+        first_key, other_key = str(uuid4()), str(uuid4())
+        first = asyncio.create_task(post(continuing, first_key))
+        await running(first_key, first)
+        again = await post(continuing, str(uuid4()), "Another question")
+        assert again.status_code == 409
+        assert again.json()["detail"]["code"] == "reply_in_progress"
+        other = asyncio.create_task(post("/conversations/messages", other_key))
+        await running(other_key, other)
+        # Both are mid-reply together: neither has finished yet.
+        assert not service.find(owner, entity, first_key).finished
+        assert not service.find(owner, entity, other_key).finished
+        # Stopping one names it by key; the other keeps going and is stored.
+        stopped = await client.post(
+            prefix + "/turn/stop", headers={**headers, "Idempotency-Key": other_key}
+        )
+        assert stopped.json() == {"stopped": True}
+        assert frames((await other).text)[-1][1]["code"] == "stopped"
+        events = frames((await first).text)
+        assert events[-1][0] == "done", events[-1]
+        assert events[-1][1]["conversation_id"] == conversation
+        stored = (await client.get(prefix + f"/conversations/{conversation}")).json()
+        assert len(stored) == 4
+        # The reply ended, so the conversation takes its next message.
+        follow_up = await post(continuing, str(uuid4()), "What changed? [stub-slow]")
+        assert frames(follow_up.text)[-1][0] == "done", follow_up.text
+
+        # A turn that ends before its task ever runs (cancelled at once, as on
+        # shutdown) still frees its conversation and ends its stream.
+        async with sessions() as db:
+            row_id = await db.scalar(
+                select(a.conversations.c.id).where(
+                    a.conversations.c.uuid == UUID(conversation)
+                )
+            )
+        service.in_flight[row_id] = until = time.monotonic() + 600
+        abandoned = service.start(
+            Turn(
+                actor=AuthenticatedActor(user, "session", None, ""),
+                entity_uuid=entity,
+                entity_id=0,
+                user_id=user,
+                content="",
+                claim=(row_id, until),
+            ),
+            str(uuid4()),
+        )
+        abandoned.task.cancel()
+        await asyncio.wait([abandoned.task])
+        assert abandoned.finished
+        assert row_id not in service.in_flight
+
+        # A claim left past its turn's longest run never blocks the conversation.
+        service.in_flight[row_id] = 0.0
+        after_lapse = await post(continuing, str(uuid4()), "Still there?")
+        assert frames(after_lapse.text)[-1][0] == "done", after_lapse.text
     await engine.dispose()

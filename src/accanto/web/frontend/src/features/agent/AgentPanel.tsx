@@ -205,6 +205,8 @@ export function AgentPanel(p: AgentPanelProps) {
   }, [p.entity.id]);
   const [reload, setReload] = useState(0);
   const abort = useRef<AbortController | null>(null);
+  /** The Idempotency-Key of the reply streaming now, which Stop names. */
+  const turnKey = useRef("");
   /** The server-side stop of the last reply, which the next send waits for. */
   const stopping = useRef<Promise<unknown> | null>(null);
   const log = useRef<HTMLDivElement>(null);
@@ -350,9 +352,10 @@ export function AgentPanel(p: AgentPanelProps) {
   function stop() {
     if (!abort.current) return;
     abort.current.abort();
+    const key = turnKey.current;
     stopping.current = p
       .credentials()
-      .then((session) => agent.stop(session, p.entity.id))
+      .then((session) => agent.stop(session, p.entity.id, key))
       .catch(() => {});
   }
 
@@ -419,6 +422,7 @@ export function AgentPanel(p: AgentPanelProps) {
       key: crypto.randomUUID(),
       received: 0,
     };
+    turnKey.current = input.key;
     let done: StreamDone | null = null;
     try {
       try {

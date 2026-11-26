@@ -102,6 +102,8 @@ class Turn:
     month: date | None = None
     deps_values: dict = field(default_factory=dict)
     prior: list = field(default_factory=list)
+    # The conversation's row id (a fresh UUID for a new conversation) and
+    # when its claim lapses.
     claim: tuple = ()
     # None starts a conversation with this turn (TDD 08).
     conversation_id: int | None = None
@@ -127,6 +129,11 @@ class Run:
     async def put(self, frame: str | None) -> None:
         """Record a frame; None ends the turn. Never suspends, so it completes
         even while the producing task is being cancelled."""
+        self.record(frame)
+
+    def record(self, frame: str | None) -> None:
+        if self.finished:
+            return
         if frame is None:
             self.finished = True
         else:
@@ -141,10 +148,14 @@ class AgentTurns:
     def __init__(self, config, sessions, *, model_resolver=resolve_model):
         self.config, self.sessions = config, sessions
         self.resolve_model = model_resolver
-        self.in_flight: set[tuple[int, int]] = set()
-        # The latest turn per (user id, Entity UUID), running or recently finished.
-        self.runs: dict[tuple[int, UUID], Run] = {}
+        # Conversations with a reply running, with when the claim lapses: one
+        # reply at a time in each, and no claim outlives a turn's longest run.
+        self.in_flight: dict[object, float] = {}
+        # Each turn, running or recently finished, by (user id, Entity UUID, key).
+        self.runs: dict[tuple[int, UUID, object], Run] = {}
         self.replies = asyncio.Semaphore(config.agent_concurrent_replies)
+        # A turn waits for a reply slot, runs the model, then stores both messages.
+        self.turn_limit = config.agent_reply_timeout * 2 + 30
         self.agent = build_sidebar_agent(sidebar_specs())
 
     async def admit(
@@ -207,8 +218,10 @@ class AgentTurns:
                 if row
                 else []
             )
-        claim = (actor.user_id, entity["id"])
-        if claim in self.in_flight:
+        # A new conversation's first turn waits for nothing: no other turn can
+        # be in it yet. Other conversations' replies never block this one.
+        claim = row["id"] if row else uuid4()
+        if self.in_flight.get(claim, 0) > time.monotonic():
             raise RejectionError(
                 "reply_in_progress", "Wait for the current reply to finish.", 409
             )
@@ -216,7 +229,8 @@ class AgentTurns:
             raise RejectionError(
                 "agent_busy", "The assistant is busy. Try again in a moment.", 429
             )
-        self.in_flight.add(claim)
+        until = time.monotonic() + self.turn_limit
+        self.in_flight[claim] = until
         return Turn(
             actor=actor.acting_as("agent"),
             entity_uuid=entity_uuid,
@@ -234,22 +248,34 @@ class AgentTurns:
                 "agent_md": settings["instructions"],
             },
             prior=history(prior),
-            claim=claim,
+            claim=(claim, until),
             conversation_id=row["id"] if row else None,
         )
 
     def start(self, turn: Turn, key: str | None) -> Run:
         """Runs the admitted turn to its end, whether or not anyone follows it."""
-        owner = (turn.user_id, turn.entity_uuid)
+        owner = (turn.user_id, turn.entity_uuid, key if key is not None else uuid4())
         run = Run(key)
         self.runs[owner] = run
-        run.task = asyncio.create_task(self._produce(turn, run, owner))
+        run.task = asyncio.create_task(self._produce(turn, run))
+        # A task cancelled before its first step never runs _produce's finally,
+        # so the claim is released here, however the task ends.
+        run.task.add_done_callback(lambda _: self._release(turn.claim, owner, run))
         return run
+
+    def _release(self, claim, owner, run: Run) -> None:
+        run.record(None)
+        # A claim that lapsed may since belong to a newer turn: leave that one.
+        conversation, until = claim
+        if self.in_flight.get(conversation) == until:
+            del self.in_flight[conversation]
+        asyncio.get_running_loop().call_later(
+            KEEP_FINISHED_SECONDS, self._forget, owner, run
+        )
 
     def find(self, actor, entity_uuid: UUID, key: str) -> Run | None:
         """This owner's turn for the Entity with that Idempotency-Key, if kept."""
-        run = self.runs.get((actor.user_id, entity_uuid))
-        return run if run is not None and run.key == key else None
+        return self.runs.get((actor.user_id, entity_uuid, key))
 
     async def follow(self, run: Run, after: int = 0) -> AsyncIterator[str]:
         """The Run's frames after the first `after`, then each new one, with a
@@ -268,17 +294,26 @@ class AgentTurns:
             except TimeoutError:
                 yield sse_heartbeat()
 
-    async def stop(self, actor, entity_uuid: UUID) -> bool:
-        """Cancels this owner's running turn for the Entity; nothing is stored.
-        Returns once the turn has ended, so the next message is admitted."""
-        run = self.runs.get((actor.user_id, entity_uuid))
-        if run is None or run.finished or run.task is None:
-            return False
-        run.task.cancel()
-        await asyncio.wait([run.task])
-        return True
+    async def stop(self, actor, entity_uuid: UUID, key: str | None = None) -> bool:
+        """Cancels this owner's running turn for the Entity with that key, or
+        every running one without a key; nothing is stored. Returns once they
+        have ended, so the next message in their conversations is admitted."""
+        tasks = [
+            run.task
+            for (user_id, entity, _), run in list(self.runs.items())
+            if user_id == actor.user_id
+            and entity == entity_uuid
+            and (key is None or run.key == key)
+            and not run.finished
+            and run.task is not None
+        ]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.wait(tasks)
+        return bool(tasks)
 
-    async def _produce(self, turn: Turn, queue: Run, owner) -> None:
+    async def _produce(self, turn: Turn, queue: Run) -> None:
         started = time.perf_counter()
         outcome = "failure"
         try:
@@ -317,10 +352,6 @@ class AgentTurns:
             )
         finally:
             await queue.put(None)
-            self.in_flight.discard(turn.claim)
-            asyncio.get_running_loop().call_later(
-                KEEP_FINISHED_SECONDS, self._forget, owner, queue
-            )
 
     def _forget(self, owner, run: Run) -> None:
         if self.runs.get(owner) is run:
