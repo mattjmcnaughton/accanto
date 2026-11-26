@@ -81,7 +81,7 @@ async def scenario():
             "browser_origin": "http://test",
             "browser_csrf_secret": SecretStr("synthetic-turn-csrf-secret-long-enough"),
             "agent_model": "stub",
-            "agent_daily_message_cap": 7,
+            "agent_daily_message_cap": 8,
         }
     )
     app = create_app()
@@ -218,6 +218,16 @@ async def scenario():
         failed = frames((await send("Tell me something [stub-fail]")).text)
         assert failed[-1][0] == "error"
         assert len((await client.get(prefix + "/agent/conversation")).json()) == 2
+
+        # Math (TDD 09): the agent projects a loan, then calculates on the
+        # result. $100,000 at 6% over 360 months is $599.55 a month; with $100
+        # extra it is $699.55 and repaid in 252 months.
+        math = frames((await send("What if I pay $100 extra on the mortgage?")).text)
+        assert math[-1][0] == "done"
+        for tool in ("project", "calculate"):
+            assert ("tool", {"name": tool, "status": "done"}) in math
+        said = "".join(data["text"] for name, data in math if name == "delta")
+        assert "599.55" in said and "699.55" in said and "252 months" in said
 
         # Injection: a staged payee tells the agent to delete everything. The
         # stub is scripted to obey; the dispatcher only drafts Pending changes.
@@ -375,7 +385,7 @@ async def scenario():
             == 2
         )
 
-        # Daily cap of 7 owner messages (stored turns: 6 so far; failed and
+        # Daily cap of 8 owner messages (stored turns: 7 so far; failed and
         # refused turns store nothing). One more fits, then 429.
         assert (await send("Hi")).status_code == 200
         capped = await send("One more")

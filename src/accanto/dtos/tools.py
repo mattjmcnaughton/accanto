@@ -1,6 +1,7 @@
 """Agent tool catalog contracts: explicit projections, separate from DB and HTTP."""
 
 from datetime import date
+from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -15,6 +16,8 @@ from pydantic import (
     model_validator,
 )
 
+from accanto.domains.monthly import money
+from accanto.domains.targets import target_gap
 from accanto.dtos.balances import CreateDebt, EditDebt, ObservationInput
 from accanto.dtos.destinations import (
     ContributionInput,
@@ -372,6 +375,8 @@ class Goal(Output):
     kind: str
     target: Money | None
     remaining_saved: Money
+    remaining_to_target: Money | None
+    percent_of_target: Amount | None
     active: bool
     completed: bool
     revision: int
@@ -397,6 +402,8 @@ class Destination(Output):
     target: Money | None
     active: bool
     contribution_progress: Money
+    remaining_to_target: Money | None
+    percent_of_target: Amount | None
     revision: int
 
 
@@ -641,6 +648,14 @@ def project_entry(row) -> Entry:
     )
 
 
+def _gap(target, progress) -> dict:
+    remaining, percent = target_gap(target, progress)
+    return {
+        "remaining_to_target": None if remaining is None else str(remaining),
+        "percent_of_target": None if percent is None else str(percent),
+    }
+
+
 def project_savings(accounts) -> SavingsList:
     return SavingsList(
         accounts=[
@@ -659,6 +674,7 @@ def project_savings(accounts) -> SavingsList:
                         kind=g["kind"],
                         target=g["target"],
                         remaining_saved=g["remaining_saved"],
+                        **_gap(g["target"], g["remaining_saved"]),
                         active=g["active"],
                         completed=g["completed"],
                         revision=g["revision"],
@@ -681,6 +697,7 @@ def project_destinations(kind, rows) -> DestinationList:
                 target=r["target"],
                 active=r["active"],
                 contribution_progress=r["contribution_progress"],
+                **_gap(r["target"], r["contribution_progress"]),
                 revision=r["revision"],
             )
             for r in rows
@@ -817,6 +834,22 @@ class NoInput(Input):
     pass
 
 
+class CalculateInput(Input):
+    expression: str = Field(
+        min_length=1,
+        max_length=2000,
+        description="Arithmetic such as (84.30 - 12) * 0.4. Numbers, + - * / ** "
+        "( ) and abs, min, max, round, sqrt, sum (up to 200 values); "
+        "percentages as / 100.",
+    )
+
+
+class Calculation(Output):
+    expression: str
+    result: Amount
+    cents: Amount
+
+
 def _first_day(value: date) -> date:
     if value.day != 1:
         raise ValueError("Use the first calendar day of the month.")
@@ -840,6 +873,346 @@ class ActivityQuery(Input):
     month: FirstDay
     category: Category | None = None
     tag_id: UUID | None = Field(default=None, description="Only entries with this tag.")
+
+
+class ActivitySummaryQuery(Input):
+    start: date
+    end: date = Field(description="Inclusive.")
+    category: Category | None = None
+    tag_id: UUID | None = None
+    source_id: UUID | None = None
+    fixed_cost_id: UUID | None = None
+    saving_goal_id: UUID | None = None
+    investment_id: UUID | None = None
+    giving_recipient_id: UUID | None = None
+    note_contains: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        description="Case-insensitive text in the entry note, such as a payee.",
+    )
+
+    @model_validator(mode="after")
+    def bounded(self):
+        if self.end < self.start:
+            raise ValueError("end must be on or after start.")
+        if (
+            self.end.year - self.start.year
+        ) * 12 + self.end.month - self.start.month >= 120:
+            raise ValueError("Summaries cover at most 120 months.")
+        return self
+
+
+class CategorySummary(Output):
+    category: Category
+    total: Money
+    entries: int
+    monthly_average: Money | None
+    months_averaged: int
+    months_without_entries: list[date]
+
+
+class MonthSummary(Output):
+    month: date
+    totals: dict[Category, Money]
+
+
+class Rate(Output):
+    numerator: Money | None
+    denominator: Money | None
+    percent: Amount | None
+
+
+class ActivitySummary(Output):
+    start: date
+    end: date
+    entries: int
+    partial_months: list[date]
+    categories: list[CategorySummary]
+    by_month: list[MonthSummary]
+    saving_rate: Rate
+    saving_and_investing_rate: Rate
+
+
+def project_summary(start, end, result) -> ActivitySummary:
+    def money(value):
+        return None if value is None else str(value)
+
+    return ActivitySummary(
+        start=start,
+        end=end,
+        entries=result["entries"],
+        partial_months=result["partial_months"],
+        categories=[
+            CategorySummary(
+                category=c["category"],
+                total=str(c["total"]),
+                entries=c["entries"],
+                monthly_average=money(c["monthly_average"]),
+                months_averaged=c["months_averaged"],
+                months_without_entries=c["months_without_entries"],
+            )
+            for c in result["categories"]
+        ],
+        by_month=[
+            MonthSummary(
+                month=m["month"],
+                totals={k: str(v) for k, v in m["totals"].items()},
+            )
+            for m in result["by_month"]
+        ],
+        **{
+            key: Rate(**{k: money(v) for k, v in result[key].items()})
+            for key in ("saving_rate", "saving_and_investing_rate")
+        },
+    )
+
+
+def _money_in(value: str) -> str:
+    return str(money(value))
+
+
+MoneyIn = Annotated[str, AfterValidator(_money_in)]
+Percent = Annotated[
+    str,
+    Field(
+        pattern=r"^-?\d{1,3}(?:\.\d{1,4})?$", description="Annual percent, e.g. 6.5."
+    ),
+]
+Months = Annotated[int, Field(ge=1, le=1200)]
+Basis = Annotated[
+    Literal["real", "nominal"],
+    Field(description="Whether the return is after inflation (real) or not."),
+]
+
+
+class _LoanTerms(Input):
+    principal: MoneyIn = Field(description="Amount owed now.")
+    annual_rate_percent: Percent
+    term_months: Months | None = Field(
+        default=None, description="Remaining term; or give monthly_payment."
+    )
+    monthly_payment: MoneyIn | None = Field(
+        default=None, description="Scheduled payment; or give term_months."
+    )
+
+    @model_validator(mode="after")
+    def one_of_term_or_payment(self):
+        if (self.term_months is None) == (self.monthly_payment is None):
+            raise ValueError("Give exactly one of term_months or monthly_payment.")
+        if not 0 <= Decimal(self.annual_rate_percent) <= 100:
+            raise ValueError("annual_rate_percent is 0 to 100.")
+        return self
+
+
+class _Return(Input):
+    annual_return_percent: Percent
+    basis: Basis
+
+    @model_validator(mode="after")
+    def plausible_return(self):
+        if not -50 <= Decimal(self.annual_return_percent) <= 50:
+            raise ValueError("annual_return_percent is -50 to 50.")
+        return self
+
+
+class LoanProjection(_LoanTerms):
+    operation: Literal["loan"]
+    extra_monthly: MoneyIn = "0.00"
+    schedule: Literal["none", "yearly", "monthly"] = "yearly"
+    first_payment_month: FirstDay | None = None
+
+
+class FireTargetProjection(Input):
+    operation: Literal["fire_target"]
+    annual_spending: MoneyIn
+    withdrawal_rate_percent: Percent
+
+
+class GrowthProjection(_Return):
+    operation: Literal["growth"]
+    start: MoneyIn
+    monthly_contribution: MoneyIn
+    months: Months | None = Field(
+        default=None, description="How long to project; omit to run to target."
+    )
+    target: MoneyIn | None = None
+
+    @model_validator(mode="after")
+    def months_or_target(self):
+        if self.months is None and self.target is None:
+            raise ValueError("Give months, target, or both.")
+        return self
+
+
+class CoastFireProjection(_Return):
+    operation: Literal["coast_fire"]
+    target: MoneyIn
+    months: Months
+
+
+class RequiredContributionProjection(_Return):
+    operation: Literal["required_contribution"]
+    start: MoneyIn
+    target: MoneyIn
+    months: Months
+
+
+class MonthsToTargetProjection(Input):
+    operation: Literal["months_to_target"]
+    remaining: MoneyIn = Field(description="Amount still needed, e.g. a goal's gap.")
+    monthly_amount: MoneyIn
+
+
+class PrepayOrInvestProjection(_LoanTerms, _Return):
+    operation: Literal["prepay_or_invest"]
+    extra_monthly: MoneyIn
+    horizon_months: Months
+
+
+Projection = Annotated[
+    LoanProjection
+    | FireTargetProjection
+    | GrowthProjection
+    | CoastFireProjection
+    | RequiredContributionProjection
+    | MonthsToTargetProjection
+    | PrepayOrInvestProjection,
+    Field(discriminator="operation"),
+]
+
+
+class ProjectInput(Input):
+    projection: Projection
+
+
+class ScheduleRow(Output):
+    period: int
+    date: date | None
+    payment: Money
+    interest: Money
+    principal: Money
+    balance: Money
+
+
+class GrowthRow(Output):
+    year: int
+    balance: Money
+    contributed: Money
+
+
+class ProjectionResult(Output):
+    operation: str
+    assumptions: dict[str, str | int | None]
+    figures: dict[str, Amount | int | date | None]
+    schedule: list[ScheduleRow] = Field(default_factory=list)
+    growth: list[GrowthRow] = Field(default_factory=list)
+    note: str = (
+        "A projection from the assumptions above, not recorded activity or a "
+        "balance. Taxes, fees and risk are not modelled."
+    )
+
+
+class PositionQuery(Input):
+    since: date | None = Field(
+        default=None,
+        description="Also report each investment and loan's balance change since "
+        "this date, next to contributions or payments recorded in between.",
+    )
+    stale_after_days: int = Field(default=45, ge=1, le=3650)
+
+
+class BalanceChange(Output):
+    from_date: date
+    to_date: date
+    from_balance: Money
+    to_balance: Money
+    balance_change: Money
+    recorded_total: Money
+    recorded_entries: int
+    money_weighted_return_percent: Amount | None = Field(
+        description="Investments only: annualized return (XIRR) of the start "
+        "balance, contributions and end balance. Noisy over short periods."
+    )
+
+
+class PositionLine(Output):
+    id: UUID
+    name: Untrusted
+    active: bool
+    balance: Money | None
+    observed_on: date | None
+    days_old: int | None
+    stale: bool
+    change: BalanceChange | None
+
+
+class SavingsLine(Output):
+    id: UUID
+    name: Untrusted
+    remaining_saved: Money
+
+
+class Position(Output):
+    on: date
+    savings: list[SavingsLine]
+    savings_total: Money
+    investments: list[PositionLine]
+    investments_total: Money | None
+    debts: list[PositionLine]
+    debts_total: Money | None
+    net_position: Money | None
+    note: str = (
+        "Savings are remaining saved from recorded activity, not bank balances. "
+        "Investments and loans are their latest observations, dated per line. "
+        "A balance change is not inferred from recorded payments or contributions."
+    )
+
+
+def _position_line(line) -> PositionLine:
+    change = line["change"]
+    return PositionLine(
+        id=line["id"],
+        name=line["name"],
+        active=line["active"],
+        balance=None if line["balance"] is None else str(line["balance"]),
+        observed_on=line["observed_on"],
+        days_old=line["days_old"],
+        stale=line["stale"],
+        change=None
+        if change is None
+        else BalanceChange(
+            **{
+                k: v if isinstance(v, date | int) or v is None else str(v)
+                for k, v in change.items()
+            }
+        ),
+    )
+
+
+def _known_total(lines) -> str | None:
+    if any(line["active"] and line["balance"] is None for line in lines):
+        return None
+    return str(
+        sum((line["balance"] or Decimal("0.00") for line in lines), Decimal("0.00"))
+    )
+
+
+def project_position(on, accounts, investments, debts, net) -> Position:
+    savings_total = sum((Decimal(a["balance"]) for a in accounts), Decimal("0.00"))
+    return Position(
+        on=on,
+        savings=[
+            SavingsLine(id=a["uuid"], name=a["name"], remaining_saved=a["balance"])
+            for a in accounts
+        ],
+        savings_total=str(savings_total),
+        investments=[_position_line(i) for i in investments],
+        investments_total=_known_total(investments),
+        debts=[_position_line(d) for d in debts],
+        debts_total=_known_total(debts),
+        net_position=None if net is None else str(net),
+    )
 
 
 class KindInput(Input):

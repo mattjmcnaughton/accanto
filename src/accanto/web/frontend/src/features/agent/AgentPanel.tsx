@@ -57,6 +57,8 @@ const LOOKS_AT: Record<string, string> = {
   get_plan: "a Plan",
   get_monthly_review: "the month's Review",
   list_activity: "recorded activity",
+  summarize_activity: "activity totals",
+  get_position: "your net position",
   list_tags: "your tags",
   list_savings: "savings goals",
   list_destinations: "investments and giving",
@@ -68,7 +70,13 @@ const LOOKS_AT: Record<string, string> = {
   list_sources: "transaction sources",
   list_pending_changes: "pending changes",
 };
+/** Tools that compute rather than look something up. */
+const COMPUTES: Record<string, Record<ToolLine["status"], string>> = {
+  calculate: { started: "Calculating…", done: "Calculated", failed: "Could not calculate" },
+  project: { started: "Projecting…", done: "Projected", failed: "Could not project" },
+};
 export function toolText({ name, status }: ToolLine): string {
+  if (COMPUTES[name]) return COMPUTES[name][status];
   const what = LOOKS_AT[name];
   if (what)
     return {
