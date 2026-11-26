@@ -128,6 +128,8 @@ class ActivityInput(Input):
     expected_revision: int | None = Field(default=None, ge=1)
     is_adjustment: bool = False
     funding_origin: LegacyOrigin = Field(default=None, exclude=True)
+    # Replaces the entry's tags; omit to leave them unchanged.
+    tag_ids: list[UUID] | None = Field(default=None, max_length=20)
 
     @field_validator("amount")
     @classmethod
@@ -233,3 +235,23 @@ class ReviewEditInput(Input):
     note: str = Field(max_length=4000)
     reviewed: bool
     checkpoint: bool = False
+
+
+class TagInput(Input):
+    name: Name
+
+
+class TagEditInput(Input):
+    name: Name
+    active: bool
+    expected_revision: int = Field(ge=1)
+
+
+class EntryTagsChange(Input):
+    entry_id: UUID
+    expected_revision: int = Field(ge=1)
+    tag_ids: list[UUID] = Field(max_length=20)
+
+
+class EntryTagsInput(Input):
+    entries: list[EntryTagsChange] = Field(min_length=1, max_length=200)

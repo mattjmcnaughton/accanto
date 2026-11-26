@@ -48,6 +48,8 @@ export interface ActivityInput {
   saving_goal_id?: UUID | null;
   /** Outflows only: the saving goal that pays; null is current income. */
   funding_goal_id?: UUID | null;
+  /** Replaces the entry's tags; omit to leave them unchanged. */
+  tag_ids?: UUID[];
 }
 export interface RevisionInput {
   expected_revision: number;
@@ -127,6 +129,7 @@ export interface Activity {
   is_refund?: boolean;
   refund_of?: UUID | null;
   remaining_refundable?: DecimalString | null;
+  tag_ids?: UUID[];
 }
 export interface RefundInput {
   date: IsoDate;

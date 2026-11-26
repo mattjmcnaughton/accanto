@@ -202,6 +202,7 @@ async def entry_snapshot(session, kind, entry):
     )
     from accanto.models import savings as s
     from accanto.services.savings import current_link
+    from accanto.services.tags import entry_tag_uuids
 
     link = await current_link(session, entry["id"])
     if link is None and entry["deleted_at"] is not None:
@@ -236,6 +237,7 @@ async def entry_snapshot(session, kind, entry):
         assignment_field(kind): str(destination_uuid) if destination_uuid else None,
         "funding_origin": "savings" if link else "income",
         "funding_goal_id": str(goal_uuid) if goal_uuid else None,
+        "tag_ids": await entry_tag_uuids(session, entry["id"]),
     }
 
 
@@ -396,6 +398,9 @@ async def write_contribution(session, entity, operation, payload, target, audit)
         await session.execute(
             delete(assignment).where(assignment.c.actual_entry_id == updated["id"])
         )
+    from accanto.services.tags import tag_entry
+
+    await tag_entry(session, entity, updated, payload.get("tag_ids"), audit)
     response = await entry_snapshot(session, kind, updated)
     await audit(m.entries, updated["uuid"], before, response)
     return response

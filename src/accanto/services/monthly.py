@@ -993,6 +993,9 @@ async def write(
                             name=fixed_cost["name"],
                         )
                     )
+                from accanto.services.tags import tag_entry
+
+                await tag_entry(session, entity, record, payload.get("tag_ids"), audit)
             response = await entry_snapshot(session, record)
             await audit(m.entries, record["uuid"], before, response)
         elif operation == "create_review":
@@ -1191,6 +1194,12 @@ async def write(
             response = await write_inbox(
                 session, entity, actor, operation, payload, target, audit
             )
+        elif operation in {"create_tag", "edit_tag", "delete_tag", "set_entry_tags"}:
+            from accanto.services.tags import write_tag
+
+            response = await write_tag(
+                session, entity, operation, payload, target, audit
+            )
         elif operation == "edit_transaction_provider":
             from accanto.services.inbox import write_provider
 
@@ -1261,6 +1270,7 @@ async def entry_snapshot(session, record):
         .where(b.entry_debts.c.actual_entry_id == record["id"])
     )
     from accanto.services.savings import current_link
+    from accanto.services.tags import entry_tag_uuids
 
     link = await current_link(session, record["id"])
     if link is None and record["deleted_at"] is not None:
@@ -1330,6 +1340,7 @@ async def entry_snapshot(session, record):
             "funding_origin": "savings" if outflow and link else "income",
             "refund_of": original_uuid,
             "remaining_refundable": remaining_refundable,
+            "tag_ids": await entry_tag_uuids(session, record["id"]),
         }
     )
 
@@ -1632,18 +1643,24 @@ async def read_plans(session, token, entity_uuid):
         return result
 
 
-async def read_activity(session, token, entity_uuid):
+async def read_activity(session, token, entity_uuid, tag_id: UUID | None = None):
     async with session.begin():
         _, entity = await authorize(session, token, entity_uuid, lock=True)
+        query = select(m.entries)
+        if tag_id is not None:
+            query = query.join(
+                m.entry_tags, m.entry_tags.c.actual_entry_id == m.entries.c.id
+            ).join(
+                m.tags,
+                (m.tags.c.id == m.entry_tags.c.tag_id) & (m.tags.c.uuid == tag_id),
+            )
         entries = (
             (
                 await session.execute(
-                    select(m.entries)
-                    .where(
+                    query.where(
                         m.entries.c.entity_id == entity["id"],
                         m.entries.c.deleted_at.is_(None),
-                    )
-                    .order_by(m.entries.c.financial_date, m.entries.c.id)
+                    ).order_by(m.entries.c.financial_date, m.entries.c.id)
                 )
             )
             .mappings()

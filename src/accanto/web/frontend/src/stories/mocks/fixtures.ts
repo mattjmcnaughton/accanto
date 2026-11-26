@@ -5452,3 +5452,28 @@ export const agentSettings = {
   retention_days: 30,
   daily_message_cap: 200,
 };
+
+/** Invented tags (TDD 05); fixtures carry none until a story applies them. */
+export const tags = [
+  {
+    uuid: "5b0c9f9e-6a3e-4c7a-9b57-1d2b3c4d5e01",
+    name: "Italy trip",
+    active: true,
+    revision: 1,
+    entries: 3,
+  },
+  {
+    uuid: "5b0c9f9e-6a3e-4c7a-9b57-1d2b3c4d5e02",
+    name: "Kids",
+    active: true,
+    revision: 1,
+    entries: 2,
+  },
+  {
+    uuid: "5b0c9f9e-6a3e-4c7a-9b57-1d2b3c4d5e03",
+    name: "Home office",
+    active: false,
+    revision: 2,
+    entries: 0,
+  },
+];

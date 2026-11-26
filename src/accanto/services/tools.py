@@ -35,6 +35,7 @@ from accanto.services.monthly import (
     write,
 )
 from accanto.services.savings import read_accounts
+from accanto.services.tags import read_tags
 
 LIST_CAP = 200
 RULES = [
@@ -46,7 +47,8 @@ RULES = [
     "stale_revision, read it again.",
     "Reuse the same idempotency key and input when retrying a write.",
     "In propose mode, writes become pending changes the owner applies in "
-    "Accanto. Deleting a savings movement or a balance observation always does.",
+    "Accanto. Deleting a savings movement, a balance observation or a tag "
+    "always does.",
 ]
 
 
@@ -128,7 +130,7 @@ async def get_monthly_review(ctx, entity_id, args: t.MonthInput, key):
 
 async def list_activity(ctx, entity_id, args: t.ActivityQuery, key):
     async with ctx.sessions() as session:
-        rows = await read_activity(session, ctx.actor, entity_id)
+        rows = await read_activity(session, ctx.actor, entity_id, args.tag_id)
     end = inbox.next_month(args.month)
     selected = [
         row
@@ -140,6 +142,11 @@ async def list_activity(ctx, entity_id, args: t.ActivityQuery, key):
         entries=[t.project_entry(row) for row in selected[:LIST_CAP]],
         truncated=len(selected) > LIST_CAP,
     )
+
+
+async def list_tags(ctx, entity_id, args, key):
+    async with ctx.sessions() as session:
+        return t.project_tags(await read_tags(session, ctx.actor, entity_id))
 
 
 async def list_savings(ctx, entity_id, args, key):
@@ -448,6 +455,32 @@ def build_activity(args: t.SaveActivity):
     )
 
 
+def build_tag(args: t.SaveTag):
+    if args.id:
+        _kind_of(args.values, t.TagEditInput, "edit (with active)")
+        return (
+            Command("edit_tag", _json(args.values), args.id),
+            f"Edit tag {args.values.name}",
+        )
+    _kind_of(args.values, t.TagInput, "create")
+    return Command("create_tag", _json(args.values)), f"Add tag {args.values.name}"
+
+
+def build_delete_tag(args: t.DeleteTag):
+    return (
+        Command("delete_tag", {"expected_revision": args.expected_revision}, args.id),
+        "Delete a tag and remove it from every entry (cannot be restored)",
+    )
+
+
+def build_entry_tags(args: t.SetEntryTags):
+    count = len(args.entries)
+    return (
+        Command("set_entry_tags", _json(args)),
+        f"Change the tags on {count} entr{'y' if count == 1 else 'ies'}",
+    )
+
+
 def build_known_total(args: KnownTotalInput):
     return (
         Command("known_total", _python(args)),
@@ -741,11 +774,19 @@ CATALOG: tuple[CatalogTool, ...] = (
     ),
     _read(
         "list_activity",
-        "Recorded activity entries for one month, optionally one category; with "
-        "notes. Capped at 200.",
+        "Recorded activity entries for one month, optionally one category or one "
+        "tag; with notes and tag_ids. Capped at 200.",
         t.ActivityQuery,
         t.ActivityList,
         list_activity,
+    ),
+    _read(
+        "list_tags",
+        "The Entity's tags with how many entries carry each. Tags overlap: never "
+        "present tagged amounts as shares of a category total.",
+        t.NoInput,
+        t.TagList,
+        list_tags,
     ),
     _read(
         "list_savings",
@@ -823,7 +864,7 @@ CATALOG: tuple[CatalogTool, ...] = (
     CatalogTool(
         "set_proposals",
         "Set (or, with clear, remove) proposals on inbox items: category, "
-        "assignment, funding, refund_of or skip, with a rationale. Records "
+        "assignment, funding, tag_ids, refund_of or skip, with a rationale. Records "
         "nothing; allowed in every Agent mode.",
         t.SetProposals,
         t.ItemOutcomes,
@@ -862,6 +903,26 @@ CATALOG: tuple[CatalogTool, ...] = (
         "Record an activity entry, or correct one given id and expected_revision.",
         t.SaveActivity,
         build_activity,
+    ),
+    _write(
+        "save_tag",
+        "Create a tag, or rename or archive one given id.",
+        t.SaveTag,
+        build_tag,
+    ),
+    _write(
+        "delete_tag",
+        "Delete a tag and remove it from every entry. Always a pending change.",
+        t.DeleteTag,
+        build_delete_tag,
+        "delete",
+    ),
+    _write(
+        "set_entry_tags",
+        "Replace the tags on entries without changing anything else. Refunds "
+        "carry their purchase's tags and cannot be set.",
+        t.SetEntryTags,
+        build_entry_tags,
     ),
     _write(
         "record_known_total",

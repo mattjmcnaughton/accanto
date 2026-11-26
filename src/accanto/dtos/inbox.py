@@ -23,6 +23,7 @@ class CompletionInput(Input):
     funding: Assignment | None = None
     refund_of: UUID | None = None
     skip: bool = False
+    tag_ids: list[UUID] = Field(default_factory=list, max_length=20)
 
     @field_validator("assignment", "funding")
     @classmethod

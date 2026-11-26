@@ -212,6 +212,9 @@ async def write_refund(session, entity, operation, payload, target, audit):
                 .one()
             )
             await audit(r.refunds, link["uuid"], None, dict(link))
+            from accanto.services.tags import copy_purchase_tags
+
+            await copy_purchase_tags(session, entity, purchase["id"], record["id"])
             # Copy original associations once; they cannot be edited via refund DTO.
             for table, column in (
                 (m.fixed_cost_assignments, "fixed_cost_id"),

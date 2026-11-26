@@ -33,6 +33,8 @@ export interface Completion {
   funding?: string | null;
   refund_of?: UUID | null;
   skip?: boolean;
+  /** Tag ids for the entry; a refund carries its purchase's tags instead. */
+  tag_ids?: UUID[];
 }
 /** Only the completion fields, so a draft copied from a proposal drops its rationale. */
 const completionOf = ({
@@ -41,12 +43,14 @@ const completionOf = ({
   funding,
   refund_of,
   skip,
+  tag_ids,
 }: Completion): Completion => ({
   category,
   assignment,
   funding,
   refund_of,
   skip,
+  tag_ids,
 });
 export interface Proposal extends Completion {
   rationale: string;

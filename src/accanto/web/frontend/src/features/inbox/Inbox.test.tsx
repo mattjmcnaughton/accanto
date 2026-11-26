@@ -137,3 +137,54 @@ it("sends only completion fields when a draft was copied from a proposal", () =>
     completion: { category: "spending", funding: "goal-1" },
   });
 });
+
+it("adds tags with t and records them with the item", async () => {
+  const writes: Array<{ path: string; body: unknown }> = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (init?.method === "POST") {
+      writes.push({ path: url, body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify({ item: {}, entry: {} }));
+    }
+    if (url.endsWith("/inbox")) return new Response(JSON.stringify([item({})]));
+    if (url.endsWith("/tags"))
+      return new Response(
+        JSON.stringify([
+          { uuid: "tag-trip", name: "Italy trip", active: true, revision: 1, entries: 0 },
+          { uuid: "tag-old", name: "Old project", active: false, revision: 2, entries: 4 },
+        ]),
+      );
+    return new Response("[]");
+  });
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+    />,
+  );
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  fireEvent.keyDown(document.body, { key: "3" });
+  fireEvent.keyDown(document.body, { key: "t" });
+  await screen.findByText(/Tags for Example Coffee Cart/);
+  // Archived tags cannot be added.
+  expect(screen.queryByText("Old project")).toBeNull();
+  fireEvent.click(screen.getByText("Italy trip"));
+  expect(await screen.findByText("Italy trip", { selector: ".fv" })).toBeDefined();
+  fireEvent.keyDown(document.body, { key: "Enter" });
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(writes[0].body).toEqual({
+    expected_revision: 3,
+    completion: {
+      category: "spending",
+      assignment: null,
+      funding: "income",
+      tag_ids: ["tag-trip"],
+    },
+  });
+});

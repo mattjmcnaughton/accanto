@@ -82,6 +82,8 @@ class ContributionInput(Input):
     note: str = Field(default="", max_length=2000)
     is_adjustment: bool = False
     expected_revision: int | None = Field(default=None, ge=1)
+    # Replaces the entry's tags; omit to leave them unchanged.
+    tag_ids: list[UUID] | None = Field(default=None, max_length=20)
     # Transition only (see dtos.monthly.LegacyOrigin); the service resolves
     # destination_id by the route's kind.
     destination_id: SkipJsonSchema[UUID | None] = None
@@ -127,3 +129,4 @@ class ContributionResult(BaseModel):
     giving_recipient_id: UUID | None = None
     funding_origin: str = "income"
     funding_goal_id: UUID | None = None
+    tag_ids: list[UUID] = []

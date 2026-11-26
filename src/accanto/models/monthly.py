@@ -338,3 +338,33 @@ outcomes = table(
     ),
     UniqueConstraint("entity_id", "user_id", "operation", "request_key"),
 )
+tags = table(
+    "tag",
+    Column("entity_id", ForeignKey("entity.id"), nullable=False),
+    Column("name", String(120), nullable=False),
+    Column("active", Boolean, nullable=False, server_default="true"),
+    Column("revision", Integer, nullable=False, server_default="1"),
+    Column("deleted_at", DateTime(timezone=True)),
+    UniqueConstraint("id", "entity_id"),
+    CheckConstraint("revision >= 1"),
+)
+# Names compare case-insensitively among current tags; deleted names are reusable.
+Index(
+    "tag_entity_name",
+    tags.c.entity_id,
+    func.lower(tags.c.name),
+    unique=True,
+    postgresql_where=tags.c.deleted_at.is_(None),
+)
+entry_tags = table(
+    "entry_tag",
+    Column("actual_entry_id", BigInteger, nullable=False),
+    Column("tag_id", BigInteger, nullable=False),
+    Column("entity_id", BigInteger, nullable=False),
+    ForeignKeyConstraint(
+        ["actual_entry_id", "entity_id"], ["actual_entry.id", "actual_entry.entity_id"]
+    ),
+    ForeignKeyConstraint(["tag_id", "entity_id"], ["tag.id", "tag.entity_id"]),
+    UniqueConstraint("actual_entry_id", "tag_id"),
+)
+Index("entry_tag_tag", entry_tags.c.tag_id)

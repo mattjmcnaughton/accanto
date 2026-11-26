@@ -1,3 +1,4 @@
+import type { Tag } from "../../lib/tags";
 /**
  * Presentation model for the Transactions inbox. The server is the authority for every
  * financial rule; `precheck` only explains, before a round trip, why Enter cannot record yet.
@@ -70,6 +71,7 @@ export interface Choices {
   goals: Array<Option & { saved: number }>;
   purchases: Activity[];
   entries: Activity[];
+  tags?: Tag[];
 }
 
 export const cents = (it: StagedTransaction) => decimalToCents(it.amount) ?? 0;

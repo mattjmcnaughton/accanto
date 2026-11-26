@@ -23,6 +23,8 @@ import {
   monthly,
 } from "../../lib/monthly";
 import { savings } from "../../lib/savings";
+import { type Tag, tags as tagApi } from "../../lib/tags";
+import { TagChips, TagPicker, TagsDialog } from "../tags/Tags";
 import { Dialog, Empty, Field, Head, tint } from "../../ui";
 import { type ScreenProps, composing, sourceChoices, useLoad } from "./shared";
 import { useGridKeys } from "./useGridKeys";
@@ -122,6 +124,7 @@ export function ActivityScreen(
     [p.entity.id, p.refresh, reload],
   );
   const loans = useLoad(() => balances.loans(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const tagState = useLoad(() => tagApi.list(p.entity.id), [p.entity.id, p.refresh, reload]);
   const recipients = useLoad(
     () => destinations.list(p.entity.id, "giving"),
     [p.entity.id, p.refresh, reload],
@@ -138,6 +141,9 @@ export function ActivityScreen(
   const month = allMonths ? "" : shown;
   const [category, setCategory] = useState<Activity["category"] | "">("");
   const [search, setSearch] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [managing, setManaging] = useState(false);
+  const [infoTags, setInfoTags] = useState<string[] | null>(null);
   const [quick, setQuick] = useState("");
   const [quickError, setQuickError] = useState("");
   const [help, setHelp] = useState(false);
@@ -155,6 +161,9 @@ export function ActivityScreen(
     if (submitRequest) form.current?.requestSubmit();
   }, [submitRequest]);
   const data = entries.kind === "ready" ? entries.data : [];
+  const tagList = tagState.kind === "ready" ? tagState.data : [];
+  const tagNames = (entry: Activity) =>
+    (entry.tag_ids ?? []).map((id) => tagList.find((tag) => tag.uuid === id)?.name ?? "");
   const today = p.entity.today;
   const sources = plans.kind === "ready" ? sourceChoices(plans.data) : [];
   const fixedCosts =
@@ -276,6 +285,7 @@ export function ActivityScreen(
           funding_origin: f.funding_goal_id ? "savings" : "income",
           saving_goal_id: f.saving_goal_id ?? null,
           funding_goal_id: f.funding_goal_id ?? null,
+          tag_ids: f.tag_ids ?? base.tag_ids,
         },
       };
     }
@@ -314,6 +324,7 @@ export function ActivityScreen(
           id === pendingRow?.id ||
           ((!month || view.financial_date.startsWith(month)) &&
             (!category || view.category === category) &&
+            (!tagFilter || (view.tag_ids ?? []).includes(tagFilter)) &&
             (!query ||
               [
                 view.financial_date,
@@ -321,6 +332,7 @@ export function ActivityScreen(
                 categoryNames[view.category],
                 title(view),
                 ...describe(view),
+                ...tagNames(view),
               ]
                 .join(" ")
                 .toLowerCase()
@@ -373,6 +385,7 @@ export function ActivityScreen(
   function start(next: Draft, isNew: boolean) {
     setDraft(next);
     setInfo(null);
+    setInfoTags(null);
     setEdit(null);
     setCellError("");
     setChanged(isNew);
@@ -386,6 +399,7 @@ export function ActivityScreen(
   function done() {
     setDraft(null);
     setInfo(null);
+    setInfoTags(null);
     setOpen(false);
     setEdit(null);
     setCellError("");
@@ -401,6 +415,7 @@ export function ActivityScreen(
       if (draft && changed && !p.guard()) return false;
       done();
       setInfo(row.view);
+      setInfoTags(null);
       return true;
     }
     if (!p.guard()) return false;
@@ -439,6 +454,7 @@ export function ActivityScreen(
             is_adjustment: entry.is_adjustment,
             saving_goal_id: entry.saving_goal_id,
             funding_goal_id: entry.funding_goal_id,
+            tag_ids: entry.tag_ids ?? [],
           },
         },
         false,
@@ -474,6 +490,7 @@ export function ActivityScreen(
           note: prefill?.note ?? "",
           saving_goal_id: null,
           funding_goal_id: null,
+          tag_ids: [],
         },
       },
       true,
@@ -684,6 +701,14 @@ export function ActivityScreen(
         <button type="button" className="btn" disabled={p.busy || !loaded} onClick={openKnown}>
           Enter known total
         </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={tagState.kind !== "ready"}
+          onClick={() => setManaging(true)}
+        >
+          Manage tags
+        </button>
         <button type="button" className="btn pri" disabled={p.busy} onClick={() => openNew()}>
           Record activity
         </button>
@@ -745,7 +770,7 @@ export function ActivityScreen(
         )}
       </div>
       <LoadProblem
-        states={[entries, plans, accounts, investments, loans, recipients]}
+        states={[entries, plans, accounts, investments, loans, recipients, tagState]}
         retry={() => setReload((x) => x + 1)}
       />
       {entries.kind === "loading" ? (
@@ -773,6 +798,22 @@ export function ActivityScreen(
                 ),
               )}
             </div>
+            {tagList.length > 0 && (
+              <select
+                className="input ar-tag-filter"
+                aria-label="Show tag"
+                value={tagFilter}
+                onChange={(e) => setTagFilter(e.target.value)}
+              >
+                <option value="">All tags</option>
+                {tagList.map((tag) => (
+                  <option key={tag.uuid} value={tag.uuid}>
+                    {tag.name}
+                    {tag.active ? "" : " (archived)"}
+                  </option>
+                ))}
+              </select>
+            )}
             <input
               className="input"
               type="search"
@@ -845,6 +886,7 @@ export function ActivityScreen(
                                   Refundable {formatMoney(v.remaining_refundable)}
                                 </span>
                               )}
+                            <TagChips tags={tagList} ids={v.tag_ids} />
                             {readOnly(v) && <span className="chip">Read only</span>}
                             {pending && changed && <span className="chip warn">Unsaved</span>}
                           </span>
@@ -913,6 +955,15 @@ export function ActivityScreen(
           </p>
         </section>
       )}
+      {managing && (
+        <TagsDialog
+          entityId={p.entity.id}
+          tags={tagList}
+          busy={p.busy}
+          save={p.save}
+          onClose={() => setManaging(false)}
+        />
+      )}
       {open && (info || draft) && (
         <Dialog title={dialogTitle} onClose={closeDialog} className="ar">
           {info && (
@@ -936,8 +987,15 @@ export function ActivityScreen(
                     </>
                   )}
                 </dl>
+                <TagPicker
+                  tags={tagList}
+                  value={infoTags ?? info.tag_ids ?? []}
+                  disabled={p.busy}
+                  onChange={setInfoTags}
+                />
                 <p className="note">
-                  Correct this entry in {info.category === "investing" ? "Investments" : "Giving"}.
+                  Change its tags here. Correct anything else in{" "}
+                  {info.category === "investing" ? "Investments" : "Giving"}.
                 </p>
               </div>
               <div className="dlg-f">
@@ -952,6 +1010,30 @@ export function ActivityScreen(
                   </button>
                 )}
                 <span className="spacer" />
+                {infoTags && (
+                  <button
+                    type="button"
+                    className="btn pri"
+                    disabled={p.busy}
+                    onClick={() =>
+                      p.save(
+                        tagApi.setEntryTags(p.entity.id, [
+                          {
+                            entry_id: info.uuid,
+                            expected_revision: info.revision,
+                            tag_ids: infoTags,
+                          },
+                        ]),
+                        (result) => {
+                          setInfoTags(null);
+                          setInfo(result.entries[0] ?? info);
+                        },
+                      )
+                    }
+                  >
+                    Save tags
+                  </button>
+                )}
                 <button type="button" className="btn" onClick={closeDialog}>
                   Close
                 </button>
@@ -978,6 +1060,7 @@ export function ActivityScreen(
                       loans={loans.kind === "ready" ? loans.data : []}
                       sources={sources}
                       savingGoals={savingGoals}
+                      tags={tagList}
                     />
                   )}
                   {draft.kind === "refund" && (
@@ -986,7 +1069,8 @@ export function ActivityScreen(
                         Original {categoryNames[draft.target.category].toLowerCase()} payment of{" "}
                         {formatMoney(draft.target.amount)} on {fmtDate(draft.target.financial_date)}
                         . Remaining refundable:{" "}
-                        {formatMoney(draft.target.remaining_refundable ?? "0.00")}.
+                        {formatMoney(draft.target.remaining_refundable ?? "0.00")}. A refund carries
+                        the purchase's tags.
                       </p>
                       <div className="two">
                         <Field label="Refund date">
@@ -1132,6 +1216,7 @@ function ActivityFields({
   loans,
   sources,
   savingGoals,
+  tags,
 }: {
   draft: Extract<Draft, { kind: "activity" }>;
   change: (next: Draft) => void;
@@ -1139,6 +1224,7 @@ function ActivityFields({
   loans: Array<{ uuid: string; name: string; active: boolean }>;
   sources: Array<{ id: string; label: string }>;
   savingGoals: GoalChoice[];
+  tags: Tag[];
 }) {
   const form = draft.form;
   const selected = draft.entry;
@@ -1315,6 +1401,11 @@ function ActivityFields({
         />
         Adjustment to the recorded total
       </label>
+      <TagPicker
+        tags={tags}
+        value={form.tag_ids ?? []}
+        onChange={(tag_ids) => update({ ...form, tag_ids })}
+      />
     </>
   );
 }
