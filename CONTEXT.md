@@ -10,6 +10,11 @@ The [product brief](docs/product/brief.md) records the current direction.
 The [MVP PRD](docs/prd/01-mvp.md) defines the proposed MVP requirements and
 acceptance criteria; this file defines their shared domain meanings.
 
+Every example in this file, and every name or amount used to illustrate these
+terms in code, tests, docs and UI copy, is synthetic. Never illustrate a term
+with a real Entity's accounts, payees or amounts (see AGENTS.md, "Privacy and
+committing").
+
 ## Ubiquitous language
 
 | Term | Meaning |

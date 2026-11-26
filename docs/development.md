@@ -139,10 +139,17 @@ a rollback must preserve saved versions and audit history.
 
 ## Privacy review before a commit
 
-Use fictional names and deliberately synthetic financial examples. Never derive
-fixtures or documentation examples from a person's financial records. Production
-packaging bundles code and assets only, not browser storage or database contents.
-Verify that remains true whenever changing packaging or initial state.
+The repository is public and holds only synthetic financial data; see
+"Privacy and committing" in [AGENTS.md](../AGENTS.md) for the full list of what
+never enters Git. Use fictional names and deliberately synthetic financial
+examples. Never derive fixtures or documentation examples from a person's
+financial records, and never copy data, captures, logs or traces from
+production. `just gate` runs `tests/unit/test_synthetic_data_only.py`, which
+rejects tracked exports, dumps, recordings, stray images, non-example emails and
+common credential formats; it cannot judge whether an amount or name is real.
+Production packaging bundles code and assets only, not browser storage or
+database contents. Verify that remains true whenever changing packaging or
+initial state.
 
 Keep financial exports, recovery files, real-data screenshots and scratch notes
 outside the repository, including untracked/ignored files: tooling may snapshot

@@ -49,7 +49,8 @@ Use independently worked amounts and observable outcomes. Link each affected
 rule above to the cheapest sufficient evidence: pure unit tests for financial
 logic, database integration tests for constraints/rollback/concurrency, and UI
 checks for user interactions. Include relevant correction and failure cases.
-Do not claim a fake database establishes transactional guarantees.
+Do not claim a fake database establishes transactional guarantees. Every
+example, fixture and screenshot is synthetic, never taken from a real workspace.
 
 ## Alternatives and tradeoffs
 

@@ -11,7 +11,9 @@ database. Never copy, anonymize, or derive fixtures from a person's finances.
 ## Safety and setup
 
 - Read the repository's privacy guidance. Use only invented data in an isolated
-  browser, including screenshots and recordings.
+  browser, including screenshots and recordings. The repository is public and
+  its owner keeps real finances in Accanto: only captures of this synthetic
+  workspace may be committed, never of production or a real Entity.
 - The script accepts only a loopback `postgresql+asyncpg` URL whose database is
   exactly `accanto_fixture_test`, without URL query overrides. It creates the
   database and records an ownership marker; it refuses an existing unmarked DB.

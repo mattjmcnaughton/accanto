@@ -118,6 +118,27 @@ SQL, identifiers, counts, statuses and error types or codes. In particular:
 
 ## Privacy and committing
 
+**Only synthetic financial data may be committed.** The repository is public, and
+its owner keeps real finances in Accanto. Everything in Git (source, tests,
+fixtures, Storybook mocks, docs, PRDs/TDDs, prototypes, screenshots, recordings,
+task notes, PR text and commit messages) must be invented for the purpose. Never
+commit, even "anonymized":
+
+- real account, institution, employer, payee, recipient, goal or Plan names
+  tied to the owner, or real amounts, balances, transactions, notes or dates;
+- data read from production, the live Box, its database, YNAB, Logfire or a
+  model provider, including exports, database dumps, CSV/OFX files, HAR files,
+  API responses, traces, logs and AGENT.md contents;
+- screenshots or recordings of anything but the synthetic `managing-fixtures`
+  workspace or Storybook mocks;
+- credentials of any kind (tokens, API keys, client secrets, connection
+  strings), or personal contact details. Use `example.test` addresses.
+
+`tests/unit/test_synthetic_data_only.py` (in `just gate`) rejects tracked
+exports, dumps, recordings, images outside `docs/screenshots/`, non-example
+emails and common credential formats. It cannot recognise a real amount or
+payee: the rules below still apply.
+
 - Never put personal financial records, identifying financial examples, exports,
   screenshots of real data, or credentials in source, docs, fixtures, task notes,
   generated artifacts, or commit messages. Use deliberately synthetic examples.

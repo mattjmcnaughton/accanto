@@ -186,6 +186,16 @@ export const inbox = {
     path: `${item(entityId, it.id)}/${action}`,
     body: { expected_revision: it.revision },
   }),
+  /** Ignore, return or undo several items in one request; each reports its own outcome. */
+  actMany: (
+    entityId: UUID,
+    items: StagedTransaction[],
+    action: "skip" | "unskip" | "undo",
+  ): InboxWrite => ({
+    method: "POST",
+    path: `${root(entityId)}/inbox/${action}`,
+    body: { items: items.map((it) => ({ item_id: it.id, expected_revision: it.revision })) },
+  }),
   resolve: (entityId: UUID, it: StagedTransaction, resolution: "keep" | "delete"): InboxWrite => ({
     method: "POST",
     path: `${item(entityId, it.id)}/resolve`,

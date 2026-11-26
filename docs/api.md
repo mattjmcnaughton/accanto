@@ -834,6 +834,7 @@ point it at the fake server in `tests/fakes/ynab_server.py`.
 | POST | `/inbox/record` | `{items: [{item_id, expected_revision, completion?}]}`; each in its own transaction; per-item outcomes |
 | POST | `/inbox/{item_id}/skip`, `/unskip` | `{expected_revision}`; ignore an item (the UI calls status `skipped` Ignored) or return it to waiting. A re-sync of the same transaction keeps it ignored |
 | POST | `/inbox/{item_id}/undo` | `{expected_revision}`; soft-deletes the recorded entry through its normal delete command; the item waits again |
+| POST | `/inbox/skip`, `/inbox/unskip`, `/inbox/undo` | `{items: [{item_id, expected_revision}]}` (up to 200); the batch form of the commands above. Each item is its own write under the request's `Idempotency-Key`, so one rejection keeps the rest; per-item outcomes `{item_id, ok, item?, entry?, error?}` |
 | POST | `/inbox/{item_id}/resolve` | `{expected_revision, resolution: "keep" \| "delete"}` for a conflict |
 
 A **proposal** (and a record `completion`) is any subset of `category`

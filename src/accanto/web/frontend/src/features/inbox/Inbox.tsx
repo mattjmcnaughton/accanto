@@ -52,7 +52,10 @@ type Picker = {
   ranked?: boolean;
   query: string;
   at: number;
+  /** The selected items a batch choice applies to; otherwise the current item. */
+  ids?: string[];
 };
+type Outcome = { item_id: string; ok: boolean; item?: unknown; error?: { message: string } };
 type Toast = { text: string; tone?: "warn" | "bad"; undo?: boolean };
 type Undo = Array<{ id: string; action: "undo" | "unskip" | "skip" | "later" }>;
 /**
@@ -146,6 +149,8 @@ export function Inbox(
   const [proposedOnly, setProposedOnly] = useState(false);
   const [cur, setCur] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** The last checkbox toggled; a shift-click selects the rows between it and the click. */
+  const anchor = useRef<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Completion>>({});
   const [hints, setHints] = useState<Record<string, string>>({});
   const [picker, setPicker] = useState<Picker | null>(null);
@@ -262,6 +267,16 @@ export function Inbox(
   const scope = proposedOnly ? all.filter((i) => i.proposal) : all;
   const shown = rows(scope, view);
   const ids = shown.flatMap((r) => ("it" in r ? [r.it.id] : []));
+  /** Rows with a checkbox: waiting items in the Waiting view, under the current filter. */
+  const selectable =
+    view === "waiting"
+      ? shown.flatMap((r) => ("it" in r && r.it.status === "waiting" ? [r.it.id] : []))
+      : [];
+  /** The selection a batch acts on: selected items still waiting, in list order. */
+  const chosen = selectable.flatMap((id) => {
+    const it = selected.has(id) ? all.find((i) => i.id === id) : undefined;
+    return it ? [it] : [];
+  });
   const waitingIds = new Set(all.filter((i) => i.status === "waiting").map((i) => i.id));
   const queue = flow ? flow.queue.filter((id) => waitingIds.has(id)) : [];
   const passOver = Boolean(flow) && queue.every((id) => flow?.later.includes(id));
@@ -313,9 +328,14 @@ export function Inbox(
         if (!(error instanceof ApiError) || error.kind !== "unauthenticated") throw error;
         result = await send<T>(await p.credentials(true), spec, key);
       }
-      // Record and undo return { item }; ignore and return-to-inbox return the item.
-      const item = (result as { item?: unknown } | null)?.item ?? result;
-      if (isItem(item)) setPatched((x) => ({ ...x, [item.id]: item }));
+      // Record and undo return { item }; ignore and return-to-inbox return the item;
+      // batch commands return { results: [{ item }] }.
+      const out = result as { item?: unknown; results?: Outcome[] } | null;
+      const fresh = (out?.results ? out.results.map((r) => r.item) : [out?.item ?? result]).filter(
+        isItem,
+      );
+      if (fresh.length)
+        setPatched((x) => ({ ...x, ...Object.fromEntries(fresh.map((i) => [i.id, i])) }));
       return result;
     } catch (error) {
       const message =
@@ -377,70 +397,103 @@ export function Inbox(
     setToast({ text: `Recorded ${describe(current, c)}.`, undo: true });
     return true;
   }
-  async function recordSelected() {
-    const chosen = all.filter((i) => selected.has(i.id) && i.status === "waiting");
-    const ready: StagedTransaction[] = [];
-    const stayed: string[] = [];
-    for (const it of chosen) {
-      const reason = precheck(it, effective(it, drafts[it.id]));
-      if (reason) {
-        stayed.push(it.id);
-        setHints((h) => ({ ...h, [it.id]: reason }));
-      } else if (!effective(it, drafts[it.id]).skip) ready.push(it);
-    }
-    const skips = chosen.filter(
-      (it) => effective(it, drafts[it.id]).skip && !stayed.includes(it.id),
+  /** An outflow whose category takes a funding origin. */
+  const fundable = (it: StagedTransaction) => {
+    const c = effective(it, drafts[it.id]);
+    return (
+      !isInflow(it) &&
+      !c.refund_of &&
+      Boolean(c.category) &&
+      !["saving", "income"].includes(c.category ?? "")
     );
-    setSelected(new Set());
-    const done: Undo = [];
-    let rejected = stayed.length;
-    if (ready.length) {
-      const result = await run<{ results: Array<{ item_id: string; ok: boolean }> }>(
-        inbox.recordMany(
-          p.entity.id,
-          ready.map((it) => ({ it, completion: drafts[it.id] })),
-        ),
-      );
-      for (const r of result?.results ?? []) {
-        if (r.ok) {
-          done.push({ id: r.item_id, action: "undo" });
-          clearDraft(r.item_id);
-        } else rejected++;
-      }
+  };
+  /** Send one batch command; an unsaved request reports every item as not saved. */
+  async function many(spec: InboxWrite, its: StagedTransaction[]): Promise<Outcome[]> {
+    const result = await run<{ results: Outcome[] }>(spec);
+    return result?.results ?? its.map((it) => ({ item_id: it.id, ok: false }));
+  }
+  /**
+   * Batch resolve: record every selected item from its proposal or the batch's choices, and
+   * ignore those set to ignore (or all of them), one request each. Items that cannot be saved
+   * stay selected with the reason on their row; z returns the saved ones together.
+   */
+  async function resolveSelected(ignore = false) {
+    const ready: StagedTransaction[] = [];
+    const skips: StagedTransaction[] = [];
+    const reasons: Record<string, string> = {};
+    for (const it of chosen) {
+      const c = effective(it, drafts[it.id]);
+      const reason = ignore ? null : precheck(it, c);
+      if (reason) reasons[it.id] = reason;
+      else (ignore || c.skip ? skips : ready).push(it);
     }
-    for (const it of skips)
-      if (await run(inbox.action(p.entity.id, it, "skip")))
-        done.push({ id: it.id, action: "unskip" });
+    const outcomes = [
+      ...(ready.length
+        ? (
+            await many(
+              inbox.recordMany(
+                p.entity.id,
+                ready.map((it) => ({ it, completion: drafts[it.id] })),
+              ),
+              ready,
+            )
+          ).map((r) => ({ ...r, action: "undo" as const }))
+        : []),
+      ...(skips.length
+        ? (await many(inbox.actMany(p.entity.id, skips, "skip"), skips)).map((r) => ({
+            ...r,
+            action: "unskip" as const,
+          }))
+        : []),
+    ];
+    const done: Undo = [];
+    for (const r of outcomes) {
+      if (r.ok) done.push({ id: r.item_id, action: r.action });
+      else
+        reasons[r.item_id] = r.error
+          ? `Not saved. ${readable(choices, r.error.message)}`
+          : "Not saved. Try again.";
+    }
+    for (const { id } of done) clearDraft(id);
+    setHints((h) => ({ ...h, ...reasons }));
+    const stayed = Object.keys(reasons);
+    setSelected(new Set(stayed));
     if (done.length) undo.current.push(done);
-    advance(done.map((d) => d.id));
+    // Land on the first item that stayed, so its reason is in view.
+    if (stayed.length) setCur(stayed[0]);
+    else advance(done.map((d) => d.id));
     const recorded = done.filter((d) => d.action === "undo").length;
     setToast({
       text: `${[
         recorded && `Recorded ${recorded}`,
         done.length - recorded && `Ignored ${done.length - recorded}`,
-        rejected && `${rejected} stayed in the inbox with the reason shown`,
+        stayed.length &&
+          `${stayed.length} stayed selected with the reason on ${stayed.length === 1 ? "its row" : "each row"}`,
       ]
         .filter(Boolean)
         .join(". ")}.`,
-      tone: rejected ? "warn" : undefined,
+      tone: stayed.length ? "warn" : undefined,
       undo: done.length > 0,
     });
   }
-  /** Ignore all selected waiting items; z returns them together. */
-  async function ignoreSelected() {
-    const chosen = all.filter((i) => selected.has(i.id) && i.status === "waiting");
-    setSelected(new Set());
-    const done: Undo = [];
-    for (const it of chosen)
-      if (await run(inbox.action(p.entity.id, it, "skip")))
-        done.push({ id: it.id, action: "unskip" });
-    if (done.length) undo.current.push(done);
-    advance(done.map((d) => d.id));
-    setToast({
-      text: `Ignored ${done.length}. They stay under Ignored, even after a re-sync.`,
-      tone: done.length === chosen.length ? undefined : "warn",
-      undo: done.length > 0,
+  /** Check or uncheck a row; with shift, every row from the last one toggled takes its state. */
+  function toggle(id: string, range = false) {
+    const from = range && anchor.current ? selectable.indexOf(anchor.current) : -1;
+    const to = selectable.indexOf(id);
+    const span =
+      from >= 0 && to >= 0 ? selectable.slice(Math.min(from, to), Math.max(from, to) + 1) : [id];
+    anchor.current = id;
+    setSelected((s) => {
+      const next = new Set(s);
+      const on = !s.has(id);
+      for (const x of span) on ? next.add(x) : next.delete(x);
+      return next;
     });
+  }
+  /** Select every waiting row under the current filter, or clear when all are selected. */
+  function selectAll() {
+    anchor.current = null;
+    setSelected(chosen.length === selectable.length ? new Set() : new Set(selectable));
   }
   /** Ignore a waiting item, or return an ignored one; true when it was saved. */
   async function skip(it: StagedTransaction): Promise<boolean> {
@@ -467,14 +520,22 @@ export function Inbox(
       setToast({ text: "Nothing to undo.", tone: "warn" });
       return false;
     }
+    // Each command needs the item's current revision, which changed with the last action.
+    // In flow the list holds it already: every write's response patched it.
+    const fresh = flow ? null : await inbox.list(p.entity.id);
+    const latest = fresh?.kind === "ready" ? fresh.data : all;
     let done = 0;
-    for (const { id, action } of [...last].reverse()) {
-      if (action === "later") continue;
-      // Each command needs the item's current revision, which changed with the last action.
-      // In flow the list holds it already: every write's response patched it.
-      const fresh = flow ? null : await inbox.list(p.entity.id);
-      const it = (fresh?.kind === "ready" ? fresh.data : all).find((i) => i.id === id);
-      if (it && (await run(inbox.action(p.entity.id, it, action)))) done++;
+    for (const action of ["undo", "unskip", "skip"] as const) {
+      const its = last.flatMap((u) => {
+        const it = u.action === action ? latest.find((i) => i.id === u.id) : undefined;
+        return it ? [it] : [];
+      });
+      if (its.length === 1) {
+        if (await run(inbox.action(p.entity.id, its[0], action))) done++;
+      } else if (its.length)
+        done += (await many(inbox.actMany(p.entity.id, its, action), its)).filter(
+          (r) => r.ok,
+        ).length;
     }
     const first = last[0];
     setView(first.action === "skip" ? "skipped" : "waiting");
@@ -653,42 +714,51 @@ export function Inbox(
     if (stopped) setProposals(stopped);
   }
 
-  function setDraft(it: StagedTransaction, c: Completion) {
-    setDrafts((d) => ({ ...d, [it.id]: c }));
-    setHints(({ [it.id]: _, ...rest }) => rest);
+  function setDraft(next: Record<string, Completion>) {
+    setDrafts((d) => ({ ...d, ...next }));
+    setHints((h) => Object.fromEntries(Object.entries(h).filter(([id]) => !(id in next))));
   }
-  function setCategory(it: StagedTransaction, category: InboxCategory) {
-    const c = effective(it, drafts[it.id]);
-    if (c.refund_of)
-      return setToast({
-        text: "A refund keeps its purchase's category and funding origin. Press r to change or remove the link.",
-        tone: "warn",
-      });
-    const next: Completion =
-      c.category === category
-        ? { ...c, skip: false }
-        : {
-            category,
-            assignment: null,
-            funding:
-              isInflow(it) || category === "saving" || category === "income" ? null : "income",
-            tag_ids: c.tag_ids,
-          };
-    setDraft(it, next);
-    if (CATEGORY[category].article && !next.assignment) openPicker("line", it, next);
+  /** Set one category on the current item, or on every selected item. */
+  function setCategory(its: StagedTransaction[], category: InboxCategory) {
+    const batch = chosen.length > 0;
+    const next: Record<string, Completion> = {};
+    for (const it of its) {
+      const c = effective(it, drafts[it.id]);
+      if (c.refund_of && !batch)
+        return setToast({
+          text: "A refund keeps its purchase's category and funding origin. Press r to change or remove the link.",
+          tone: "warn",
+        });
+      next[it.id] =
+        c.category === category && !c.refund_of
+          ? { ...c, skip: false }
+          : {
+              category,
+              assignment: null,
+              funding:
+                isInflow(it) || category === "saving" || category === "income" ? null : "income",
+              tag_ids: c.refund_of ? [] : c.tag_ids,
+            };
+    }
+    setDraft(next);
+    const first = next[its[0].id];
+    if (CATEGORY[category].article && its.some((it) => !next[it.id].assignment))
+      openPicker("line", its[0], first, batch ? its.map((it) => it.id) : undefined);
   }
   function openPicker(
     kind: Picker["kind"],
     it: StagedTransaction,
     c = effective(it, drafts[it.id]),
+    ids?: string[],
   ) {
-    const base = { query: "", at: 0 };
+    const base = { query: "", at: 0, ids };
+    const target = ids ? `${ids.length} selected` : it.payee;
     if (kind === "line") {
       const category = CATEGORY[c.category as InboxCategory];
       setPicker({
         ...base,
         kind,
-        title: `${category.line} for ${it.payee}`,
+        title: `${category.line} for ${target}`,
         placeholder: `Type to filter ${category.line?.toLowerCase()}s`,
         options:
           c.category === "saving" ? choices.goals : choices.lines[c.category as InboxCategory],
@@ -702,11 +772,12 @@ export function Inbox(
             : "Nothing to choose here yet. Add one on its own screen first.",
       });
     } else if (kind === "funding") {
-      const amount = Math.abs(cents(it));
+      const targets = ids ? chosen.filter((x) => ids.includes(x.id)) : [it];
+      const amount = targets.reduce((sum, x) => sum + Math.abs(cents(x)), 0);
       setPicker({
         ...base,
         kind,
-        title: `Funding origin for ${it.payee}, ${money(amount)}`,
+        title: `Funding origin for ${target}, ${money(amount)}`,
         placeholder: "Type to filter funding origins",
         options: [
           { id: "income", name: "Current income", note: "the current-income pool" },
@@ -719,20 +790,26 @@ export function Inbox(
         ],
       });
     } else if (kind === "tag") {
-      const chosen = c.tag_ids ?? [];
+      // In a batch, a tag counts as added when every selected item carries it.
+      const on = (tag: string) =>
+        (ids ? chosen.filter((x) => ids.includes(x.id)) : [it]).every((x) =>
+          (effective(x, drafts[x.id]).tag_ids ?? []).includes(tag),
+        );
       setPicker({
         ...base,
         kind,
-        title: `Tags for ${it.payee}`,
+        title: `Tags for ${target}`,
         placeholder: "Type to filter tags",
         options: (choices.tags ?? [])
-          .filter((tag) => tag.active || chosen.includes(tag.uuid))
+          .filter((tag) => tag.active || on(tag.uuid))
           .map((tag) => ({
             id: tag.uuid,
             name: tag.name,
-            note: chosen.includes(tag.uuid) ? "added, choose to remove" : undefined,
+            note: on(tag.uuid) ? "added, choose to remove" : undefined,
           })),
-        foot: "An entry can carry several tags. Choose one to add or remove it.",
+        foot: ids
+          ? "Choose a tag to add it to every selected item, or to remove it when all carry it."
+          : "An entry can carry several tags. Choose one to add or remove it.",
         none: "No tags yet. Create them in Activity with Manage tags.",
       });
     } else if (kind === "refund") {
@@ -765,20 +842,22 @@ export function Inbox(
   async function choose(option: Option) {
     const it = current;
     const kind = picker?.kind;
+    const ids = picker?.ids;
     setPicker(null);
-    if (!it || !kind) return;
-    const c = effective(it, drafts[it.id]);
-    if (kind === "line") setDraft(it, { ...c, assignment: option.id });
-    else if (kind === "funding") setDraft(it, { ...c, funding: option.id });
-    else if (kind === "tag") {
-      const chosen = c.tag_ids ?? [];
-      setDraft(it, {
-        ...c,
-        tag_ids: chosen.includes(option.id)
-          ? chosen.filter((id) => id !== option.id)
-          : [...chosen, option.id],
+    const targets = ids ? chosen.filter((x) => ids.includes(x.id)) : it ? [it] : [];
+    if (!it || !kind || !targets.length) return;
+    const each = (change: (c: Completion) => Completion, only = targets) =>
+      setDraft(Object.fromEntries(only.map((x) => [x.id, change(effective(x, drafts[x.id]))])));
+    const on = targets.every((x) => effective(x, drafts[x.id]).tag_ids?.includes(option.id));
+    if (kind === "line") each((c) => ({ ...c, assignment: option.id }));
+    else if (kind === "funding")
+      each((c) => ({ ...c, funding: option.id }), targets.filter(fundable));
+    else if (kind === "tag")
+      each((c) => {
+        const tagged = (c.tag_ids ?? []).filter((id) => id !== option.id);
+        return { ...c, tag_ids: on ? tagged : [...tagged, option.id] };
       });
-    } else if (kind === "refund") setDraft(it, option.id ? { refund_of: option.id } : {});
+    else if (kind === "refund") setDraft({ [it.id]: option.id ? { refund_of: option.id } : {} });
     else if (await run(inbox.resolve(p.entity.id, it, option.id as "keep" | "delete"))) {
       advance([it.id]);
       setToast({
@@ -795,6 +874,50 @@ export function Inbox(
       )
     : [];
 
+  /** Keys that act on every selected item; false lets the key reach the normal handler. */
+  function batchKey(key: string, selection: string[]): boolean {
+    const shared = new Set(chosen.map((it) => effective(it, drafts[it.id]).category ?? null));
+    const category = shared.size === 1 ? [...shared][0] : null;
+    const warn = (text: string) => setToast({ text, tone: "warn" });
+    if (["1", "2", "3", "4", "5", "6"].includes(key))
+      setCategory(chosen, CATEGORIES[Number(key) - 1].id);
+    else if (key === "Enter") void resolveSelected();
+    else if (key === "s") void resolveSelected(true);
+    else if (key === "a") {
+      if (!category) warn(`Choose one category for the ${chosen.length} selected first: 1–6.`);
+      else openPicker("line", chosen[0], effective(chosen[0], drafts[chosen[0].id]), selection);
+    } else if (key === "f") {
+      const outflows = chosen.filter(fundable);
+      if (!outflows.length)
+        warn("A funding origin applies to outflows with a category. None is selected.");
+      else
+        openPicker(
+          "funding",
+          outflows[0],
+          undefined,
+          outflows.map((it) => it.id),
+        );
+    } else if (key === "t") {
+      const taggable = chosen.filter((it) => {
+        const c = effective(it, drafts[it.id]);
+        return !c.refund_of && !c.skip;
+      });
+      if (!taggable.length) warn("Refunds and ignored items take no tags here.");
+      else
+        openPicker(
+          "tag",
+          taggable[0],
+          undefined,
+          taggable.map((it) => it.id),
+        );
+    } else if (key === "r")
+      warn("A refund links one purchase. Press Esc to clear the selection, then link it.");
+    else if (key === "Escape") {
+      anchor.current = null;
+      setSelected(new Set());
+    } else return false;
+    return true;
+  }
   function press(key: string) {
     setToast(null);
     if (help) {
@@ -826,6 +949,9 @@ export function Inbox(
         tone: "warn",
       });
     const c = current ? effective(current, drafts[current.id]) : {};
+    const batch = chosen.length > 0;
+    const selection = chosen.map((it) => it.id);
+    if (batch && batchKey(key, selection)) return;
     switch (key) {
       case "j":
       case "ArrowDown":
@@ -842,7 +968,7 @@ export function Inbox(
                 : "Already recorded. z undoes the last recording.",
             tone: "warn",
           });
-        return void (selected.size ? recordSelected() : record());
+        return void record();
       case "1":
       case "2":
       case "3":
@@ -850,7 +976,7 @@ export function Inbox(
       case "5":
       case "6":
         if (!current || !waiting) return notHere();
-        return setCategory(current, CATEGORIES[Number(key) - 1].id);
+        return setCategory([current], CATEGORIES[Number(key) - 1].id);
       case "a":
         if (!current || !waiting) return notHere();
         if (c.refund_of)
@@ -903,16 +1029,12 @@ export function Inbox(
             text: "Recorded items are not ignored. z undoes the last recording.",
             tone: "warn",
           });
-        if (selected.size) return void ignoreSelected();
         return void skip(current);
       case "x":
-        if (!current || !waiting) return notHere();
-        return setSelected((s) => {
-          const next = new Set(s);
-          if (next.has(current.id)) next.delete(current.id);
-          else next.add(current.id);
-          return next;
-        });
+        if (!current || !waiting || view !== "waiting") return notHere();
+        return toggle(current.id);
+      case "X":
+        return selectAll();
       case "z":
         return void undoLast();
       case "v": {
@@ -927,7 +1049,6 @@ export function Inbox(
       case "?":
         return setHelp(true);
       case "Escape":
-        if (selected.size) return setSelected(new Set());
         if (current) setHints(({ [current.id]: _, ...rest }) => rest);
     }
   }
@@ -1203,7 +1324,6 @@ export function Inbox(
                       touched={Boolean(drafts[current.id])}
                       choices={choices}
                       hint={hints[current.id]}
-                      selected={0}
                       press={press}
                     />
                     <button type="button" className="btn quiet" onClick={() => press("Escape")}>
@@ -1231,61 +1351,124 @@ export function Inbox(
         </div>
       ) : (
         <div className="ix-cols">
-          {/* biome-ignore lint/a11y/useSemanticElements: The inbox's own keys move the cursor through this list. */}
-          <div
-            role="listbox"
-            className="ix-list"
-            ref={list}
-            tabIndex={-1}
-            aria-label={`${view} items`}
-            aria-activedescendant={current ? `ix-${current.id}` : undefined}
-          >
-            {shown.length === 0 && (
-              <div className="ix-empty">
-                <b>{proposedOnly ? "No proposals here" : "Nothing here"}</b>
+          <div className="ix-side">
+            {selectable.length > 0 && (
+              <div className="ix-selbar">
+                <button
+                  // biome-ignore lint/a11y/useSemanticElements: A native checkbox would take focus and keys from the inbox's handler.
+                  type="button"
+                  role="checkbox"
+                  className="ix-pick"
+                  tabIndex={-1}
+                  aria-checked={
+                    chosen.length === selectable.length ? true : chosen.length ? "mixed" : false
+                  }
+                  aria-label={`Select all ${selectable.length} waiting`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={selectAll}
+                >
+                  <span className={`ix-chk${chosen.length ? " on" : ""}`} aria-hidden="true">
+                    {chosen.length === selectable.length ? "✓" : chosen.length ? "–" : ""}
+                  </span>
+                </button>
+                <span>
+                  {chosen.length
+                    ? `${chosen.length} of ${selectable.length} selected · ${money(
+                        chosen.reduce((sum, it) => sum + Math.abs(cents(it)), 0),
+                      )}`
+                    : `Select all ${selectable.length}`}
+                </span>
+                <Key k="X" />
+                {chosen.length > 0 && (
+                  <span className="ix-selbar-do">
+                    <button
+                      type="button"
+                      className="btn pri sm"
+                      disabled={busy}
+                      onClick={() => press("Enter")}
+                    >
+                      Record {chosen.length}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn sm"
+                      disabled={busy}
+                      onClick={() => press("s")}
+                    >
+                      Ignore {chosen.length}
+                    </button>
+                    <button type="button" className="btn quiet sm" onClick={() => press("Escape")}>
+                      Clear
+                    </button>
+                  </span>
+                )}
               </div>
             )}
-            {shown.map((row) =>
-              "head" in row ? (
-                <div className="ix-dayh" key={`h-${row.head}`}>
-                  <b>{/^\d{4}-\d{2}$/.test(row.head) ? fmtMonth(row.head) : row.head}</b>
-                  <span className={row.warn ? "chip warn" : undefined}>{row.sub}</span>
+            {/* biome-ignore lint/a11y/useSemanticElements: The inbox's own keys move the cursor through this list. */}
+            <div
+              role="listbox"
+              className="ix-list"
+              ref={list}
+              tabIndex={-1}
+              aria-label={`${view} items`}
+              aria-activedescendant={current ? `ix-${current.id}` : undefined}
+            >
+              {shown.length === 0 && (
+                <div className="ix-empty">
+                  <b>{proposedOnly ? "No proposals here" : "Nothing here"}</b>
                 </div>
-              ) : "parent" in row ? (
-                <div className="ix-row par" key={`p-${row.parent}`}>
-                  <span className="t">
-                    <b>{row.payee}</b> · split in YNAB into {row.lines} lines · {row.waiting}{" "}
-                    waiting
-                  </span>
-                  <span>{formatMoney(row.total.replace("-", ""))}</span>
-                </div>
-              ) : (
-                <ItemRow
-                  key={row.it.id}
-                  it={row.it}
-                  c={shownAs(row.it)}
-                  choices={choices}
-                  current={row.it.id === current?.id}
-                  checked={selected.has(row.it.id)}
-                  hint={hints[row.it.id]}
-                  undoable={
-                    undo.current[undo.current.length - 1]?.some((u) => u.id === row.it.id) ?? false
-                  }
-                  inWaiting={view === "waiting"}
-                  onClick={() => setCur(row.it.id)}
-                />
-              ),
-            )}
+              )}
+              {shown.map((row) =>
+                "head" in row ? (
+                  <div className="ix-dayh" key={`h-${row.head}`}>
+                    <b>{/^\d{4}-\d{2}$/.test(row.head) ? fmtMonth(row.head) : row.head}</b>
+                    <span className={row.warn ? "chip warn" : undefined}>{row.sub}</span>
+                  </div>
+                ) : "parent" in row ? (
+                  <div className="ix-row par" key={`p-${row.parent}`}>
+                    <span className="t">
+                      <b>{row.payee}</b> · split in YNAB into {row.lines} lines · {row.waiting}{" "}
+                      waiting
+                    </span>
+                    <span>{formatMoney(row.total.replace("-", ""))}</span>
+                  </div>
+                ) : (
+                  <ItemRow
+                    key={row.it.id}
+                    it={row.it}
+                    c={shownAs(row.it)}
+                    choices={choices}
+                    current={row.it.id === current?.id}
+                    checked={selected.has(row.it.id)}
+                    hint={hints[row.it.id]}
+                    undoable={
+                      undo.current[undo.current.length - 1]?.some((u) => u.id === row.it.id) ??
+                      false
+                    }
+                    inWaiting={view === "waiting"}
+                    onClick={() => setCur(row.it.id)}
+                    onCheck={(range) => toggle(row.it.id, range)}
+                  />
+                ),
+              )}
+            </div>
           </div>
           <section className="ix-detail" aria-live="polite">
-            {current ? (
+            {chosen.length ? (
+              <BatchDetail
+                its={chosen}
+                cs={chosen.map((it) => effective(it, drafts[it.id]))}
+                choices={choices}
+                busy={busy}
+                press={press}
+              />
+            ) : current ? (
               <Detail
                 it={current}
                 c={shownAs(current)}
                 touched={Boolean(drafts[current.id])}
                 choices={choices}
                 hint={hints[current.id]}
-                selected={selected.size}
                 press={press}
               />
             ) : (
@@ -1336,21 +1519,33 @@ export function Inbox(
                 [["Enter"], "Choose"],
                 [["Esc"], "Cancel"],
               ]
-            : [
-                [["j", "k"], "Move"],
-                [["Enter"], selected.size ? `Record ${selected.size} selected` : "Accept"],
-                [["1–6"], "Category"],
-                [["a"], "Assignment"],
-                [["f"], "Funding origin"],
-                [["r"], "Refund"],
-                [["s"], "Ignore"],
-                [["x"], "Select"],
-                [["z"], "Undo"],
-                [["v"], "View"],
-                [["p"], "Proposals"],
-                [["F"], "Flow"],
-                [["?"], "Help"],
-              ]
+            : chosen.length
+              ? [
+                  [["j", "k"], "Move"],
+                  [["x"], "Select"],
+                  [["X"], "Select all"],
+                  [["1–6"], "Category for all"],
+                  [["a", "f", "t"], "Pickers for all"],
+                  [["Enter"], `Record ${chosen.length}`],
+                  [["s"], `Ignore ${chosen.length}`],
+                  [["z"], "Undo"],
+                  [["Esc"], "Clear selection"],
+                ]
+              : [
+                  [["j", "k"], "Move"],
+                  [["Enter"], "Accept"],
+                  [["1–6"], "Category"],
+                  [["a"], "Assignment"],
+                  [["f"], "Funding origin"],
+                  [["r"], "Refund"],
+                  [["s"], "Ignore"],
+                  [["x"], "Select"],
+                  [["z"], "Undo"],
+                  [["v"], "View"],
+                  [["p"], "Proposals"],
+                  [["F"], "Flow"],
+                  [["?"], "Help"],
+                ]
         ).map(([k, label]) => (
           <span key={String(label)}>
             {(k as string[]).map((x) => (
@@ -1430,6 +1625,7 @@ function ItemRow({
   undoable,
   inWaiting,
   onClick,
+  onCheck,
 }: {
   it: StagedTransaction;
   c: Completion;
@@ -1440,6 +1636,7 @@ function ItemRow({
   undoable: boolean;
   inWaiting: boolean;
   onClick: () => void;
+  onCheck: (range: boolean) => void;
 }) {
   const s = summary(it, c, choices);
   const kid = Boolean(it.parent_ref) && inWaiting;
@@ -1457,9 +1654,25 @@ function ItemRow({
       onClick={onClick}
     >
       {it.status === "waiting" && inWaiting && (
-        <span className={`ix-chk${checked ? " on" : ""}`} aria-hidden="true">
-          {checked ? "✓" : ""}
-        </span>
+        <button
+          // biome-ignore lint/a11y/useSemanticElements: A native checkbox would take focus and keys from the inbox's handler.
+          type="button"
+          role="checkbox"
+          className="ix-pick"
+          tabIndex={-1}
+          aria-checked={checked}
+          aria-label={`Select ${it.payee}, ${signed(it)}`}
+          // Keep focus off the box, so Enter still records instead of pressing it again.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onCheck(e.shiftKey);
+          }}
+        >
+          <span className={`ix-chk${checked ? " on" : ""}`} aria-hidden="true">
+            {checked ? "✓" : ""}
+          </span>
+        </button>
       )}
       <i className="dot" style={tint(s.kind)} />
       <div className="t">
@@ -1469,7 +1682,7 @@ function ItemRow({
           {it.rejection && it.status === "waiting" && (
             <span className="chip bad">Not recorded</span>
           )}
-          {hint && <span className="chip warn">Needs a choice</span>}
+          {hint && <span className="chip warn">Needs you</span>}
           {it.proposal_rejection && it.status === "waiting" && !it.rejection && (
             <span className="chip warn">Proposal rejected</span>
           )}
@@ -1497,6 +1710,7 @@ function ItemRow({
               · <span className="nb">{it.proposal.rationale}</span>
             </>
           )}
+          {hint && <span className="ix-why-row"> · {hint}</span>}
         </small>
       </div>
       <div className={`a${isInflow(it) ? " good" : ""}`}>{signed(it)}</div>
@@ -1578,7 +1792,6 @@ function Detail({
   touched,
   choices,
   hint,
-  selected,
   press,
 }: {
   it: StagedTransaction;
@@ -1586,7 +1799,6 @@ function Detail({
   touched: boolean;
   choices: Choices;
   hint?: string;
-  selected: number;
   press: (key: string) => void;
 }) {
   const waiting = it.status === "waiting";
@@ -1780,19 +1992,17 @@ function Detail({
           <>
             <button
               type="button"
-              className={`btn pri${selected || c.category || c.skip || purchase ? "" : " off"}`}
+              className={`btn pri${c.category || c.skip || purchase ? "" : " off"}`}
               onClick={() => press("Enter")}
             >
               <Key k="Enter" />
-              {selected
-                ? `Record ${selected} selected`
-                : c.skip
-                  ? "Accept: ignore"
-                  : c.category || purchase
-                    ? touched
-                      ? "Record"
-                      : "Accept and record"
-                    : "Nothing to accept yet"}
+              {c.skip
+                ? "Accept: ignore"
+                : c.category || purchase
+                  ? touched
+                    ? "Record"
+                    : "Accept and record"
+                  : "Nothing to accept yet"}
             </button>
             {!c.skip && (
               <button type="button" className="btn" onClick={() => press("s")}>
@@ -1822,11 +2032,132 @@ function Detail({
   );
 }
 
+/** The batch panel: what the selection will record, and one choice set on all of it. */
+function BatchDetail({
+  its,
+  cs,
+  choices,
+  busy,
+  press,
+}: {
+  its: StagedTransaction[];
+  cs: Completion[];
+  choices: Choices;
+  busy: boolean;
+  press: (key: string) => void;
+}) {
+  const ready = its.filter((it, i) => !cs[i].skip && !precheck(it, cs[i])).length;
+  const ignoring = cs.filter((c) => c.skip).length;
+  const needs = its.length - ready - ignoring;
+  /** The one value every selected item shares, or "Mixed". */
+  const shared = (value: (c: Completion) => string | null) => {
+    const values = new Set(cs.map(value));
+    return values.size === 1 ? [...values][0] : "Mixed";
+  };
+  const category = shared((c) => c.category ?? null);
+  const line = category && category !== "Mixed" ? CATEGORY[category as InboxCategory] : null;
+  const outflows = cs.filter(
+    (c, i) => !isInflow(its[i]) && c.category && !["saving", "income"].includes(c.category),
+  );
+  const tagged = (choices.tags ?? []).filter((tag) =>
+    cs.every((c) => c.tag_ids?.includes(tag.uuid)),
+  );
+  const field = (key: string, label: string, value: string | null, extra?: string) => (
+    <button type="button" className="ix-fld" onClick={() => press(key)}>
+      <Key k={key} />
+      <span>
+        <span className="fl">{label}</span>
+        <span className={`fv${value ? "" : " none"}`}>{value ?? "Not chosen"}</span>
+        {extra && <span className="fx">{extra}</span>}
+      </span>
+    </button>
+  );
+  return (
+    <>
+      <div className="ix-d-h">
+        <div>
+          <div className="ix-d-t">{its.length} selected</div>
+          <div className="note">
+            {[
+              `${ready} ready to record`,
+              needs && `${needs} need${needs === 1 ? "s" : ""} a choice`,
+              ignoring && `${ignoring} set to ignore`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </div>
+        </div>
+        <div className="ix-fig">{money(its.reduce((sum, it) => sum + Math.abs(cents(it)), 0))}</div>
+      </div>
+      <div className="lab">Set for all {its.length}</div>
+      <div className="ix-cats">
+        {CATEGORIES.map((x, i) => (
+          <button
+            key={x.id}
+            type="button"
+            aria-pressed={category === x.id}
+            onClick={() => press(String(i + 1))}
+          >
+            <Key k={String(i + 1)} />
+            <i className="dot" style={tint(x.kind)} />
+            {x.name}
+          </button>
+        ))}
+      </div>
+      {line &&
+        field(
+          "a",
+          line.line ?? "Assignment",
+          shared((c) => lineName(choices, c) ?? (line.article ? null : "Unassigned")),
+        )}
+      {outflows.length > 0 &&
+        field(
+          "f",
+          "Funding origin",
+          new Set(outflows.map((c) => fundingName(choices, c))).size === 1
+            ? fundingName(choices, outflows[0])
+            : "Mixed",
+          outflows.length < its.length ? `Applies to the ${outflows.length} outflows.` : undefined,
+        )}
+      {category &&
+        field(
+          "t",
+          "Tags",
+          tagged.length ? tagged.map((tag) => tag.name).join(", ") : null,
+          "Optional. A tag chosen here is added to every selected item.",
+        )}
+      <div className="ix-msg">
+        Each item records on its own, from its proposal or these choices. Any that cannot stay
+        selected, with the reason on its row.
+      </div>
+      <div className="ix-do">
+        <button
+          type="button"
+          className={`btn pri${ready + ignoring ? "" : " off"}`}
+          disabled={busy}
+          onClick={() => press("Enter")}
+        >
+          <Key k="Enter" />
+          Record {its.length} selected
+        </button>
+        <button type="button" className="btn" disabled={busy} onClick={() => press("s")}>
+          <Key k="s" />
+          Ignore {its.length}
+        </button>
+        <button type="button" className="btn quiet" onClick={() => press("Escape")}>
+          <Key k="Esc" />
+          Clear selection
+        </button>
+      </div>
+    </>
+  );
+}
+
 const HELP: Array<[string, string]> = [
   ["j k", "Next and previous item. ↓ and ↑ also work."],
   [
     "Enter",
-    "Accept the proposal, record the actual entry, and advance. Records every selected item. On a conflict, opens the resolution choices.",
+    "Accept the proposal, record the actual entry, and advance. With a selection, records every selected item; any that cannot stay selected with the reason on its row. On a conflict, opens the resolution choices.",
   ],
   [
     "1 – 6",
@@ -1840,7 +2171,10 @@ const HELP: Array<[string, string]> = [
     "s",
     "Ignore: it stays out of totals, even after a re-sync. Under Ignored, return it to the inbox.",
   ],
-  ["x", "Select or deselect for Enter. Esc clears the selection."],
+  [
+    "x",
+    "Select or deselect for a batch; shift-click a box to select a range. X selects every waiting item shown. With a selection, 1–6, a, f and t set the same choice on all of them, Enter records them, s ignores them, and Esc clears it.",
+  ],
   ["z", "Undo the last recording or ignore."],
   ["v", "Change the view: Waiting, Ignored, Recorded."],
   ["p", "Show only items with a proposal, or all items again."],
