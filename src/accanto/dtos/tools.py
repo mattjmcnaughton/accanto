@@ -1,6 +1,7 @@
 """Agent tool catalog contracts: explicit projections, separate from DB and HTTP."""
 
 from datetime import date
+from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from pydantic import (
     model_validator,
 )
 
+from accanto.domains.monthly import money
 from accanto.domains.targets import target_gap
 from accanto.dtos.balances import CreateDebt, EditDebt, ObservationInput
 from accanto.dtos.destinations import (
@@ -963,6 +965,151 @@ def project_summary(start, end, result) -> ActivitySummary:
             key: Rate(**{k: money(v) for k, v in result[key].items()})
             for key in ("saving_rate", "saving_and_investing_rate")
         },
+    )
+
+
+def _money_in(value: str) -> str:
+    return str(money(value))
+
+
+MoneyIn = Annotated[str, AfterValidator(_money_in)]
+Percent = Annotated[
+    str,
+    Field(
+        pattern=r"^-?\d{1,3}(?:\.\d{1,4})?$", description="Annual percent, e.g. 6.5."
+    ),
+]
+Months = Annotated[int, Field(ge=1, le=1200)]
+Basis = Annotated[
+    Literal["real", "nominal"],
+    Field(description="Whether the return is after inflation (real) or not."),
+]
+
+
+class _LoanTerms(Input):
+    principal: MoneyIn = Field(description="Amount owed now.")
+    annual_rate_percent: Percent
+    term_months: Months | None = Field(
+        default=None, description="Remaining term; or give monthly_payment."
+    )
+    monthly_payment: MoneyIn | None = Field(
+        default=None, description="Scheduled payment; or give term_months."
+    )
+
+    @model_validator(mode="after")
+    def one_of_term_or_payment(self):
+        if (self.term_months is None) == (self.monthly_payment is None):
+            raise ValueError("Give exactly one of term_months or monthly_payment.")
+        if not 0 <= Decimal(self.annual_rate_percent) <= 100:
+            raise ValueError("annual_rate_percent is 0 to 100.")
+        return self
+
+
+class _Return(Input):
+    annual_return_percent: Percent
+    basis: Basis
+
+    @model_validator(mode="after")
+    def plausible_return(self):
+        if not -50 <= Decimal(self.annual_return_percent) <= 50:
+            raise ValueError("annual_return_percent is -50 to 50.")
+        return self
+
+
+class LoanProjection(_LoanTerms):
+    operation: Literal["loan"]
+    extra_monthly: MoneyIn = "0.00"
+    schedule: Literal["none", "yearly", "monthly"] = "yearly"
+    first_payment_month: FirstDay | None = None
+
+
+class FireTargetProjection(Input):
+    operation: Literal["fire_target"]
+    annual_spending: MoneyIn
+    withdrawal_rate_percent: Percent
+
+
+class GrowthProjection(_Return):
+    operation: Literal["growth"]
+    start: MoneyIn
+    monthly_contribution: MoneyIn
+    months: Months | None = Field(
+        default=None, description="How long to project; omit to run to target."
+    )
+    target: MoneyIn | None = None
+
+    @model_validator(mode="after")
+    def months_or_target(self):
+        if self.months is None and self.target is None:
+            raise ValueError("Give months, target, or both.")
+        return self
+
+
+class CoastFireProjection(_Return):
+    operation: Literal["coast_fire"]
+    target: MoneyIn
+    months: Months
+
+
+class RequiredContributionProjection(_Return):
+    operation: Literal["required_contribution"]
+    start: MoneyIn
+    target: MoneyIn
+    months: Months
+
+
+class MonthsToTargetProjection(Input):
+    operation: Literal["months_to_target"]
+    remaining: MoneyIn = Field(description="Amount still needed, e.g. a goal's gap.")
+    monthly_amount: MoneyIn
+
+
+class PrepayOrInvestProjection(_LoanTerms, _Return):
+    operation: Literal["prepay_or_invest"]
+    extra_monthly: MoneyIn
+    horizon_months: Months
+
+
+Projection = Annotated[
+    LoanProjection
+    | FireTargetProjection
+    | GrowthProjection
+    | CoastFireProjection
+    | RequiredContributionProjection
+    | MonthsToTargetProjection
+    | PrepayOrInvestProjection,
+    Field(discriminator="operation"),
+]
+
+
+class ProjectInput(Input):
+    projection: Projection
+
+
+class ScheduleRow(Output):
+    period: int
+    date: date | None
+    payment: Money
+    interest: Money
+    principal: Money
+    balance: Money
+
+
+class GrowthRow(Output):
+    year: int
+    balance: Money
+    contributed: Money
+
+
+class ProjectionResult(Output):
+    operation: str
+    assumptions: dict[str, str | int | None]
+    figures: dict[str, Amount | int | date | None]
+    schedule: list[ScheduleRow] = Field(default_factory=list)
+    growth: list[GrowthRow] = Field(default_factory=list)
+    note: str = (
+        "A projection from the assumptions above, not recorded activity or a "
+        "balance. Taxes, fees and risk are not modelled."
     )
 
 

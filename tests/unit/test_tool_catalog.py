@@ -10,6 +10,7 @@ from accanto.services.tools import CATALOG, TOOLS
 CATALOG_NAMES = [
     "get_context",
     "calculate",
+    "project",
     "list_plans",
     "get_plan",
     "get_monthly_review",

@@ -1,6 +1,6 @@
 # 07 — Agent financial math: calculator, summaries and projections
 
-Status: In progress (calculator, activity summaries and target gaps implemented)
+Status: In progress (calculator, activity summaries, target gaps and projections implemented)
 Updated: 2026-11-26
 
 ## Purpose and scope
@@ -34,7 +34,7 @@ pure functions in `domains/`.
 | `calculate(expression)` | Ad-hoc arithmetic on figures the agent has | None (pure) | 1, done |
 | `summarize_activity(start, end, …)` | T1 totals by category, assignment, tag or note; T2 per-month totals, averages and savings rate | Activity | 2, done |
 | Target-gap fields on `list_savings` and `list_destinations` | T3 remaining to target and percent of target | Existing reads | 2, done |
-| `project(operation, …)` | T4 months to target; P1 loan payment and schedule; P2 FIRE target; P3 growth and months to FIRE; P4 coast and required contribution; P5 prepay versus invest | None (pure) | 3 |
+| `project(operation, …)` | T4 months to target; P1 loan payment and schedule; P2 FIRE target; P3 growth and months to FIRE; P4 coast and required contribution; P5 prepay versus invest | None (pure) | 3, done |
 | `get_position(on)` | T5 position snapshot and net position; T6 change between observations versus recorded payments or contributions | Savings, investments, debts | 4 |
 | `investment_returns(investment_id?)` | P6 money-weighted return (XIRR) from contributions and observations | Investments | 5 |
 
@@ -96,6 +96,46 @@ below zero) and the percent reached (above 100 when exceeded). Progress is
 remaining saved for goals and contribution progress for investments and giving
 recipients, matching CONTEXT.md **Recorded progress**. No target means both are
 unknown.
+
+## Projections
+
+`project` takes one `projection` object whose `operation` selects the
+calculation; the result echoes every assumption, lists `figures`, an optional
+`schedule` (loans, yearly by default) or yearly `growth` rows, and a fixed note
+that it is a projection. Pure functions live in `domains/projections.py`.
+
+- **Rates.** Inputs are annual percents. Loans use the nominal monthly rate
+  APR ÷ 12. Growth uses the effective monthly rate (1 + R)^(1/12) − 1, so a
+  year of compounding equals R. Growth inputs state `basis: real | nominal`;
+  the tool does not convert between them.
+- **Loans** (`loan`). The level payment is
+  P·r(1+r)^n ÷ ((1+r)^n − 1), or P ÷ n at 0%, rounded half-even to cents. Each
+  month's interest is rounded half-even to cents, as statements do; with a term,
+  the last scheduled payment also clears the cents left by rounding the payment,
+  so a 360-month loan ends at month 360. A payment that does not cover the
+  month's interest is refused. Extra payments report interest and months saved
+  against the same loan without them. Loans can be described by a term or by a
+  monthly payment (for an existing loan from its latest balance observation).
+  Lender rounding can differ by cents; observations stay authoritative.
+- **FIRE target** (`fire_target`): annual spending ÷ withdrawal rate.
+- **Growth** (`growth`): balance × (1 + g) + contribution each month, for a
+  number of months or until a target (at most 1200 months).
+- **Coast FIRE** (`coast_fire`): target ÷ (1 + g)^n. **Required contribution**
+  (`required_contribution`): (target − start·(1 + g)^n)·g ÷ ((1 + g)^n − 1), or
+  zero when the start already gets there.
+- **Months to target** (`months_to_target`): remaining ÷ monthly amount, rounded
+  up to whole months, without growth.
+- **Prepay or invest** (`prepay_or_invest`): the same monthly budget (loan
+  payment + extra) two ways. Prepay sends the extra to the loan; invest sends it
+  to investments. In both, once the loan is repaid the whole budget is invested.
+  Net position at the horizon is investments less the remaining balance; the
+  result reports both and the difference. Taxes, fees and risk are not modelled.
+
+**Rounding exception (constitution §1).** Amounts *needed* to reach a target
+(FIRE target, coast amount, required contribution) round **up** to the cent.
+Rationale: half-even could report a figure that, followed exactly, falls short;
+the worked case of $100,000 growing to $1,000,000 over 240 months at 5% was
+$1.79 short. Everything else rounds half-even.
 
 ## Interfaces
 

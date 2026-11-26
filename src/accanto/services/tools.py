@@ -12,12 +12,13 @@ import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel
 
-from accanto.domains import activity_summary, calculator
+from accanto.domains import activity_summary, calculator, projections
 from accanto.domains.entity import entity_today
 from accanto.dtos import tools as t
 from accanto.dtos.monthly import KnownTotalInput
@@ -122,6 +123,136 @@ async def calculate(ctx, entity_id, args: t.CalculateInput, key):
         expression=args.expression,
         result=format(value, "f"),
         cents=format(calculator.cents(value), "f"),
+    )
+
+
+def _months_after(first: date | None, months: int) -> date | None:
+    if first is None:
+        return None
+    index = first.year * 12 + first.month - 1 + months - 1
+    return date(index // 12, index % 12 + 1, 1)
+
+
+def _schedule(rows, every: int, first: date | None) -> list[t.ScheduleRow]:
+    periods = [rows[i : i + every] for i in range(0, len(rows), every)]
+    return [
+        t.ScheduleRow(
+            period=number,
+            date=_months_after(first, period[-1]["month"]),
+            payment=str(sum(r["payment"] for r in period)),
+            interest=str(sum(r["interest"] for r in period)),
+            principal=str(sum(r["principal"] for r in period)),
+            balance=str(period[-1]["balance"]),
+        )
+        for number, period in enumerate(periods, 1)
+    ]
+
+
+def _growth_rows(balances, contribution) -> list[t.GrowthRow]:
+    marks = [*range(12, len(balances) + 1, 12)]
+    if balances and len(balances) % 12:
+        marks.append(len(balances))
+    return [
+        t.GrowthRow(
+            year=-(-month // 12),
+            balance=str(projections.cents(balances[month - 1])),
+            contributed=str(projections.cents(contribution * month)),
+        )
+        for month in marks
+    ]
+
+
+def _run_projection(p) -> tuple[dict, list, list]:
+    rate = Decimal(getattr(p, "annual_rate_percent", "0"))
+    returns = Decimal(getattr(p, "annual_return_percent", "0"))
+    payment = (
+        Decimal(p.monthly_payment) if getattr(p, "monthly_payment", None) else None
+    )
+    if p.operation == "loan":
+        result = projections.compare_extra(
+            Decimal(p.principal),
+            rate,
+            months=p.term_months,
+            payment=payment,
+            extra=Decimal(p.extra_monthly),
+        )
+        every = {"none": 0, "yearly": 12, "monthly": 1}[p.schedule]
+        figures = {
+            "payment": result["payment"],
+            "months": result["months"],
+            "payoff_month": _months_after(p.first_payment_month, result["months"]),
+            "total_interest": result["total_interest"],
+            "total_paid": result["total_paid"],
+            "interest_saved": result["interest_saved"],
+            "months_saved": result["months_saved"],
+        }
+        rows = _schedule(result["rows"], every, p.first_payment_month) if every else []
+        return figures, rows, []
+    if p.operation == "fire_target":
+        target = projections.fire_target(
+            Decimal(p.annual_spending), Decimal(p.withdrawal_rate_percent)
+        )
+        return {"fire_target": target}, [], []
+    if p.operation == "growth":
+        contribution = Decimal(p.monthly_contribution)
+        result = projections.grow(
+            Decimal(p.start),
+            contribution,
+            returns,
+            months=p.months,
+            target=Decimal(p.target) if p.target else None,
+        )
+        figures = {
+            "final_balance": projections.cents(result["final"]),
+            "contributed": projections.cents(result["contributed"]),
+            "growth": projections.cents(result["growth"]),
+            "months": len(result["balances"]),
+            "months_to_target": result["months_to_target"],
+        }
+        return figures, [], _growth_rows(result["balances"], contribution)
+    if p.operation == "coast_fire":
+        amount = projections.coast_amount(Decimal(p.target), returns, p.months)
+        return {"coast_amount": amount}, [], []
+    if p.operation == "required_contribution":
+        amount = projections.required_contribution(
+            Decimal(p.start), Decimal(p.target), returns, p.months
+        )
+        return {"monthly_contribution": amount}, [], []
+    if p.operation == "months_to_target":
+        months = projections.months_to_target(
+            Decimal(p.remaining), Decimal(p.monthly_amount)
+        )
+        return {"months": months}, [], []
+    result = projections.prepay_or_invest(
+        Decimal(p.principal),
+        rate,
+        Decimal(p.extra_monthly),
+        returns,
+        p.horizon_months,
+        months=p.term_months,
+        payment=payment,
+    )
+    figures = {"payment": result["payment"], "difference": result["difference"]}
+    for name in ("prepay", "invest"):
+        figures |= {f"{name}_{k}": v for k, v in result[name].items()}
+    return figures, [], []
+
+
+async def project(ctx, entity_id, args: t.ProjectInput, key):
+    p = args.projection
+    try:
+        figures, schedule, growth = _run_projection(p)
+    except ValueError as error:
+        raise RejectionError("invalid_arguments", str(error), 422) from None
+    return t.ProjectionResult(
+        operation=p.operation,
+        assumptions=p.model_dump(mode="json", exclude={"operation"}),
+        figures={
+            k: v if isinstance(v, int | date) or v is None else str(v)
+            for k, v in figures.items()
+        },
+        schedule=schedule,
+        growth=growth,
     )
 
 
@@ -832,6 +963,22 @@ CATALOG: tuple[CatalogTool, ...] = (
         t.Calculation,
         "read",
         calculate,
+        pure=True,
+    ),
+    CatalogTool(
+        "project",
+        "Projections from assumptions you state, never recorded figures: loan "
+        "payment, payoff and schedule with extra payments (loan); FIRE target "
+        "from spending and withdrawal rate (fire_target); growth with monthly "
+        "contributions and months to a target (growth); coast FIRE amount "
+        "(coast_fire); contribution needed by a date (required_contribution); "
+        "months to cover a gap without growth (months_to_target); prepaying a "
+        "loan versus investing (prepay_or_invest). Say the result is a "
+        "projection and name its assumptions.",
+        t.ProjectInput,
+        t.ProjectionResult,
+        "read",
+        project,
         pure=True,
     ),
     _read(

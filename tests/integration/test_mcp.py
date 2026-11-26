@@ -183,6 +183,36 @@ async def scenario():
                 "invalid_arguments: Division by zero." in rejected["content"][0]["text"]
             )
             assert "84.31" not in rejected["content"][0]["text"]
+            loan = await mcp.call(
+                "project",
+                {
+                    "projection": {
+                        "operation": "loan",
+                        "principal": "100000",
+                        "annual_rate_percent": "6",
+                        "term_months": 360,
+                        "schedule": "none",
+                    }
+                },
+            )
+            assert loan["figures"]["payment"] == "599.55"
+            assert loan["figures"]["months"] == 360
+            assert loan["assumptions"]["annual_rate_percent"] == "6"
+            both = await mcp.call(
+                "project",
+                {
+                    "projection": {
+                        "operation": "loan",
+                        "principal": "73519.00",
+                        "annual_rate_percent": "6",
+                        "term_months": 360,
+                        "monthly_payment": "700.00",
+                    }
+                },
+                error=True,
+            )
+            assert "invalid_arguments" in both["content"][0]["text"]
+            assert "73519" not in both["content"][0]["text"]
 
             # Entity boundary: a foreign Entity is unavailable.
             denied = await mcp.call(
