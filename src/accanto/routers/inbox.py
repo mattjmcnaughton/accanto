@@ -48,11 +48,18 @@ async def list_inbox(
     status: Annotated[list[Status] | None, Query()] = None,
     month: date | None = None,
     source: UUID | None = None,
+    proposed: bool | None = None,
 ):
     if month is not None and month.day != 1:
         raise HTTPException(422, "Use the first day of the calendar month.")
     return await inbox.read_inbox(
-        session, token, entity_id, statuses=status, month=month, source=source
+        session,
+        token,
+        entity_id,
+        statuses=status,
+        month=month,
+        source=source,
+        proposed=proposed,
     )
 
 

@@ -28,6 +28,11 @@ const press = async (...keys: string[]) => {
 /** Waiting items, oldest first by month, with each proposal's rationale. */
 export const Waiting: Story = {};
 
+/** p (or the filter) shows only items with a proposal; the view counts follow it. */
+export const WithProposals: Story = {
+  play: () => press("p"),
+};
+
 /** A proposal whose dry run the record checks rejected: $640 from a goal with $400 saved. */
 export const ProposalRejected: Story = {
   play: () => press(...Array(6).fill("j")),

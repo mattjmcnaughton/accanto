@@ -107,7 +107,7 @@ pairs, and `save_*` creates or, given `id` and `expected_revision`, edits.
   `list_activity(month, category?, tag_id?)` (with notes and payees, capped),
   `list_tags`, `list_spending_subcategories`, `list_savings`,
   `list_destinations(kind)`, `list_debts`, `list_investment_observations`,
-  `list_income_estimates`, `list_inbox(status?, month?)`, `get_inbox_item`,
+  `list_income_estimates`, `list_inbox(status?, month?, proposed?)`, `get_inbox_item`,
   `list_sources` (no token), `list_pending_changes`.
 - **Inbox:** `sync_source`, `set_proposals` (bulk, clear allowed),
   `record_inbox_items`, `skip_inbox_item(skip: bool)`, `undo_inbox_item`,
