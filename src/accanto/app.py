@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
+from accanto import telemetry
 from accanto.config import settings
 from accanto.logging import configure_logging
 from accanto.mcp_server import MountMCP, create_mcp_app
@@ -104,6 +105,8 @@ def create_app() -> FastAPI:
 
     # Mount frontend static files (only serves if dist/ exists)
     mount_frontend(app)
+
+    telemetry.instrument(app)
 
     return app
 

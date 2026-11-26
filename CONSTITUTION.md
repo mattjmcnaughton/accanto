@@ -163,6 +163,25 @@ model providers reached by the built-in agent and by MCP clients: what agent
 tools return may be sent; credentials, tokens, audit history and other Entities
 never are.
 
+Tracing exported to an external backend (currently Logfire, over OpenTelemetry)
+is operational telemetry, not a financial data decision. It may carry operation
+and route names, timings, SQL text with bind placeholders, record identifiers,
+counts, booleans, statuses, and error types and codes. It never carries amounts,
+balances, notes, names, payees, anything a person typed, model prompts, replies,
+tool arguments or results, images, credentials, tokens, headers or cookies, or a
+URL that contains any of them. In particular:
+
+- Keep values out at the source: configure each instrumentation to omit content
+  and give custom spans only allowed attributes. Export-time scrubbing is a
+  backstop, never the control, because it cannot recognise an amount.
+- Export nothing without an explicitly configured token, so development and
+  tests send nothing by default. Send only to a private project, and use only
+  synthetic data when verifying against the live backend.
+- A test must run the real server against a local receiver with synthetic
+  canary values across every instrumented interface, and fail if a canary or an
+  unreviewed attribute key appears anywhere in the exported payload. Adding an
+  integration, span or attribute means extending that test and its review.
+
 ## 7. Make failures explicit and preserve data
 
 Never represent a failed load as an empty workspace or a failed calculation as
@@ -209,6 +228,11 @@ verification gaps.
   same change, unless the technical design records an explicit exclusion.
   Rationale: the owner operates Accanto through the UI, the API, and agents, so a
   field that one interface cannot reach silently diverges the others.
+- 2026-11-25: §6 sets the rules for externally exported tracing: an allowed
+  list of contents, source-side omission instead of scrubbing, export only with
+  an explicit token to a private project, and a canary test over the exported
+  payload. Rationale: performance tracing through Logfire, without relaxing the
+  rule that financial data stays out of telemetry.
 - 2026-11-23: §2 allows MCP clients to authenticate with user-owned API keys;
   hosted MCP OAuth follows later. §6 names PRD 02 as the explicit decision for
   sending financial data to model providers. Rationale: let CLI agents (Claude

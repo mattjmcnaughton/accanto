@@ -26,6 +26,7 @@ dependencies = [
     "cryptography>=50",
     "pydantic-ai-slim[openrouter]>=2.15,<3",
     "pillow>=11",
+    "logfire[fastapi,httpx,sqlalchemy]>=5.6.0",
 ]
 
 [project.urls]

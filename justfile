@@ -85,6 +85,10 @@ test-external:
 eval-agent:
     uv run pytest tests/external/test_agent_evals.py -m external -s -q
 
+# Trace privacy check against real Logfire (synthetic data; see docs/technical/telemetry.md)
+test-logfire-live:
+    uv run pytest tests/external/test_logfire_live.py -m external -q
+
 # Serve the seeded synthetic YNAB plan on loopback for local development and demos
 fake-ynab seed="7" port="8105":
     uv run python -m tests.fakes.ynab_server --seed {{seed}} --port {{port}}

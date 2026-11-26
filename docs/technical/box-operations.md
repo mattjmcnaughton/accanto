@@ -28,6 +28,10 @@ Runtime configuration lives on the deployment, never in Git:
   `["me@example.com"]`), `BROWSER_CSRF_SECRET`.
 - Environment variable: `OIDC_ISSUER`, exactly as the provider's discovery document
   reports it. Auth0 issuers end with `/`.
+- Optional, for performance tracing: secret `LOGFIRE_TOKEN` (a write token for
+  the private `accanto` Logfire project) and environment variable
+  `LOGFIRE_ENVIRONMENT=production`. Without the token nothing is exported; see
+  [telemetry.md](telemetry.md).
 - Set by Amp: `PORT` and `AMP_DEPLOYMENT_URL`, which becomes `BROWSER_ORIGIN`.
 
 List what is stored, without values, with `manage_amp` (topics `secrets` and
