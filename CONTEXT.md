@@ -40,7 +40,8 @@ acceptance criteria; this file defines their shared domain meanings.
 | Deduction used | Deferred beyond v1. The larger eligible amount of the standard deduction and expected itemized total, selected automatically for the Entity tax estimate. Both amounts remain visible. |
 | Entity tax estimate | Deferred beyond v1. One approximate annual income-tax calculation for the Entity, based on its combined annual Income, selected filing status, tax year, and deduction used. It is not the sum of taxes calculated independently for each Income source. |
 | Under-withholding flag | Deferred beyond v1. A notice when estimated annual income tax exceeds expected annual withholding. It does not create a tax reserve, reduce unassigned cash, or change planned tithe. |
-| Fixed costs | Entity-wide planned recurring expenses, with a separate amount and monthly or annual frequency for each cost. |
+| Fixed costs | Entity-wide planned recurring expenses, with a separate amount and fixed-cost frequency for each cost. |
+| Fixed-cost frequency | How often one fixed cost is paid: weekly (52 payments per year), biweekly (every two weeks, 26 per year), monthly (12), quarterly (4), or annual (1). Its monthly Plan amount is the entered amount × payments per year ÷ 12, rounded half-even to cents for each cost before costs are summed. It is the same every month, even though a month holds four or five weekly or two or three biweekly payments. |
 | Tithe | A giving target calculated as 10% of planned take-home income, shown alongside monthly giving allocations to named recipients. Recipient allocations may be above or below it; show their difference without blocking a Plan save. Cash allocation uses the recipient allocation total, not this target. It is distinct from cumulative recipient targets and actual donations. |
 | Guilt-free spending | Entity-wide planned discretionary spending. This includes money allocated from the shared account to personal accounts for individual spending, informally called “dividends.” Such allocations are ordinary guilt-free spending entries, not a separate category, domain type, or workflow. Here “dividend” does not mean an investment distribution. |
 | Saving goal | An Entity's named purpose for cash set aside in one linked savings account. A finite goal has a positive funding target and may be explicitly completed and archived; an ongoing goal can be funded and used indefinitely, with an optional positive target to keep on hand. Goals are managed independently of Plans. Archived or inactive goals preserve history and are unavailable for new contributions. Home repair and an emergency fund can be ongoing goals. Each account also has a mandatory ongoing Unallocated goal with no target and a protected lifecycle. |
@@ -428,6 +429,11 @@ establish a match. Fixed-cost identity behavior is unchanged by this income deci
   Adjustments remain visible as entries in Activity and Review detail. Editing or
   deleting one recalculates totals and flags a reviewed month for another look.
   Annual expenses are smoothed in the Plan and recorded as paid in Reviews.
+  The same holds for every fixed-cost frequency: a Review compares the smoothed
+  monthly amount with the payments recorded that month, so a month with a fifth
+  weekly payment, a third biweekly payment or a quarterly payment shows more
+  recorded than planned, and other months show less. Reviews do not prorate or
+  count expected payments per month.
 - A goal's Saving target and actual contributions are distinct from its
   monthly allocation in each Plan. Cash-account labels do not track balances or
   earmarks. Do not count a transfer as new saving.

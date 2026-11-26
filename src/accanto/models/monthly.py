@@ -175,7 +175,9 @@ fixed_cost_lines = table(
         ["debt_account_id", "entity_id"], ["debt_account.id", "debt_account.entity_id"]
     ),
     UniqueConstraint("plan_revision_id", "fixed_cost_id"),
-    CheckConstraint("frequency IN ('monthly', 'annual')"),
+    CheckConstraint(
+        "frequency IN ('weekly', 'biweekly', 'monthly', 'quarterly', 'annual')"
+    ),
     CheckConstraint("amount BETWEEN 0 AND 999999999.99"),
 )
 savings_funding_lines = table(

@@ -49,7 +49,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-it("edits annual fixed-cost inputs and keeps the stored monthly result visible", async () => {
+it("edits annual fixed-cost inputs, previews a weekly change and keeps the stored monthly result visible", async () => {
   const fixed = {
     fixed_cost_id: "fixed-a",
     name: "Synthetic subscription",
@@ -76,6 +76,9 @@ it("edits annual fixed-cost inputs and keeps the stored monthly result visible",
   fireEvent.click(screen.getByRole("button", { name: "Details for Synthetic subscription" }));
   expect(screen.getByDisplayValue("100.00")).toBeDefined();
   fireEvent.change(screen.getByDisplayValue("100.00"), { target: { value: "120.00" } });
+  fireEvent.change(screen.getByLabelText("Frequency"), { target: { value: "Weekly" } });
+  // 120.00 × 52 payments ÷ 12 months, not 120.00 × 4 weeks.
+  expect(screen.getAllByText("$520.00").length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -85,7 +88,7 @@ it("edits annual fixed-cost inputs and keeps the stored monthly result visible",
             fixed_cost_id: "fixed-a",
             name: "Synthetic subscription",
             amount: "120.00",
-            frequency: "annual",
+            frequency: "weekly",
             debt_account_id: null,
           },
         ],

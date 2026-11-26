@@ -6,12 +6,13 @@ export interface IncomeLineInput {
   name: string;
   amount: DecimalString;
 }
+export type FixedCostFrequency = "weekly" | "biweekly" | "monthly" | "quarterly" | "annual";
 export interface FixedCostLineInput {
   fixed_cost_id?: UUID | null;
   debt_account_id?: UUID | null;
   name: string;
   amount: DecimalString;
-  frequency: "monthly" | "annual";
+  frequency: FixedCostFrequency;
 }
 export interface PlanInput {
   name: string;
@@ -83,7 +84,7 @@ export interface PlanRevision {
     name: string;
     canonical_name: string;
     amount: DecimalString;
-    frequency: "monthly" | "annual";
+    frequency: FixedCostFrequency;
     monthly_amount: DecimalString;
   }>;
   savings_funding?: Array<{ account_id: UUID; account_name: string; amount: DecimalString }>;

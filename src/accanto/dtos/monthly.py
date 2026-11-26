@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
-from accanto.domains.monthly import money
+from accanto.domains.monthly import fixed_cost_monthly, money
 
 Name = Annotated[str, Field(min_length=1, max_length=120)]
 
@@ -52,12 +52,17 @@ class FixedCostLine(Input):
     debt_account_id: UUID | None = None
     name: Name
     amount: str
-    frequency: Literal["monthly", "annual"]
+    frequency: Literal["weekly", "biweekly", "monthly", "quarterly", "annual"]
 
     @field_validator("amount")
     @classmethod
     def valid_amount(cls, value: str) -> str:
         return str(money(value))
+
+    @model_validator(mode="after")
+    def valid_monthly_amount(self):
+        fixed_cost_monthly(self.amount, self.frequency)
+        return self
 
 
 class SavingsFundingLine(Input):

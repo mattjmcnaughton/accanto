@@ -1,7 +1,20 @@
 import { fmtDate, money as formatCents } from "../../lib/format";
 import { USD_AMOUNT } from "../../lib/money";
-import type { PlanInput, PlanRevision } from "../../lib/monthly";
+import type { FixedCostFrequency, PlanInput, PlanRevision } from "../../lib/monthly";
 import { parseTimestamp } from "../../lib/timestamp";
+
+/** Fixed-cost frequency labels, their API values and payments per year. */
+export const FREQUENCIES = {
+  Weekly: ["weekly", 52],
+  Biweekly: ["biweekly", 26],
+  Monthly: ["monthly", 12],
+  Quarterly: ["quarterly", 4],
+  Annual: ["annual", 1],
+} as const satisfies Record<string, readonly [FixedCostFrequency, number]>;
+export type Frequency = keyof typeof FREQUENCIES;
+const frequencyLabel = (value: FixedCostFrequency) =>
+  (Object.keys(FREQUENCIES) as Frequency[]).find((label) => FREQUENCIES[label][0] === value) ??
+  "Monthly";
 
 export type Group = "income" | "funding" | "fixed" | "spending" | "saving" | "investing" | "giving";
 export type Line = {
@@ -9,7 +22,7 @@ export type Line = {
   group: Group;
   name: string;
   amount: string;
-  frequency: "Monthly" | "Annual";
+  frequency: Frequency;
   reference?: string;
   link?: string;
   monthlyAmount?: string;
@@ -38,7 +51,8 @@ export const even = (n: number, d: number) => {
 export const monthlyAmount = (line: Line): number | null => {
   if (line.monthlyAmount !== undefined) return cents(line.monthlyAmount);
   const value = cents(line.amount);
-  return value === null ? null : line.frequency === "Annual" ? even(value, 12) : value;
+  // Annualize by payments per year, then divide by 12 (half-even), like the server.
+  return value === null ? null : even(value * FREQUENCIES[line.frequency][1], 12);
 };
 /** Cents for display. A missing amount is "Unknown", never zero. */
 export const money = (n: number | null) => (n === null ? "Unknown" : formatCents(n));
@@ -174,7 +188,7 @@ export function revisionLines(revision: PlanRevision): Line[] {
       group: "fixed" as const,
       name: line.name,
       amount: line.amount,
-      frequency: line.frequency === "annual" ? ("Annual" as const) : ("Monthly" as const),
+      frequency: frequencyLabel(line.frequency),
       link: line.debt_account_id ?? undefined,
       ...(revision.saved ? { monthlyAmount: line.monthly_amount } : {}),
     })),
@@ -227,7 +241,7 @@ export function planInput(name: string, lines: Line[], revision?: number): PlanI
       debt_account_id: line.link ?? null,
       name: line.name,
       amount: line.amount,
-      frequency: line.frequency === "Annual" ? "annual" : "monthly",
+      frequency: FREQUENCIES[line.frequency][0],
     })),
     spending: group("spending")[0].amount,
     savings_funding: group("funding").map((line) => ({

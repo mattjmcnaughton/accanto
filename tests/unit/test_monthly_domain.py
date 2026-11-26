@@ -72,6 +72,30 @@ def test_annual_fixed_costs_round_per_line_and_preserve_unknowns():
     assert plan_results([money("10.15")], money("0"))["tithe_target"] == "1.02"
 
 
+@pytest.mark.parametrize(
+    ("amount", "frequency", "expected"),
+    [
+        ("100.00", "weekly", "433.33"),  # 5200 / 12
+        ("100.00", "biweekly", "216.67"),  # 2600 / 12
+        ("100.00", "quarterly", "33.33"),  # 400 / 12
+        ("0.03", "biweekly", "0.06"),  # 0.065 rounds half-even, not up
+        ("0.09", "biweekly", "0.20"),  # 0.195
+        ("230000000.00", "weekly", "996666666.67"),
+    ],
+)
+def test_fixed_cost_frequencies_annualize_then_divide_by_twelve(
+    amount, frequency, expected
+):
+    assert fixed_cost_monthly(amount, frequency) == Decimal(expected)
+
+
+def test_fixed_cost_frequency_rejects_unsupported_and_oversized_lines():
+    with pytest.raises(ValueError, match="frequency"):
+        fixed_cost_monthly("100.00", "twice_monthly")
+    with pytest.raises(ValueError, match="range"):
+        fixed_cost_monthly("999999999.99", "weekly")
+
+
 def test_unknown_zero_and_unplanned_income_are_distinct():
     actual = monthly_actuals(["salary", "bonus"], [("salary", money("4000"))], [])
     assert actual["income_recorded"] == "4000.00"

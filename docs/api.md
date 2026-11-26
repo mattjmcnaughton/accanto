@@ -305,14 +305,19 @@ must continue using `revision`, not `updated_at`, for optimistic concurrency.
 
 `POST /plans` and `PUT /plans/{plan_id}/draft` accept `fixed_costs`, an array
 of named lines with `amount` as a USD decimal string and `frequency` of
-`monthly` or `annual`. A persisted line also has a stable Entity-scoped
+`weekly`, `biweekly` (every two weeks), `monthly`, `quarterly` or `annual`. A persisted line also has a stable Entity-scoped
 `fixed_cost_id`. Retain that ID when editing or copying the line; omit it to
 create a new cost. Copied Plans share Fixed cost identities while Income
 sources receive new identities. Each line returns its entered amount,
 frequency and cent-valued `monthly_amount`; `fixed_cost_total` sums those
 monthly results. Three annual inputs of `100.00` therefore produce three
 `8.33` monthly lines and a `24.99` monthly total while retaining all three
-`100.00` inputs. The total reduces the Plan's unassigned amount.
+`100.00` inputs. The total reduces the Plan's unassigned amount. Each
+`monthly_amount` is `amount` × payments per year (52, 26, 12, 4 or 1) ÷ 12,
+rounded half-even to cents: `100.00` weekly is `433.33`, biweekly `216.67` and
+quarterly `33.33`. A line whose monthly amount would exceed `999999999.99` is
+rejected with 422. Reviews compare this smoothed amount with the payments
+recorded in the month; they do not count payments per month.
 
 ### Plan funding and destination allocations
 
