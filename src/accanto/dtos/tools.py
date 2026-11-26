@@ -817,6 +817,22 @@ class NoInput(Input):
     pass
 
 
+class CalculateInput(Input):
+    expression: str = Field(
+        min_length=1,
+        max_length=2000,
+        description="Arithmetic such as (84.30 - 12) * 0.4. Numbers, + - * / ** "
+        "( ) and abs, min, max, round, sqrt, sum (up to 200 values); "
+        "percentages as / 100.",
+    )
+
+
+class Calculation(Output):
+    expression: str
+    result: Amount
+    cents: Amount
+
+
 def _first_day(value: date) -> date:
     if value.day != 1:
         raise ValueError("Use the first calendar day of the month.")

@@ -156,7 +156,9 @@ async def scenario():
                     "anthropic/requiresUserInteraction"
                 )
                 assert bool(needs_approval) is (spec.build is not None), name
-                if name != "get_context":
+                if spec.pure:
+                    assert "entity_id" not in tool["inputSchema"]["properties"]
+                elif name != "get_context":
                     assert tool["inputSchema"]["required"][0] == "entity_id"
                 if spec.kind != "read":
                     assert "idempotency_key" in tool["inputSchema"]["required"]
@@ -166,6 +168,21 @@ async def scenario():
             assert context["entities"][0]["name"] == {
                 "untrusted": "Synthetic MCP Entity"
             }
+
+            # Pure arithmetic needs no Entity; rejections never echo the input.
+            calculated = await mcp.call("calculate", {"expression": "0.1 + 0.2"})
+            assert calculated == {
+                "expression": "0.1 + 0.2",
+                "result": "0.3",
+                "cents": "0.30",
+            }
+            rejected = await mcp.call(
+                "calculate", {"expression": "84.31 / 0"}, error=True
+            )
+            assert (
+                "invalid_arguments: Division by zero." in rejected["content"][0]["text"]
+            )
+            assert "84.31" not in rejected["content"][0]["text"]
 
             # Entity boundary: a foreign Entity is unavailable.
             denied = await mcp.call(
