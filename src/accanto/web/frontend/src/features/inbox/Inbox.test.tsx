@@ -129,6 +129,46 @@ it("records with Enter, keeps 1–6 inside the inbox, and sends the item's revis
   ).toBeDefined();
 });
 
+it("leaves keys pressed in the assistant panel to the panel", async () => {
+  const writes: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (init?.method === "POST") {
+      writes.push(url);
+      return new Response(JSON.stringify(item({ status: "skipped", revision: 4 })));
+    }
+    if (url.endsWith("/inbox")) return new Response(JSON.stringify([item({})]));
+    return new Response("[]");
+  });
+  render(
+    <>
+      <Inbox
+        entity={session.entities[0]}
+        concealed={false}
+        busy={false}
+        refresh={0}
+        guard={() => true}
+        dirty={() => {}}
+        save={() => {}}
+        credentials={async () => session}
+      />
+      <aside data-own-keys="">
+        <button type="button">Apply</button>
+      </aside>
+    </>,
+  );
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  const apply = screen.getByRole("button", { name: "Apply" });
+  fireEvent.keyDown(apply, { key: "s" });
+  fireEvent.keyDown(apply, { key: "3" });
+  await new Promise((r) => setTimeout(r, 20));
+  expect(writes).toEqual([]);
+  // The same key on the page itself still skips: only the panel's keys are left alone.
+  fireEvent.keyDown(document.body, { key: "s" });
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(writes[0]).toMatch(/\/inbox\/i1\/skip$/);
+});
+
 it("sends only completion fields when a draft was copied from a proposal", () => {
   const draft: Proposal = { category: "spending", funding: "income", rationale: "Synthetic" };
   const write = inbox.record("e", item({}), { ...draft, funding: "goal-1" });

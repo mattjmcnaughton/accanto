@@ -209,68 +209,7 @@ export function Home({
               Recorded so far against {result.version.name}, version {result.version.number}
             </span>
           </h2>
-          <div className="card pad">
-            <Band
-              label={`Recorded against planned for ${name}`}
-              parts={OUT.map(({ key, kind, name: title }): BandPart => {
-                const group = comparison[key];
-                const planned = cents(group.planned) ?? 0;
-                const recorded = cents(group.recorded) ?? 0;
-                const missing = group.items
-                  .filter((item) => item.recorded === null)
-                  .reduce((total, item) => total + (cents(item.planned) ?? 0), 0);
-                return {
-                  key,
-                  kind,
-                  weight: planned,
-                  fill: planned ? recorded / planned : 0,
-                  hatch: planned ? missing / planned : 0,
-                  title: `${title}: ${formatMoney(group.recorded)} recorded of ${formatMoney(group.planned)}`,
-                };
-              })}
-            />
-            <table className="buckets">
-              <caption className="sr-only">Recorded against planned by category</caption>
-              <thead>
-                <tr>
-                  <th scope="col">
-                    <span className="sr-only">Color</span>
-                  </th>
-                  <th scope="col">Category</th>
-                  <th scope="col" className="num">
-                    Recorded
-                  </th>
-                  <th scope="col" className="num">
-                    Planned
-                  </th>
-                  <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {OUT.map(({ key, kind, name: title }) => {
-                  const group = comparison[key];
-                  const st = status(key, group);
-                  return (
-                    <tr key={key} style={tint(kind)}>
-                      <td>
-                        <span className="dot" />
-                      </td>
-                      <th scope="row">{title}</th>
-                      <td className="num">{formatMoney(group.recorded)}</td>
-                      <td className="num muted">{formatMoney(group.planned)}</td>
-                      <td className={st.tone}>{st.text}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <p className="note home-legend">
-              Income: {formatMoney(comparison.income.recorded)} of{" "}
-              {formatMoney(comparison.income.planned)} received.{" "}
-              {status("income", comparison.income).text}. Solid is recorded, pale is planned, and
-              hatching is a planned line with no entry.
-            </p>
-          </div>
+          <MonthBreakdown comparison={comparison} name={name} />
         </section>
       )}
       {items.length > 0 && (
@@ -332,7 +271,81 @@ export function Home({
   );
 }
 
-function Hero({
+/** Where a month's money is going: recorded against planned per category, as the API reports it. */
+export function MonthBreakdown({
+  comparison,
+  name,
+}: {
+  comparison: NonNullable<ReviewResult["comparison"]>;
+  name: string;
+}) {
+  return (
+    <div className="card pad">
+      <Band
+        label={`Recorded against planned for ${name}`}
+        parts={OUT.map(({ key, kind, name: title }): BandPart => {
+          const group = comparison[key];
+          const planned = cents(group.planned) ?? 0;
+          const recorded = cents(group.recorded) ?? 0;
+          const missing = group.items
+            .filter((item) => item.recorded === null)
+            .reduce((total, item) => total + (cents(item.planned) ?? 0), 0);
+          return {
+            key,
+            kind,
+            weight: planned,
+            fill: planned ? recorded / planned : 0,
+            hatch: planned ? missing / planned : 0,
+            title: `${title}: ${formatMoney(group.recorded)} recorded of ${formatMoney(group.planned)}`,
+          };
+        })}
+      />
+      <table className="buckets">
+        <caption className="sr-only">Recorded against planned by category</caption>
+        <thead>
+          <tr>
+            <th scope="col">
+              <span className="sr-only">Color</span>
+            </th>
+            <th scope="col">Category</th>
+            <th scope="col" className="num">
+              Recorded
+            </th>
+            <th scope="col" className="num">
+              Planned
+            </th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {OUT.map(({ key, kind, name: title }) => {
+            const group = comparison[key];
+            const st = status(key, group);
+            return (
+              <tr key={key} style={tint(kind)}>
+                <td>
+                  <span className="dot" />
+                </td>
+                <th scope="row">{title}</th>
+                <td className="num">{formatMoney(group.recorded)}</td>
+                <td className="num muted">{formatMoney(group.planned)}</td>
+                <td className={st.tone}>{st.text}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="note home-legend">
+        Income: {formatMoney(comparison.income.recorded)} of{" "}
+        {formatMoney(comparison.income.planned)} received.{" "}
+        {status("income", comparison.income).text}. Solid is recorded, pale is planned, and hatching
+        is a planned line with no entry.
+      </p>
+    </div>
+  );
+}
+
+export function Hero({
   month,
   today,
   spending,

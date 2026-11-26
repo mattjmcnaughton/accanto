@@ -75,6 +75,15 @@ export function useTheme(): [ThemeChoice, (choice: ThemeChoice) => void] {
 export const composing = (event: { nativeEvent: KeyboardEvent }) =>
   event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229;
 
+/**
+ * One owner for the keyboard: a screen's single-key shortcuts stand back while a dialog is open
+ * or while focus is in a region that owns its keys, such as the assistant panel. Without this,
+ * a key pressed on a button in the panel acted on the screen behind it.
+ */
+export const keysBelongElsewhere = (target: EventTarget | null) =>
+  Boolean(document.querySelector("dialog[open]")) ||
+  (target instanceof Element && Boolean(target.closest("[data-own-keys]")));
+
 /** Share pending reads only. A later visit still checks authorization and gets fresh data. */
 export const WorkspaceReads = createContext<Map<string, Promise<LoadState<unknown>>> | null>(null);
 

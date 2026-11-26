@@ -91,3 +91,23 @@ export const AssistantLongConversation: Story = {
   },
   play: openAssistant,
 };
+
+/** Ctrl K opens the Ask bar: suggested phrases, / commands, screens, and free text to ask. */
+export const AskBar: Story = {
+  parameters: agentOn,
+  beforeEach: () => short.reset(),
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole("button", { name: "Ask or jump" });
+    await userEvent.keyboard("{Control>}k{/Control}");
+  },
+};
+/** /left shows Home's own figure, read from the Review: no model turn. */
+export const AskBarCard: Story = {
+  parameters: agentOn,
+  beforeEach: () => short.reset(),
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole("button", { name: "Ask or jump" });
+    await userEvent.keyboard("{Control>}k{/Control}");
+    await userEvent.keyboard("/left{Enter}");
+  },
+};

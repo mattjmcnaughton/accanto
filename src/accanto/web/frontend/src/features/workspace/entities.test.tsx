@@ -83,7 +83,7 @@ it("offers the other Entities and Create Entity in the command palette", async (
   render(<ProductionHome />);
   await screen.findByRole("combobox", { name: "Entity" });
   fireEvent.keyDown(document, { key: "k", ctrlKey: true });
-  const palette = screen.getByRole("dialog", { name: "Search or jump" });
+  const palette = screen.getByRole("dialog", { name: "Ask or jump" });
   expect(
     within(palette).getByRole("button", { name: /Switch to Synthetic Personal/ }),
   ).toBeDefined();

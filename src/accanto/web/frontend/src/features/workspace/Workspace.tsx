@@ -20,10 +20,11 @@ import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice"
 import { Savings } from "../savings/Savings";
 import { Settings } from "../settings/Settings";
 import { ActivityScreen } from "./Activity";
+import { type Action, AskBar } from "./AskBar";
 import { CreateEntityDialog, EntitySwitcher, createEntity } from "./Entities";
 import { MonthlyReview } from "./MonthlyReview";
 import { Plans } from "./Plans";
-import { WorkspaceReads, useTheme } from "./shared";
+import { WorkspaceReads, keysBelongElsewhere, useTheme } from "./shared";
 
 /** Every screen has its own address; "more" is the phone's list of the screens without a tab. */
 export const SCREENS = [
@@ -142,6 +143,14 @@ export function Workspace({
   const approved = useRef<{ to: Screen; month: string; keep: boolean } | null>(null);
   const [palette, setPalette] = useState(false);
   const [assistant, setAssistant] = useState(false);
+  /** The Ask bar's latest request to the assistant panel: a question or a tab to show. */
+  const [request, setRequest] = useState<{ id: number; ask?: string; tab?: "pending" }>({ id: 0 });
+  const toAssistant = (next: { ask?: string; tab?: "pending" }) => {
+    setAssistant(true);
+    setRequest((r) => ({ id: r.id + 1, ...next }));
+  };
+  // A one-shot request for the Inbox's flow mode, from /inbox.
+  const [flow, setFlow] = useState(0);
   const [shortcuts, setShortcuts] = useState(false);
   const [theme, setTheme] = useTheme();
   const [refresh, setRefresh] = useState(0);
@@ -407,7 +416,7 @@ export function Workspace({
       event.metaKey ||
       event.altKey ||
       typing(event.target) ||
-      document.querySelector("dialog[open]")
+      keysBelongElsewhere(event.target)
     )
       return;
     if (/^[1-9]$/.test(event.key)) {
@@ -455,13 +464,27 @@ export function Workspace({
       {label}
     </a>
   );
-  const commands: Command[] = [
+  const commands: Action[] = [
+    {
+      text: "Process my inbox",
+      hint: "Inbox flow",
+      slash: "/inbox",
+      run: () => {
+        if (screen === "inbox" || go("inbox")) setFlow((x) => x + 1);
+      },
+    },
+    { text: "Add activity", hint: "Action", slash: "/add", run: addActivity },
+    {
+      text: "Pending changes",
+      hint: "Assistant",
+      slash: "/pending",
+      run: () => toAssistant({ tab: "pending" }),
+    },
     ...[...ORDER, "inbox" as const].map((to) => ({
       text: `Go to ${TITLES[to]}`,
       hint: "Screen",
       run: () => go(to),
     })),
-    { text: "Add activity", hint: "Action", run: addActivity },
     ...(switchEntity
       ? [
           ...session.entities
@@ -612,11 +635,11 @@ export function Workspace({
                 type="button"
                 className="jump"
                 onClick={() => setPalette(true)}
-                aria-label="Search or jump"
+                aria-label="Ask or jump"
                 aria-keyshortcuts="Control+K Meta+K"
               >
                 <Icon name="search" />
-                <span>Search or jump</span>
+                <span>Ask or jump</span>
                 <span className="kbd">Ctrl K</span>
               </button>
               <button
@@ -707,6 +730,8 @@ export function Workspace({
                   {...props}
                   credentials={credentials}
                   changed={changed}
+                  flow={flow}
+                  flowStarted={() => setFlow(0)}
                   openSettings={() => go("settings")}
                 />
               )}
@@ -790,6 +815,7 @@ export function Workspace({
           }}
           openSettings={() => go("settings")}
           changed={changed}
+          request={request}
         />
       )}
       {entity && (
@@ -802,7 +828,16 @@ export function Workspace({
         </nav>
       )}
       {dialogSlot && notice && createPortal(notice, dialogSlot)}
-      {palette && !concealed && <Palette commands={commands} close={() => setPalette(false)} />}
+      {palette && entity && !concealed && (
+        <AskBar
+          entity={entity}
+          month={month}
+          actions={commands}
+          ask={(ask) => toAssistant({ ask })}
+          go={(to) => go(to)}
+          close={() => setPalette(false)}
+        />
+      )}
       {shortcuts && !concealed && <Shortcuts close={() => setShortcuts(false)} />}
       {creating && entity && !concealed && (
         <CreateEntityDialog
@@ -826,78 +861,12 @@ export function Workspace({
   );
 }
 
-type Command = { text: string; hint: string; run: () => void };
-function Palette({ commands: all, close }: { commands: Command[]; close: () => void }) {
-  const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState(0);
-  const commands = useMemo(() => {
-    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    return all.filter((c) => words.every((w) => c.text.toLowerCase().includes(w)));
-  }, [all, query]);
-  const at = Math.min(selected, commands.length - 1);
-  const run = (command: Command) => {
-    close();
-    command.run();
-  };
-  return (
-    <Dialog title="Search or jump" className="pal" onClose={close}>
-      <input
-        // biome-ignore lint/a11y/noAutofocus: The palette exists to take typing at once.
-        autoFocus
-        placeholder="Jump to a screen or run an action"
-        aria-label="Search or jump"
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setSelected(0);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-            e.preventDefault();
-            setSelected(
-              (at + (e.key === "ArrowDown" ? 1 : commands.length - 1)) %
-                Math.max(1, commands.length),
-            );
-          } else if (e.key === "Enter" && commands[at]) {
-            // Without this, the same key press lands on whatever opens next.
-            e.preventDefault();
-            run(commands[at]);
-          }
-        }}
-      />
-      <output className="sr-only">
-        {commands[at]
-          ? `${commands[at].text}, ${at + 1} of ${commands.length}`
-          : "No matching commands"}
-      </output>
-      {commands.length ? (
-        <div className="pal-list">
-          {commands.map((c, i) => (
-            <button
-              type="button"
-              key={c.text}
-              aria-current={i === at ? "true" : undefined}
-              onClick={() => run(c)}
-              ref={i === at ? (el) => el?.scrollIntoView?.({ block: "nearest" }) : undefined}
-            >
-              {c.text}
-              <small>{c.hint}</small>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="pal-none">Nothing matches "{query}". Try a screen name or an action.</div>
-      )}
-    </Dialog>
-  );
-}
-
 const Shortcuts = ({ close }: { close: () => void }) => (
   <Dialog title="Keyboard shortcuts" onClose={close}>
     <div className="dlg-b">
       <div className="keys">
         {[
-          ["Ctrl K or ⌘ K", "Search, jump to a screen, or run an action"],
+          ["Ctrl K or ⌘ K", "Ask the assistant, jump to a screen, or run a / command"],
           ["Ctrl J or ⌘ J", "Open or close the assistant"],
           ["1 to 9", "Go to a screen, in sidebar order"],
           ["N", "Add activity"],
