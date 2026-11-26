@@ -120,13 +120,12 @@
   gap: 20px;
   min-height: 0;
 }
+/* A row under the log rather than a layer over its last lines. */
 .agent-latest {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
+  flex: none;
+  align-self: center;
+  margin-top: 6px;
   border-radius: 99px;
-  box-shadow: var(--pop);
 }
 .agent-ended {
   display: flex;
@@ -280,6 +279,10 @@
   background: var(--brand);
   color: var(--surface);
 }
+.agent-thumbs {
+  display: flex;
+  gap: 6px;
+}
 .agent-thumb {
   position: relative;
 }
@@ -317,37 +320,94 @@
   .agent-resize {
     display: none;
   }
+  /* An overlay fits the visual viewport AgentPanel measures: a keyboard shortens it from below
+     instead of covering the composer, and iOS has no reason to pan the header away. */
   .app.with-agent .agent {
     position: fixed;
-    inset: 0 0 0 auto;
+    inset: var(--vvtop, 0px) 0 auto auto;
+    height: var(--vvh, 100dvh);
     width: min(520px, 100vw);
     z-index: 8;
     box-shadow: var(--pop);
+  }
+  .app.with-agent .agent.full {
+    inset: var(--vvtop, 0px) 0 auto 0;
   }
 }
 @media (max-width: 760px) {
   .app.with-agent {
     grid-template-columns: minmax(0, 1fr);
   }
-  /* Pinned to the screen (inset, not 100dvh) so the header and close button stay
-     reachable; the page behind cannot scroll it away. */
-  .app.with-agent .agent {
-    inset: 0;
-    width: 100vw;
-    height: auto;
+  /* The whole visible screen, clear of notches; the log is its only scrolling part, and the
+     page behind never scrolls. A drag down on the header moves it with the finger. */
+  .app.with-agent .agent,
+  .app.with-agent .agent.full {
+    inset: var(--vvtop, 0px) 0 auto 0;
+    width: auto;
+    gap: 8px;
+    padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
     overscroll-behavior: contain;
+    transform: translateY(var(--agent-pull, 0px));
   }
   html:has(.app.with-agent),
   html:has(.app.with-agent) body {
     overflow: hidden;
+    overscroll-behavior: none;
+  }
+  .agent-h {
+    touch-action: none;
+  }
+  /* Thumb-sized header actions. */
+  .agent-h .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+  /* One row: Attach, the box and Send, with any images above it. */
+  .agent-compose {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "thumbs thumbs thumbs" "attach text send";
+    align-items: end;
+    gap: 0 2px;
+    padding: 3px;
+    border-radius: 20px;
+  }
+  .agent-compose-bar {
+    display: contents;
+  }
+  .agent-attach {
+    grid-area: attach;
+    width: 36px;
+    height: 36px;
+  }
+  .agent-send {
+    grid-area: send;
+    width: 36px;
+    height: 36px;
+    border-radius: 99px;
+  }
+  .agent-thumbs {
+    grid-area: thumbs;
+    padding: 6px 6px 4px;
   }
   /* iOS zooms into a focused field under 16px and does not zoom back out. */
   .agent-compose textarea {
+    grid-area: text;
     font-size: 16px;
+    line-height: 1.3;
+    min-height: 0;
+    padding: 8px 4px;
+    max-height: calc(var(--vvh, 100dvh) * 0.3);
+  }
+  /* A long example question would otherwise make the empty box two lines tall. */
+  .agent-compose textarea:placeholder-shown {
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   /* Phone keyboards have no Shift+Enter to explain. */
   .agent-hint {
-    visibility: hidden;
+    display: none;
   }
   /* The sheet already fills a phone's screen. */
   .agent .agent-full-btn {
