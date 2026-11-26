@@ -490,6 +490,28 @@ function mockPlans(groups: unknown[] = [{ plan_id: "p", revisions: [version, she
     .mockImplementation(async (path) => json(String(path).endsWith("/plans") ? groups : []));
 }
 
+it("lists saved Plan versions newest first, under the current draft", async () => {
+  const newer = { ...version, uuid: "v2", name: "Revised", number: 2, saved_at: "2026-11-05" };
+  mockPlans([{ plan_id: "p", revisions: [version, newer, { ...sheetDraft, number: 3 }] }]);
+  render(<Plans {...props()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Details for Baseline" }));
+  expect(screen.getByText(/2 saved versions, latest version 2/)).toBeDefined();
+  const expanded = document.querySelectorAll(".plan-versions p");
+  expect([...expanded].map((row) => row.textContent)).toEqual([
+    "Version 2, saved Nov 5, 2026 · Revised",
+    "Version 1, saved Oct 1, 2026 · Baseline",
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "Baseline" }));
+  const picker = screen.getByLabelText("Viewing Plan version") as HTMLSelectElement;
+  expect([...picker.options].map((option) => option.text)).toEqual([
+    "Current draft",
+    "Version 2, saved Nov 5, 2026",
+    "Version 1, saved Oct 1, 2026",
+  ]);
+  fireEvent.change(picker, { target: { value: picker.options[2].value } });
+  expect(screen.getByRole("heading", { name: "Baseline" })).toBeDefined();
+});
+
 it("keeps Enter and Escape edits local and writes only on Ctrl+S, never mid-edit or read-only", async () => {
   mockPlans();
   const p = props();

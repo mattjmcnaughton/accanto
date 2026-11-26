@@ -4,6 +4,7 @@ import { type PlanGroup, type PlanRevision, monthly } from "../../lib/monthly";
 import { Dialog, Empty, Head } from "../../ui";
 import { LoadProblem, LoadingCard, defaultDate } from "./Activity";
 import { type Resolution, ReviewDetails, complete, reviewSections } from "./ReviewDetails";
+import { newestFirst } from "./planWorksheetModel";
 import type { Screen } from "./Workspace";
 import { type ScreenProps, previousMonth, useLoad } from "./shared";
 import "./activity-review.css";
@@ -64,7 +65,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
   if (p.concealed) return null;
   const versions =
     plans.kind === "ready"
-      ? plans.data.flatMap((plan) => plan.revisions.filter((r) => r.saved))
+      ? newestFirst(plans.data.flatMap((plan) => plan.revisions.filter((r) => r.saved)))
       : [];
   const currentPlan =
     plans.kind === "ready" && state.kind === "ready"
@@ -208,13 +209,13 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
                   disabled={p.busy}
                   onChange={(e) => retarget(e.target.value)}
                 >
-                  {(currentPlan?.revisions.filter((r) => r.saved) || [state.data.version]).map(
-                    (r) => (
-                      <option key={r.uuid} value={r.uuid}>
-                        {versionLabel(r)}
-                      </option>
-                    ),
-                  )}
+                  {newestFirst(
+                    currentPlan?.revisions.filter((r) => r.saved) || [state.data.version],
+                  ).map((r) => (
+                    <option key={r.uuid} value={r.uuid}>
+                      {versionLabel(r)}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>
