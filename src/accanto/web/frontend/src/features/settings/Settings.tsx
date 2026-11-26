@@ -11,9 +11,12 @@ interface EntitySettings {
   id: string;
   name: string;
   time_zone: string;
+  /** Projection assumption: an annual percent, 6.00 for a new Entity. */
+  default_return_percent: string;
   revision: number;
   today?: string;
 }
+const PERCENT = /^-?\d{1,2}(\.\d{1,2})?$/;
 export interface SettingsProps extends ScreenProps {
   credentials: (signIn?: boolean) => Promise<BrowserSession>;
   saved: () => void;
@@ -73,6 +76,7 @@ export function Settings(p: SettingsProps) {
                   body: {
                     name: current.name,
                     time_zone: current.time_zone,
+                    default_return_percent: current.default_return_percent.trim(),
                     expected_revision: current.revision,
                   },
                 },
@@ -133,6 +137,29 @@ export function Settings(p: SettingsProps) {
                     <option key={zone} value={zone} />
                   ))}
                 </datalist>
+              </div>
+              <div className="setting">
+                <div>
+                  <label htmlFor="entity-default-return">Default expected return (% a year)</label>
+                  <small id="default-return-help">
+                    Used by Projections for any investment without its own expected return. 6 is a
+                    cautious figure for a diversified stock and bond portfolio. Projections do not
+                    yet account for inflation.
+                  </small>
+                </div>
+                <input
+                  id="entity-default-return"
+                  className="input set-percent"
+                  required
+                  inputMode="decimal"
+                  aria-describedby="default-return-help"
+                  aria-invalid={!PERCENT.test(current.default_return_percent.trim())}
+                  value={current.default_return_percent}
+                  onChange={(event) => {
+                    setForm({ ...current, default_return_percent: event.target.value });
+                    p.dirty(true);
+                  }}
+                />
               </div>
               <div className="setting">
                 <div aria-hidden="true">

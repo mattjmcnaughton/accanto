@@ -15,6 +15,7 @@ from accanto.domains.destinations import (
     opening_move_allowed,
     require_new_destination,
 )
+from accanto.dtos.destinations import EXPECTATIONS
 from accanto.models import destinations as d
 from accanto.models import monthly as m
 from accanto.services.access import RejectionError
@@ -88,9 +89,44 @@ async def snapshots(session, kind, rows):
             "contribution_progress": str(totals.get(row["id"], Decimal("0.00"))),
             "opening": openings.get(row["id"]),
             "latest": latest.get(row["id"]),
+            **(expectations(row) if kind == "investment" else {}),
         }
         for row in rows
     ]
+
+
+def expectations(row) -> dict:
+    """An investment's projection assumptions as the API reports them."""
+    return {
+        "expected_return_percent": None
+        if row["expected_return_percent"] is None
+        else str(row["expected_return_percent"]),
+        "expected_contribution": None
+        if row["expected_contribution"] is None
+        else str(row["expected_contribution"]),
+        "expected_contribution_frequency": row["expected_contribution_frequency"],
+    }
+
+
+def expectation_values(kind, payload, unchanged=()) -> dict:
+    """Column values for the assumptions a write sets; giving has none."""
+    given = {f: payload.get(f) for f in EXPECTATIONS if f not in unchanged}
+    if kind == "giving":
+        if (
+            given.get("expected_return_percent") is not None
+            or given.get("expected_contribution") is not None
+        ):
+            raise RejectionError(
+                "invalid_expectations",
+                "Giving recipients do not have projection assumptions.",
+                422,
+            )
+        return {}
+    if "expected_contribution_frequency" in given:
+        given["expected_contribution_frequency"] = (
+            given["expected_contribution_frequency"] or "monthly"
+        )
+    return given
 
 
 async def read_destinations(session, token, entity_uuid, kind):
@@ -129,6 +165,7 @@ async def write_destination(session, entity, operation, payload, target, audit):
                         entity_id=entity["id"],
                         name=payload["name"],
                         target=contribution_target(payload["target"]),
+                        **expectation_values(kind, payload),
                     )
                     .returning(table)
                 )
@@ -173,6 +210,9 @@ async def write_destination(session, entity, operation, payload, target, audit):
                     target=contribution_target(payload["target"]),
                     active=payload["active"],
                     revision=row["revision"] + 1,
+                    **expectation_values(
+                        kind, payload, payload.get("unchanged", EXPECTATIONS)
+                    ),
                 )
                 .returning(table)
             )

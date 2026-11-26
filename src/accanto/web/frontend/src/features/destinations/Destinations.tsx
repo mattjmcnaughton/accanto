@@ -3,6 +3,7 @@ import type { LoadState } from "../../lib/api";
 import { type Observation, type ObservationInput, balances } from "../../lib/balances";
 import {
   type Contribution,
+  type ContributionFrequency,
   type ContributionInput,
   type Destination,
   type DestinationKind,
@@ -41,7 +42,25 @@ type DestinationForm = {
   active: boolean;
   openingDate: string;
   openingAmount: string;
+  /** Investments only: projection assumptions, blank when not set. */
+  returnPercent: string;
+  contribution: string;
+  frequency: ContributionFrequency;
 };
+/** An annual percent, from −10 to 30, with up to two decimals. */
+const RETURN_PERCENT = /^-?\d{1,2}(\.\d{1,2})?$/;
+const validReturn = (value: string) =>
+  RETURN_PERCENT.test(value.trim()) && Number(value) >= -10 && Number(value) <= 30;
+const PER = { monthly: "a month", annual: "a year" } as const;
+/** "6.00% a year, $500.00 a month", or null when neither assumption is set. */
+export function expectationText(row: Destination): string | null {
+  const parts = [
+    row.expected_return_percent && `${row.expected_return_percent}% a year`,
+    row.expected_contribution &&
+      `${formatMoney(row.expected_contribution)} ${PER[row.expected_contribution_frequency ?? "monthly"]}`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
+}
 /** The contribution being edited; `savings` keeps the origin choice while no goal is picked. */
 type EntryForm = Omit<ContributionInput, "investment_id" | "giving_recipient_id"> & {
   destination: string | null;
@@ -95,6 +114,10 @@ function problem(form: Form): string {
     if (d.openingAmount && (!validMoney(d.openingAmount) || !d.openingDate))
       return "Enter an opening date and a USD opening value with up to two decimals.";
     if (form.record?.opening && !d.openingDate) return "Enter an opening date.";
+    if (d.returnPercent.trim() && !validReturn(d.returnPercent))
+      return "Enter the expected return as a percent from −10 to 30 with up to two decimals.";
+    if (d.contribution.trim() && !validMoney(d.contribution))
+      return "Enter the expected contribution as USD with up to two decimals.";
     return "";
   }
   if (!form.value.date) return "Enter a date.";
@@ -162,8 +185,20 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
             active: row.active,
             openingDate: row.opening?.date ?? p.entity.today,
             openingAmount: row.opening?.amount ?? "",
+            returnPercent: row.expected_return_percent ?? "",
+            contribution: row.expected_contribution ?? "",
+            frequency: row.expected_contribution_frequency ?? "monthly",
           }
-        : { name: "", target: "", active: true, openingDate: p.entity.today, openingAmount: "" },
+        : {
+            name: "",
+            target: "",
+            active: true,
+            openingDate: p.entity.today,
+            openingAmount: "",
+            returnPercent: "",
+            contribution: "",
+            frequency: "monthly",
+          },
     });
   }
   function editEntry(
@@ -257,6 +292,14 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
     if (form.type === "destination") {
       const v = form.value;
       const target = v.target.trim() || null;
+      const expectations =
+        form.kind === "investment"
+          ? {
+              expected_return_percent: v.returnPercent.trim() || null,
+              expected_contribution: v.contribution.trim() || null,
+              expected_contribution_frequency: v.frequency,
+            }
+          : {};
       editor.submit(
         error,
         form.record
@@ -268,6 +311,7 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
               ...(form.record.opening && v.openingDate !== form.record.opening.date
                 ? { opening_date: v.openingDate }
                 : {}),
+              ...expectations,
             })
           : destinations.create(p.entity.id, form.kind, {
               name: v.name.trim(),
@@ -276,6 +320,7 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
                 form.kind === "investment" && v.openingAmount
                   ? { date: v.openingDate, amount: v.openingAmount.trim() }
                   : null,
+              ...expectations,
             }),
       );
     } else if (form.type === "entry") {
@@ -329,6 +374,13 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
           {
             header: "Observed on",
             cell: (row: Destination) => (row.latest ? <Day iso={row.latest.date} /> : dash),
+          },
+          {
+            header: "Assumptions",
+            wide: true,
+            cell: (row: Destination) => (
+              <span className="rec-wrap">{expectationText(row) ?? dash}</span>
+            ),
           },
         ]
       : []),
@@ -504,6 +556,14 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
                   : "No contributions recorded yet"
               }
             />
+          ) : null}
+          {investment ? (
+            <p className="rec-expect">
+              <span className="cap">Projection assumptions</span>
+              {expectationText(row) ?? (
+                <span className="muted">None yet. Use Edit to set an expected return.</span>
+              )}
+            </p>
           ) : (
             row.target && (
               <Progress
@@ -862,6 +922,47 @@ function DestinationFields({
             />
           </div>
         </>
+      )}
+      {kind === "investment" && (
+        <fieldset className="rec-assume">
+          <legend>Projection assumptions</legend>
+          <p className="note">
+            Optional, and used only by Projections. They never change contributions, values or
+            Plans.
+          </p>
+          <div className="two">
+            <Field label="Expected return (% a year)" hint="Blank uses the default in Settings">
+              <input
+                inputMode="decimal"
+                placeholder="6.00"
+                value={value.returnPercent}
+                aria-invalid={!!value.returnPercent.trim() && !validReturn(value.returnPercent)}
+                onChange={(event) => set({ returnPercent: event.target.value })}
+              />
+            </Field>
+            <div className="rec-contrib">
+              <MoneyField
+                label="Expected contribution (USD)"
+                value={value.contribution}
+                required={false}
+                onChange={(contribution) => set({ contribution })}
+              />
+              {/* biome-ignore lint/a11y/useSemanticElements: The kit\'s segmented control is a button group. */}
+              <div className="seg-control" role="group" aria-label="Contribution frequency">
+                {(["monthly", "annual"] as const).map((frequency) => (
+                  <button
+                    key={frequency}
+                    type="button"
+                    aria-pressed={value.frequency === frequency}
+                    onClick={() => set({ frequency })}
+                  >
+                    {frequency === "monthly" ? "Monthly" : "Annually"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </fieldset>
       )}
       {record?.opening && (
         <>

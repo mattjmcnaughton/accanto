@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6l032`.
+   supported revision is `6n034`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -147,6 +147,12 @@ never reads them. Grant the runtime role access to them after upgrading.
 estimates; their `audit_log` rows stay. Code since the Income Estimates removal
 never reads them. Not additive: back up first if the rows matter. Its downgrade
 recreates the tables empty. No grant changes.
+`6n034` adds projection assumptions ([TDD 14](../tdds/14-projections.md)):
+`investment.expected_return_percent`, `expected_contribution` and
+`expected_contribution_frequency` (default `monthly`), and
+`entity.default_return_percent` (default `6.00`), `fire_annual_spending` and
+`fire_withdrawal_percent` (default `4.00`). Additive with defaults; `6m033` code
+never reads them. No grant changes.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

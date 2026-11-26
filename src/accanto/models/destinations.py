@@ -26,6 +26,15 @@ investments = table(
     Column("target", Numeric(14, 2)),
     Column("active", Boolean, nullable=False, server_default="true"),
     Column("revision", Integer, nullable=False, server_default="1"),
+    # Projection assumptions (TDD 14); not activity or observations.
+    Column("expected_return_percent", Numeric(5, 2)),
+    Column("expected_contribution", Numeric(14, 2)),
+    Column(
+        "expected_contribution_frequency",
+        String(10),
+        nullable=False,
+        server_default="monthly",
+    ),
     UniqueConstraint("id", "entity_id"),
     CheckConstraint("target IS NULL OR target BETWEEN 0.01 AND 999999999.99"),
     CheckConstraint("revision >= 1"),

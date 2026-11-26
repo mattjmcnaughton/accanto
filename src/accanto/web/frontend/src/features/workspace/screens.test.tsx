@@ -51,7 +51,18 @@ afterEach(() => {
 });
 
 it.each([
-  ["home", ["debts", "investments", "plans", "reviews/2026-11-01", "routines", "savings-accounts"]],
+  [
+    "home",
+    [
+      "debts",
+      "investments",
+      "plans",
+      "projections?years=20",
+      "reviews/2026-11-01",
+      "routines",
+      "savings-accounts",
+    ],
+  ],
   ["plans", ["plans"]],
   ["activity", ["activity", "spending-subcategories", "tags"]],
   ["review", ["plans", "reviews/2026-10-01", "reviews/2026-11-01"]],

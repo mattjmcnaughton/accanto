@@ -19,6 +19,7 @@ async def read_settings(session, actor, entity_uuid, *, instant=None):
             "id": str(entity["uuid"]),
             "name": entity["name"],
             "time_zone": entity["time_zone"],
+            "default_return_percent": str(entity["default_return_percent"]),
             "revision": entity["revision"],
             "today": entity_today(
                 instant or datetime.now(UTC), entity["time_zone"]

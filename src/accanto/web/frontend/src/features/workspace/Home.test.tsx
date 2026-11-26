@@ -53,6 +53,7 @@ const props = (result: ReviewResult, month = "2026-11") => ({
   accounts: { kind: "empty" as const },
   investments: { kind: "empty" as const },
   loans: { kind: "empty" as const },
+  worth: { kind: "empty" as const },
   open: vi.fn(),
   newPlan: vi.fn(),
   showPlans: vi.fn(),

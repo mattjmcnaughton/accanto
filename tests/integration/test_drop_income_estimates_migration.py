@@ -74,7 +74,7 @@ async def scenario():
                 await connection.execute(text(statement), ids)
             before = await snapshot(connection)
 
-            await connection.run_sync(upgrade, "head")
+            await connection.run_sync(upgrade, "6l032")
             assert not await exists(connection, "income_estimate_line")
             assert not await exists(connection, "income_estimate")
             # Other records and the estimate's audit history are untouched.

@@ -28,6 +28,7 @@
 }
 .rec-records {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
 }
 .rec-alert {
@@ -167,6 +168,9 @@
   text-overflow: ellipsis;
   vertical-align: bottom;
 }
+.rec-grid .rec-wrap {
+  white-space: normal;
+}
 .rec-grid time {
   white-space: nowrap;
 }
@@ -197,4 +201,34 @@
 
 .records .two {
   align-items: end;
+}
+.rec-expect {
+  margin: 0;
+}
+.rec-assume {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 4px 0 0;
+  padding: 14px 0 0;
+  display: grid;
+  gap: 10px;
+}
+.rec-assume legend {
+  font-weight: 600;
+  padding: 0;
+  float: left;
+}
+.rec-assume .note {
+  margin: 0;
+}
+.rec-contrib {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.rec-contrib .seg-control {
+  justify-self: start;
+}
+.rec-assume .two {
+  align-items: start;
 }

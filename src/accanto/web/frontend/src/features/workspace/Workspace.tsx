@@ -15,6 +15,7 @@ import { AgentPanel } from "../agent/AgentPanel";
 import { Balances } from "../balances/Balances";
 import { Destinations } from "../destinations/Destinations";
 import { Inbox } from "../inbox/Inbox";
+import { Projections } from "../projections/Projections";
 import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice";
 import { Routines } from "../routines/Routines";
 import { Savings } from "../savings/Savings";
@@ -34,6 +35,7 @@ export const SCREENS = [
   "review",
   "plans",
   "routines",
+  "projections",
   "savings",
   "investments",
   "giving",
@@ -68,7 +70,10 @@ const NAV: { group: string; items: [Screen, string][] }[] = [
   },
   {
     group: "Planning",
-    items: [["plans", "Plans"]],
+    items: [
+      ["plans", "Plans"],
+      ["projections", "Projections"],
+    ],
   },
   {
     group: "Balances",
@@ -751,6 +756,9 @@ export function Workspace({
                   open={(to, m) => go(to, false, m ?? month)}
                 />
               )}
+              {screen === "projections" && (
+                <Projections {...props} openInvestments={() => go("investments")} />
+              )}
               {screen === "savings" && <Savings {...props} />}
               {screen === "investments" && <Destinations {...props} kind="investment" />}
               {screen === "giving" && <Destinations {...props} kind="giving" />}
@@ -770,6 +778,7 @@ export function Workspace({
                       [
                         "inbox",
                         "routines",
+                        "projections",
                         "savings",
                         "investments",
                         "giving",

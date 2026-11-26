@@ -4,6 +4,7 @@ import { balances } from "../../lib/balances";
 import { destinations } from "../../lib/destinations";
 import { fmtDate } from "../../lib/format";
 import { type PlanGroup, type PlanRevision, monthly } from "../../lib/monthly";
+import { projections } from "../../lib/projections";
 import { confirmInAppNavigation } from "../../lib/recoverableWrite";
 import { routines } from "../../lib/routines";
 import { savings } from "../../lib/savings";
@@ -85,6 +86,10 @@ export function Plans(
   const routineList = useLoad(() => routines.list(p.entity.id), deps, {
     enabled: home,
     share: "routines",
+  });
+  const worth = useLoad(() => projections.netWorth(p.entity.id), deps, {
+    enabled: home,
+    share: "net-worth",
   });
   // Home compares the shell's month with its Review, read exactly as the Review screen reads it.
   const month = p.month ?? p.entity.today.slice(0, 7);
@@ -364,6 +369,7 @@ export function Plans(
           accounts={accounts}
           investments={investments}
           loans={loans}
+          worth={worth}
           open={(id) => {
             const plan = plans.find((item) => item.plan_id === id);
             if (plan) open(plan);

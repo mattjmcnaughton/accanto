@@ -11,9 +11,10 @@ import { http, HttpResponse, delay } from "msw";
 import { fn } from "storybook/test";
 import type { ScreenProps } from "../../features/workspace/shared";
 import * as data from "./fixtures";
+import * as projection from "./projections";
 import { routineList } from "./routines";
 
-export { data };
+export { data, projection };
 export type State = "loaded" | "empty" | "loading" | "failed";
 
 const entity = "/api/entities/:entity";
@@ -75,6 +76,16 @@ const resources = {
     loaded: data.spendingSubcategories,
     empty: [],
   },
+  projections: {
+    path: `${entity}/projections`,
+    loaded: projection.projections,
+    empty: { 10: { investments: [] }, 20: { investments: [] }, 30: { investments: [] } },
+  },
+  fireAssumptions: {
+    path: `${entity}/fire-assumptions`,
+    loaded: projection.fireAssumptions,
+    empty: projection.noFireAssumptions,
+  },
   // Inbox stories put the stateful handlers of mocks/inbox.ts first; these cover other states.
   inbox: { path: `${entity}/inbox`, loaded: [], empty: [] },
   sources: { path: `${entity}/sources`, loaded: [], empty: [] },
@@ -88,7 +99,7 @@ export type Resource = keyof typeof resources;
 
 function reader(resource: Resource, choice: State | unknown) {
   const { path, ...bodies } = resources[resource];
-  return http.get(path, async ({ params }) => {
+  return http.get(path, async ({ params, request }) => {
     if (choice === "loading") await delay("infinite");
     if (choice === "failed")
       return HttpResponse.json(
@@ -98,6 +109,11 @@ function reader(resource: Resource, choice: State | unknown) {
         { status: 503 },
       );
     const body = choice === "loaded" || choice === "empty" ? bodies[choice] : choice;
+    // Projections are keyed by the requested horizon in years.
+    if (resource === "projections")
+      return HttpResponse.json(
+        (body as Record<string, object>)[new URL(request.url).searchParams.get("years") ?? "20"],
+      );
     if (resource !== "reviews") return HttpResponse.json(body as object);
     const review = (body as Record<string, unknown>)[String(params.month)];
     return review ? HttpResponse.json(review) : missingReview();
@@ -108,6 +124,9 @@ function reader(resource: Resource, choice: State | unknown) {
 const writes = [
   http.post("/api/keys", () => HttpResponse.json({ key: "acc_synthetic_storybook_key" })),
   http.delete("/api/keys/:id", () => new HttpResponse(null, { status: 204 })),
+  http.put(`${entity}/fire-assumptions`, async ({ request }) =>
+    HttpResponse.json({ ...((await request.json()) as object), revision: 3 }),
+  ),
   http.put(`${entity}/transaction-provider`, async () => {
     await delay(600);
     return HttpResponse.json({ kind: "ynab", configured: true, revision: 1 });

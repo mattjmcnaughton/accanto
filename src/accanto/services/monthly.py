@@ -262,6 +262,8 @@ async def write(
                 values = entity_settings(payload["name"], payload["time_zone"])
             except ValueError as error:
                 raise RejectionError("invalid_settings", str(error), 422) from None
+            if payload.get("default_return_percent") is not None:
+                values["default_return_percent"] = payload["default_return_percent"]
             record = (
                 (
                     await session.execute(
@@ -279,8 +281,31 @@ async def write(
                 "id": str(record["uuid"]),
                 "name": record["name"],
                 "time_zone": record["time_zone"],
+                "default_return_percent": str(record["default_return_percent"]),
                 "revision": record["revision"],
             }
+        elif operation == "edit_fire_assumptions":
+            check_revision(entity, payload.get("expected_revision"))
+            record = (
+                (
+                    await session.execute(
+                        update(m.entities)
+                        .where(m.entities.c.id == entity["id"])
+                        .values(
+                            fire_annual_spending=payload["annual_spending"],
+                            fire_withdrawal_percent=payload["withdrawal_percent"],
+                            revision=entity["revision"] + 1,
+                        )
+                        .returning(m.entities)
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            await audit(m.entities, entity["uuid"], dict(entity), dict(record))
+            from accanto.services.projections import fire_assumptions
+
+            response = fire_assumptions(record)
         elif operation in {"create_plan", "edit_plan", "copy_plan"}:
             before = None
             if operation in {"create_plan", "copy_plan"}:
