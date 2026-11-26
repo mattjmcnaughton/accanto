@@ -228,6 +228,59 @@ fieldset.dlg-b {
   padding: 16px;
   color: var(--ink3);
 }
+/* The Ask bar: the palette with suggested phrases and cards read from the API. */
+.pal.ask {
+  width: min(640px, calc(100vw - 24px));
+}
+.pal-list .kbd {
+  font-size: 12px;
+}
+.ask-suggested {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--line);
+}
+.ask-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 99px;
+  padding: 5px 11px;
+  font-size: 14px;
+  text-align: left;
+}
+.ask-chip .ico {
+  color: var(--ink3);
+}
+@media (hover: hover) {
+  .ask-chip:hover {
+    background: var(--wash);
+  }
+}
+.ask-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 14px;
+  max-height: min(62vh, 560px);
+  overflow: auto;
+}
+.ask-card-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ask-card-h .spacer {
+  flex: 1;
+}
+.ask-card-h .note {
+  white-space: nowrap;
+}
 .keys {
   display: grid;
   grid-template-columns: auto 1fr;

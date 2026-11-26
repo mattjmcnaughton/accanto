@@ -36,6 +36,11 @@ export interface AgentPanelProps {
   changed: () => void;
   /** Whether a reply is streaming; the workspace blocks switching Entities meanwhile. */
   streaming?: (on: boolean) => void;
+  /**
+   * A one-shot request from the Ask bar, applied once the conversation has loaded: send `ask`
+   * in the open conversation, or show `tab`. A new `id` is a new request.
+   */
+  request?: { id: number; ask?: string; tab?: "pending" };
 }
 type Tab = "chat" | "pending" | "history";
 /** A reply as it streamed, in the order things happened: text, tool steps and drafts. */
@@ -325,6 +330,21 @@ export function AgentPanel(p: AgentPanelProps) {
   const pull = (dy: number) => {
     sheet.current?.style.setProperty("--agent-pull", `${Math.max(0, dy)}px`);
   };
+
+  const handled = useRef(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Act on a new request once loaded.
+  useEffect(() => {
+    const request = p.request;
+    if (!request || request.id === handled.current || !settings?.enabled) return;
+    if (current === undefined) return;
+    handled.current = request.id;
+    if (request.tab) setTab(request.tab);
+    // A reply still streaming keeps its turn; the question waits in the composer instead.
+    if (request.ask) {
+      if (live) setText(request.ask);
+      else void send(request.ask, []);
+    }
+  }, [p.request?.id, settings?.enabled, current]);
 
   /** Stop ends the turn on the server too; closing the stream alone leaves it running. */
   function stop() {

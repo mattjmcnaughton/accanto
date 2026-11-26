@@ -102,7 +102,7 @@ it("keeps the save notice reachable by moving it into an open dialog", async () 
   await waitFor(() => expect(within(main).getByRole("alert")).toBeDefined());
   // A modal dialog makes the page behind it inert, so the notice must be inside the dialog.
   fireEvent.keyDown(document, { key: "k", ctrlKey: true });
-  const dialog = screen.getByRole("dialog", { name: "Search or jump" });
+  const dialog = screen.getByRole("dialog", { name: "Ask or jump" });
   expect(within(dialog).getByRole("button", { name: "Retry save" })).toBeDefined();
   expect(within(main).queryByRole("alert")).toBeNull();
   fireEvent(dialog, new Event("cancel", { cancelable: true }));
@@ -159,4 +159,44 @@ it("opens the entry dialog from any screen and shares one month across Home, Act
   );
   fireEvent.click(screen.getByRole("button", { name: "This month" }));
   expect(navigate).toHaveBeenLastCalledWith("activity", false, undefined);
+});
+it("sends free text from the Ask bar to the assistant and runs / commands without it", async () => {
+  const session = {
+    user: { id: "u" },
+    csrf_token: "test",
+    entities: [{ id: "e", name: "Synthetic Entity", today: "2026-11-10", time_zone: "UTC" }],
+  };
+  const asked: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (url.endsWith("/auth/session")) return new Response(JSON.stringify(session));
+    if (url.endsWith("/agent/settings"))
+      return new Response(
+        JSON.stringify({ enabled: true, mode: "ask_first", instructions: "", revision: 1 }),
+      );
+    if (url.endsWith("/messages") && init?.method === "POST") {
+      asked.push(String((init.body as FormData).get("content")));
+      return new Response(new ReadableStream({ start: (c) => c.close() }));
+    }
+    return new Response("[]");
+  });
+  const navigate = vi.fn();
+  render(<Workspace initial={session} signedOut={vi.fn()} screen="home" navigate={navigate} />);
+
+  fireEvent.keyDown(document, { key: "k", ctrlKey: true });
+  let bar = screen.getByRole("textbox", { name: "Ask or jump" });
+  // A / command lists only commands, and Enter runs it here: no question reaches the model.
+  fireEvent.change(bar, { target: { value: "/inb" } });
+  const dialog = screen.getByRole("dialog", { name: "Ask or jump" });
+  expect(within(dialog).queryByText(/^Ask:/)).toBeNull();
+  fireEvent.keyDown(bar, { key: "Enter" });
+  expect(navigate).toHaveBeenLastCalledWith("inbox", false, undefined);
+  expect(screen.queryByRole("dialog", { name: "Ask or jump" })).toBeNull();
+
+  fireEvent.keyDown(document, { key: "k", ctrlKey: true });
+  bar = screen.getByRole("textbox", { name: "Ask or jump" });
+  fireEvent.change(bar, { target: { value: "How much went to Example Bistro?" } });
+  fireEvent.keyDown(bar, { key: "Enter" });
+  await waitFor(() => expect(asked).toEqual(["How much went to Example Bistro?"]));
+  expect(screen.getByRole("complementary", { name: "Assistant" })).toBeDefined();
 });

@@ -103,6 +103,9 @@ export function Inbox(
     credentials: (signIn?: boolean) => Promise<BrowserSession>;
     changed?: () => void;
     openSettings?: () => void;
+    /** A one-shot request to start flow mode, from the Ask bar's /inbox; a new value asks again. */
+    flow?: number;
+    flowStarted?: () => void;
   },
 ) {
   const [reload, setReload] = useState(0);
@@ -504,6 +507,14 @@ export function Inbox(
     setPicker(null);
     setFlow({ ids: order, queue: order, later: [], editing: false });
   }
+  const flowAsked = useRef(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Start once the items have loaded.
+  useEffect(() => {
+    if (!p.flow || p.flow === flowAsked.current || items.kind !== "ready") return;
+    flowAsked.current = p.flow;
+    startFlow();
+    p.flowStarted?.();
+  }, [p.flow, items.kind]);
   function endFlow() {
     setFlow(null);
     setPicker(null);
