@@ -50,6 +50,23 @@
   font-weight: 400;
   font-size: 12.5px;
 }
+.ix-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 1 240px;
+  min-width: 160px;
+}
+.ix-search .input {
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 30px 4px 10px;
+}
+.ix-search .kbd {
+  position: absolute;
+  right: 8px;
+  pointer-events: none;
+}
 .ix-strip {
   display: flex;
   flex-wrap: wrap;
@@ -624,6 +641,13 @@
   }
   .ix-cols {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .ix-search {
+    flex: 1 1 100%;
+    order: 10;
+  }
+  .ix-search .kbd {
+    display: none;
   }
   .ix-list {
     max-height: 340px;

@@ -269,6 +269,31 @@ def test_agent_journey(tmp_path):
         until("!/No proposal yet/.test(document.querySelector('#main').textContent)")
         assert waiting() == before
 
+        # Search: / focuses the box and the list narrows as you type; Select all
+        # then takes only the matching rows. Enter returns the keys to the list with
+        # the search kept; in the box, Esc clears it, then a second Esc leaves.
+        rows = "Array.from(document.querySelectorAll('[role=option]'))"
+        browser("press", "/")
+        until(
+            "document.activeElement?.getAttribute('aria-label') === 'Search the inbox'"
+        )
+        browser("keyboard", "type", "property")
+        until(f"{rows}.length === 1")
+        assert "Example Property Co" in text("[role=option]")
+        browser("press", "Enter")
+        until("document.activeElement?.tagName !== 'INPUT'")
+        browser("press", "X")
+        until(
+            "/1 of 1 selected/.test(document.querySelector('.ix-selbar').textContent)"
+        )
+        browser("press", "Escape")
+        browser("press", "/")
+        browser("press", "Escape")
+        until(f"{rows}.length === {before}")
+        browser("press", "Escape")
+        until("document.activeElement?.tagName !== 'INPUT'")
+        assert waiting() == before
+
         # Recording from the inbox is the owner's action; the count drops by one.
         rent = value(
             "Array.from(document.querySelectorAll('[role=option]'))"

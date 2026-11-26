@@ -170,6 +170,51 @@ export function summary(it: StagedTransaction, c: Completion, choices: Choices) 
   };
 }
 
+/** Lowercase without accents, with a typed minus sign read as a hyphen. */
+const fold = (text: string) =>
+  text
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\u2212/g, "-")
+    .toLowerCase();
+/** What inbox search reads on an item: its words, and its signed amount in cents. */
+export type Searchable = { text: string; cents: number };
+/**
+ * Payee, memo, source category, and what the row shows it as (the proposal or edit, or the
+ * recorded entry) with the proposal's rationale or question.
+ */
+export function searchable(it: StagedTransaction, c: Completion, choices: Choices): Searchable {
+  return {
+    text: fold(
+      [
+        it.payee,
+        it.memo,
+        it.source_category?.name,
+        summary(it, c, choices).text,
+        it.proposal?.rationale,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    ),
+    cents: cents(it),
+  };
+}
+/**
+ * True when every word of the query matches. A number such as "12", "$1,234.5" or "-12" matches
+ * that exact amount (signed only when typed with a sign) or the same digits in the text.
+ */
+export function matches(item: Searchable, query: string): boolean {
+  return fold(query)
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => {
+      if (item.text.includes(word)) return true;
+      const typed = decimalToCents(word.replace(/^\+/, "").replace(/[$,]/g, ""));
+      if (typed === null) return false;
+      return /^[+-]/.test(word) ? typed === item.cents : Math.abs(typed) === Math.abs(item.cents);
+    });
+}
+
 export type Row =
   | { head: string; sub: string; warn?: boolean }
   | { parent: string; payee: string; lines: number; total: string; waiting: number }

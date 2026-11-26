@@ -31,11 +31,13 @@ import {
   isInflow,
   isReadyToAssign,
   lineName,
+  matches,
   precheck,
   purchaseLabel,
   readable,
   refundCandidates,
   rows,
+  searchable,
   summary,
   waitingLabel,
 } from "./inboxModel";
@@ -147,6 +149,9 @@ export function Inbox(
   const [view, setView] = useState<View>("waiting");
   /** Show only items that carry a proposal; the views and their counts follow it. */
   const [proposedOnly, setProposedOnly] = useState(false);
+  /** Search typed in the inbox; it narrows every view, like the proposals filter. */
+  const [query, setQuery] = useState("");
+  const search = useRef<HTMLInputElement>(null);
   const [cur, setCur] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   /** The last checkbox toggled; a shift-click selects the rows between it and the click. */
@@ -264,7 +269,17 @@ export function Inbox(
           funding: entry?.funding_goal_id ?? null,
         };
   };
-  const scope = proposedOnly ? all.filter((i) => i.proposal) : all;
+  // Every item is loaded already, so search filters in the browser with no request (§9).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `all` and `shownAs` derive from these.
+  const texts = useMemo(
+    () => new Map(all.map((i) => [i.id, searchable(i, shownAs(i), choices)])),
+    [items, patched, drafts, choices],
+  );
+  const found = (i: StagedTransaction) => {
+    const entry = texts.get(i.id);
+    return !entry || matches(entry, query);
+  };
+  const scope = all.filter((i) => (!proposedOnly || i.proposal) && found(i));
   const shown = rows(scope, view);
   const ids = shown.flatMap((r) => ("it" in r ? [r.it.id] : []));
   /** Rows with a checkbox: waiting items in the Waiting view, under the current filter. */
@@ -564,6 +579,7 @@ export function Inbox(
     if (!order.length) return setToast({ text: "Nothing is waiting in the inbox.", tone: "warn" });
     setSelected(new Set());
     setProposedOnly(false);
+    setQuery("");
     setView("waiting");
     setPicker(null);
     setFlow({ ids: order, queue: order, later: [], editing: false });
@@ -937,7 +953,7 @@ export function Inbox(
         setPicker({ ...picker, query: picker.query + key.toLowerCase(), at: 0 });
       return;
     }
-    if (busy && !["j", "k", "ArrowDown", "ArrowUp", "?", "v", "Escape"].includes(key)) return;
+    if (busy && !["j", "k", "ArrowDown", "ArrowUp", "?", "v", "/", "Escape"].includes(key)) return;
     if (flowKey(key)) return;
     const at = ids.indexOf(cur ?? "");
     const waiting = current?.status === "waiting";
@@ -1046,6 +1062,10 @@ export function Inbox(
         return setProposedOnly((on) => !on);
       case "F":
         return startFlow();
+      case "/":
+        // Select what is there, so typing starts a new search.
+        search.current?.focus();
+        return search.current?.select();
       case "?":
         return setHelp(true);
       case "Escape":
@@ -1203,6 +1223,30 @@ export function Inbox(
               ))}
             </div>
             <Key k="p" />
+            <div className="ix-search">
+              <input
+                ref={search}
+                className="input"
+                type="search"
+                placeholder="Search payee, memo, amount…"
+                aria-label="Search the inbox"
+                aria-keyshortcuts="/"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  // Esc clears the search, then gives the keys back to the list; Enter or ↓ keep it.
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    if (query) setQuery("");
+                    else e.currentTarget.blur();
+                  } else if (e.key === "Enter" || e.key === "ArrowDown") {
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                  }
+                }}
+              />
+              {!query && <Key k="/" />}
+            </div>
           </>
         )}
       </header>
@@ -1376,7 +1420,7 @@ export function Inbox(
                     ? `${chosen.length} of ${selectable.length} selected · ${money(
                         chosen.reduce((sum, it) => sum + Math.abs(cents(it)), 0),
                       )}`
-                    : `Select all ${selectable.length}`}
+                    : `Select all ${selectable.length}${query.trim() ? " matching" : ""}`}
                 </span>
                 <Key k="X" />
                 {chosen.length > 0 && (
@@ -1415,7 +1459,20 @@ export function Inbox(
             >
               {shown.length === 0 && (
                 <div className="ix-empty">
-                  <b>{proposedOnly ? "No proposals here" : "Nothing here"}</b>
+                  <b>
+                    {query.trim()
+                      ? `Nothing ${VIEW_NAMES[view].toLowerCase()} matches “${query.trim()}”`
+                      : proposedOnly
+                        ? "No proposals here"
+                        : "Nothing here"}
+                  </b>
+                  {query.trim() && (
+                    <p>
+                      <button type="button" className="btn sm" onClick={() => setQuery("")}>
+                        Clear search
+                      </button>
+                    </p>
+                  )}
                 </div>
               )}
               {shown.map((row) =>
@@ -1544,6 +1601,7 @@ export function Inbox(
                   [["v"], "View"],
                   [["p"], "Proposals"],
                   [["F"], "Flow"],
+                  [["/"], "Search"],
                   [["?"], "Help"],
                 ]
         ).map(([k, label]) => (
@@ -2178,6 +2236,10 @@ const HELP: Array<[string, string]> = [
   ["z", "Undo the last recording or ignore."],
   ["v", "Change the view: Waiting, Ignored, Recorded."],
   ["p", "Show only items with a proposal, or all items again."],
+  [
+    "/",
+    "Search by payee, memo, YNAB category, amount, or the proposal and its question. Every word must match. It narrows every view and the proposals filter, and X selects only matching rows. Enter returns to the list; Esc clears the search.",
+  ],
   [
     "F",
     "Flow: one waiting item at a time. Enter accepts, l or → leaves it for later (nothing is saved), s ignores, e edits, z undoes, Esc leaves.",
