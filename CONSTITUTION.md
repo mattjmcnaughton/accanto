@@ -186,6 +186,11 @@ URL that contains any of them. In particular:
   server's own log output. Adding an
   integration, span or attribute means extending that test and its review.
 
+The public repository is held to the same standard as telemetry: it contains only
+synthetic financial data. Fixtures, tests, docs, screenshots, recordings and
+commit messages are invented, never copied or derived from a real workspace,
+and never contain credentials.
+
 ## 7. Make failures explicit and preserve data
 
 Never represent a failed load as an empty workspace or a failed calculation as
@@ -242,6 +247,9 @@ verification gaps.
 
 ### Amendment notes
 
+- 2026-11-26: §6 states that the public repository holds only synthetic
+  financial data. Rationale: the owner now keeps real finances in Accanto, so a
+  copied example or production capture would publish them.
 - 2026-11-26: §9 makes bounded interactive reads and regression checks explicit
   after production showed that repeated round trips, duplicate screen reads,
   and exclusive read-side locks compounded into multi-second waits.

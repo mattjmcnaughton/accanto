@@ -39,7 +39,9 @@ Give each implementer its exact ticket and acceptance criteria, absolute worktre
 and base revision, allowed scope, authoritative documents, restrictions, and
 handoff requirements. Assign one writer per worktree. Use separate test databases,
 ports, browser sessions, and generated artifacts. Never reset a development
-database or attach to a personal browser session. Use deliberately synthetic data.
+database or attach to a personal browser session. Use deliberately synthetic data:
+the repository is public, and only synthetic financial data may be committed
+(AGENTS.md, "Privacy and committing"). Pass that rule to every implementer.
 
 For every ticket, perform **prep → build → review-suite → resolve-review → prove
 → create-commit**, following the stage contracts in the common guide. Load the
