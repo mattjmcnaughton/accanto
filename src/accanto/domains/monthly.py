@@ -24,14 +24,36 @@ def known_total_delta(desired: str, amounts: list[Decimal]) -> Decimal:
     return money(str(delta), signed=True)
 
 
+FIXED_COST_PAYMENTS_PER_YEAR = {
+    "weekly": 52,
+    "biweekly": 26,
+    "monthly": 12,
+    "quarterly": 4,
+    "annual": 1,
+}
+
+
 def fixed_cost_monthly(amount: str, frequency: str) -> Decimal:
-    """Smooth each named annual line separately, then sum cent results."""
+    """Annualize one line by payments per year, divide by 12, round to cents.
+
+    Each named line is smoothed separately before lines are summed, so weekly
+    and biweekly costs plan the same amount every month even though a month
+    can hold four or five payments.
+    """
     entered = money(amount)
-    if frequency == "monthly":
-        return entered
-    if frequency != "annual":
-        raise ValueError("Fixed-cost frequency must be monthly or annual.")
-    return (entered / 12).quantize(CENT, rounding=ROUND_HALF_EVEN)
+    if frequency not in FIXED_COST_PAYMENTS_PER_YEAR:
+        raise ValueError(
+            "Fixed-cost frequency must be weekly, biweekly, monthly, "
+            "quarterly or annual."
+        )
+    with localcontext() as ctx:
+        ctx.prec = 28
+        monthly = (entered * FIXED_COST_PAYMENTS_PER_YEAR[frequency] / 12).quantize(
+            CENT, rounding=ROUND_HALF_EVEN
+        )
+    if monthly > LIMIT:
+        raise ValueError("Monthly fixed-cost amount is outside the supported range.")
+    return monthly
 
 
 def plan_results(

@@ -11,6 +11,7 @@ import {
   type WorksheetDraft,
   allocationBand,
   allocations,
+  FREQUENCIES,
   balance,
   cents,
   even,
@@ -408,7 +409,7 @@ export function PlanWorksheet({
     const currentEdit = edit;
     const options =
       edit?.col === 2
-        ? ["Monthly", "Annual"].map((name) => ({ id: name, name, active: true }))
+        ? Object.keys(FREQUENCIES).map((name) => ({ id: name, name, active: true }))
         : catalog[row.group];
     const props = {
       autoFocus: true,
@@ -981,8 +982,9 @@ export function PlanWorksheet({
                           })
                         }
                       >
-                        <option>Monthly</option>
-                        <option>Annual</option>
+                        {Object.keys(FREQUENCIES).map((name) => (
+                          <option key={name}>{name}</option>
+                        ))}
                       </select>
                     </div>
                     <div className="field">

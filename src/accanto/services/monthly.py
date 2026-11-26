@@ -826,6 +826,13 @@ async def write(
                 fixed_cost = await scoped(
                     session, m.fixed_costs, entity["id"], payload["fixed_cost_id"]
                 )
+            if payload.get("spending_subcategory_id") and payload["category"] != (
+                "spending"
+            ):
+                raise RejectionError(
+                    "spending_subcategory_category",
+                    "Only guilt-free spending selects a subcategory.",
+                )
             if operation == "known_total":
                 from accanto.models import savings as s
 
@@ -996,8 +1003,16 @@ async def write(
                             name=fixed_cost["name"],
                         )
                     )
+                from accanto.services.spending_subcategories import assign_entry
                 from accanto.services.tags import tag_entry
 
+                await assign_entry(
+                    session,
+                    entity,
+                    record,
+                    payload.get("spending_subcategory_id"),
+                    audit,
+                )
                 await tag_entry(session, entity, record, payload.get("tag_ids"), audit)
             response = await entry_snapshot(session, record)
             await audit(m.entries, record["uuid"], before, response)
@@ -1197,6 +1212,17 @@ async def write(
             response = await write_inbox(
                 session, entity, actor, operation, payload, target, audit
             )
+        elif operation in {
+            "create_spending_subcategory",
+            "edit_spending_subcategory",
+        }:
+            from accanto.services.spending_subcategories import (
+                write_spending_subcategory,
+            )
+
+            response = await write_spending_subcategory(
+                session, entity, operation, payload, target, audit
+            )
         elif operation in {"create_tag", "edit_tag", "delete_tag", "set_entry_tags"}:
             from accanto.services.tags import write_tag
 
@@ -1273,8 +1299,10 @@ async def entry_snapshot(session, record):
         .where(b.entry_debts.c.actual_entry_id == record["id"])
     )
     from accanto.services.savings import current_link
+    from accanto.services.spending_subcategories import entry_subcategory
     from accanto.services.tags import entry_tag_uuids
 
+    subcategory_uuid, subcategory_name = await entry_subcategory(session, record["id"])
     link = await current_link(session, record["id"])
     if link is None and record["deleted_at"] is not None:
         link = (
@@ -1336,6 +1364,8 @@ async def entry_snapshot(session, record):
             "fixed_cost_name": fixed_assignment["fixed_cost_name"]
             if fixed_assignment
             else None,
+            "spending_subcategory_id": subcategory_uuid,
+            "spending_subcategory_name": subcategory_name,
             "saving_goal_id": goal_uuid if record["category"] == "saving" else None,
             "funding_goal_id": goal_uuid if outflow else None,
             "investment_id": investment_uuid,

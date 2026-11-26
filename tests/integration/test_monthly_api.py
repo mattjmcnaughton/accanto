@@ -721,6 +721,38 @@ async def scenario():
         assert [line["fixed_cost_id"] for line in copied["fixed_costs"]] == [
             line["fixed_cost_id"] for line in fixed_saved["fixed_costs"]
         ]
+        cadence_body = {
+            **fixed_body,
+            "name": "Synthetic cadences",
+            "fixed_costs": [
+                {"name": "Service W", "amount": "100.00", "frequency": "weekly"},
+                {"name": "Service B", "amount": "100.00", "frequency": "biweekly"},
+                {"name": "Service Q", "amount": "100.00", "frequency": "quarterly"},
+            ],
+        }
+        cadence = await post("/plans", cadence_body)
+        assert cadence.status_code == 200, cadence.text
+        cadence_draft = cadence.json()["draft"]
+        assert [
+            (line["frequency"], line["monthly_amount"])
+            for line in cadence_draft["fixed_costs"]
+        ] == [("weekly", "433.33"), ("biweekly", "216.67"), ("quarterly", "33.33")]
+        assert cadence_draft["fixed_cost_total"] == "683.33"
+        cadence_saved = await post(
+            f"/plans/{cadence.json()['plan_id']}/versions", {"expected_revision": 1}
+        )
+        assert cadence_saved.status_code == 200, cadence_saved.text
+        assert cadence_saved.json()["version"]["fixed_cost_total"] == "683.33"
+        oversized = await post(
+            "/plans",
+            {
+                **cadence_body,
+                "fixed_costs": [
+                    {"name": "Too big", "amount": "999999999.99", "frequency": "weekly"}
+                ],
+            },
+        )
+        assert oversized.status_code == 422, oversized.text
         fixed_review = await post(
             "/reviews", {"month": "2026-11-01", "version_id": fixed_saved["uuid"]}
         )

@@ -24,6 +24,7 @@ from accanto.routers import (
     monthly,
     savings,
     sources,
+    spending_subcategories,
     tags,
 )
 from accanto.services.access import RejectionError
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(savings.router)
     app.include_router(destinations.router)
     app.include_router(tags.router)
+    app.include_router(spending_subcategories.router)
     app.include_router(balances.router)
     app.include_router(api_keys.router)
     app.include_router(inbox.router)

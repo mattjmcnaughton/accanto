@@ -88,7 +88,18 @@ def test_outflow_with_savings_funding_maps_to_entry_command():
         "note": "Sample Plumbing Co",
         "category": "spending",
         "funding_goal_id": GOAL,
+        "spending_subcategory_id": None,
     }
+
+
+def test_spending_assignment_is_an_optional_spending_subcategory():
+    def chosen(assignment):
+        completion = Completion(category="spending", assignment=assignment)
+        return command_for(OUT, completion).fields["spending_subcategory_id"]
+
+    assert chosen(LINE) == LINE
+    assert chosen("unassigned") is None
+    assert chosen(None) is None
 
 
 def test_each_category_maps_to_its_existing_command():
@@ -139,7 +150,6 @@ def test_incomplete_or_contradictory_completions_are_rejected(facts, completion,
         Completion(skip=True, category="spending"),
         Completion(refund_of=LINE, category="spending"),
         Completion(assignment=LINE),
-        Completion(category="spending", assignment=LINE),
         Completion(category="saving", assignment="unassigned"),
         Completion(category="income", funding=GOAL),
         Completion(category="other"),

@@ -290,6 +290,10 @@ async def scenario():
         assert again.json()["counts"]["unchanged"] == 0  # delta returned nothing
 
         # Proposals for every item create no entries; dry runs store rejections.
+        # Guilt-free spending's assignment is a Spending subcategory (TDD 07).
+        clothing = (
+            await command("POST", "/spending-subcategories", {"name": "Clothing"})
+        ).json()
         refs = {
             r: await item(r)
             for r in ("t-repair", "t-shirt", "t-return1", "t-return2", "t-coffee")
@@ -310,6 +314,7 @@ async def scenario():
                         "item_id": refs["t-shirt"]["id"],
                         "expected_revision": refs["t-shirt"]["revision"],
                         "category": "spending",
+                        "assignment": clothing["uuid"],
                         "rationale": "Clothing is guilt-free",
                     },
                     {
@@ -370,6 +375,7 @@ async def scenario():
         )
         assert purchase.status_code == 200, purchase.text
         purchase_id = purchase.json()["entry"]["uuid"]
+        assert purchase.json()["entry"]["spending_subcategory_id"] == clothing["uuid"]
         first = await item("t-return1")
         spending_inflow = await client.post(
             prefix + f"/inbox/{first['id']}/record",
@@ -388,6 +394,7 @@ async def scenario():
         )
         assert refund.status_code == 200, refund.text
         assert refund.json()["entry"]["remaining_refundable"] == "42.00"
+        assert refund.json()["entry"]["spending_subcategory_name"] == "Clothing"
         second = await item("t-return2")
         capped = await client.post(
             prefix + f"/inbox/{second['id']}/record",

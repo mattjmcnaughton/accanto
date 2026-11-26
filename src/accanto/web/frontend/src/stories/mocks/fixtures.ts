@@ -5477,3 +5477,28 @@ export const tags = [
     entries: 0,
   },
 ];
+
+/** Invented guilt-free spending subcategories (TDD 07); entries name none until a story assigns them. */
+export const spendingSubcategories = [
+  {
+    uuid: "6c1d0a0f-7b4f-4d8b-8c68-2e3c4d5e6f01",
+    name: "Eating out",
+    active: true,
+    revision: 1,
+    entries: 4,
+  },
+  {
+    uuid: "6c1d0a0f-7b4f-4d8b-8c68-2e3c4d5e6f02",
+    name: "Books",
+    active: true,
+    revision: 1,
+    entries: 2,
+  },
+  {
+    uuid: "6c1d0a0f-7b4f-4d8b-8c68-2e3c4d5e6f03",
+    name: "Old hobby",
+    active: false,
+    revision: 2,
+    entries: 0,
+  },
+];

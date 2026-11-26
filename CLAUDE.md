@@ -86,15 +86,34 @@ tests/
 - `docs/technical/box-operations.md` — read before deploying or debugging the live Amp Box deployment
 - `docs/technical/telemetry.md` — read before adding spans, span attributes, tracing integrations or telemetry dependencies
 
-## Telemetry
+## Logs, telemetry and secrets
 
-Tracing and metrics go to Logfire over OpenTelemetry. Follow
-[CONSTITUTION.md §6](CONSTITUTION.md#6-keep-financial-data-out-of-operational-telemetry)
-and [docs/technical/telemetry.md](docs/technical/telemetry.md): spans carry only
-operation names, timings, placeholder SQL, identifiers, counts and codes. Use
-`logfire.span` with a constant name, never `@logfire.instrument` (it records
-every argument, including credentials). Any new span, attribute or integration
-extends `tests/integration/test_trace_privacy.py` and its reviewed key list.
+Logs (structlog to stdout, uvicorn, libraries) and Logfire traces and metrics
+follow [CONSTITUTION.md §6](CONSTITUTION.md#6-keep-financial-data-out-of-operational-telemetry);
+[docs/technical/telemetry.md](docs/technical/telemetry.md) has the details and
+what each path records. They carry only operation names, timings, placeholder
+SQL, identifiers, counts, statuses and error types or codes. In particular:
+
+- **Secrets** (the YNAB access token, session cookies, CSRF secret, API keys,
+  OIDC codes, `LOGFIRE_TOKEN`, provider keys) live in `SecretStr` settings, in
+  `Authorization` headers or encrypted columns. Never put them in a URL, a log
+  field, a span attribute, an exception message or an error response, and never
+  print or paste them, including in task notes.
+- **Logging:** structlog events take a constant name plus counts, UUIDs, codes,
+  statuses and `ms`. Never log request or response bodies, model content,
+  `str(error)`, `exc_info` or tracebacks; log `type(error).__name__` or a code.
+  Keep uvicorn access logs off (`--no-access-log`): query strings carry OIDC codes.
+- **Errors:** raise `RejectionError` (or `SourceError`) with fixed messages, and
+  map other exceptions to fixed text as `app.py` and `mcp_server.safe_error` do.
+  Keep `hide_parameters=True` on engines.
+- **Spans:** use `logfire.span` with a constant name, never `@logfire.instrument`
+  (it records every argument, including credentials). Spans leave the process
+  only through `telemetry.SafeSpanExporter`, which drops exception messages; do
+  not add another exporter or turn on Logfire's own.
+- **Tests:** a new span, attribute, integration, secret or logging path extends
+  `tests/integration/test_trace_privacy.py` (canaries checked in the export and
+  the server log) and its reviewed key list. Check production Logfire by span
+  names, attribute keys and counts only, never by reading values.
 
 ## Privacy and committing
 

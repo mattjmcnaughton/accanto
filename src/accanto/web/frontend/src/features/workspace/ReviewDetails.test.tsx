@@ -218,3 +218,79 @@ it("renders older contracts from missing-source ids and month entries without in
   expect(screen.getByText("Synthetic lunch", { exact: false })).toBeDefined();
   expect(screen.queryByRole("region", { name: "Planned and actual metrics" })).toBeNull();
 });
+
+it("groups guilt-free spending by subcategory without planned amounts per group", () => {
+  const spend = (uuid: string, amount: string, name: string | null): Activity => ({
+    uuid,
+    financial_date: "2026-10-05",
+    category: "spending",
+    amount,
+    source_id: null,
+    fixed_cost_id: null,
+    fixed_cost_name: null,
+    debt_account_id: null,
+    spending_subcategory_id: name && `sub-${name}`,
+    spending_subcategory_name: name,
+    note: `Synthetic ${uuid}`,
+    revision: 1,
+    is_adjustment: false,
+    funding_origin: "income",
+    saving_goal_id: null,
+    funding_goal_id: null,
+  });
+  const [dinner, lunch, gum] = [
+    spend("dinner", "62.10", "Eating out"),
+    spend("lunch", "12.00", "Eating out"),
+    spend("gum", "7.05", null),
+  ];
+  const empty: ComparisonGroup = {
+    planned: "0.00",
+    recorded: null,
+    incomplete: true,
+    difference: null,
+    items: [],
+    unplanned: [],
+    adjustments: [],
+  };
+  render(
+    <ReviewDetails
+      review={{
+        ...base,
+        actual: { ...base.actual, spending_recorded: "81.15" },
+        spending_difference: "-718.85",
+        comparison: {
+          income: empty,
+          fixed_cost: empty,
+          spending: {
+            ...empty,
+            planned: "800.00",
+            recorded: "81.15",
+            incomplete: false,
+            difference: "-718.85",
+            unplanned: [dinner, lunch, gum],
+            breakdown: [
+              {
+                id: "sub-Eating out",
+                name: "Eating out",
+                recorded: "74.10",
+                entries: [dinner, lunch],
+              },
+              { id: null, name: null, recorded: "7.05", entries: [gum] },
+            ],
+          },
+          saving: empty,
+          investing: empty,
+          giving: empty,
+        },
+      }}
+    />,
+  );
+  const spending = within(section("Guilt-free spending"));
+  fireEvent.click(spending.getByRole("button", { name: "3 entries" }));
+  // Each entry appears once, under its group; groups carry no planned or difference figures.
+  expect(spending.queryByText(/Unplanned activity/)).toBeNull();
+  const eating = row("^Eating out");
+  expect(eating.textContent).toBe("Eating out$74.10");
+  expect(row("^Unassigned").textContent).toBe("Unassigned$7.05");
+  expect(spending.getAllByText(/Synthetic (dinner|lunch|gum)/)).toHaveLength(3);
+});

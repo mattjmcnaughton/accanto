@@ -165,6 +165,18 @@ it("shows both the destination and savings origin for funded outflows", async ()
       revision: 1,
       is_adjustment: false,
     },
+    {
+      uuid: "books-entry",
+      financial_date: "2026-11-06",
+      category: "spending",
+      amount: "18.40",
+      funding_origin: "income",
+      note: "Synthetic paperback",
+      spending_subcategory_id: "sub-books",
+      spending_subcategory_name: "Books",
+      revision: 1,
+      is_adjustment: false,
+    },
   ];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
     const url = String(path);
@@ -189,6 +201,8 @@ it("shows both the destination and savings origin for funded outflows", async ()
   expect(spending?.textContent).toContain("Guilt-free spending");
   expect(spending?.textContent).not.toContain("from");
   expect(spending?.textContent).not.toContain("Unassigned");
+  // An assigned entry names its Spending subcategory.
+  expect(row("Synthetic paperback")?.textContent).toContain("Guilt-free spending, Books");
 });
 it("keeps the viewed contributing-entry fingerprint through a background refresh", async () => {
   let refreshed = false;

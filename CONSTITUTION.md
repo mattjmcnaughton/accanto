@@ -174,12 +174,16 @@ URL that contains any of them. In particular:
 - Keep values out at the source: configure each instrumentation to omit content
   and give custom spans only allowed attributes. Export-time scrubbing is a
   backstop, never the control, because it cannot recognise an amount.
+- Never export or log exception messages or error status descriptions: library
+  exceptions quote what they rejected, such as a database error naming the
+  duplicate value. Export exception types and stack frames only.
 - Export nothing without an explicitly configured token, so development and
   tests send nothing by default. Send only to a private project, and use only
   synthetic data when verifying against the live backend.
 - A test must run the real server against a local receiver with synthetic
   canary values across every instrumented interface, and fail if a canary or an
-  unreviewed attribute key appears anywhere in the exported payload. Adding an
+  unreviewed attribute key appears anywhere in the exported payload or in the
+  server's own log output. Adding an
   integration, span or attribute means extending that test and its review.
 
 ## 7. Make failures explicit and preserve data
@@ -230,8 +234,9 @@ verification gaps.
   field that one interface cannot reach silently diverges the others.
 - 2026-11-25: §6 sets the rules for externally exported tracing: an allowed
   list of contents, source-side omission instead of scrubbing, export only with
-  an explicit token to a private project, and a canary test over the exported
-  payload. Rationale: performance tracing through Logfire, without relaxing the
+  an explicit token to a private project, no exception messages in exports or
+  logs, and a canary test over the exported payload and the server's own
+  output. Rationale: performance tracing through Logfire, without relaxing the
   rule that financial data stays out of telemetry.
 - 2026-11-23: §2 allows MCP clients to authenticate with user-owned API keys;
   hosted MCP OAuth follows later. §6 names PRD 02 as the explicit decision for

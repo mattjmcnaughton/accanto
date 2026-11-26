@@ -1,6 +1,11 @@
 """Independently worked, deliberately synthetic monthly comparison examples."""
 
-from accanto.domains.monthly_comparison import compare_category, ratio, summary
+from accanto.domains.monthly_comparison import (
+    breakdown,
+    compare_category,
+    ratio,
+    summary,
+)
 
 
 def entry(identity, amount, **extra):
@@ -34,6 +39,38 @@ def test_missing_identity_is_not_completed_by_unplanned_or_adjustment():
     )
     assert not completed["incomplete"]
     assert completed["difference"] == "-215.00"
+
+
+def test_spending_breakdown_groups_every_entry_once_and_adds_up_to_the_total():
+    def spend(subcategory, amount, **extra):
+        return {
+            "spending_subcategory_id": subcategory,
+            "spending_subcategory_name": {"b": "Books", "e": "Eating out"}.get(
+                subcategory
+            ),
+            "amount": amount,
+            **extra,
+        }
+
+    # A refund nets against its purchase's subcategory; an adjustment is Unassigned.
+    entries = [
+        spend("b", "18.40"),
+        spend(None, "7.05"),
+        spend("e", "62.10"),
+        spend("b", "-18.40", is_refund=True),
+        spend("e", "30.00"),
+        spend(None, "-2.50", is_adjustment=True),
+    ]
+    lines = breakdown(entries, "spending_subcategory_id", "spending_subcategory_name")
+    assert [(line["name"], line["recorded"]) for line in lines] == [
+        ("Eating out", "92.10"),
+        ("Books", "0.00"),
+        (None, "4.55"),
+    ]
+    assert sum(len(line["entries"]) for line in lines) == len(entries)
+    recorded = compare_category([], entries, "spending_subcategory_id", "500.00")
+    assert recorded["recorded"] == "96.65" and recorded["items"] == []
+    assert len(recorded["unplanned"]) == len(entries)
 
 
 def test_net_saving_and_savings_funded_investing_are_distinct():

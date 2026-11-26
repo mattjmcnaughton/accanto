@@ -216,8 +216,10 @@ async def write_refund(session, entity, operation, payload, target, audit):
 
             await copy_purchase_tags(session, entity, purchase["id"], record["id"])
             # Copy original associations once; they cannot be edited via refund DTO.
+            # A purchase's later subcategory change follows to its refunds.
             for table, column in (
                 (m.fixed_cost_assignments, "fixed_cost_id"),
+                (m.spending_subcategory_assignments, "spending_subcategory_id"),
                 (b.entry_debts, "debt_account_id"),
                 (d.giving_entries, "giving_recipient_id"),
             ):

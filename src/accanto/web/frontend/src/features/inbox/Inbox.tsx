@@ -12,6 +12,7 @@ import {
 } from "../../lib/inbox";
 import { monthly } from "../../lib/monthly";
 import { savings } from "../../lib/savings";
+import { spendingSubcategories } from "../../lib/spendingSubcategories";
 import { tags } from "../../lib/tags";
 import { tint } from "../../ui";
 import { LoadProblem, LoadingCard } from "../workspace/Activity";
@@ -91,6 +92,7 @@ export function Inbox(
   const investments = useSettled(useLoad(() => destinations.list(p.entity.id, "investment"), deps));
   const recipients = useSettled(useLoad(() => destinations.list(p.entity.id, "giving"), deps));
   const tagState = useSettled(useLoad(() => tags.list(p.entity.id), deps));
+  const subcategoryState = useSettled(useLoad(() => spendingSubcategories.list(p.entity.id), deps));
   const [view, setView] = useState<View>("waiting");
   const [cur, setCur] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -157,7 +159,14 @@ export function Inbox(
           })),
           unassigned("fixed cost"),
         ],
-        spending: [],
+        spending: [
+          ...(subcategoryState.kind === "ready"
+            ? subcategoryState.data
+                .filter((sub) => sub.active)
+                .map((sub) => ({ id: sub.uuid, name: sub.name }))
+            : []),
+          unassigned("guilt-free spending"),
+        ],
         saving: goals,
         investing: [...destination(investments), unassigned("investing")],
         giving: [...destination(recipients), unassigned("giving")],
@@ -176,7 +185,7 @@ export function Inbox(
           : [],
       tags: tagState.kind === "ready" ? tagState.data : [],
     } satisfies Choices;
-  }, [plans, accounts, activity, investments, recipients, tagState]);
+  }, [plans, accounts, activity, investments, recipients, tagState, subcategoryState]);
 
   /** What a row shows: the recorded entry once recorded, else the edit or proposal. */
   const shownAs = (it: StagedTransaction): Completion => {
@@ -394,7 +403,7 @@ export function Inbox(
             tag_ids: c.tag_ids,
           };
     setDraft(it, next);
-    if (CATEGORY[category].line && !next.assignment) openPicker("line", it, next);
+    if (CATEGORY[category].article && !next.assignment) openPicker("line", it, next);
   }
   function openPicker(
     kind: Picker["kind"],
@@ -415,7 +424,10 @@ export function Inbox(
           c.category === "saving"
             ? "Saving always names a goal. Unallocated savings is a goal too."
             : undefined,
-        none: "Nothing to choose here yet. Add one on its own screen first.",
+        none:
+          c.category === "spending"
+            ? "No subcategories yet. Add them from Activity, Spending subcategories."
+            : "Nothing to choose here yet. Add one on its own screen first.",
       });
     } else if (kind === "funding") {
       const amount = Math.abs(cents(it));
@@ -575,11 +587,6 @@ export function Inbox(
           });
         if (!c.category)
           return setHints((h) => ({ ...h, [current.id]: "Choose a category first: 1–6." }));
-        if (!CATEGORY[c.category].line)
-          return setToast({
-            text: "Guilt-free spending has no assignment. The payee is kept as the entry's note.",
-            tone: "warn",
-          });
         return openPicker("line", current);
       case "f":
         if (!current || !waiting) return notHere();
@@ -1201,7 +1208,9 @@ function Detail({
           ))}
         </div>
       )}
-      {category?.line && !purchase && field("a", category.line, lineName(choices, c))}
+      {category?.line &&
+        !purchase &&
+        field("a", category.line, lineName(choices, c) ?? (category.article ? null : "Unassigned"))}
       {(purchase || (waiting && inflow && !isReadyToAssign(it) && !c.category)) &&
         field(
           "r",

@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6d024`.
+   supported revision is `6f026`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -110,6 +110,19 @@ table after upgrading.
 are only soft-deleted, so the `entry_tag` foreign key never blocks older code, and
 older code leaves an entry's tags unchanged when it edits that entry. Grant the
 runtime role access to the two new tables after upgrading.
+`6e025` only widens the `plan_fixed_cost_line` frequency check to add `weekly`,
+`biweekly` and `quarterly`; stored lines and monthly amounts are unchanged and no
+grants change. `6d024` code still reads such lines, but its UI shows them as
+Monthly (and resends them as monthly when the draft is edited), its draft API
+rejects them and copying a Plan with one fails, so roll back only before anyone
+uses a new frequency. The downgrade fails once a
+line uses one, because saved lines are immutable.
+`6f026` only adds `spending_subcategory` and `entry_spending_subcategory`; `6e025`
+code never reads them, and entries are only soft-deleted, so the link's foreign
+key never blocks it. Older code keeps an entry's subcategory when it edits that
+entry, but does not copy it to a new refund and does not clear it when it changes
+an entry's category from guilt-free spending. The next edit under `6f026` clears
+such a stale link. Grant the runtime role access to the two new tables after upgrading.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility
