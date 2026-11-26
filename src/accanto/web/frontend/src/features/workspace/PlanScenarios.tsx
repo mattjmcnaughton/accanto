@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { type PlanGroup, type PlanRevision, monthly } from "../../lib/monthly";
 import { Field } from "../../ui";
+import { newestFirst } from "./planWorksheetModel";
 import type { ScreenProps } from "./shared";
 
 export function CopyPlan({
@@ -18,7 +19,7 @@ export function CopyPlan({
   onCancel?: () => void;
 }) {
   const choices = plans.flatMap((plan) =>
-    plan.revisions.map((revision) => ({ planId: plan.plan_id, revision })),
+    newestFirst(plan.revisions).map((revision) => ({ planId: plan.plan_id, revision })),
   );
   const [selected, setSelected] = useState<{ planId: string; revision: PlanRevision } | null>(
     () => choices.find(({ revision }) => revision.uuid === initial) ?? null,

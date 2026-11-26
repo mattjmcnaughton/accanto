@@ -384,3 +384,41 @@ it("answers an unknown line with an explicit zero entry dated in the reviewed mo
     expect.any(Function),
   );
 });
+it("lists saved versions newest first when starting and editing a Review", async () => {
+  const groups = [
+    {
+      plan_id: "plan",
+      revisions: [version, { ...version, uuid: "v2", number: 2, saved_at: "2026-11-05" }],
+    },
+    {
+      plan_id: "other",
+      revisions: [{ ...version, uuid: "w1", name: "Side", saved_at: "2026-10-20" }],
+    },
+  ];
+  const names = (select: HTMLSelectElement) =>
+    [...select.options].filter((option) => option.value).map((option) => option.value);
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (path) =>
+      String(path).endsWith("/plans") ? json(groups) : absent(),
+    );
+  const { unmount } = render(<MonthlyReview {...props()} />);
+  expect(names((await screen.findByLabelText("Compare with")) as HTMLSelectElement)).toEqual([
+    "v2",
+    "w1",
+    "v1",
+  ]);
+  unmount();
+  fetch.mockImplementation(async (path) =>
+    String(path).endsWith("/plans")
+      ? json(groups)
+      : String(path).endsWith("2026-11-01")
+        ? json(review)
+        : absent(),
+  );
+  render(<MonthlyReview {...props()} />);
+  expect(names((await screen.findByLabelText("Compared with")) as HTMLSelectElement)).toEqual([
+    "v2",
+    "v1",
+  ]);
+});

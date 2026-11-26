@@ -21,6 +21,7 @@ import {
   balance,
   lineGroups,
   money,
+  newestFirst,
   planInput,
   revisionLines,
   savedLabel,
@@ -187,8 +188,7 @@ export function Plans(
     draftOf(plan)?.name ??
     plan.revisions[0]?.name ??
     "Unavailable Plan";
-  const versionsOf = (plan: PlanGroup) =>
-    plan.revisions.filter((r) => r.saved).sort((a, b) => a.number - b.number);
+  const versionsOf = (plan: PlanGroup) => newestFirst(plan.revisions.filter((r) => r.saved));
   const focus = (selector: string) =>
     requestAnimationFrame(() => root.current?.querySelector<HTMLElement>(selector)?.focus());
   function open(plan: PlanGroup) {
@@ -526,7 +526,7 @@ export function Plans(
             <ul className="stack plan-list" aria-label="Plans" onKeyDown={keys}>
               {visible.map((plan) => {
                 const versions = versionsOf(plan);
-                const latest = versions[versions.length - 1];
+                const latest = versions[0];
                 const { dirty, stats, amounts } = statsOf(plan);
                 const tone = balance(stats);
                 const band = allocationBand(amounts, stats.unassigned);

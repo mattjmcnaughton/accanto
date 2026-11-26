@@ -263,6 +263,12 @@ export function planInput(name: string, lines: Line[], revision?: number): PlanI
   };
 }
 
+/** Revisions as people read them: the unsaved draft first, then saved versions newest first. */
+export function newestFirst<T extends Pick<PlanRevision, "saved_at" | "number">>(revisions: T[]) {
+  const at = (r: T) => parseTimestamp(r.saved_at) ?? Number.POSITIVE_INFINITY;
+  return [...revisions].sort((a, b) => at(b) - at(a) || b.number - a.number);
+}
+
 /** "Version 2, saved Nov 20, 2026", with the save date in the Entity time zone. */
 export function savedLabel(version: PlanRevision, timeZone: string) {
   const savedAt = parseTimestamp(version.saved_at);
