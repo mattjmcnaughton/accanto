@@ -849,6 +849,10 @@ class KindInput(Input):
 class InboxQuery(Input):
     status: list[InboxStatus] | None = None
     month: FirstDay | None = None
+    proposed: bool | None = Field(
+        default=None,
+        description="true: only items with a proposal; false: only items without one.",
+    )
 
 
 class ItemRef(Input):

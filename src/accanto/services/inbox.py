@@ -252,7 +252,9 @@ async def staged_item(session, entity_id, item_uuid):
 # Reads ----------------------------------------------------------------------
 
 
-async def read_inbox(session, token, entity_uuid, *, statuses, month, source):
+async def read_inbox(
+    session, token, entity_uuid, *, statuses, month, source, proposed=None
+):
     async with session.begin():
         _, entity = await authorize(session, token, entity_uuid, lock=False)
         query = select(st.staged).where(st.staged.c.entity_id == entity["id"])
@@ -268,6 +270,10 @@ async def read_inbox(session, token, entity_uuid, *, statuses, month, source):
         if source is not None:
             src = await scoped(session, st.sources, entity["id"], source)
             query = query.where(st.staged.c.source_id == src["id"])
+        if proposed is not None:
+            # A cleared proposal is stored as JSON null, not SQL NULL.
+            has = func.coalesce(func.jsonb_typeof(st.staged.c.proposal), "null")
+            query = query.where((has == "object") == proposed)
         views = (
             query.add_columns(
                 st.sources.c.uuid.label("source_uuid"),

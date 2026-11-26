@@ -345,6 +345,32 @@ async def scenario():
         assert coffee["proposal_rejection"]["code"] == "needs_choice"
         assert results[refs["t-return2"]["id"]]["error"]["code"] == "stale_revision"
         assert await entries() == 0
+
+        # The proposed filter, including an item whose proposal was cleared.
+        async def proposed_refs(proposed):
+            listed = await client.get(prefix + "/inbox", params={"proposed": proposed})
+            return {r["source_ref"] for r in listed.json()}
+
+        cleared = await command(
+            "DELETE",
+            f"/inbox/{coffee['id']}/proposal",
+            {"expected_revision": coffee["revision"]},
+        )
+        assert cleared.status_code == 200, cleared.text
+        assert await proposed_refs("true") == {"t-repair", "t-shirt"}
+        unproposed = await proposed_refs("false")
+        assert {"t-coffee", "t-return2"} <= unproposed
+        assert not unproposed & {"t-repair", "t-shirt"}
+        coffee_proposal = await command(
+            "PUT",
+            f"/inbox/{coffee['id']}/proposal",
+            {
+                "expected_revision": cleared.json()["revision"],
+                "category": "saving",
+                "rationale": "Deliberately incomplete",
+            },
+        )
+        assert coffee_proposal.status_code == 200, coffee_proposal.text
         detail = (await client.get(prefix + "/reviews/2026-11-01")).json()
         assert detail["inbox_waiting"] == 6
         assert detail["actual"]["spending_recorded"] is None

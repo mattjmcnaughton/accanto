@@ -117,6 +117,8 @@ export function Inbox(
     }),
   );
   const [view, setView] = useState<View>("waiting");
+  /** Show only items that carry a proposal; the views and their counts follow it. */
+  const [proposedOnly, setProposedOnly] = useState(false);
   const [cur, setCur] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [drafts, setDrafts] = useState<Record<string, Completion>>({});
@@ -221,7 +223,8 @@ export function Inbox(
           funding: entry?.funding_goal_id ?? null,
         };
   };
-  const shown = rows(all, view);
+  const scope = proposedOnly ? all.filter((i) => i.proposal) : all;
+  const shown = rows(scope, view);
   const ids = shown.flatMap((r) => ("it" in r ? [r.it.id] : []));
   const current = all.find((i) => i.id === cur && ids.includes(i.id)) ?? null;
   const visible = ids.join(",");
@@ -240,9 +243,9 @@ export function Inbox(
   }, [cur, view]);
 
   const counts = {
-    waiting: all.filter((i) => i.status === "waiting").length,
-    skipped: all.filter((i) => i.status === "skipped").length,
-    recorded: all.filter((i) => i.status === "recorded").length,
+    waiting: scope.filter((i) => i.status === "waiting").length,
+    skipped: scope.filter((i) => i.status === "skipped").length,
+    recorded: scope.filter((i) => i.status === "recorded").length,
   };
   const month = (current?.financial_date ?? p.entity.today).slice(0, 7);
   const monthWaiting = all.filter(
@@ -669,6 +672,9 @@ export function Inbox(
         setSelected(new Set());
         return setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]);
       }
+      case "p":
+        setSelected(new Set());
+        return setProposedOnly((on) => !on);
       case "?":
         return setHelp(true);
       case "Escape":
@@ -769,6 +775,23 @@ export function Inbox(
           ))}
         </div>
         <Key k="v" />
+        {/* biome-ignore lint/a11y/useSemanticElements: The kit's segmented control is a button group. */}
+        <div className="seg-control" role="group" aria-label="Filter">
+          {[false, true].map((on) => (
+            <button
+              key={String(on)}
+              type="button"
+              aria-pressed={proposedOnly === on}
+              onClick={() => {
+                setSelected(new Set());
+                setProposedOnly(on);
+              }}
+            >
+              {on ? "With proposals" : "All"}
+            </button>
+          ))}
+        </div>
+        <Key k="p" />
       </header>
       {syncing && (
         <output className="ix-syncing">
@@ -829,7 +852,7 @@ export function Inbox(
           >
             {shown.length === 0 && (
               <div className="ix-empty">
-                <b>Nothing here</b>
+                <b>{proposedOnly ? "No proposals here" : "Nothing here"}</b>
               </div>
             )}
             {shown.map((row) =>
@@ -911,6 +934,7 @@ export function Inbox(
               [["x"], "Select"],
               [["z"], "Undo"],
               [["v"], "View"],
+              [["p"], "Proposals"],
               [["?"], "Help"],
             ]
         ).map(([k, label]) => (
@@ -1334,6 +1358,7 @@ const HELP: Array<[string, string]> = [
   ["x", "Select or deselect for Enter. Esc clears the selection."],
   ["z", "Undo the last recording or skip."],
   ["v", "Change the view: Waiting, Skipped, Recorded."],
+  ["p", "Show only items with a proposal, or all items again."],
   ["↑ ↓ Enter Esc", "In a picker: move, choose, cancel."],
   ["?", "Show or hide this help."],
 ];

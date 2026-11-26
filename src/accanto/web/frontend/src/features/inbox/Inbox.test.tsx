@@ -235,3 +235,52 @@ it("assigns guilt-free spending to a subcategory with a, and records Unassigned 
     completion: { category: "spending", assignment: "sub-eat", funding: "income" },
   });
 });
+
+it("filters to items with a proposal with p, keeping the Review's waiting count", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    if (String(path).endsWith("/inbox"))
+      return new Response(
+        JSON.stringify([
+          item({}),
+          item({
+            id: "i2",
+            source_ref: "tx-2",
+            payee: "Sample Hardware",
+            proposal: { category: "spending", rationale: "Synthetic" },
+            proposed_by: { user_id: "u", interface: "mcp", at: "2026-11-20T00:00:00Z" },
+          }),
+          item({ id: "i3", source_ref: "tx-3", payee: "Example Bakery", status: "skipped" }),
+        ]),
+      );
+    return new Response("[]");
+  });
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+    />,
+  );
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  const waiting = () => screen.getByRole("button", { name: /^Waiting/ }).textContent;
+  expect(waiting()).toBe("Waiting 2");
+  fireEvent.keyDown(document.body, { key: "p" });
+  await waitFor(() => expect(waiting()).toBe("Waiting 1"));
+  expect(screen.getByRole("button", { name: "With proposals" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  expect(screen.queryByText("Example Coffee Cart", { selector: ".ix-row *" })).toBeNull();
+  expect(screen.getByText("Sample Hardware", { selector: ".ix-d-t" })).toBeDefined();
+  expect(screen.getByRole("button", { name: /^Skipped/ }).textContent).toBe("Skipped 0");
+  // The strip mirrors the month's Review, so it still counts every waiting item.
+  expect(document.querySelector(".ix-strip")?.textContent).toContain(
+    "2 transactions waiting in the inbox",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "All" }));
+  await waitFor(() => expect(waiting()).toBe("Waiting 2"));
+});

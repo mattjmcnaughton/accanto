@@ -196,6 +196,7 @@ async def list_inbox(ctx, entity_id, args: t.InboxQuery, key):
             statuses=args.status,
             month=args.month,
             source=None,
+            proposed=args.proposed,
         )
     return t.InboxList(
         items=[t.project_item(row) for row in rows[:LIST_CAP]],
