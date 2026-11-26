@@ -295,18 +295,18 @@ async def plan_read_race(monkeypatch):
         )
         original = created["draft"]
         parent_read, continue_read = asyncio.Event(), asyncio.Event()
-        snapshot = monthly.plan_snapshot
+        details = monthly.plan_details
 
         async with sessions() as first_reader:
 
-            async def pause_snapshot(db, record):
+            async def pause_details(db, revision_ids):
                 if db is first_reader:
                     # Pause after loading the draft, before querying its children.
                     parent_read.set()
                     await continue_read.wait()
-                return await snapshot(db, record)
+                return await details(db, revision_ids)
 
-            monkeypatch.setattr(monthly, "plan_snapshot", pause_snapshot)
+            monkeypatch.setattr(monthly, "plan_details", pause_details)
             async with asyncio.TaskGroup() as tasks:
                 first = tasks.create_task(read_plans(first_reader, actor, entity))
                 try:

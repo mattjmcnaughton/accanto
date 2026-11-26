@@ -20,7 +20,7 @@ from accanto.domains.monthly import (
     plan_results,
 )
 from accanto.models import monthly as m
-from accanto.repositories.monthly import plan_allocations, plan_fixed_costs, plan_lines
+from accanto.repositories.monthly import plan_details
 from accanto.services.access import AuthenticatedActor, RejectionError, revalidate_actor
 
 
@@ -92,21 +92,18 @@ def check_revision(record, expected):
 
 
 async def plan_snapshot(session, record):
-    from accanto.domains.monthly_comparison import planned_metrics
-
     # Line triggers may have advanced metadata since the parent RETURNING row.
     updated_at = await session.scalar(
         select(m.revisions.c.updated_at).where(m.revisions.c.id == record["id"])
     )
-    snapshot = json_values(
-        {
-            **dict(record),
-            "updated_at": updated_at,
-            "incomes": await plan_lines(session, record["id"]),
-            "fixed_costs": await plan_fixed_costs(session, record["id"]),
-            **(await plan_allocations(session, record["id"])),
-        }
-    )
+    details = await plan_details(session, [record["id"]])
+    return plan_view({**record, "updated_at": updated_at}, details[record["id"]])
+
+
+def plan_view(record, details):
+    from accanto.domains.monthly_comparison import planned_metrics
+
+    snapshot = json_values({**record, **details})
     # Presentation only: saved monetary inputs/results are never recalculated.
     snapshot["planned_metrics"] = planned_metrics(snapshot)
     return snapshot
@@ -206,7 +203,9 @@ async def write(
                     "record_not_found", "Revision is unavailable in this Plan.", 404
                 )
             check_revision(source_revision, payload["expected_revision"])
-            allocations = await plan_allocations(session, source_revision["id"])
+            allocations = (await plan_details(session, [source_revision["id"]]))[
+                source_revision["id"]
+            ]
             # Derive new inputs only after recording the original request identity.
             # The creation path assigns fresh Plan and Income source identities.
             payload = {
@@ -214,7 +213,7 @@ async def write(
                 "spending": str(source_revision["spending"]),
                 "incomes": [
                     {"name": line["name"], "amount": str(line["amount"])}
-                    for line in await plan_lines(session, source_revision["id"])
+                    for line in allocations["incomes"]
                 ],
                 "fixed_costs": [
                     {
@@ -225,7 +224,7 @@ async def write(
                         "amount": str(line["amount"]),
                         "frequency": line["frequency"],
                     }
-                    for line in await plan_fixed_costs(session, source_revision["id"])
+                    for line in allocations["fixed_costs"]
                 ],
                 **{
                     key: [
@@ -292,7 +291,6 @@ async def write(
             }
         elif operation in {"create_plan", "edit_plan", "copy_plan"}:
             before = None
-            old_allocations = None
             if operation in {"create_plan", "copy_plan"}:
                 if payload.get("expected_revision") is not None:
                     raise RejectionError(
@@ -326,7 +324,6 @@ async def write(
                 )
                 check_revision(old, payload.get("expected_revision"))
                 before = await plan_snapshot(session, old)
-                old_allocations = await plan_allocations(session, old["id"])
                 number, revision = old["number"], old["revision"] + 1
             results = plan_results(
                 [Decimal(line["amount"]) for line in payload["incomes"]],
@@ -564,8 +561,8 @@ async def write(
                     prior_label = next(
                         (
                             prior[name_key]
-                            for prior in (old_allocations or {}).get(key, [])
-                            if prior[id_key] == line[id_key]
+                            for prior in (before or {}).get(key, [])
+                            if prior[id_key] == str(line[id_key])
                         ),
                         None,
                     )
@@ -1494,7 +1491,8 @@ async def read_review(session, token, entity_uuid, month: date):
         )
         from accanto.services.monthly_comparison import explain_review
 
-        version_view = await plan_snapshot(session, version)
+        details = await plan_details(session, [version["id"]])
+        version_view = plan_view(version, details[version["id"]])
         with logfire.span("monthly.entry_snapshots", entry_count=len(entries)):
             entry_views = await entry_snapshots(session, entries)
         explanation = explain_review(version_view, entry_views)
@@ -1583,28 +1581,26 @@ async def read_plans(session, token, entity_uuid):
             .mappings()
             .all()
         )
-        result = []
-        for plan in plans:
+        by_plan = {plan["id"]: [] for plan in plans}
+        if plans:
             revisions = (
                 (
                     await session.execute(
                         select(m.revisions)
-                        .where(m.revisions.c.plan_id == plan["id"])
+                        .where(m.revisions.c.entity_id == entity["id"])
                         .order_by(m.revisions.c.number)
                     )
                 )
                 .mappings()
                 .all()
             )
-            result.append(
-                {
-                    "plan_id": str(plan["uuid"]),
-                    "revisions": [
-                        await plan_snapshot(session, row) for row in revisions
-                    ],
-                }
-            )
-        return result
+            details = await plan_details(session, [row["id"] for row in revisions])
+            for row in revisions:
+                by_plan[row["plan_id"]].append(plan_view(row, details[row["id"]]))
+        return [
+            {"plan_id": str(plan["uuid"]), "revisions": by_plan[plan["id"]]}
+            for plan in plans
+        ]
 
 
 async def read_activity(session, token, entity_uuid, tag_id: UUID | None = None):

@@ -14,6 +14,7 @@ from accanto.db import get_session
 from accanto.models import monthly as m
 from accanto.models import savings as s
 from accanto.services.api_keys import issue_key
+from tests.integration.read_cost import counted_get
 
 URL = os.environ.get("ACCANTO_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(
@@ -89,6 +90,8 @@ async def scenario():
         source_account, source = await account(
             "Source account", "100.00", "Source goal", "100.00"
         )
+        one_account, small_cost = await counted_get(client, engine, root)
+        assert one_account == [source_account]
         destination_account, destination = await account(
             "Destination account", "0.00", "Destination goal", "0.00"
         )
@@ -138,8 +141,9 @@ async def scenario():
                 {**base, "amount": "100.00", "to_goal_id": source["uuid"]},
             )
         ).status_code == 422
-        accounts = (await client.get(root)).json()
+        accounts, larger_cost = await counted_get(client, engine, root)
         assert [account["balance"] for account in accounts] == ["400.00", "100.00"]
+        assert larger_cost == small_cost
         assert sum(float(account["balance"]) for account in accounts) == 500
         purchase = await write(
             "POST",

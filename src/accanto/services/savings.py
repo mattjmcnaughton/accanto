@@ -1,5 +1,6 @@
 """Savings commands under the shared authorized Entity transaction."""
 
+from collections import defaultdict
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -53,6 +54,7 @@ async def saving_facts(session, entity_id, *, as_of=None, excluded_adjustment_id
                 )
                 .join(s.accounts, s.accounts.c.id == s.goals.c.account_id)
                 .where(s.goals.c.entity_id == entity_id)
+                .order_by(s.goals.c.id)
             )
         )
         .mappings()
@@ -266,18 +268,16 @@ async def attach_entry(
 
 
 async def snapshot(session, account):
-    rows = (
-        (
-            await session.execute(
-                select(s.goals)
-                .where(s.goals.c.account_id == account["id"])
-                .order_by(s.goals.c.id)
-            )
-        )
-        .mappings()
-        .all()
+    rows, balances, contributions = await saving_facts(session, account["entity_id"])
+    return account_view(
+        account,
+        [row for row in rows if row["account_id"] == account["id"]],
+        balances,
+        contributions,
     )
-    _, balances, contributions = await saving_facts(session, account["entity_id"])
+
+
+def account_view(account, rows, balances, contributions):
     goals = [
         {
             "uuid": str(row["uuid"]),
@@ -324,7 +324,16 @@ async def read_accounts(session, token, entity_uuid):
             .mappings()
             .all()
         )
-        return [await snapshot(session, row) for row in rows]
+        if not rows:
+            return []
+        goals, balances, contributions = await saving_facts(session, entity["id"])
+        by_account = defaultdict(list)
+        for goal in goals:
+            by_account[goal["account_id"]].append(goal)
+        return [
+            account_view(row, by_account[row["id"]], balances, contributions)
+            for row in rows
+        ]
 
 
 async def read_account(session, token, entity_uuid, account_uuid):

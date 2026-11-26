@@ -14,6 +14,7 @@ from accanto.app import create_app
 from accanto.db import get_session
 from accanto.models import monthly as m
 from accanto.services.api_keys import issue_key
+from tests.integration.read_cost import counted_get
 
 URL = os.environ.get("ACCANTO_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="Requires isolated migrated test DB")
@@ -130,6 +131,8 @@ async def scenario():
             },
         )
         draft = plan["draft"]
+        one_plan, small_cost = await counted_get(client, engine, prefix + "/plans")
+        assert one_plan == [{"plan_id": plan["plan_id"], "revisions": [draft]}]
         assert draft["income"] == "4000.00"
         assert draft["funding_total"] == "5000.00"
         assert draft["tithe_target"] == "400.00"
@@ -202,12 +205,14 @@ async def scenario():
                 "expected_revision": debt["revision"],
             },
         )
-        plans = await client.get(prefix + "/plans")
-        assert plans.status_code == 200
-        preserved = next(row for row in plans.json()[0]["revisions"] if row["saved"])
+        plans, larger_cost = await counted_get(client, engine, prefix + "/plans")
+        by_plan = {p["plan_id"]: p["revisions"] for p in plans}
+        assert by_plan[copied["plan_id"]] == [copied["draft"]]
+        preserved = next(row for row in by_plan[plan["plan_id"]] if row["saved"])
         assert preserved["investments"][0]["destination_name"] == "Example investment"
         assert preserved["giving"][0]["destination_name"] == "Example recipient"
         assert preserved["fixed_costs"][0]["debt_account_name"] == "Example loan"
+        assert larger_cost == small_cost
         archived_copy = await command(
             "POST",
             f"/plans/{plan['plan_id']}/copies",
