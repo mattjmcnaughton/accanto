@@ -226,19 +226,3 @@ def create_mcp_app(state):
     app = server.http_app(path="/mcp", stateless_http=True, json_response=True)
     app.add_middleware(_NoStore)
     return app
-
-
-class MountMCP:
-    """ASGI middleware sending exactly /mcp to the MCP app, before any route.
-
-    Keeps the SPA fallback and API middleware away from MCP requests.
-    """
-
-    def __init__(self, app, mcp):
-        self.app, self.mcp = app, mcp
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http" and scope["path"] == "/mcp":
-            await self.mcp(scope, receive, send)
-            return
-        await self.app(scope, receive, send)

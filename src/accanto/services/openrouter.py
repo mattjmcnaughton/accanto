@@ -5,19 +5,15 @@ are cached per (id, key) so each request does not open a new HTTP pool. Every
 request is routed only to zero-data-retention endpoints (PRD AG-04, AG-09).
 """
 
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-from pydantic_ai.models import Model
-from pydantic_ai.models.openrouter import OpenRouterModel, OpenRouterModelSettings
-from pydantic_ai.providers.openrouter import OpenRouterProvider
-
-from accanto.services.stub_model import build_stub_model
+if TYPE_CHECKING:
+    from pydantic_ai.models import Model
+    from pydantic_ai.models.openrouter import OpenRouterModel
 
 STUB_MODEL_ID = "stub"
-ZDR_SETTINGS = OpenRouterModelSettings(
-    openrouter_provider={"zdr": True, "data_collection": "deny"}
-)
-_cache: dict[tuple[str, str], OpenRouterModel] = {}
+_cache: "dict[tuple[str, str], OpenRouterModel]" = {}
 
 
 class AgentUnavailableError(Exception):
@@ -43,7 +39,14 @@ def agent_model_id(config) -> str:
     return model_id
 
 
-def resolve_model(config) -> Model:
+def resolve_model(config) -> "Model":
+    # Imported here: pydantic-ai and openai cost seconds of startup on the Box, and
+    # Settings reads (provider_label) do not need them.
+    from pydantic_ai.models.openrouter import OpenRouterModel, OpenRouterModelSettings
+    from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+    from accanto.services.stub_model import build_stub_model
+
     model_id = agent_model_id(config)
     if model_id == STUB_MODEL_ID:
         return build_stub_model()
@@ -53,7 +56,9 @@ def resolve_model(config) -> Model:
         model = OpenRouterModel(
             model_id,
             provider=OpenRouterProvider(api_key=key),
-            settings=ZDR_SETTINGS,
+            settings=OpenRouterModelSettings(
+                openrouter_provider={"zdr": True, "data_collection": "deny"}
+            ),
         )
         _cache[(model_id, key)] = model
     return model

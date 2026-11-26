@@ -53,6 +53,12 @@ switches back to the previous release if the service does not start. Check
 `"status": "ready"` and `deployedCommitSHA` in its output, then check readiness
 as described below.
 
+The CLI waits only about 12 seconds for the port, and the b1.small Box imports
+Python roughly three times slower than an orb. So startup does not import the
+assistant (pydantic-ai, openai) or MCP (fastmcp, mcp) stacks. They load on the
+first assistant request and the first `/mcp` request, and
+`tests/unit/test_app.py` fails if startup imports them again.
+
 Migrate **before** deploying an application version that needs a new schema.
 Migrations run from an orb with the owner credential, never from the Box:
 
