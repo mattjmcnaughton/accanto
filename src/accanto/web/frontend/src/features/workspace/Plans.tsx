@@ -49,25 +49,36 @@ export function Plans(
   },
 ) {
   const [reload, setReload] = useState(0);
-  const state = useLoad(() => monthly.plans(p.entity.id), [p.entity.id, p.refresh, reload]);
-  const accounts = useLoad(() => savings.list(p.entity.id), [p.entity.id, p.refresh, reload]);
-  const investments = useLoad(
-    () => destinations.list(p.entity.id, "investment"),
-    [p.entity.id, p.refresh, reload],
-  );
-  const giving = useLoad(
-    () => destinations.list(p.entity.id, "giving"),
-    [p.entity.id, p.refresh, reload],
-  );
-  const loans = useLoad(() => balances.loans(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const [active, setActive] = useState<string | null>(null);
+  const shown = p.visible !== false && !p.concealed;
+  const worksheet = shown && !p.home && active !== null;
+  const home = shown && !!p.home;
+  const deps = [p.entity.id, p.refresh, reload];
+  const state = useLoad(() => monthly.plans(p.entity.id), deps, { enabled: shown, share: "plans" });
+  const accounts = useLoad(() => savings.list(p.entity.id), deps, {
+    enabled: home || worksheet,
+    share: "savings",
+  });
+  const investments = useLoad(() => destinations.list(p.entity.id, "investment"), deps, {
+    enabled: home || worksheet,
+    share: "investments",
+  });
+  const giving = useLoad(() => destinations.list(p.entity.id, "giving"), deps, {
+    enabled: worksheet,
+    share: "giving",
+  });
+  const loans = useLoad(() => balances.loans(p.entity.id), deps, {
+    enabled: home || worksheet,
+    share: "loans",
+  });
   // Home compares the shell's month with its Review, read exactly as the Review screen reads it.
   const month = p.month ?? p.entity.today.slice(0, 7);
   const review = useLoad(
     () => monthly.review(p.entity.id, `${month}-01`),
     [p.entity.id, month, p.refresh, reload],
+    { enabled: home, share: `review:${month}-01` },
   );
   const [opened, setOpened] = useState<Record<string, OpenDraft>>({});
-  const [active, setActive] = useState<string | null>(null);
   useEffect(() => {
     if (p.home) setActive(null);
   }, [p.home]);
@@ -254,8 +265,7 @@ export function Plans(
     const buttons = rows[row].querySelectorAll("button");
     buttons[Math.min(col, buttons.length - 1)].focus();
   }
-  if (p.concealed || p.visible === false) return null;
-  const home = !!p.home;
+  if (!shown) return null;
   const visible = plans.filter((plan) =>
     displayName(plan).toLowerCase().includes(query.trim().toLowerCase()),
   );

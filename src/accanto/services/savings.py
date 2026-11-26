@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from sqlalchemy import insert, select, update
 
+from accanto.db import read_snapshot
 from accanto.domains.savings import (
     SavingEvent,
     SavingsShortfallError,
@@ -310,8 +311,8 @@ async def snapshot(session, account):
 
 
 async def read_accounts(session, token, entity_uuid):
-    async with session.begin():
-        _, entity = await authorize(session, token, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
         rows = (
             (
                 await session.execute(
@@ -327,8 +328,8 @@ async def read_accounts(session, token, entity_uuid):
 
 
 async def read_account(session, token, entity_uuid, account_uuid):
-    async with session.begin():
-        _, entity = await authorize(session, token, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
         return await snapshot(
             session, await scoped(session, s.accounts, entity["id"], account_uuid)
         )
@@ -352,8 +353,8 @@ def movement_result(row, kind, goal_ids):
 
 
 async def read_movements(session, token, entity_uuid):
-    async with session.begin():
-        _, entity = await authorize(session, token, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
         goals = (
             await session.execute(
                 select(s.goals.c.id, s.goals.c.uuid).where(

@@ -71,6 +71,7 @@ tests/
 - **Field names** for a reference are named after the specific record (`fixed_cost_id`, `investment_id`, `funding_goal_id`), never a generic name shared by several record types or one field carrying two meanings. An entry's assignment and its funding origin are separate fields.
 - **DTOs** are Pydantic models for API I/O, always separate from DB models.
 - **Frontend** is composed into `src/accanto/web/frontend/` using the `frontend-react` template.
+- **Interactive reads:** Apply [Constitution §9](CONSTITUTION.md#9-bound-the-work-of-interactive-reads) when changing a screen load, a list endpoint, or a read transaction. Count API requests at the screen boundary, compare SQL counts with small and larger synthetic lists, or test overlapping requests with real Postgres, according to the risk changed. Report the observed counts or concurrency result in the review.
 - Tests are organized by type in `tests/unit/`, `tests/integration/`, `tests/e2e/`.
 - Use `@pytest.mark.external` for tests that hit external services.
 - Python tool config is in `pyproject.toml`; frontend tools have their own config.

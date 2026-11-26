@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import delete, insert, select, update
 
+from accanto.db import read_snapshot
 from accanto.domains.income_estimates import estimate as calculate
 from accanto.models import income_estimates as m
 from accanto.repositories.income_estimates import get_estimate, snapshot
@@ -124,8 +125,8 @@ async def write_estimate(session, entity, operation, payload, target, audit):
 
 async def read_estimates(session, token, entity_uuid, target=None):
     """Read a consistent Entity-scoped estimate collection or one estimate."""
-    async with session.begin():
-        _, entity = await authorize(session, token, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
         if target is not None:
             record = await get_estimate(session, entity["id"], target)
             if record is None:

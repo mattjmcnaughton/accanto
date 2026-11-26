@@ -1,5 +1,12 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
-import type { BrowserSession, LoadState } from "../../lib/api";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { type BrowserSession, type LoadState, loading } from "../../lib/api";
 import type { PlanGroup, WriteSpec } from "../../lib/monthly";
 
 export type Entity = BrowserSession["entities"][number];
@@ -68,21 +75,39 @@ export function useTheme(): [ThemeChoice, (choice: ThemeChoice) => void] {
 export const composing = (event: { nativeEvent: KeyboardEvent }) =>
   event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229;
 
+/** Share pending reads only. A later visit still checks authorization and gets fresh data. */
+export const WorkspaceReads = createContext<Map<string, Promise<LoadState<unknown>>> | null>(null);
+
 /** Disposed reads cannot populate a new screen, User or month. */
-export function useLoad<T>(load: () => Promise<LoadState<T>>, dependencies: unknown[]) {
-  const [state, setState] = useState<LoadState<T>>({ kind: "loading" });
+export function useLoad<T>(
+  load: () => Promise<LoadState<T>>,
+  dependencies: unknown[],
+  { enabled = true, share }: { enabled?: boolean; share?: string } = {},
+) {
+  const reads = useContext(WorkspaceReads);
+  const pool = share ? reads : null;
   // biome-ignore lint/correctness/useExhaustiveDependencies: Callers provide the request identity and explicit reload generation.
+  const identity = useMemo(() => ({}), [enabled, pool, share, ...dependencies]);
+  const [settled, setSettled] = useState<{ identity: object; result: LoadState<T> }>();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The identity above drives the load, not the inline callback.
   useEffect(() => {
+    if (!enabled) return;
     let disposed = false;
-    setState({ kind: "loading" });
-    void load().then((result) => {
-      if (!disposed) setState(result);
+    const pending = share ? (pool?.get(share) as Promise<LoadState<T>> | undefined) : undefined;
+    const request = pending ?? load();
+    if (!pending && pool && share) {
+      pool.set(share, request);
+      const release = () => pool.delete(share);
+      void request.then(release, release);
+    }
+    void request.then((result) => {
+      if (!disposed) setSettled({ identity, result });
     });
     return () => {
       disposed = true;
     };
-  }, dependencies);
-  return state;
+  }, [identity]);
+  return enabled && settled?.identity === identity ? settled.result : loading;
 }
 export function LoadMessage({ state, retry }: { state: LoadState<unknown>; retry: () => void }) {
   if (state.kind === "loading") return <output className="note">Loading…</output>;

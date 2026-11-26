@@ -6,6 +6,7 @@ from decimal import Decimal
 import logfire
 from sqlalchemy import delete, func, insert, select, update
 
+from accanto.db import read_snapshot
 from accanto.domains.destinations import (
     contribution_amount,
     contribution_target,
@@ -100,8 +101,8 @@ async def snapshot(session, kind, row):
 
 
 async def read_destinations(session, token, entity_uuid, kind):
-    async with session.begin():
-        _, entity = await authorize(session, token, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
         table, _, _, _ = resources(kind)
         rows = (
             (
@@ -243,8 +244,8 @@ async def entry_snapshot(session, kind, entry):
 
 
 async def read_contributions(session, token, entity_uuid, kind):
-    async with session.begin():
-        _, entity = await authorize(session, token, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
         _, _, _, category = resources(kind)
         rows = (
             (

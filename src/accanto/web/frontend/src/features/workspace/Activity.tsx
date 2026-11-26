@@ -121,23 +121,20 @@ export function ActivityScreen(
   p: ScreenProps & { month?: string; add?: number; added?: () => void },
 ) {
   const [reload, setReload] = useState(0);
-  const entries = useLoad(() => monthly.activity(p.entity.id), [p.entity.id, p.refresh, reload]);
-  const plans = useLoad(() => monthly.plans(p.entity.id), [p.entity.id, p.refresh, reload]);
-  const accounts = useLoad(() => savings.list(p.entity.id), [p.entity.id, p.refresh, reload]);
-  const investments = useLoad(
-    () => destinations.list(p.entity.id, "investment"),
-    [p.entity.id, p.refresh, reload],
-  );
-  const loans = useLoad(() => balances.loans(p.entity.id), [p.entity.id, p.refresh, reload]);
-  const tagState = useLoad(() => tagApi.list(p.entity.id), [p.entity.id, p.refresh, reload]);
-  const subcategoryState = useLoad(
-    () => subcategoryApi.list(p.entity.id),
-    [p.entity.id, p.refresh, reload],
-  );
-  const recipients = useLoad(
-    () => destinations.list(p.entity.id, "giving"),
-    [p.entity.id, p.refresh, reload],
-  );
+  const deps = [p.entity.id, p.refresh, reload];
+  const visible = !p.concealed;
+  const entries = useLoad(() => monthly.activity(p.entity.id), deps, {
+    enabled: visible,
+    share: "activity",
+  });
+  const tagState = useLoad(() => tagApi.list(p.entity.id), deps, {
+    enabled: visible,
+    share: "tags",
+  });
+  const subcategoryState = useLoad(() => subcategoryApi.list(p.entity.id), deps, {
+    enabled: visible,
+    share: "spending-subcategories",
+  });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [changed, setChanged] = useState(false);
   const [info, setInfo] = useState<Activity | null>(null);
@@ -171,6 +168,33 @@ export function ActivityScreen(
     if (submitRequest) form.current?.requestSubmit();
   }, [submitRequest]);
   const data = entries.kind === "ready" ? entries.data : [];
+  // Row names need lookups too, including purchases referenced by refunds in another month.
+  const formOpen = open && draft?.kind === "activity";
+  const knownTotal = open && draft?.kind === "known";
+  const plans = useLoad(() => monthly.plans(p.entity.id), deps, {
+    enabled: visible && (formOpen || knownTotal || data.some((entry) => entry.source_id)),
+    share: "plans",
+  });
+  const accounts = useLoad(() => savings.list(p.entity.id), deps, {
+    enabled:
+      visible &&
+      (formOpen ||
+        knownTotal ||
+        data.some((entry) => entry.saving_goal_id || entry.funding_goal_id)),
+    share: "savings",
+  });
+  const loans = useLoad(() => balances.loans(p.entity.id), deps, {
+    enabled: visible && (formOpen || data.some((entry) => entry.debt_account_id)),
+    share: "loans",
+  });
+  const investments = useLoad(() => destinations.list(p.entity.id, "investment"), deps, {
+    enabled: visible && data.some((entry) => entry.investment_id),
+    share: "investments",
+  });
+  const recipients = useLoad(() => destinations.list(p.entity.id, "giving"), deps, {
+    enabled: visible && data.some((entry) => entry.giving_recipient_id),
+    share: "giving",
+  });
   const tagList = tagState.kind === "ready" ? tagState.data : [];
   const subcategoryList = subcategoryState.kind === "ready" ? subcategoryState.data : [];
   const tagNames = (entry: Activity) =>

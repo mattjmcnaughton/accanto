@@ -66,6 +66,7 @@ it("records a payment assigned to a saved cost removed from the current draft", 
   render(<ActivityScreen {...props()} save={save} />);
   fireEvent.click(await screen.findByRole("button", { name: "Record activity" }));
   fireEvent.change(screen.getByLabelText("Category"), { target: { value: "fixed_cost" } });
+  await screen.findByRole("option", { name: "Synthetic subscription" });
   fireEvent.change(screen.getByLabelText("Fixed cost"), { target: { value: "fixed-a" } });
   fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "12.00" } });
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Record" }));
@@ -192,9 +193,11 @@ it("shows both the destination and savings origin for funded outflows", async ()
   });
   render(<ActivityScreen {...props()} />);
   const row = (text: string) => screen.getByText(text).closest('[role="row"]');
-  await screen.findByText("Synthetic service");
-  expect(row("Synthetic service")?.textContent).toContain("Loan: Synthetic loan");
-  expect(row("Synthetic service")?.textContent).toContain("from Synthetic cash · Reserve");
+  await waitFor(() => {
+    expect(row("Synthetic service")?.textContent).toContain("Loan: Synthetic loan");
+    expect(row("Synthetic service")?.textContent).toContain("from Synthetic cash · Reserve");
+  });
+  await screen.findByText("Example recipient");
   expect(row("Example recipient")?.textContent).toContain("from Synthetic cash · Reserve");
   // Income-funded spending names no saving goal and is not an unassigned line.
   const spending = row("$25.00");

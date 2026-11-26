@@ -1,10 +1,11 @@
-"""Read current settings, and create Entities, under the shared credential locks."""
+"""Read current settings and create Entities under the shared access rules."""
 
 from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import insert, select
 
+from accanto.db import read_snapshot
 from accanto.domains.entity import entity_settings, entity_today
 from accanto.models import monthly as m
 from accanto.services.access import RejectionError, lock_user, revalidate_actor
@@ -12,8 +13,8 @@ from accanto.services.monthly import authorize, json_values, request_digest
 
 
 async def read_settings(session, actor, entity_uuid, *, instant=None):
-    async with session.begin():
-        _, entity = await authorize(session, actor, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, actor, entity_uuid, lock=False)
         return {
             "id": str(entity["uuid"]),
             "name": entity["name"],

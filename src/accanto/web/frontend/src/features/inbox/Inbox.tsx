@@ -79,20 +79,43 @@ function useSettled<T>(state: LoadState<T>): LoadState<T> {
 export function Inbox(
   p: ScreenProps & {
     credentials: (signIn?: boolean) => Promise<BrowserSession>;
+    changed?: () => void;
     openSettings?: () => void;
   },
 ) {
   const [reload, setReload] = useState(0);
   const deps = [p.entity.id, p.refresh, reload];
-  const items = useSettled(useLoad(() => inbox.list(p.entity.id), deps));
-  const sources = useSettled(useLoad(() => inbox.sources(p.entity.id), deps));
-  const plans = useSettled(useLoad(() => monthly.plans(p.entity.id), deps));
-  const accounts = useSettled(useLoad(() => savings.list(p.entity.id), deps));
-  const activity = useSettled(useLoad(() => monthly.activity(p.entity.id), deps));
-  const investments = useSettled(useLoad(() => destinations.list(p.entity.id, "investment"), deps));
-  const recipients = useSettled(useLoad(() => destinations.list(p.entity.id, "giving"), deps));
-  const tagState = useSettled(useLoad(() => tags.list(p.entity.id), deps));
-  const subcategoryState = useSettled(useLoad(() => spendingSubcategories.list(p.entity.id), deps));
+  // Proposals and keyboard pickers need their options as soon as the rows arrive.
+  const enabled = !p.concealed;
+  const items = useSettled(useLoad(() => inbox.list(p.entity.id), deps, { enabled }));
+  const sources = useSettled(useLoad(() => inbox.sources(p.entity.id), deps, { enabled }));
+  const plans = useSettled(
+    useLoad(() => monthly.plans(p.entity.id), deps, { enabled, share: "plans" }),
+  );
+  const accounts = useSettled(
+    useLoad(() => savings.list(p.entity.id), deps, { enabled, share: "savings" }),
+  );
+  const activity = useSettled(
+    useLoad(() => monthly.activity(p.entity.id), deps, { enabled, share: "activity" }),
+  );
+  const investments = useSettled(
+    useLoad(() => destinations.list(p.entity.id, "investment"), deps, {
+      enabled,
+      share: "investments",
+    }),
+  );
+  const recipients = useSettled(
+    useLoad(() => destinations.list(p.entity.id, "giving"), deps, { enabled, share: "giving" }),
+  );
+  const tagState = useSettled(
+    useLoad(() => tags.list(p.entity.id), deps, { enabled, share: "tags" }),
+  );
+  const subcategoryState = useSettled(
+    useLoad(() => spendingSubcategories.list(p.entity.id), deps, {
+      enabled,
+      share: "spending-subcategories",
+    }),
+  );
   const [view, setView] = useState<View>("waiting");
   const [cur, setCur] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -243,7 +266,8 @@ export function Inbox(
       return null;
     } finally {
       setBusy(false);
-      setReload((x) => x + 1);
+      if (p.changed) p.changed();
+      else setReload((x) => x + 1);
     }
   }
   /** After an item leaves the view, the cursor lands on the next one still there. */

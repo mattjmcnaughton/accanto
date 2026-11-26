@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import insert, select, update
 
+from accanto.db import read_snapshot
 from accanto.models.monthly import keys
 from accanto.services.access import (
     AuthenticatedActor,
@@ -75,8 +76,8 @@ async def manage_key(
 
 
 async def list_keys(session, actor):
-    async with session.begin():
-        current = await revalidate_actor(session, actor, lock=True)
+    async with read_snapshot(session):
+        current = await revalidate_actor(session, actor, lock=False)
         rows = (
             (
                 await session.execute(

@@ -702,11 +702,17 @@ Within one transaction: authenticate/authorize; lock Entity; canonicalize reques
 look up idempotency outcome; validate expected revision; load rule facts; compute
 proposed results; validate shared rules; persist records and relationships; write
 complete before/after audit snapshots; store successful response; commit. Never
-return success before commit. Current Plan, activity and Review reads take the
-same key and Entity locks for all their queries. READ COMMITTED alone would not give a multi-query snapshot;
-these locks exclude participating writes for the duration. Preserve this protocol
-when adding session-authenticated commands and settings; privileged SQL outside
-the protocol is not a supported financial interface.
+return success before commit. Privileged SQL outside the protocol is not a
+supported financial interface.
+
+Pure reads that previously took the write locks (including Plan, Activity and
+Review) instead use a read-only Postgres REPEATABLE READ transaction. Credential
+revalidation, Entity ownership and all result queries share one snapshot, without
+waiting for or delaying financial row locks. An already authorized read can
+finish against its earlier snapshot; revocation or ownership loss committed
+before a new read's snapshot denies that read. This changes scheduling, not
+financial rules. Verify with overlapping reads and a concurrent Plan edit,
+then with new reads after credential revocation and Entity access loss.
 
 Scope retry keys by User, Entity and operation (including target resource).
 Store canonical request SHA-256 and the successful response in
@@ -808,8 +814,9 @@ rules. Today `authorize` accepts a raw API key and audit requires `api_key_uuid`
 Introduce an explicit authenticated actor carrying User identity, credential kind
 and credential reference. The service must revalidate the credential and current
 Entity ownership within its transaction before replay or mutation; adapters cannot
-pass an unchecked User ID. Preserve key-before-Entity lock order; session requests
-lock their session before Entity. Logout/revocation uses the same credential lock.
+pass an unchecked User ID. Preserve credential-before-Entity lock order for
+writes; browser commands lock their session before Entity. Logout/revocation uses
+the same credential lock as commands.
 Make audit's API-key reference nullable for browser writes and record interface
 and session attribution without storing session secrets in financial snapshots.
 Reuse the existing services for both callers; do not duplicate monthly commands.

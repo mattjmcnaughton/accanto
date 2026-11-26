@@ -207,6 +207,21 @@ Run the local checks needed to establish confidence in the change, using
 engineering judgment. Local verification complements CI and should target risks
 specific to the change. Required CI checks are the merge gate.
 
+## 9. Bound the work of interactive reads
+
+Use set-based reads so database round trips do not grow with each item in a
+list. Bound the work of default views as history grows; make full-history reads
+explicit. Load the data the active workflow needs and share identical in-flight
+reads within the same authorization boundary.
+
+Read-only workflows must not take exclusive row locks to coordinate with other
+reads. Use a consistent snapshot when a read needs several queries. Preserve
+current authorization checks and the locks and atomicity that protect writes.
+
+When changing these paths, verify the affected query count, request count, or
+concurrency behavior with synthetic data. Use small and larger inputs when
+checking growth. Prefer these repeatable checks to local wall-clock limits.
+
 ## Governance and document ownership
 
 When proposed work conflicts with these principles, surface and resolve the
@@ -227,6 +242,9 @@ verification gaps.
 
 ### Amendment notes
 
+- 2026-11-26: §9 makes bounded interactive reads and regression checks explicit
+  after production showed that repeated round trips, duplicate screen reads,
+  and exclusive read-side locks compounded into multi-second waits.
 - 2026-11-25: §2 requires a data model change to reach every interface (database,
   domain and services, API, agent tool catalog and MCP, UI, CONTEXT.md) in the
   same change, unless the technical design records an explicit exclusion.

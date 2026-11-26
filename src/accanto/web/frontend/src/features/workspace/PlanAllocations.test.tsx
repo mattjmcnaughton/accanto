@@ -73,7 +73,7 @@ it("keeps the full allocation input and flags inactive draft references", async 
   expect(screen.getAllByText("−$300.00").length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button", { name: "Details for Laptop" }));
   expect(
-    screen.getByText(
+    await screen.findByText(
       "This reference is inactive or unavailable. Review this draft allocation explicitly.",
     ),
   ).toBeDefined();

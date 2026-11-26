@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import insert, select, update
 
+from accanto.db import read_snapshot
 from accanto.domains.balances import (
     ObservedBalance,
     latest_observation,
@@ -61,8 +62,8 @@ def observation_result(row):
 
 
 async def read_observations(session, token, entity_uuid, kind):
-    async with session.begin():
-        _, entity = await authorize(session, token, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
         return [
             observation_result(row)
             for row in await observations_for(session, kind, entity["id"])
@@ -110,8 +111,8 @@ async def debt_snapshot(session, row):
 
 
 async def read_debts(session, token, entity_uuid):
-    async with session.begin():
-        _, entity = await authorize(session, token, entity_uuid, lock=True)
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
         rows = (
             (
                 await session.execute(

@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, insert, select
 
+from accanto.db import read_snapshot
 from accanto.domains.entity import entity_today
 from accanto.models import monthly as m
 from accanto.services.access import RejectionError, issue_session, revalidate_actor
@@ -94,8 +95,8 @@ async def admit_identity(session, claims, config):
 
 
 async def account_metadata(session, actor):
-    async with session.begin():
-        current = await revalidate_actor(session, actor, lock=True)
+    async with read_snapshot(session):
+        current = await revalidate_actor(session, actor, lock=False)
         user = await session.scalar(
             select(m.users.c.uuid).where(m.users.c.id == current.user_id)
         )
@@ -105,15 +106,11 @@ async def account_metadata(session, actor):
                     select(m.entities)
                     .where(m.entities.c.owner_id == current.user_id)
                     .order_by(m.entities.c.id)
-                    .with_for_update()
                 )
             )
             .mappings()
             .all()
         )
-        if current.credential_kind == "oauth":
-            # Discovery may have waited for the same Entity locks as financial tools.
-            current = await revalidate_actor(session, current, lock=True)
         now = datetime.now(UTC)
         return {
             "user": {"id": str(user)},

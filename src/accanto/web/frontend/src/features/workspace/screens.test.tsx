@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PlanRevision } from "../../lib/monthly";
 import { PlanBreakdown } from "./PlanBreakdown";
@@ -49,6 +49,128 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+
+it.each([
+  ["home", ["debts", "investments", "plans", "reviews/2026-11-01", "savings-accounts"]],
+  ["plans", ["plans"]],
+  ["activity", ["activity", "spending-subcategories", "tags"]],
+  ["review", ["plans", "reviews/2026-10-01", "reviews/2026-11-01"]],
+  [
+    "inbox",
+    [
+      "activity",
+      "giving-recipients",
+      "inbox",
+      "investments",
+      "plans",
+      "savings-accounts",
+      "sources",
+      "spending-subcategories",
+      "tags",
+      "transaction-provider",
+    ],
+  ],
+] as const)("loads only the foreground resources on cold %s", async (section, expected) => {
+  const reads: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const resource = String(path).replace(`/api/entities/${entity.id}/`, "");
+    reads.push(resource);
+    if (resource.startsWith("reviews/")) return json({ detail: { code: "review_not_found" } }, 404);
+    return json(resource === "plans" ? plans : []);
+  });
+  await act(async () => {
+    render(<Workspace initial={session} signedOut={vi.fn()} screen={section} />);
+  });
+  expect(reads.sort()).toEqual(expected);
+});
+
+it("refreshes only visible Activity after a write and restores the unsaved Plan", async () => {
+  const reads: string[] = [];
+  let saved = false;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const resource = String(path).replace(`/api/entities/${entity.id}/`, "");
+    const entry = {
+      uuid: "new-entry",
+      financial_date: entity.today,
+      category: "spending",
+      amount: "12.00",
+      note: "Synthetic groceries",
+      revision: 1,
+    };
+    if (init?.method === "POST") {
+      saved = true;
+      return json(entry);
+    }
+    reads.push(resource);
+    return json(resource === "plans" ? plans : resource === "activity" && saved ? [entry] : []);
+  });
+  render(<Workspace initial={session} signedOut={vi.fn()} />);
+  fireEvent.click(nav().getByRole("link", { name: "Plans" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Baseline" }));
+  fireEvent.click(screen.getByRole("button", { name: "Details for Salary" }));
+  fireEvent.change(screen.getByLabelText("Monthly amount"), { target: { value: "4200.00" } });
+  await act(async () => fireEvent.click(nav().getByRole("link", { name: "Activity" })));
+  reads.length = 0;
+  const quick = screen.getByRole("textbox", { name: /Record guilt-free spending/ });
+  fireEvent.change(quick, { target: { value: "12.00 Synthetic groceries" } });
+  fireEvent.submit(quick.closest("form") as HTMLFormElement);
+  expect(await screen.findByText("Synthetic groceries")).toBeDefined();
+  const refreshReads = reads.splice(0).sort();
+  await act(async () => fireEvent.click(nav().getByRole("link", { name: "Plans" })));
+  fireEvent.click(screen.getByRole("button", { name: "Details for Salary" }));
+  expect(screen.getByDisplayValue("4200.00")).toBeDefined();
+  expect(refreshReads).toEqual(["activity", "spending-subcategories", "tags"]);
+  expect(reads.sort()).toEqual([
+    "debts",
+    "giving-recipients",
+    "investments",
+    "plans",
+    "savings-accounts",
+  ]);
+});
+
+it("shares a pending Home Review only within the same workspace", async () => {
+  const finish: Array<(response: Response) => void> = [];
+  const reviewPaths: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    if (String(path).endsWith("/reviews/2026-11-01")) {
+      reviewPaths.push(String(path));
+      return new Promise<Response>((resolve) => finish.push(resolve));
+    }
+    if (String(path).includes("/reviews/"))
+      return json({ detail: { code: "review_not_found" } }, 404);
+    return json([]);
+  });
+  const view = render(<Workspace key="first" initial={session} signedOut={vi.fn()} />);
+  fireEvent.click(nav().getByRole("link", { name: "Review" }));
+  const sameWorkspace = finish.length;
+  const secondSession = { ...session, user: { id: "second-user" }, csrf_token: "other-token" };
+  view.rerender(
+    <Workspace key="second" initial={secondSession} signedOut={vi.fn()} screen="review" />,
+  );
+  const differentSession = finish.length;
+  const otherEntity = { ...entity, id: "other-entity" };
+  view.rerender(
+    <Workspace
+      key="other-entity"
+      entityId={otherEntity.id}
+      initial={{ ...secondSession, entities: [entity, otherEntity] }}
+      signedOut={vi.fn()}
+      screen="review"
+    />,
+  );
+  await act(async () => {
+    for (const complete of finish) complete(json({ detail: { code: "review_not_found" } }, 404));
+  });
+  expect(sameWorkspace).toBe(1);
+  expect(differentSession).toBe(2);
+  expect(reviewPaths).toEqual([
+    "/api/entities/entity/reviews/2026-11-01",
+    "/api/entities/entity/reviews/2026-11-01",
+    "/api/entities/other-entity/reviews/2026-11-01",
+  ]);
+});
+
 it("edits annual fixed-cost inputs, previews a weekly change and keeps the stored monthly result visible", async () => {
   const fixed = {
     fixed_cost_id: "fixed-a",
