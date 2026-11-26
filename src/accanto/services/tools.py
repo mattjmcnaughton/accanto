@@ -1404,7 +1404,8 @@ CATALOG: tuple[CatalogTool, ...] = (
     ),
     _write(
         "save_plan_version",
-        "Save a Plan's draft as an immutable version.",
+        "Save a Plan's draft as an immutable version. Unreviewed Reviews that "
+        "compared with its previous latest version move to the new one.",
         t.SavePlanVersion,
         build_save_version,
     ),

@@ -54,7 +54,7 @@ same rule applies to every listed command, including correction/deletion paths.
 | Savings lifecycle | [Decisions 13–14](../../CONTEXT.md#decision-13--archive-a-savings-account-agreed) | Archive/reopen account; any affected activity | Zero balance and lifecycle provenance; account/goals/audit same transaction | Nonzero rejects; reopening leaves previously completed/inactive goals unchanged |
 | Debt and investment observations | [Decisions 20–23](../../CONTEXT.md#decision-20--archive-a-debt-account-agreed); [Debt accounts](../../CONTEXT.md#debt-accounts) | Setup, observation create/correct/delete, debt archive/reopen, payments/contributions | Pure date/lifecycle/latest-observation rules; partial unique account/date; opening protected | $300 payment does not infer principal; zero observation allows archival; duplicate rejects |
 | Unknown versus zero | [Domain boundaries](../../CONTEXT.md#domain-boundaries) | Record/correct/delete actual; read Review | Pure rollup from current entries and expected saved lines; missing stays null | Explicit zero resolves one item; category adjustment does not resolve other unknown sources |
-| Monthly Review and annotation | [Start Review](../../CONTEXT.md#start-a-monthly-review); [Annotate month](../../CONTEXT.md#annotate-a-month-as-reviewed-or-closed) | Create/retarget/edit Review/checkpoint | Entity/month unique; saved-only target; visible prior-month default; no financial lock | New v3 does not replace prior-month v2; mark with gaps remains editable |
+| Monthly Review and annotation | [Start Review](../../CONTEXT.md#start-a-monthly-review); [Annotate month](../../CONTEXT.md#annotate-a-month-as-reviewed-or-closed) | Create/retarget/edit Review/checkpoint | Entity/month unique; saved-only target; visible prior-month default; no financial lock | New v3 moves unreviewed months off v2 and is preselected after prior-month v2; reviewed months keep v2 with a newer-version notice; mark with gaps remains editable |
 | Transparent percentages | [Percentage metrics](../../CONTEXT.md#percentage-metrics--explicit-choices-before-defaults) | Read Plan/Review views | Named numerator/base and amounts; unknown/zero denominator → unavailable | $2,500/$4,000=62.5%; $2,500/$5,000=50%, distinct labels |
 | Entity isolation | [Constitution §2](../../CONSTITUTION.md#2-support-both-ui-and-api-operation); [Domain boundaries](../../CONTEXT.md#domain-boundaries) | Every read/write/retry | Current ownership authorization; scoped repository queries and FKs | Foreign Entity UUID denied, including previously successful retries after access loss |
 | Durable audited writes | [Constitution §1](../../CONSTITUTION.md#1-represent-finances-honestly), [§7](../../CONSTITUTION.md#7-make-failures-explicit-and-preserve-data) | Every saved financial change | Service transaction; immutable audit DB permissions/triggers; revision and retry rows | Inject failure → no partial records; same key → one audit; stale key with changed input → conflict |
@@ -876,8 +876,9 @@ Acceptance for this increment:
    differences are $0 and -$725. Draft edits/new versions leave v1 and its Review
    unchanged. Missing expected income remains unknown until an explicit entry,
    including zero. Saving an overallocated Plan remains allowed with a warning.
-3. November visibly preselects October's version even after a newer version exists;
-   without the immediately previous month's Review, require an explicit selection.
+3. November visibly preselects the latest saved version of October's Plan
+   (amended 2026-11: previously October's exact version); without the immediately
+   previous month's Review, require an explicit selection.
    Creating a Review does not create/copy activity. No cross-Plan match is inferred.
 4. Edit and soft-delete an entry through the UI and observe the same API rollups.
    Reload durability, failed loads, failed saves, stale edits and a lost response

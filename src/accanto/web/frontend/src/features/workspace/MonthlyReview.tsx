@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fmtMonth, fmtShort, monthName, plural } from "../../lib/format";
-import { type PlanRevision, monthly } from "../../lib/monthly";
+import { type PlanGroup, type PlanRevision, monthly } from "../../lib/monthly";
 import { Dialog, Empty, Head } from "../../ui";
 import { LoadProblem, LoadingCard, defaultDate } from "./Activity";
 import { type Resolution, ReviewDetails, complete, reviewSections } from "./ReviewDetails";
@@ -10,6 +10,13 @@ import "./activity-review.css";
 
 const versionLabel = (r: PlanRevision) =>
   `${r.name} v${r.number}${r.saved_at ? `, saved ${fmtShort(r.saved_at.slice(0, 10))}` : ""}`;
+
+/** The newest saved version of the Plan that owns `uuid`. */
+const latestSaved = (plans: PlanGroup[], uuid: string) =>
+  plans
+    .find((plan) => plan.revisions.some((r) => r.uuid === uuid))
+    ?.revisions.filter((r) => r.saved)
+    .reduce<PlanRevision | undefined>((a, r) => (a && a.number >= r.number ? a : r), undefined);
 
 /** The shell owns the month: changing it remounts the Review, after the unsaved-change guard. */
 export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Screen) => void }) {
@@ -38,12 +45,18 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
   const [help, setHelp] = useState(false);
   const editedRef = useRef(false);
   editedRef.current = edited;
+  // Follow the previous month's Plan to its latest saved version.
   useEffect(() => {
-    setChoice(previous.kind === "ready" ? previous.data.version.uuid : "");
-  }, [previous]);
+    if (previous.kind !== "ready") return setChoice("");
+    const uuid = previous.data.version.uuid;
+    setChoice(plans.kind === "ready" ? (latestSaved(plans.data, uuid)?.uuid ?? uuid) : uuid);
+  }, [previous, plans]);
+  // The compared version is saved on its own, so it always mirrors the server.
+  useEffect(() => {
+    if (state.kind === "ready") setTarget(state.data.version.uuid);
+  }, [state]);
   useEffect(() => {
     if (state.kind === "ready" && !edited) {
-      setTarget(state.data.version.uuid);
       setNote(state.data.review.note);
       setReviewed(Boolean(state.data.review.reviewed_at));
     }
@@ -57,17 +70,38 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
     plans.kind === "ready" && state.kind === "ready"
       ? plans.data.find((plan) => plan.revisions.some((r) => r.uuid === state.data.version.uuid))
       : null;
+  const newer =
+    plans.kind === "ready" && state.kind === "ready"
+      ? latestSaved(plans.data, state.data.version.uuid)
+      : undefined;
+  const newerVersion =
+    state.kind === "ready" && newer && newer.number > state.data.version.number ? newer : null;
   const retry = () => setReload((x) => x + 1);
   const touch = () => {
     setEdited(true);
     p.dirty(true);
   };
-  const saveReview = (changes: { reviewed?: boolean; checkpoint?: boolean } = {}) => {
-    if (state.kind !== "ready" || !target) return;
+  /** Saves a new compared version at once, keeping any unsaved note or mark unsaved. */
+  const retarget = (version: string) => {
+    if (state.kind !== "ready" || version === state.data.version.uuid) return;
+    setTarget(version);
     p.save(
       monthly.editReview(p.entity.id, `${month}-01`, {
         expected_revision: state.data.review.revision,
-        version_id: target,
+        version_id: version,
+        note: state.data.review.note,
+        reviewed: Boolean(state.data.review.reviewed_at),
+        checkpoint: false,
+      }),
+      () => p.dirty(editedRef.current),
+    );
+  };
+  const saveReview = (changes: { reviewed?: boolean; checkpoint?: boolean } = {}) => {
+    if (state.kind !== "ready") return;
+    p.save(
+      monthly.editReview(p.entity.id, `${month}-01`, {
+        expected_revision: state.data.review.revision,
+        version_id: state.data.version.uuid,
         note,
         reviewed: changes.reviewed ?? reviewed,
         checkpoint: changes.checkpoint ?? false,
@@ -172,10 +206,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
                   value={target}
                   required
                   disabled={p.busy}
-                  onChange={(e) => {
-                    setTarget(e.target.value);
-                    touch();
-                  }}
+                  onChange={(e) => retarget(e.target.value)}
                 >
                   {(currentPlan?.revisions.filter((r) => r.saved) || [state.data.version]).map(
                     (r) => (
@@ -193,6 +224,25 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
           </>
         )}
       </div>
+      {newerVersion && state.kind === "ready" && (
+        <output className="ar-banner">
+          <span>
+            A newer version is saved: {versionLabel(newerVersion)}. This Review still compares with
+            v{state.data.version.number}
+            {state.data.review.reviewed_at
+              ? ` because ${name} was marked reviewed against it.`
+              : "."}
+          </span>
+          <button
+            type="button"
+            className="btn sm"
+            disabled={p.busy}
+            onClick={() => retarget(newerVersion.uuid)}
+          >
+            Compare with v{newerVersion.number}
+          </button>
+        </output>
+      )}
       {state.kind === "ready" && Boolean(state.data.inbox_waiting) && (
         <output className="ar-banner">
           <span>
@@ -262,7 +312,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
               </label>
               <small id="review-start-hint" className="note">
                 {previous.kind === "ready"
-                  ? `Preselected from ${previousName}'s Review.`
+                  ? `Preselected from ${previousName}'s Review, at its Plan's latest saved version.`
                   : `${previousName} has no Review, so nothing is preselected.`}{" "}
                 Activity already recorded in {name} is included.
               </small>
@@ -314,7 +364,6 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
                 <button
                   type="button"
                   className="btn pri"
-                  disabled={!target}
                   onClick={() => saveReview({ reviewed: !reviewed })}
                 >
                   {reviewed
@@ -324,7 +373,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
                       : `Mark ${name} reviewed`}
                 </button>
                 {edited && (
-                  <button type="submit" className="btn" disabled={!target}>
+                  <button type="submit" className="btn">
                     Save changes
                   </button>
                 )}
