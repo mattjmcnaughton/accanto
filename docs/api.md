@@ -908,7 +908,7 @@ point it at the fake server in `tests/fakes/ynab_server.py`.
 | GET | `/sources/{source_id}/accounts` | The plan's accounts and which are selected |
 | PUT | `/sources/{source_id}/accounts` | `{account_ids, expected_revision}`; default is none; adding an account re-reads history |
 | DELETE | `/sources/{source_id}` | `{expected_revision}`; stops importing the plan; recorded entries and inbox history stay |
-| POST | `/sources/{source_id}/sync` | Fetch changes since the stored cursor and stage them; returns counts. Records nothing |
+| POST | `/sources/{source_id}/sync` | Fetch changes since the stored cursor and stage the cleared ones; returns counts (`added`, `changed`, `removed`, `conflicts`, `unchanged`, `ignored`, and `uncleared`: new transactions not staged because they are still uncleared). Records nothing |
 | GET | `/inbox?status=&month=YYYY-MM-01&source=&proposed=&limit=` | Staged transactions (default: all but removed), oldest first, with source facts, proposal, rejections and revision; `proposed=true` keeps only items with a proposal, `false` only items without one; `limit` (1–500) returns the first items, to work in chunks |
 | POST | `/inbox/proposal-run` | `202`; starts the built-in agent's proposal run over every waiting item without a proposal, or returns the active run. Records nothing. Needs the assistant on and an Agent mode other than Read only (`agent_disabled`, `read_only`); a browser session or API key (`proposal_run_credential` otherwise) |
 | GET | `/inbox/proposal-run` | `{run, waiting, proposed, needs_you, chunk}`: the latest run (`state` queued, running, succeeded, failed or cancelled; `steps`; `counts` proposed, needs_you, failed; `error_code`) and the waiting items' proposal counts |
@@ -947,7 +947,11 @@ so repeating the same press returns the first outcome without a second entry.
 
 Statuses: `waiting`, `skipped`, `recorded`, `conflict` (recorded, then changed or
 deleted in the source; the entry is never edited by sync), and `removed`
-(deleted in the source before recording). A YNAB failure changes neither the
+(deleted in the source before recording). Sync stages a new transaction only
+once YNAB reports it `cleared` or `reconciled`; YNAB sends it again in a later
+delta when it clears, at its posted amount and date. A transaction deleted
+before it clears, such as a cancelled hold, is never staged. Staged items keep
+their status if YNAB later reports them uncleared. A YNAB failure changes neither the
 cursor nor the inbox. YNAB milliunits convert to exact cents; an amount with
 partial cents fails the sync. `kind` is `ordinary`, `transfer_on_budget`,
 `transfer_tracking` or `card_payment`; how to treat each is the proposer's choice.

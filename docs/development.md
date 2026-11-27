@@ -419,9 +419,10 @@ terminal from the repository root, with PostgreSQL running (in an orb:
 7. Connect the synthetic plan: **Transactions inbox** → paste the token
    `synthetic-ynab-token-not-real` → **Find plans** → *Fixture household plan* →
    **Connect this plan** → check *Example Checking* and *Sample Rewards Card* →
-   **Import these accounts** → **Sync now**. Seed 7 stages 19 waiting items:
-   purchases, a split, a refund, payroll, transfers, a card payment, an
-   unapproved and uncleared dinner, a bill and a duplicate charge.
+   **Import these accounts** → **Sync now**. Seed 7 stages 18 waiting items:
+   purchases, a split, a refund, payroll, transfers, a card payment, a bill and
+   a duplicate charge. Its unapproved, uncleared dinner is not staged until it
+   clears; `POST /fake/advance` clears it.
 
 8. Open the assistant with **Assistant** or `Ctrl/⌘ J`. With the stub model,
    messages containing "categorize" propose categories for the inbox, "spend"

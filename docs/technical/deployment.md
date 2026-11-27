@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6o035`.
+   supported revision is `6p036`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -157,6 +157,13 @@ never reads them. No grant changes.
 nullable `debt_account.interest_rate_percent` and `monthly_payment`. Additive,
 no backfill; `6n034` code never reads or writes them, so its inserts and edits
 leave them null or unchanged. No grant changes.
+`6p036` deletes waiting staged transactions whose latest source copy is
+uncleared, with their proposals ([TDD 02](../tdds/02-transactions-inbox.md),
+decision F6); recorded, conflict, skipped and removed items are kept. Not
+additive: back up first if those proposals matter. No schema change, so `6o035`
+code runs on it unchanged (it would stage uncleared transactions again). The
+downgrade restores nothing; a later sync stages each once it clears. No grant
+changes.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

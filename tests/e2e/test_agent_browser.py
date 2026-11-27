@@ -249,10 +249,11 @@ def test_agent_journey(tmp_path):
         assert FAKE_TOKEN not in browser("get", "html", "body")
         before = waiting()
         # The generator's month on checking: 3 groceries, coffee, a purchase
-        # and its refund, payroll, 3 split lines, 3 transfers, rent, the
-        # unapproved dinner, a bill and a duplicate = 17; on the card: dinner
-        # and household goods = 2. Brokerage and savings are not imported.
-        assert before == 19, before
+        # and its refund, payroll, 3 split lines, 3 transfers, rent, a bill and
+        # a duplicate = 16; on the card: dinner and household goods = 2. The
+        # uncleared dinner is held until it clears (F6). Brokerage and savings
+        # are not imported.
+        assert before == 18, before
 
         # The background proposal run proposes for every waiting item, in steps
         # on the server, and records nothing.
@@ -265,7 +266,7 @@ def test_agent_journey(tmp_path):
 
         # Proposals record nothing: the waiting count does not move.
         ask("Please categorize my inbox")
-        assert "I proposed categories for 19 inbox items" in last_reply()
+        assert f"I proposed categories for {before} inbox items" in last_reply()
         until("!/No proposal yet/.test(document.querySelector('#main').textContent)")
         assert waiting() == before
 

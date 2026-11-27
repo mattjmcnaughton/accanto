@@ -983,7 +983,16 @@ async def sync(session, token, entity_uuid, source_uuid, source: TransactionSour
         log.warning("inbox_sync_failed", source=str(source_uuid), code=error.code)
         raise source_rejection(error) from None
     counts = dict.fromkeys(
-        ("added", "changed", "removed", "conflicts", "unchanged", "ignored"), 0
+        (
+            "added",
+            "changed",
+            "removed",
+            "conflicts",
+            "unchanged",
+            "ignored",
+            "uncleared",
+        ),
+        0,
     )
     async with session.begin():
         _, entity = await authorize(session, token, entity_uuid, lock=True)
@@ -1059,6 +1068,11 @@ async def sync(session, token, entity_uuid, source_uuid, source: TransactionSour
                 for child in children.get(item.source_ref, []):
                     if not child["latest"]["deleted"]:
                         await apply(child, {**child["latest"], "deleted": True}, True)
+                continue
+            if target is None and not item.cleared:
+                # F6: staged only once cleared. YNAB sends it again when it
+                # clears; a hold cancelled first never arrives.
+                counts["uncleared"] += 1
                 continue
             if target is None:
                 await session.execute(

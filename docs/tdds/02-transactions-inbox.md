@@ -53,7 +53,8 @@ transactions, and non-USD sources.
    (default none).
 2. **Sync.** The adapter fetches changes since its stored cursor and stages
    new, changed, and deleted transactions. Sync records nothing as an actual
-   entry.
+   entry. It stages a new transaction only once the source reports it cleared
+   (F6).
 3. **Propose (optional).** Any API caller, typically an AI agent, attaches a
    proposal to staged transactions: "pre-label the transactions". Accanto
    holds no suggestion logic of its own.
@@ -148,7 +149,7 @@ StagedTransactionInput
   source_category     optional (id, name)
   memo                optional
   kind                ordinary | transfer_on_budget | transfer_tracking | card_payment
-  cleared, approved   booleans; false where the source has no such concept
+  cleared, approved   booleans; true where the source has no such concept
   deleted             bool
 ```
 
@@ -303,10 +304,10 @@ nothing. A YNAB failure changes nothing. The Review shows its waiting count.
 | A1 | Generic Transactions inbox with source adapters; YNAB is the only adapter. No generic provider framework. |
 | P1 | No suggestion engine or mapping tables. Callers attach proposals through the API; the person finalizes. |
 | I2 | Any authenticated caller with Entity access may use every inbox endpoint, including record. No new key scopes. |
+| F6 | Stage only cleared transactions. Sync skips a new transaction the source reports uncleared (YNAB `uncleared`, a bank's pending) and stores nothing for it. YNAB returns a transaction in the delta again whenever it changes, including when it clears (`cleared` or `reconciled`), so the next sync stages it then, at its posted amount and date. One deleted before it clears (a cancelled hold, or a pending entry YNAB replaced with a posted one at a different amount) is never staged. A staged item that YNAB later reports uncleared keeps its status, and F7 still applies to recorded items. Unapproved but cleared transactions are staged with a badge. Migration `6p036` deletes waiting items staged earlier whose latest copy is uncleared; the next sync stages each once it clears. |
 | D1 | Sending staged transaction data to an outside AI provider is allowed only when the person explicitly enables it. That opt-in belongs to the agent's design; this API sends nothing outside Accanto. |
 
 ### Open
-- **F6.** Stage unapproved or uncleared transactions now, or wait until approved.
 - **F7.** Source edits and deletes after recording: flag only (proposed), with
   keep-or-delete chosen by the person.
 - **F8.** Payee: keep it in `note`, or add a payee field to actual entries.
@@ -319,7 +320,7 @@ nothing. A YNAB failure changes nothing. The Review shows its waiting count.
 - **UI.** Accept the mockup's binding changes (`v`, `1`–`6` opening pickers,
   oldest first). Until decided, follow the mockup.
 
-F6 and F7 default to the mockup's behavior (stage unapproved items with a
-badge; flag deletes as conflicts resolved by keep or delete) and stay open.
+F7 defaults to the mockup's behavior (flag deletes as conflicts resolved by
+keep or delete) and stays open.
 T1 defaults to encryption at rest with a new `source_secret_key` setting; T2 to
 `httpx`; T3 to manual sync.

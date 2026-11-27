@@ -7,7 +7,7 @@ router = APIRouter(tags=["health"])
 
 # Bump deliberately when adopting a new schema; rollback compatibility must be
 # assessed before changing this contract. Connectivity alone cannot admit traffic.
-SCHEMA_REVISION = "6o035"
+SCHEMA_REVISION = "6p036"
 
 
 @router.get("/healthz")
