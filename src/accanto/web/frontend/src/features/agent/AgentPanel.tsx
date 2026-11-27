@@ -18,7 +18,7 @@ import { ApiError, type BrowserSession, type UUID } from "../../lib/api";
 import { formatMoney } from "../../lib/format";
 import type { WriteSpec } from "../../lib/monthly";
 import { Icon } from "../../ui";
-import type { Entity } from "../workspace/shared";
+import { type Entity, composing } from "../workspace/shared";
 import { Markdown } from "./Markdown";
 import "./agent.css";
 
@@ -1042,9 +1042,16 @@ export function AgentPanel(p: AgentPanelProps) {
               placeholder="What did I spend on groceries last month?"
               onChange={(event) => setText(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                if (event.key === "Enter" && !composing(event)) {
                   event.preventDefault();
-                  void send();
+                  // Enter and Shift+Enter send; Alt or Ctrl+Enter starts a new line, which
+                  // textareas do not do for those keys themselves.
+                  if (!event.altKey && !event.ctrlKey) return void send();
+                  const box = event.currentTarget;
+                  if (box.value.length - (box.selectionEnd - box.selectionStart) >= box.maxLength)
+                    return;
+                  box.setRangeText("\n", box.selectionStart, box.selectionEnd, "end");
+                  setText(box.value);
                 } else if (event.key === "ArrowUp" && !text && !live) {
                   // Up in an empty box brings back the last question to edit and send again.
                   const last = [...messages].reverse().find((m) => m.role === "owner");
@@ -1096,7 +1103,7 @@ export function AgentPanel(p: AgentPanelProps) {
               <small className="agent-hint">
                 {text.length > 3600
                   ? `${4000 - text.length} characters left`
-                  : "Enter to send · Shift+Enter for a new line"}
+                  : "Enter or Shift+Enter to send · Alt+Enter for a new line"}
               </small>
               {live ? (
                 <button

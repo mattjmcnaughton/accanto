@@ -407,7 +407,18 @@ def test_agent_journey(tmp_path):
         assert "categorize your recurring payees" in last_reply()
         ask("Example Grocer is groceries; skip transfers between my accounts.")
         assert "name saving goals" in last_reply()
-        ask("Goals are named after the purchase, like Laptop.")
+        # From the keyboard: Alt+Enter starts a new line and Shift+Enter sends.
+        compose = ".agent textarea"
+        browser("focus", compose)
+        browser("keyboard", "type", "Goals are named after the purchase,")
+        browser("press", "Alt+Enter")
+        browser("keyboard", "type", "like Laptop.")
+        typed = "Goals are named after the purchase,\nlike Laptop."
+        until(f"document.querySelector({compose!r}).value === {typed!r}")
+        browser("press", "Shift+Enter")
+        until(f"document.querySelector({compose!r}).value === ''")
+        until("!document.querySelector('.agent-log[aria-busy=true]')")
+        idle()
         ask("Ask before drafting anything over $500.")
         assert "Shall I save it?" in last_reply()
         assert "Example Grocer is groceries" in last_reply()
@@ -422,7 +433,10 @@ def test_agent_journey(tmp_path):
         until("/No pending changes/.test(document.querySelector('.agent').textContent)")
         go("Settings")
         until("/Laptop/.test(document.querySelector('#agent-md')?.value ?? '')")
-        assert "## Approvals" in value("document.querySelector('#agent-md').value")
+        agent_md = browser("eval", "document.querySelector('#agent-md').value")
+        assert "## Approvals" in agent_md
+        # The answer sent with Shift+Enter kept its line break (JSON-escaped here).
+        assert "purchase,\\nlike Laptop." in agent_md
 
         def choose_mode(mode, label):
             go("Settings")
