@@ -243,16 +243,20 @@ it("gives the phone tabs to daily screens and groups the rest in More", async ()
   const main = within(screen.getByRole("main"));
   expect(main.getAllByRole("link").map((row) => row.textContent)).toEqual([
     "Review",
-    "Routines",
-    "Schedules",
     "Plans",
     "Projections",
     "Savings",
     "Investments",
-    "Giving",
     "Loans",
+    "Giving",
+    "Routines",
+    "Schedules",
     "Settings",
   ]);
+  // More keeps the sidebar's groups, in the sidebar's order.
+  expect(
+    Array.from(document.querySelectorAll("main .navlabel"), (label) => label.textContent),
+  ).toEqual(["This month", "Planning", "Balances", "Recurring"]);
 });
 it("returns focus after a dialog and starts j in a screen's own rows", async () => {
   const session = {
