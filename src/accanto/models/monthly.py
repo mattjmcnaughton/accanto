@@ -282,6 +282,14 @@ entries = table(
     UniqueConstraint("id", "entity_id"),
     UniqueConstraint("recording_order"),
 )
+# Activity pages: newest financial date first, then recording order.
+Index(
+    "actual_entry_entity_date",
+    entries.c.entity_id,
+    entries.c.financial_date.desc(),
+    entries.c.id,
+    postgresql_where=entries.c.deleted_at.is_(None),
+)
 assignments = table(
     "entry_income_source",
     Column("actual_entry_id", BigInteger, nullable=False, unique=True),

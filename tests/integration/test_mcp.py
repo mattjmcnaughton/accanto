@@ -267,9 +267,17 @@ async def scenario():
                 )
             sidebar = ToolContext(sessions, owner.acting_as("agent"))
             month = t.ActivityQuery(month="2026-11-01")
-            rest_rows = (await client.get(prefix + "/activity", headers=api)).json()
+            rest_page = (
+                await client.get(
+                    prefix + "/activity/page",
+                    params={"month": "2026-11-01", "limit": 200},
+                    headers=api,
+                )
+            ).json()
             rest = t.ActivityList(
-                entries=[t.project_entry(r) for r in rest_rows], truncated=False
+                entries=[t.project_entry(r) for r in rest_page["entries"]],
+                truncated=False,
+                next_cursor=rest_page["next_cursor"],
             ).model_dump(mode="json")
             over_mcp = await mcp.call(
                 "list_activity", {"entity_id": str(entity), "month": "2026-11-01"}

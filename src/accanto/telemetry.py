@@ -51,6 +51,17 @@ def request_attributes(_request, attributes):
     return {"errors": errors} if errors else None
 
 
+def drop_query(span, scope):
+    """Export request URLs without their query string, which can carry search
+    words such as Activity's `q`."""
+    if not scope.get("query_string") or not span.is_recording():
+        return
+    for key in ("http.target", "http.url"):
+        value = (getattr(span, "attributes", None) or {}).get(key)
+        if isinstance(value, str):
+            span.set_attribute(key, value.split("?", 1)[0])
+
+
 # Traceback lines that carry no exception text: headers, frames with their
 # source line and carets, and exception class names without their message.
 _HEADER = re.compile(
@@ -178,5 +189,8 @@ def instrument(app: FastAPI) -> None:
         logfire.instrument_httpx()
         _configured = True
     logfire.instrument_fastapi(
-        app, request_attributes_mapper=request_attributes, excluded_urls=EXCLUDED_URLS
+        app,
+        request_attributes_mapper=request_attributes,
+        excluded_urls=EXCLUDED_URLS,
+        server_request_hook=drop_query,
     )

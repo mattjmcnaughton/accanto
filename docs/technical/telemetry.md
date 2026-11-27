@@ -13,7 +13,7 @@ dependency.
 
 | Integration | Records | What keeps values out |
 | --- | --- | --- |
-| FastAPI | one span per request: route template, path with UUIDs, status, timings, client address and user agent | `request_attributes` keeps only the `type` and `loc` of validation errors, never argument values or the rejected `input`. Headers are not captured. `/api/auth/callback` (its URL carries the OIDC code), `/healthz` and `/readyz` are not traced. |
+| FastAPI | one span per request: route template, path with UUIDs, status, timings, client address and user agent | `request_attributes` keeps only the `type` and `loc` of validation errors, never argument values or the rejected `input`. `drop_query` exports URLs without their query string, which can carry search words. Headers are not captured. `/api/auth/callback` (its URL carries the OIDC code), `/healthz` and `/readyz` are not traced. |
 | SQLAlchemy | one span per statement: SQL text with `$1` placeholders, database name and role | Bind values are never recorded; the engine also sets `hide_parameters=True`. |
 | httpx | outbound YNAB and Auth0 calls: method, URL (YNAB plan and account IDs), status | Tokens travel in headers or bodies, which are not captured. |
 | Pydantic AI | agent run, model request and tool spans; model name, token counts | `include_content=False` and `include_binary_content=False`: messages keep only part types and tool names. |

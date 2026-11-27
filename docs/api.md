@@ -70,7 +70,8 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | POST | `/plans/{plan_id}/versions` | Expected draft revision; freezes snapshot and creates next draft. Unreviewed Reviews on the previous latest version move to the new version |
 | POST | `/activity` | Income/fixed-cost/spending/saving with explicit date, amount, optional source/fixed-cost/spending-subcategory/goal and note; `is_adjustment` for signed corrections; one savings funding origin on spending |
 | POST | `/activity/known-total` | Desired total and contributing-entry fingerprint; fixed-cost totals remain category-level and unassigned; saving requires a goal; creates one signed adjustment |
-| GET | `/activity` | Current entries ordered by financial date and recording order; optional `?tag_id=` keeps entries with that tag |
+| GET | `/activity` | Every current entry (full history) ordered by financial date and recording order; optional `?tag_id=` keeps entries with that tag |
+| GET | `/activity/page?month=YYYY-MM-01&category=&tag_id=&q=&entry_id=&cursor=&limit=` | One page of current entries, newest financial date first, then recording order: `{entries, purchases, next_cursor, total, matching}`. `limit` is 1–500 (default 100); pass `next_cursor` (the last entry's UUID, null on the last page) as `cursor` for the next page. `q` searches every word in dates, category, note, assigned names, tags and amounts. `total` counts the month (or all history), `matching` what the filters keep; `purchases` are refunds' purchases the page does not hold |
 | PUT | `/activity/{entry_id}` | Replacement entry plus expected revision |
 | DELETE | `/activity/{entry_id}` | Expected revision in JSON body; soft deletes |
 | POST | `/reviews` | Month's first date and saved version UUID |

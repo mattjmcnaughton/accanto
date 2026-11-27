@@ -36,6 +36,7 @@ from accanto.services.destinations import read_destinations
 from accanto.services.monthly import (
     authorize,
     read_activity,
+    read_activity_page,
     read_plans,
     read_review,
     write,
@@ -292,17 +293,20 @@ async def get_monthly_review(ctx, entity_id, args: t.MonthInput, key):
 
 async def list_activity(ctx, entity_id, args: t.ActivityQuery, key):
     async with ctx.sessions() as session:
-        rows = await read_activity(session, ctx.actor, entity_id, args.tag_id)
-    end = inbox.next_month(args.month)
-    selected = [
-        row
-        for row in rows
-        if args.month <= date.fromisoformat(row["financial_date"]) < end
-        and (args.category is None or row["category"] == args.category)
-    ]
+        page = await read_activity_page(
+            session,
+            ctx.actor,
+            entity_id,
+            month=args.month,
+            category=args.category,
+            tag_id=args.tag_id,
+            cursor=args.cursor,
+            limit=LIST_CAP,
+        )
     return t.ActivityList(
-        entries=[t.project_entry(row) for row in selected[:LIST_CAP]],
-        truncated=len(selected) > LIST_CAP,
+        entries=[t.project_entry(row) for row in page["entries"]],
+        truncated=page["next_cursor"] is not None,
+        next_cursor=page["next_cursor"],
     )
 
 
@@ -1211,8 +1215,9 @@ CATALOG: tuple[CatalogTool, ...] = (
     ),
     _read(
         "list_activity",
-        "Recorded activity entries for one month, optionally one category or one "
-        "tag; with notes and tag_ids. Capped at 200.",
+        "Recorded activity entries for one month, newest first, optionally one "
+        "category or one tag; with notes and tag_ids. 200 per page: pass "
+        "next_cursor as cursor for more.",
         t.ActivityQuery,
         t.ActivityList,
         list_activity,

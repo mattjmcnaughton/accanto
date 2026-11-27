@@ -290,6 +290,12 @@ async def drive(origin, secrets, suffix):
         activity = await client.get(prefix + "/activity", headers=cookie)
         review = await client.get(f"{prefix}/reviews/{year}-10-01", headers=cookie)
         assert note in activity.text and amount in review.text
+        # A search's words travel in the query string, which spans must leave out.
+        searched = await client.get(
+            prefix + "/activity/page", params={"q": note, "limit": 1}, headers=cookie
+        )
+        assert searched.json()["entries"][0]["note"] == note
+        assert searched.json()["next_cursor"]
 
         # MCP: tool results carry the same values.
         listed = await client.post(

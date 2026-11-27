@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PlanRevision } from "../../lib/monthly";
+import { activityPage } from "../../stories/mocks/activity";
 import { PlanBreakdown } from "./PlanBreakdown";
 import { Plans } from "./Plans";
 import { Workspace } from "./Workspace";
@@ -65,7 +66,7 @@ it.each([
   ],
   ["plans", ["plans"]],
   ["schedules", ["schedules"]],
-  ["activity", ["activity", "spending-subcategories", "tags"]],
+  ["activity", ["activity/page?month=2026-11-01&limit=100", "spending-subcategories", "tags"]],
   ["review", ["plans", "reviews/2026-10-01", "reviews/2026-11-01"]],
   [
     "inbox",
@@ -89,6 +90,7 @@ it.each([
     const resource = String(path).replace(`/api/entities/${entity.id}/`, "");
     reads.push(resource);
     if (resource.startsWith("reviews/")) return json({ detail: { code: "review_not_found" } }, 404);
+    if (resource.startsWith("activity/page")) return json(activityPage(String(path), []));
     return json(resource === "plans" ? plans : []);
   });
   await act(async () => {
@@ -217,7 +219,9 @@ it("refreshes only visible Activity after a write and restores the unsaved Plan"
       return json(entry);
     }
     reads.push(resource);
-    return json(resource === "plans" ? plans : resource === "activity" && saved ? [entry] : []);
+    if (resource.startsWith("activity/page"))
+      return json(activityPage(String(path), saved ? [entry] : []));
+    return json(resource === "plans" ? plans : []);
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);
   fireEvent.click(nav().getByRole("link", { name: "Plans" }));
@@ -234,7 +238,11 @@ it("refreshes only visible Activity after a write and restores the unsaved Plan"
   await act(async () => fireEvent.click(nav().getByRole("link", { name: "Plans" })));
   fireEvent.click(screen.getByRole("button", { name: "Details for Salary" }));
   expect(screen.getByDisplayValue("4200.00")).toBeDefined();
-  expect(refreshReads).toEqual(["activity", "spending-subcategories", "tags"]);
+  expect(refreshReads).toEqual([
+    "activity/page?month=2026-11-01&limit=100",
+    "spending-subcategories",
+    "tags",
+  ]);
   expect(reads.sort()).toEqual([
     "debts",
     "giving-recipients",

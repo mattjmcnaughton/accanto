@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ProductionHome } from "../../routes/__root";
+import { activityPage } from "../../stories/mocks/activity";
 import { Workspace } from "./Workspace";
 import { previousMonth, sourceChoices } from "./shared";
 
@@ -115,7 +116,11 @@ it("opens the entry dialog from any screen and shares one month across Home, Act
     csrf_token: "test",
     entities: [{ id: "e", name: "Synthetic Entity", today: "2026-10-17", time_zone: "UTC" }],
   };
-  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("[]"));
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).includes("/activity/page")
+      ? new Response(JSON.stringify(activityPage(String(path), [])))
+      : new Response("[]"),
+  );
   const navigate = vi.fn();
   const view = render(
     <Workspace initial={session} signedOut={vi.fn()} screen="settings" navigate={navigate} />,
@@ -208,7 +213,11 @@ it("gives the phone tabs to daily screens and groups the rest in More", async ()
     csrf_token: "test",
     entities: [{ id: "e", name: "Synthetic Entity", today: "2026-11-10", time_zone: "UTC" }],
   };
-  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("[]"));
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).includes("/activity/page")
+      ? new Response(JSON.stringify(activityPage(String(path), [])))
+      : new Response("[]"),
+  );
   const navigate = vi.fn();
   render(
     <Workspace initial={session} signedOut={vi.fn()} screen="schedules" navigate={navigate} />,
@@ -267,7 +276,9 @@ it("returns focus after a dialog and starts j in a screen's own rows", async () 
     is_adjustment: false,
   };
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
-    String(path).endsWith("/activity") ? new Response(JSON.stringify([entry])) : new Response("[]"),
+    String(path).includes("/activity/page")
+      ? new Response(JSON.stringify(activityPage(String(path), [entry])))
+      : new Response("[]"),
   );
   render(<Workspace initial={session} signedOut={vi.fn()} screen="activity" navigate={vi.fn()} />);
   await screen.findByText("Synthetic lunch");

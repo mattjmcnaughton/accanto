@@ -146,6 +146,28 @@ export interface Activity {
   remaining_refundable?: DecimalString | null;
   tag_ids?: UUID[];
 }
+/** One page of Activity, newest financial date first (`GET /activity/page`). */
+export interface ActivityPage {
+  entries: Activity[];
+  /** Purchases of refunds on this page that the page does not hold. */
+  purchases: Activity[];
+  /** Pass as `cursor` for the next page; null on the last one. */
+  next_cursor: UUID | null;
+  /** Entries in the month, or in all months without one. */
+  total: number;
+  /** Of those, the ones the category, tag and search keep. */
+  matching: number;
+}
+export interface ActivityQuery {
+  /** The first day of the month; omitted for all months. */
+  month?: IsoDate;
+  category?: Activity["category"];
+  tag_id?: UUID;
+  q?: string;
+  entry_id?: UUID;
+  cursor?: UUID;
+  limit?: number;
+}
 export interface RefundInput {
   date: IsoDate;
   amount: DecimalString;
@@ -292,6 +314,24 @@ export const monthly = {
     loadResource(`${root(entityId)}/plans`, (plans) => plans.length === 0),
   activity: (entityId: UUID): Promise<LoadState<Activity[]>> =>
     loadResource(`${root(entityId)}/activity`, (entries) => entries.length === 0),
+  activityPage: (entityId: UUID, query: ActivityQuery): Promise<LoadState<ActivityPage>> => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query))
+      if (value !== undefined && value !== "") params.set(key, String(value));
+    return loadResource(`${root(entityId)}/activity/page?${params}`, () => false);
+  },
+  /** Every page of a bounded query, such as one month's category for a known total. */
+  activityAll: async (entityId: UUID, query: ActivityQuery): Promise<LoadState<Activity[]>> => {
+    const entries: Activity[] = [];
+    let cursor: UUID | undefined;
+    do {
+      const page = await monthly.activityPage(entityId, { ...query, cursor, limit: 500 });
+      if (page.kind !== "ready") return page.kind === "empty" ? { kind: "ready", data: [] } : page;
+      entries.push(...page.data.entries);
+      cursor = page.data.next_cursor ?? undefined;
+    } while (cursor);
+    return { kind: "ready", data: entries };
+  },
   review: (entityId: UUID, month: IsoDate): Promise<LoadState<ReviewResult>> =>
     loadResource(`${root(entityId)}/reviews/${encodeURIComponent(month)}`, () => false),
   createPlan: (

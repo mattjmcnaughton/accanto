@@ -1,10 +1,10 @@
 """Authenticated direct API for the incremental monthly core."""
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 
 from accanto.dtos.monthly import (
@@ -19,8 +19,10 @@ from accanto.dtos.monthly import (
 )
 from accanto.routers.authentication import Session, Token
 from accanto.services.monthly import (
+    ACTIVITY_PAGE_LIMIT,
     RejectionError,
     read_activity,
+    read_activity_page,
     read_plans,
     read_review,
     write,
@@ -259,6 +261,43 @@ async def edit_review(
 async def get_plans(entity_id: UUID, session: Session, token: Token):
     try:
         return public_result(await read_plans(session, token, entity_id))
+    except RejectionError as error:
+        raise HTTPException(error.status, error.message) from None
+
+
+@router.get("/activity/page")
+async def get_activity_page(
+    entity_id: UUID,
+    session: Session,
+    token: Token,
+    month: date | None = None,
+    category: Literal[
+        "income", "fixed_cost", "spending", "saving", "investing", "giving"
+    ]
+    | None = None,
+    tag_id: UUID | None = None,
+    q: Annotated[str, Query(max_length=200)] = "",
+    entry_id: UUID | None = None,
+    cursor: UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=ACTIVITY_PAGE_LIMIT)] = 100,
+):
+    if month is not None and month.day != 1:
+        raise HTTPException(422, "Use the first day of the calendar month.")
+    try:
+        return public_result(
+            await read_activity_page(
+                session,
+                token,
+                entity_id,
+                month=month,
+                category=category,
+                tag_id=tag_id,
+                query=q,
+                entry_id=entry_id,
+                cursor=cursor,
+                limit=limit,
+            )
+        )
     except RejectionError as error:
         raise HTTPException(error.status, error.message) from None
 
