@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Loan, PayoffSummary } from "../../lib/balances";
 import { ActivityScreen } from "../workspace/Activity";
 import type { ScreenProps } from "../workspace/shared";
@@ -174,6 +174,21 @@ const mock = (debts = loans) =>
     if (url.endsWith("/activity")) return json(entries);
     return json([]);
   });
+const show = async (view: "Cards" | "Table") =>
+  fireEvent.click(
+    within(await screen.findByRole("group", { name: "View" })).getByRole("button", { name: view }),
+  );
+// This jsdom has no localStorage; a fresh store keeps each test's view choice to itself.
+beforeEach(() => {
+  const stored = new Map<string, string>();
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (k: string) => stored.get(k) ?? null,
+      setItem: (k: string, v: string) => void stored.set(k, String(v)),
+    },
+  });
+});
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -182,6 +197,7 @@ afterEach(() => {
 it("shows each loan's payment history apart from dated observations", async () => {
   mock();
   render(<Balances {...props} />);
+  await show("Table");
   const table = await screen.findByRole("grid", { name: "Loans" });
   const loanB = within(table).getByText("Example loan B").closest("tr") as HTMLElement;
   expect(within(loanB).getByText("Active")).toBeDefined();
@@ -196,6 +212,7 @@ it("shows each loan's payment history apart from dated observations", async () =
 it("archives only at zero owed and asks first", async () => {
   mock();
   render(<Balances {...props} />);
+  await show("Table");
   const table = await screen.findByRole("grid", { name: "Loans" });
   fireEvent.click(within(table).getByRole("button", { name: "Details for Example loan B" }));
   expect(screen.getByRole("button", { name: "Archive loan" })).toBeDisabled();
@@ -207,6 +224,7 @@ it("archives only at zero owed and asks first", async () => {
   mock([loans[0], zero]);
   const save = vi.fn();
   render(<Balances {...props} save={save} />);
+  await show("Table");
   const again = await screen.findByRole("grid", { name: "Loans" });
   fireEvent.click(within(again).getByRole("button", { name: "Details for Example loan B" }));
   fireEvent.click(screen.getByRole("button", { name: "Archive loan" }));
@@ -237,6 +255,7 @@ it("names the debt account beside a fixed-cost payment in Activity", async () =>
 it("closes an untouched new record panel with Close and with Escape", async () => {
   mock();
   render(<Balances {...props} />);
+  await show("Table");
   await screen.findByRole("grid", { name: "Loans" });
   fireEvent.click(screen.getByRole("button", { name: "Add loan" }));
   const panel = await screen.findByRole("dialog", { name: "Add loan" });
@@ -253,6 +272,7 @@ it("closes an untouched new record panel with Close and with Escape", async () =
 it("keeps an invalid edited panel open on Escape and shows the problem", async () => {
   mock();
   render(<Balances {...props} />);
+  await show("Table");
   await screen.findByRole("grid", { name: "Loans" });
   fireEvent.click(screen.getByRole("button", { name: "Add loan" }));
   const panel = await screen.findByRole("dialog");
@@ -265,6 +285,7 @@ it("retains a valid observation edit on Escape and writes only on Ctrl+S, trimme
   mock();
   const save = vi.fn();
   render(<Balances {...props} save={save} />);
+  await show("Table");
   await screen.findByRole("grid", { name: "Loans" });
   fireEvent.click(screen.getByRole("button", { name: "Record observation" }));
   const panel = await screen.findByRole("dialog");
@@ -300,6 +321,7 @@ it("corrects an observation against its loaded revision and refuses an invalid a
   mock();
   const save = vi.fn();
   render(<Balances {...props} save={save} />);
+  await show("Table");
   const grid = await screen.findByRole("grid", { name: "Amount owed observations" });
   fireEvent.keyDown(grid.querySelector('[data-cell="0-0"]') as HTMLElement, { key: "Enter" });
   const panel = await screen.findByRole("dialog");
@@ -323,6 +345,7 @@ it("adds a loan with optional fixed-rate terms, refusing an out-of-range rate", 
   mock();
   const save = vi.fn();
   render(<Balances {...props} save={save} />);
+  await show("Table");
   await screen.findByRole("grid", { name: "Loans" });
   fireEvent.click(screen.getByRole("button", { name: "Add loan" }));
   const panel = await screen.findByRole("dialog", { name: "Add loan" });
@@ -372,7 +395,8 @@ it("shows the payoff on each card and flags a payment under the interest", async
       "The $5.00 payment does not cover $5.00 monthly interest, so this loan never pays down.",
     ),
   ).toBeDefined();
-  const grid = screen.getByRole("grid", { name: "Loans" });
+  await show("Table");
+  const grid = await screen.findByRole("grid", { name: "Loans" });
   const row = within(grid).getByText("Example loan C").closest("tr") as HTMLElement;
   expect(within(row).getByText("Payment under interest")).toBeDefined();
 });
@@ -381,6 +405,7 @@ it("shows the schedule in details and saves terms and a moved opening date", asy
   mock();
   const save = vi.fn();
   render(<Balances {...props} save={save} />);
+  await show("Table");
   const grid = await screen.findByRole("grid", { name: "Loans" });
   fireEvent.click(within(grid).getByRole("button", { name: "Details for Example loan B" }));
   const rows = await screen.findByRole("table", {
@@ -412,4 +437,22 @@ it("shows the schedule in details and saves terms and a moved opening date", asy
     }),
     expect.any(Function),
   );
+});
+
+it("shows cards or the table, never both, and remembers the choice on reload", async () => {
+  mock();
+  render(<Balances {...props} />);
+  // Cards by default: the loan cards without the record tables.
+  await screen.findByRole("button", { name: "Example loan B details" });
+  expect(screen.queryByRole("grid")).toBeNull();
+  await show("Table");
+  expect(await screen.findByRole("grid", { name: "Loans" })).toBeDefined();
+  expect(screen.queryByRole("button", { name: "Example loan B details" })).toBeNull();
+  cleanup();
+  render(<Balances {...props} />);
+  expect(await screen.findByRole("grid", { name: "Loans" })).toBeDefined();
+  expect(screen.queryByRole("button", { name: "Example loan B details" })).toBeNull();
+  await show("Cards");
+  await screen.findByRole("button", { name: "Example loan B details" });
+  expect(screen.queryByRole("grid")).toBeNull();
 });

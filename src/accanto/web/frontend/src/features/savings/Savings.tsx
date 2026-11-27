@@ -2,7 +2,17 @@ import type React from "react";
 import { useEffect, useId, useRef, useState } from "react";
 import { decimalToCents, fmtDate, fmtShort, formatMoney, money } from "../../lib/format";
 import { type Goal, type SavingsAccount, type SavingsMovement, savings } from "../../lib/savings";
-import { Dialog, Empty, Field, Head, Icon, Meter, Skeleton } from "../../ui";
+import {
+  Dialog,
+  Empty,
+  Field,
+  Head,
+  Icon,
+  Meter,
+  Skeleton,
+  useRecordView,
+  ViewToggle,
+} from "../../ui";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 import { useGridKeys } from "../workspace/useGridKeys";
 import "./savings.css";
@@ -129,6 +139,7 @@ export function Savings(p: ScreenProps) {
   const [lifecycle, setLifecycle] = useState<Lifecycle | null>(null);
   const [notice, setNotice] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [view, setView] = useRecordView("savings");
   const [help, setHelp] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const opener = useRef<HTMLElement | null>(null);
@@ -1242,6 +1253,7 @@ export function Savings(p: ScreenProps) {
             : undefined
         }
       >
+        <ViewToggle view={view} choose={setView} />
         {accounts.length > 0 && (
           <button
             type="button"
@@ -1278,7 +1290,7 @@ export function Savings(p: ScreenProps) {
           Add an account, then split it into goals.
         </Empty>
       )}
-      {active.map(accountSection)}
+      {view === "cards" && active.map(accountSection)}
       {hiddenCount > 0 && (
         <div>
           <button
@@ -1291,11 +1303,11 @@ export function Savings(p: ScreenProps) {
           </button>
         </div>
       )}
-      {showArchived && archived.map(accountSection)}
-      {goalRows.length > 0 && (
-        <section aria-label="Table view">
+      {view === "cards" && showArchived && archived.map(accountSection)}
+      {view === "table" && goalRows.length > 0 && (
+        <section aria-label="Accounts and goals">
           <h2 className="h2">
-            Table view{" "}
+            Accounts and goals{" "}
             <span>Edit in place: arrow keys or h j k l move, Enter edits, ? lists every key.</span>
           </h2>
           <div className="card sv-table">
@@ -1320,7 +1332,7 @@ export function Savings(p: ScreenProps) {
           </div>
         </section>
       )}
-      {(accounts.length > 0 || movesError) && (
+      {view === "table" && (accounts.length > 0 || movesError) && (
         <section aria-label="Moves and corrections">
           <h2 className="h2">
             Moves and corrections <span>Not new saving, income or spending</span>

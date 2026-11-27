@@ -179,10 +179,6 @@
 }
 
 @media (max-width: 760px) {
-  /* The cards above already carry each record's figures and its Edit or Details action. */
-  .rec-registry {
-    display: none;
-  }
   .rec-keys {
     display: none;
   }

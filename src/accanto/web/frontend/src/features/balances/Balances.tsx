@@ -9,7 +9,7 @@ import {
 } from "../../lib/balances";
 import { decimalToCents, fmtDate, fmtMon, fmtMonth, formatMoney, plural } from "../../lib/format";
 import { monthly } from "../../lib/monthly";
-import { Dialog, Empty, Field, Head, Icon, Trend } from "../../ui";
+import { Dialog, Empty, Field, Head, Icon, Trend, useRecordView, ViewToggle } from "../../ui";
 import {
   type Column,
   ConfirmDialog,
@@ -86,6 +86,7 @@ function problem(form: Form): string {
 }
 
 export function Balances(p: ScreenProps) {
+  const [view, setView] = useRecordView("loans");
   const [reload, setReload] = useState(0);
   const again = () => setReload((value) => value + 1);
   const loans = useLoad(() => balances.loans(p.entity.id), [p.entity.id, p.refresh, reload]);
@@ -315,6 +316,7 @@ export function Balances(p: ScreenProps) {
         title={<span id="balances-title">Loans</span>}
         tip="The amount owed is a dated check-in you record from your lender. Recording a payment never changes it."
       >
+        <ViewToggle view={view} choose={setView} />
         {accounts.length > 0 && add}
       </Head>
       <PendingEdit
@@ -334,7 +336,7 @@ export function Balances(p: ScreenProps) {
           Add a loan with what you owe today.
         </Empty>
       )}
-      {accounts.length > 0 && (
+      {view === "cards" && accounts.length > 0 && (
         <div className="grid2">
           {accounts.map((account) => {
             const count = paymentsFor(account).length;
@@ -396,55 +398,57 @@ export function Balances(p: ScreenProps) {
           })}
         </div>
       )}
-      <div className="card pad rec-records">
-        {(loans.kind === "ready" || loans.kind === "empty") && (
-          <div className="rec-registry">
-            <div className="rec-bar">
-              <h2 className="h2">All loans</h2>
+      {view === "table" && (
+        <div className="card pad rec-records">
+          {(loans.kind === "ready" || loans.kind === "empty") && (
+            <div className="rec-registry">
+              <div className="rec-bar">
+                <h2 className="h2">All loans</h2>
+              </div>
+              <RecordGrid
+                label="Loans"
+                rows={accounts}
+                rowId={(row) => row.uuid}
+                columns={loanColumns}
+                empty="No loans yet. Press a to add one."
+                edit={openLoan}
+                add={() => openLoan(null)}
+                help={showHelp}
+              />
             </div>
-            <RecordGrid
-              label="Loans"
-              rows={accounts}
-              rowId={(row) => row.uuid}
-              columns={loanColumns}
-              empty="No loans yet. Press a to add one."
-              edit={openLoan}
-              add={() => openLoan(null)}
-              help={showHelp}
-            />
-          </div>
-        )}
-        <div>
-          <div className="rec-bar">
-            <h2 className="h2">Amount owed observations</h2>
-            <button
-              type="button"
-              className="btn sm"
-              disabled={p.busy}
-              onClick={() => editObservation(null)}
-            >
-              Record observation
-            </button>
-          </div>
-          {observed.kind === "ready" || observed.kind === "empty" ? (
-            <RecordGrid
-              label="Amount owed observations"
-              rows={observations}
-              rowId={(row) => row.uuid}
-              columns={observationColumns}
-              empty="No observations yet."
-              marked={marked}
-              edit={editObservation}
-              add={() => editObservation(null)}
-              remove={removeObservation}
-              help={showHelp}
-            />
-          ) : (
-            observed.kind === "loading" && <Loading what="observations" />
           )}
+          <div>
+            <div className="rec-bar">
+              <h2 className="h2">Amount owed observations</h2>
+              <button
+                type="button"
+                className="btn sm"
+                disabled={p.busy}
+                onClick={() => editObservation(null)}
+              >
+                Record observation
+              </button>
+            </div>
+            {observed.kind === "ready" || observed.kind === "empty" ? (
+              <RecordGrid
+                label="Amount owed observations"
+                rows={observations}
+                rowId={(row) => row.uuid}
+                columns={observationColumns}
+                empty="No observations yet."
+                marked={marked}
+                edit={editObservation}
+                add={() => editObservation(null)}
+                remove={removeObservation}
+                help={showHelp}
+              />
+            ) : (
+              observed.kind === "loading" && <Loading what="observations" />
+            )}
+          </div>
         </div>
-      </div>
-      <KeyHint help={showHelp} />
+      )}
+      {view === "table" && <KeyHint help={showHelp} />}
       {draft?.open && form && (
         <Dialog
           key={draft.key}

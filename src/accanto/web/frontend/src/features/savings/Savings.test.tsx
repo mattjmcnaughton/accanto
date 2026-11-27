@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Goal, SavingsAccount, SavingsMovement } from "../../lib/savings";
 import type { ScreenProps } from "../workspace/shared";
 import { Savings } from "./Savings";
@@ -70,8 +70,26 @@ const cell = (grid: string, row: string, col: number) =>
 const press = (target: Element, key: string, init: KeyboardEventInit = {}) =>
   fireEvent.keyDown(target, { key, ...init });
 const savedBody = (p: ScreenProps) => vi.mocked(p.save).mock.lastCall?.[0];
-const loaded = () => screen.findByRole("grid", { name: "Savings accounts and goals" });
+const showView = async (name: "Cards" | "Table") => {
+  for (const group of await screen.findAllByRole("group", { name: "View" }))
+    fireEvent.click(within(group).getByRole("button", { name }));
+};
+const loaded = async () => {
+  await showView("Table");
+  return screen.findByRole("grid", { name: "Savings accounts and goals" });
+};
 
+// This jsdom has no localStorage; a fresh store keeps each test's view choice to itself.
+beforeEach(() => {
+  const stored = new Map<string, string>();
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (k: string) => stored.get(k) ?? null,
+      setItem: (k: string, v: string) => void stored.set(k, String(v)),
+    },
+  });
+});
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -295,6 +313,7 @@ it("keeps movement identity on correction and rejects a transfer within one acco
   serve([account([goal({}), unallocated])], [movement]);
   const p = props();
   render(<Savings {...p} />);
+  await showView("Table");
   await screen.findByText("Synthetic correction");
   press(cell("moves", "m:move-1", 1), "i");
   expect(screen.getByText(/recorded action cannot change/)).toBeTruthy();
@@ -342,6 +361,7 @@ it("deletes a movement with dd only after confirmation and never deletes goals",
   const p = props();
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   render(<Savings {...p} />);
+  await showView("Table");
   await screen.findByText("Synthetic correction");
   press(cell("goals", "g:goal-1", 0), "d");
   press(cell("goals", "g:goal-1", 0), "d");
@@ -402,6 +422,8 @@ it("gives each Savings dialog a unique accessible title", async () => {
       <Savings {...p} />
     </>,
   );
+  await waitFor(() => expect(screen.getAllByRole("group", { name: "View" })).toHaveLength(2));
+  await showView("Table");
   await waitFor(() =>
     expect(screen.getAllByRole("grid", { name: "Savings accounts and goals" })).toHaveLength(2),
   );
@@ -419,8 +441,7 @@ it("moves saved money from a goal card through the dialog", async () => {
   serve([account([goal({}), unallocated])]);
   const p = props();
   const view = render(<Savings {...p} />);
-  await loaded();
-  fireEvent.click(screen.getByRole("button", { name: "Move money from Emergency" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Move money from Emergency" }));
   const dialog = screen.getByRole("dialog", { name: "Move saved money" });
   expect(within(dialog).getByLabelText("From")).toHaveProperty("value", "goal-1");
   fireEvent.change(within(dialog).getByLabelText("To"), { target: { value: "goal-u" } });
@@ -442,5 +463,6 @@ it("moves saved money from a goal card through the dialog", async () => {
   fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
   expect(screen.getByRole("dialog", { name: "Move saved money" })).toBeTruthy();
   expect(within(dialog).getByLabelText("Amount (USD)")).toHaveProperty("value", "12.00");
+  await showView("Table");
   expect(screen.getByRole("row", { name: /New savings record/ })).toBeTruthy();
 });

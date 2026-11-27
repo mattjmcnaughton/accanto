@@ -15,7 +15,7 @@ import {
 } from "../../lib/destinations";
 import { fmtDate, formatMoney, plural } from "../../lib/format";
 import { savings } from "../../lib/savings";
-import { Dialog, Empty, Field, Head, Icon, Trend } from "../../ui";
+import { Dialog, Empty, Field, Head, Icon, Trend, useRecordView, ViewToggle } from "../../ui";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 import { InvestmentSummary } from "./InvestmentSummary";
 import {
@@ -152,6 +152,7 @@ const shown = (state: LoadState<unknown>) => state.kind === "ready" || state.kin
 /** One screen per kind: Investments or Giving, each at its own address. */
 export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
   const screenKind = p.kind ?? "investment";
+  const [view, setView] = useRecordView(screenKind);
   const [reload, setReload] = useState(0);
   const again = () => setReload((value) => value + 1);
   const deps = [p.entity.id, p.refresh, reload];
@@ -634,88 +635,92 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
           </Empty>
         )}
         {kind === "investment" && list.length > 0 && <InvestmentSummary rows={list} />}
-        {list.length > 0 && <div className="grid2">{cards(kind)}</div>}
-        <div className="card pad rec-records">
-          {shown(rows[kind]) && (
-            <div className="rec-registry">
-              <div className="rec-bar">
-                <h3 className="h2">All {copy.registry.toLowerCase()}</h3>
+        {view === "cards" && list.length > 0 && <div className="grid2">{cards(kind)}</div>}
+        {view === "table" && (
+          <div className="card pad rec-records">
+            {shown(rows[kind]) && (
+              <div className="rec-registry">
+                <div className="rec-bar">
+                  <h3 className="h2">All {copy.registry.toLowerCase()}</h3>
+                </div>
+                <RecordGrid
+                  label={copy.registry}
+                  rows={list}
+                  rowId={(row) => row.uuid}
+                  columns={destinationColumns(kind)}
+                  empty={`No ${copy.one}s yet. Press a to add one.`}
+                  marked={markedIn("destination", kind)}
+                  edit={(row) => editDestination(kind, row)}
+                  add={() => editDestination(kind, null)}
+                  help={showHelp}
+                />
               </div>
-              <RecordGrid
-                label={copy.registry}
-                rows={list}
-                rowId={(row) => row.uuid}
-                columns={destinationColumns(kind)}
-                empty={`No ${copy.one}s yet. Press a to add one.`}
-                marked={markedIn("destination", kind)}
-                edit={(row) => editDestination(kind, row)}
-                add={() => editDestination(kind, null)}
-                help={showHelp}
-              />
-            </div>
-          )}
-          <div>
-            <div className="rec-bar">
-              <h3 className="h2">{copy.entryHeading}</h3>
-              <button
-                type="button"
-                className="btn sm"
-                disabled={p.busy}
-                onClick={() => editEntry(kind, null)}
-              >
-                Record {copy.entryOne}
-              </button>
-            </div>
-            {shown(history[kind]) ? (
-              <RecordGrid
-                label={copy.entries}
-                rows={ready(history[kind])}
-                rowId={(row) => row.uuid}
-                columns={entryColumns(kind)}
-                empty={`No recorded ${copy.entryHeading.toLowerCase()} yet.`}
-                marked={markedIn("entry", kind)}
-                edit={(row) => editEntry(kind, row)}
-                add={() => editEntry(kind, null)}
-                remove={(row) => removeEntry(kind, row)}
-                help={showHelp}
-              />
-            ) : (
-              history[kind].kind === "loading" && <Loading what={copy.entryHeading.toLowerCase()} />
             )}
-          </div>
-          {kind === "investment" && (
             <div>
               <div className="rec-bar">
-                <h3 className="h2">Observed values</h3>
+                <h3 className="h2">{copy.entryHeading}</h3>
                 <button
                   type="button"
                   className="btn sm"
                   disabled={p.busy}
-                  onClick={() => editObservation(null)}
+                  onClick={() => editEntry(kind, null)}
                 >
-                  Record value
+                  Record {copy.entryOne}
                 </button>
               </div>
-              <LoadFailure state={observed} retry={again} />
-              {shown(observed) ? (
+              {shown(history[kind]) ? (
                 <RecordGrid
-                  label="Investment value observations"
-                  rows={observations}
+                  label={copy.entries}
+                  rows={ready(history[kind])}
                   rowId={(row) => row.uuid}
-                  columns={observationColumns}
-                  empty="No observed values yet."
-                  marked={markedIn("observation")}
-                  edit={editObservation}
-                  add={() => editObservation(null)}
-                  remove={removeObservation}
+                  columns={entryColumns(kind)}
+                  empty={`No recorded ${copy.entryHeading.toLowerCase()} yet.`}
+                  marked={markedIn("entry", kind)}
+                  edit={(row) => editEntry(kind, row)}
+                  add={() => editEntry(kind, null)}
+                  remove={(row) => removeEntry(kind, row)}
                   help={showHelp}
                 />
               ) : (
-                observed.kind === "loading" && <Loading what="observed values" />
+                history[kind].kind === "loading" && (
+                  <Loading what={copy.entryHeading.toLowerCase()} />
+                )
               )}
             </div>
-          )}
-        </div>
+            {kind === "investment" && (
+              <div>
+                <div className="rec-bar">
+                  <h3 className="h2">Observed values</h3>
+                  <button
+                    type="button"
+                    className="btn sm"
+                    disabled={p.busy}
+                    onClick={() => editObservation(null)}
+                  >
+                    Record value
+                  </button>
+                </div>
+                <LoadFailure state={observed} retry={again} />
+                {shown(observed) ? (
+                  <RecordGrid
+                    label="Investment value observations"
+                    rows={observations}
+                    rowId={(row) => row.uuid}
+                    columns={observationColumns}
+                    empty="No observed values yet."
+                    marked={markedIn("observation")}
+                    edit={editObservation}
+                    add={() => editObservation(null)}
+                    remove={removeObservation}
+                    help={showHelp}
+                  />
+                ) : (
+                  observed.kind === "loading" && <Loading what="observed values" />
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </>
     );
   };
@@ -759,6 +764,7 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
         title={<span id={COPY[screenKind].id}>{COPY[screenKind].title}</span>}
         tip={COPY[screenKind].tip}
       >
+        <ViewToggle view={view} choose={setView} />
         {ready(rows[screenKind]).length > 0 && addButton(screenKind)}
       </Head>
       <PendingEdit
@@ -770,7 +776,7 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
       />
       <Notice text={notice} dismiss={() => setNotice("")} />
       {section(screenKind)}
-      <KeyHint help={showHelp} />
+      {view === "table" && <KeyHint help={showHelp} />}
       {draft?.open && form && (
         <Dialog key={draft.key} title={titleOf(form)} onClose={() => editor.close(problem(form))}>
           <div ref={editor.aside} onKeyDown={keepOnEscape}>

@@ -299,10 +299,20 @@ def test_signed_in_workspace(tmp_path):
         browser("click", f"#{cell_id}")
         until("!!document.querySelector('dialog[open]')")
 
+    def view(name):
+        # Record screens show cards or a table, never both; each screen keeps
+        # its choice in this browser.
+        button(name)
+        until(
+            "Array.from(document.querySelectorAll('#main [aria-label=View] button'))"
+            f".some(b => b.textContent === {name!r}"
+            " && b.getAttribute('aria-pressed') === 'true')"
+        )
+
     def open_loan():
-        # Phone widths show each loan as a card; its details button opens the
-        # loan's dialog with payments, archive and reopen.
-        button("Synthetic loan details")
+        # The loan table's details button opens the loan's dialog with
+        # payments, archive and reopen.
+        button("Details for Synthetic loan")
         until("!!document.querySelector('dialog[open]')")
 
     def tab_to_button(name):
@@ -543,8 +553,9 @@ def test_signed_in_workspace(tmp_path):
         page = browser("snapshot")
         assert "Synthetic savings" in page, page
         assert "Unallocated" in page and "$4,000.00" in page
-        expect_cell("td[aria-label='Laptop, Contributions']", "$0.00")
         assert "Not yet funded" in page and "Funded" in page
+        view("Table")
+        expect_cell("td[aria-label='Laptop, Contributions']", "$0.00")
         browser("reload")
         signed_in()
         go("Savings")
@@ -623,6 +634,7 @@ def test_signed_in_workspace(tmp_path):
             "25000.00",
         )
         save_record("Save investment")
+        view("Table")
         record_cell("Investments", 2, "Active")
         record_cell("Investments", 3, "$0.00")
         record_cell("Investments", 5, "$25,000.00")
@@ -670,6 +682,7 @@ def test_signed_in_workspace(tmp_path):
         )
         save_record("Save recipient")
         browser("wait", "--text", "Example recipient")
+        view("Table")
         button("Record donation")
         browser("find", "label", "Amount (USD)", "fill", "100.00")
         recipient = value(
@@ -705,6 +718,7 @@ def test_signed_in_workspace(tmp_path):
         set_date('dialog[open] input[type="date"]', "2026-10-01")
         browser("find", "label", "Opening amount owed (USD)", "fill", "300")
         save_record("Save loan")
+        view("Table")
         record_cell("Loans", 5, "$300.00")
         record_cell("Loans", 4, "Oct 1, 2026")
         # Add activity in the top bar opens the entry dialog from any screen.
