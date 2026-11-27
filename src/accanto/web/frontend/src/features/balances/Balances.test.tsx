@@ -416,6 +416,23 @@ it("shows the schedule in details and saves terms and a moved opening date", asy
   expect(within(last).getByText("$109.13")).toBeDefined();
   expect(within(last).getByText("$0.00")).toBeDefined();
   expect(screen.getByText("Jan 1, 2027, in 3 payments")).toBeDefined();
+  expect(
+    screen.getByRole("img", { name: "Example loan B: $500.00 principal, $9.13 interest" }),
+  ).toBeDefined();
+  const owed = screen.getByRole("slider", { name: "Example loan B, amount owed by month" });
+  fireEvent.keyDown(owed, { key: "Home" });
+  expect(owed.getAttribute("aria-valuetext")).toBe("Now: Owed $500.00");
+  // Bars group payments by calendar year: two in 2026, one in 2027.
+  const years = screen.getByRole("slider", {
+    name: "Example loan B, interest and principal by year",
+  });
+  expect(years.getAttribute("aria-valuetext")).toBe(
+    "2027, 1 payment: Principal $108.05, Interest $1.08, Interest 1%",
+  );
+  fireEvent.keyDown(years, { key: "Home" });
+  expect(years.getAttribute("aria-valuetext")).toBe(
+    "2026, 2 payments: Principal $391.95, Interest $8.05, Interest 2%",
+  );
   const terms = screen.getByRole("form", { name: "Terms for Example loan B" });
   fireEvent.change(within(terms).getByLabelText(/Monthly payment/), { target: { value: "" } });
   fireEvent.change(within(terms).getByLabelText("Opening date"), {

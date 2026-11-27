@@ -10,165 +10,6 @@
 .proj-today {
   text-align: right;
 }
-.proj-chart {
-  margin: 0;
-}
-.proj-axis-title {
-  display: block;
-  font-size: 12.5px;
-  color: var(--ink3);
-  margin-bottom: 6px;
-}
-.proj-axes {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
-  row-gap: 6px;
-}
-.proj-y,
-.proj-x {
-  position: relative;
-  font-size: 12px;
-  color: var(--ink3);
-  font-variant-numeric: tabular-nums;
-}
-.proj-y span {
-  position: absolute;
-  right: 8px;
-  transform: translateY(-50%);
-  white-space: nowrap;
-}
-.proj-x {
-  height: 16px;
-}
-.proj-x span {
-  position: absolute;
-  transform: translateX(-50%);
-  white-space: nowrap;
-}
-.proj-x span:first-child {
-  transform: none;
-}
-.proj-x span:last-child {
-  transform: translateX(-100%);
-}
-.proj-plot {
-  position: relative;
-  height: 260px;
-  touch-action: pan-y;
-  cursor: crosshair;
-  border-radius: 4px;
-}
-.proj-plot:focus-visible {
-  outline: 2px solid var(--focus, var(--ink2));
-  outline-offset: 4px;
-}
-.proj-plot svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-.proj-plot polyline {
-  fill: none;
-  stroke-width: 2.5;
-  vector-effect: non-scaling-stroke;
-  stroke-linejoin: round;
-}
-.proj-grid,
-.proj-zero,
-.proj-cursor,
-.proj-fire-at {
-  vector-effect: non-scaling-stroke;
-}
-.proj-grid {
-  stroke: var(--line);
-  stroke-width: 1;
-}
-.proj-zero {
-  stroke: var(--ink3);
-  stroke-width: 1;
-}
-.proj-cursor {
-  stroke: var(--ink2);
-  stroke-width: 1;
-}
-.proj-fire-at {
-  stroke: var(--c-income);
-  stroke-width: 1;
-  stroke-dasharray: 3 3;
-}
-.proj-inv {
-  stroke: var(--c);
-}
-.proj-net {
-  stroke: var(--ink2);
-  stroke-dasharray: 5 4;
-}
-.proj-tgt {
-  stroke: var(--c-income);
-  stroke-dasharray: 2 4;
-}
-.proj-dot {
-  position: absolute;
-  width: 10px;
-  height: 10px;
-  margin: -5px 0 0 -5px;
-  border-radius: 50%;
-  background: var(--surface);
-  border: 2px solid var(--c, var(--ink2));
-  pointer-events: none;
-}
-.proj-dot.net {
-  border-color: var(--ink2);
-}
-.proj-dot.tgt {
-  border-color: var(--c-income);
-}
-.proj-tip {
-  position: absolute;
-  top: 0;
-  margin-left: 12px;
-  display: grid;
-  gap: 3px;
-  padding: 8px 10px;
-  min-width: 190px;
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 0 0 0 1px var(--line), 0 6px 18px rgb(0 0 0 / 0.12);
-  font-size: 13px;
-  pointer-events: none;
-  white-space: nowrap;
-}
-.proj-tip.end {
-  transform: translateX(-100%);
-  margin-left: -12px;
-}
-.proj-tip strong {
-  float: right;
-  margin-left: 12px;
-  font-variant-numeric: tabular-nums;
-}
-.proj-legend {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-  font-size: 13px;
-  color: var(--ink2);
-}
-.proj-key::before {
-  content: "";
-  display: inline-block;
-  width: 16px;
-  margin-right: 6px;
-  vertical-align: middle;
-  border-top: 2.5px solid var(--c);
-}
-.proj-key.net::before {
-  border-top: 2.5px dashed var(--ink2);
-}
-.proj-key.tgt::before {
-  border-top: 2px dotted var(--c-income);
-}
 .proj-assume {
   display: grid;
   gap: 20px;
@@ -250,15 +91,6 @@
   .proj-fire-fields {
     grid-template-columns: minmax(0, 1fr);
   }
-  .proj-axes {
-    grid-template-columns: 44px minmax(0, 1fr);
-  }
-  .proj-plot {
-    height: 220px;
-  }
-  .proj-tip {
-    min-width: 168px;
-  }
 }
 .proj-warn {
   margin: 0;
@@ -323,9 +155,6 @@
   }
   .proj-today {
     text-align: left;
-  }
-  .proj-plot {
-    height: 190px;
   }
   .proj-table thead {
     display: none;

@@ -13,6 +13,7 @@ import {
 import { fmtDate, fmtShort, inputMoney, money, parseMoney } from "../lib/format";
 
 export { cleanName, Combobox, type ComboCreate, type ComboOption, sameName } from "./Combobox";
+export { Chart, type Series } from "./Chart";
 
 const PATHS: Record<string, string> = {
   home: "M2.5 7 8 2.5 13.5 7v6.5h-11z M6.5 13.5v-4h3v4",

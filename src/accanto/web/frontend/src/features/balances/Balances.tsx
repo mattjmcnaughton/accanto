@@ -1,15 +1,37 @@
-import { type KeyboardEvent, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, useState } from "react";
 import {
   type Loan,
   type LoanTerms,
   type Observation,
   type ObservationInput,
+  type PayoffRow,
+  type PayoffSchedule,
   type PayoffSummary,
   balances,
 } from "../../lib/balances";
-import { decimalToCents, fmtDate, fmtMon, fmtMonth, formatMoney, plural } from "../../lib/format";
+import {
+  decimalToCents,
+  fmtDate,
+  fmtMon,
+  fmtMonth,
+  formatMoney,
+  money,
+  pct,
+  plural,
+} from "../../lib/format";
 import { monthly } from "../../lib/monthly";
-import { Dialog, Empty, Field, Head, Icon, Trend, useRecordView, ViewToggle } from "../../ui";
+import {
+  Band,
+  Chart,
+  Dialog,
+  Empty,
+  Field,
+  Head,
+  Icon,
+  Trend,
+  useRecordView,
+  ViewToggle,
+} from "../../ui";
 import {
   type Column,
   ConfirmDialog,
@@ -462,6 +484,7 @@ export function Balances(p: ScreenProps) {
                 : "Record amount owed"
           }
           onClose={() => editor.close(problem(form))}
+          className={loan ? "loan-dlg" : undefined}
         >
           <div ref={editor.aside} onKeyDown={keepOnEscape}>
             {loan ? (
@@ -762,15 +785,6 @@ function PayoffDetails({ entity, loan, refresh }: { entity: string; loan: Loan; 
   );
   const schedule = state.kind === "ready" ? state.data : null;
   const payoff = schedule ?? loan.payoff;
-  const points = schedule
-    ? [
-        { date: schedule.as_of, value: decimalToCents(schedule.balance) ?? 0 },
-        // One point a year and the last payment keep a long schedule legible.
-        ...schedule.rows
-          .filter((row, i) => row.month % 12 === 0 || i === schedule.rows.length - 1)
-          .map((row) => ({ date: row.date, value: decimalToCents(row.balance) ?? 0 })),
-      ]
-    : [];
   return (
     <section className="loan-schedule" aria-label={`Payoff schedule for ${loan.name}`}>
       <h3>Payoff schedule</h3>
@@ -798,7 +812,7 @@ function PayoffDetails({ entity, loan, refresh }: { entity: string; loan: Loan; 
       <LoadFailure state={state} retry={() => undefined} />
       {schedule && schedule.rows.length > 0 && (
         <>
-          <Trend points={points} kind="fixed" label={`${loan.name}, scheduled amount owed`} />
+          <PayoffCharts schedule={schedule} name={loan.name} />
           <div className="rec-scroll loan-rows">
             <table className="rec-grid" aria-label={`Payoff schedule rows for ${loan.name}`}>
               <thead>
@@ -836,5 +850,104 @@ function PayoffDetails({ entity, loan, refresh }: { entity: string; loan: Loan; 
         </>
       )}
     </section>
+  );
+}
+
+const cents = (value: string) => decimalToCents(value) ?? 0;
+type Owed = Pick<PayoffRow, "month" | "date" | "balance">;
+type Year = { year: string; payments: number; interest: number; principal: number };
+
+/** Amount owed after each payment, and each year's interest and principal. */
+function PayoffCharts({ schedule, name }: { schedule: PayoffSchedule; name: string }) {
+  const rows = schedule.rows;
+  const owed: Owed[] = [{ month: 0, date: schedule.as_of, balance: schedule.balance }, ...rows];
+  const last = owed.length - 1;
+  const short = rows.length < 24;
+  const every = rows.length <= 72 ? 1 : rows.length <= 144 ? 2 : rows.length <= 360 ? 5 : 10;
+  const label = (r: Owed) =>
+    short ? `${fmtMon(r.date)} ’${r.date.slice(2, 4)}` : r.date.slice(0, 4);
+  const owedTick = (r: Owed, i: number) => {
+    if (i === 0) return "Now";
+    if (i === last) return label(r);
+    const gap = short ? 6 : 12 * every;
+    return r.month % gap === 0 && last - i >= gap * 0.6 ? label(r) : null;
+  };
+
+  const years: Year[] = [];
+  for (const row of rows) {
+    const year = row.date.slice(0, 4);
+    let at = years[years.length - 1];
+    if (at?.year !== year) {
+      at = { year, payments: 0, interest: 0, principal: 0 };
+      years.push(at);
+    }
+    at.payments += 1;
+    at.interest += cents(row.interest);
+    at.principal += cents(row.principal);
+  }
+  const interest = years.reduce((sum, y) => sum + y.interest, 0);
+  const principal = years.reduce((sum, y) => sum + y.principal, 0);
+  const total = interest + principal;
+  const step = Math.ceil(years.length / 6);
+  return (
+    <>
+      <Chart
+        rows={owed}
+        series={[
+          { key: "owed", name: "Owed", color: "var(--c-fixed)", pick: (r) => cents(r.balance) },
+        ]}
+        title="Amount owed"
+        label={`${name}, amount owed by month`}
+        when={(r) => (r.month === 0 ? "Now" : `${fmtMon(r.date)} ${r.date.slice(0, 4)}`)}
+        note={(r) => (r.month === 0 ? null : `Payment ${r.month} of ${rows.length}`)}
+        tick={owedTick}
+      />
+      <div className="loan-split">
+        <span className="chart-title">Interest vs principal</span>
+        <Band
+          label={`${name}: ${money(principal)} principal, ${money(interest)} interest`}
+          parts={[
+            {
+              key: "principal",
+              kind: "fixed",
+              weight: principal,
+              title: `Principal ${money(principal)}`,
+            },
+            {
+              key: "interest",
+              kind: "free",
+              weight: interest,
+              title: `Interest ${money(interest)}`,
+            },
+          ]}
+        />
+        <div className="chart-legend">
+          <span className="chart-key bar" style={{ "--c": "var(--c-fixed)" } as CSSProperties}>
+            Principal <strong>{money(principal)}</strong> · {pct(principal, total, 0)}
+          </span>
+          <span className="chart-key bar" style={{ "--c": "var(--c-free)" } as CSSProperties}>
+            Interest <strong>{money(interest)}</strong> · {pct(interest, total, 0)}
+          </span>
+        </div>
+      </div>
+      <Chart
+        bars
+        rows={years}
+        series={[
+          {
+            key: "principal",
+            name: "Principal",
+            color: "var(--c-fixed)",
+            pick: (y) => y.principal,
+          },
+          { key: "interest", name: "Interest", color: "var(--c-free)", pick: (y) => y.interest },
+        ]}
+        title="Paid per year"
+        label={`${name}, interest and principal by year`}
+        when={(y) => (y.payments < 12 ? `${y.year}, ${plural(y.payments, "payment")}` : y.year)}
+        note={(y) => `Interest ${pct(y.interest, y.interest + y.principal, 0)}`}
+        tick={(y, i) => (i % step === 0 ? y.year : null)}
+      />
+    </>
   );
 }
