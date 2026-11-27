@@ -1,20 +1,20 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ApiError, type BrowserSession, type UUID } from "../../lib/api";
 import {
+  AGENT_MODES,
   type AgentMessage,
   type AgentSettings,
+  AgentStreamError,
   type ApplyAllResult,
   type ConversationSummary,
-  AgentStreamError,
   type PendingChange,
   RESUMABLE,
   type SendInput,
   type StreamDone,
-  AGENT_MODES,
   type ToolLine,
   agent,
   streamReply,
 } from "../../lib/agentStream";
+import { ApiError, type BrowserSession, type UUID } from "../../lib/api";
 import { formatMoney } from "../../lib/format";
 import type { WriteSpec } from "../../lib/monthly";
 import { Icon } from "../../ui";
@@ -34,6 +34,8 @@ export interface AgentPanelProps {
   openSettings: () => void;
   /** After a turn or a dismissal: screens reload, so new inbox proposals show. */
   changed: () => void;
+  /** After an Entity settings change may have saved: the Entity's name, time zone and today reload. */
+  settingsChanged?: () => void;
   /** Whether a reply is streaming; the workspace blocks switching Entities meanwhile. */
   streaming?: (on: boolean) => void;
   /**
@@ -84,7 +86,10 @@ const LOOKS_AT: Record<string, string> = {
   list_sources: "transaction sources",
   list_pending_changes: "pending changes",
   get_agent_instructions: "your AGENT.md",
+  get_settings: "your Entity settings",
 };
+/** Tools whose saved result changes the Entity's name, time zone or today. */
+const ENTITY_SETTINGS = "save_entity_settings";
 /** Tools that compute rather than look something up. */
 const COMPUTES: Record<string, Record<ToolLine["status"], string>> = {
   calculate: { started: "Calculating…", done: "Calculated", failed: "Could not calculate" },
@@ -486,6 +491,8 @@ export function AgentPanel(p: AgentPanelProps) {
         )
       )
         p.changed();
+      if (turn.parts.some((part) => part.kind === "tool" && part.line.name === ENTITY_SETTINGS))
+        p.settingsChanged?.();
     }
   }
 
@@ -551,6 +558,9 @@ export function AgentPanel(p: AgentPanelProps) {
               ? `Applied ${applied} of ${results.length}. Stopped at “${summary}”: ${message} It and the ones after it are still pending.`
               : `Applied all ${applied} changes.`;
         setOutcome({ note, failed: failed?.id ?? null, message: failed ? message : "" });
+        const tools = new Map(changes.map((c) => [c.id, c.tool]));
+        if (results.some((r) => r.status === "applied" && tools.get(r.id) === ENTITY_SETTINGS))
+          p.settingsChanged?.();
         setAnnounce(note);
         setReload((x) => x + 1);
       },

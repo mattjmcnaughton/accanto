@@ -107,6 +107,8 @@ Included:
 - Debts and balances: create or edit debts, record, correct, or delete
   observations.
 - Income estimates: create, edit, duplicate.
+- Entity settings (2026-11-27): read; edit name, time zone, default expected
+  return and FIRE assumptions. They follow the agent mode like any write.
 
 Excluded from every agent surface:
 
@@ -114,7 +116,6 @@ Excluded from every agent surface:
 - Source setup: connecting YNAB, replacing or reading the token, disconnecting,
   choosing which accounts sync.
 - The agent's own settings: enablement, agent mode, AGENT.md, retention.
-- Entity settings: name and time zone.
 - Sign-in, session, and health endpoints.
 
 ### AG-06 — Agent mode and approval

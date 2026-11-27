@@ -283,6 +283,53 @@ it("shows a stale Apply on its card without leaving a save to discard", async ()
   expect(within(card).getByRole("button", { name: "Dismiss" })).toBeEnabled();
 });
 
+it("reloads the Entity's name and time zone once an Entity settings change applies", async () => {
+  const rename = change({
+    id: "pc7",
+    summary: "Update settings: name Synthetic Household, time zone America/Chicago",
+    tool: "save_entity_settings",
+    input: { name: "Synthetic Household", time_zone: "America/Chicago", expected_revision: 2 },
+  });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    if (url.endsWith("/settings"))
+      return json({ enabled: true, mode: "ask_first", instructions: "", revision: 1 });
+    if (url.includes("/pending-changes")) return json([rename]);
+    return json([]);
+  });
+  const save = vi.fn();
+  const settingsChanged = vi.fn();
+  render(
+    <AgentPanel
+      entity={entity}
+      busy={false}
+      refresh={0}
+      screen="home"
+      month="2026-11"
+      credentials={async () => session}
+      save={save}
+      close={vi.fn()}
+      openSettings={vi.fn()}
+      changed={vi.fn()}
+      settingsChanged={settingsChanged}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: /^Pending changes/ }));
+  const card = document.querySelector("[data-pending=pc7]") as HTMLElement;
+  expect(within(card).getByText("Synthetic Household")).toBeInTheDocument();
+  fireEvent.click(within(card).getByRole("button", { name: "Apply" }));
+  const [, confirmed] = save.mock.calls[0];
+  // A failed apply saved nothing, so the Entity stays as loaded.
+  act(() =>
+    confirmed({
+      results: [{ id: "pc7", status: "failed", error: { code: "stale_revision", message: "x" } }],
+    }),
+  );
+  expect(settingsChanged).not.toHaveBeenCalled();
+  act(() => confirmed({ results: [{ id: "pc7", status: "applied" }] }));
+  expect(settingsChanged).toHaveBeenCalledTimes(1);
+});
+
 it("applies all pending changes with their edits after confirming, and shows where it stopped", async () => {
   const changes = [
     change({ id: "pc3", summary: "Record Example Cafe", created_at: "2026-11-20T03:00:00Z" }),

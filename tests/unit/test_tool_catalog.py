@@ -29,6 +29,7 @@ CATALOG_NAMES = [
     "get_inbox_item",
     "list_sources",
     "get_agent_instructions",
+    "get_settings",
     "list_pending_changes",
     "sync_source",
     "set_proposals",
@@ -39,6 +40,8 @@ CATALOG_NAMES = [
     "undo_inbox_item",
     "resolve_inbox_conflict",
     "propose_agent_instructions",
+    "save_entity_settings",
+    "save_fire_assumptions",
     "save_activity",
     "save_spending_subcategory",
     "save_tag",
@@ -73,8 +76,24 @@ def test_catalog_is_exactly_the_agreed_tools():
     assert [tool.name for tool in CATALOG] == CATALOG_NAMES
 
 
+# Settings agents may edit; every other setting is sensitive and browser-only.
+SAFE_SETTINGS = {
+    "save_entity_settings": {
+        "name",
+        "time_zone",
+        "default_return_percent",
+        "expected_revision",
+    },
+    "save_fire_assumptions": {
+        "annual_spending",
+        "withdrawal_percent",
+        "expected_revision",
+    },
+}
+
+
 def test_excluded_operations_have_no_tool():
-    excluded = ("key", "connect", "disconnect", "account_selection", "setting")
+    excluded = ("key", "connect", "disconnect", "account_selection", "provider")
     for tool in CATALOG:
         assert not any(word in tool.name for word in excluded), tool.name
         properties = tool.input.model_json_schema().get("properties", {})
@@ -84,6 +103,24 @@ def test_excluded_operations_have_no_tool():
         assert ("instructions" in properties) == (
             tool.name == "propose_agent_instructions"
         )
+        if "setting" in tool.name:
+            assert tool.name in {"get_settings", *SAFE_SETTINGS}, tool.name
+
+
+def test_settings_tools_take_only_safe_settings():
+    for name, fields in SAFE_SETTINGS.items():
+        schema = TOOLS[name].input.model_json_schema()
+        assert set(schema["properties"]) == fields, name
+        assert schema["additionalProperties"] is False
+    assert set(t.Settings.model_fields) == {
+        "name",
+        "time_zone",
+        "today",
+        "default_return_percent",
+        "fire_annual_spending",
+        "fire_withdrawal_percent",
+        "revision",
+    }
 
 
 def test_only_gated_writes_build_pending_changes():

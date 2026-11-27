@@ -675,6 +675,21 @@ months/targets and saved Plan versions stay unchanged. Settings edits and their
 before/after audit snapshots and retry outcomes commit atomically. Stale revisions
 return 409; current authorization is required even for successful retry outcomes.
 
+These settings and the FIRE assumptions above are the ones API keys and agents
+may change ([TDD 03](tdds/03-agent-access.md#entity-settings-for-agents-2026-11-27)).
+Agents use the catalog tools `get_settings` (all of them with the one Entity
+`revision`), `save_entity_settings` (`{name, time_zone, default_return_percent?,
+expected_revision}`) and `save_fire_assumptions` (`{annual_spending,
+withdrawal_percent, expected_revision}`, both required so neither resets by
+omission). They follow the Agent mode like any write: Read only refuses them,
+Ask first drafts a Pending change, Apply directly records them, audited as `mcp`
+or `agent`. Everything else in Settings is sensitive and browser-session only;
+API keys get `403 browser_session_required` and no tool reaches it: the Agent
+mode, assistant enablement and `PUT /agent/settings` (AGENT.md may only be
+proposed, see below), the YNAB token (`/transaction-provider`) and source setup
+(plans, connect, account selection, disconnect), and sign-in and sessions. An
+unknown field in a settings body, such as `mode`, is a 422.
+
 `GET /api/keys` lists the authenticated User's keys as `{id, name, created_at,
 revoked_at}`, including revoked metadata. It never returns a token or digest.
 Existing `POST /api/keys` shows a new token once; `DELETE /api/keys/{id}` revokes

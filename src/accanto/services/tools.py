@@ -4,9 +4,11 @@ One entry per tool: its input and output contracts and one async function.
 Reads call the existing read services and project explicit fields. Writes build
 the existing service command and go through agent_writes.dispatch, which
 enforces the Agent mode. Excluded on purpose (PRD AG-05): API keys, source
-setup, agent enablement and mode, Entity settings, sign-in and health. No tool
+setup and the YNAB token, agent enablement and mode, sign-in and health. No tool
 here reaches them, and tests assert the exact tool list. AGENT.md is readable,
-and an agent may only propose a new one as a Pending change (TDD 10).
+and an agent may only propose a new one as a Pending change (TDD 10). The
+Entity's own settings (name, time zone, default expected return and FIRE
+assumptions) are ordinary gated writes (TDD 03, Settings).
 """
 
 import json
@@ -19,6 +21,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from accanto.db import read_snapshot
 from accanto.domains import activity_summary, calculator, position, projections
 from accanto.domains.entity import entity_today
 from accanto.dtos import tools as t
@@ -37,6 +40,7 @@ from accanto.services.monthly import (
     read_review,
     write,
 )
+from accanto.services.projections import fire_assumptions
 from accanto.services.routines import (
     occurrence_target,
     read_occurrence,
@@ -501,6 +505,21 @@ async def get_agent_instructions(ctx, entity_id, args, key):
         return t.AgentInstructions(
             **await agent_settings.read_instructions(session, ctx.actor, entity_id)
         )
+
+
+async def get_settings(ctx, entity_id, args, key):
+    async with ctx.sessions() as session, read_snapshot(session):
+        _, entity = await authorize(session, ctx.actor, entity_id, lock=False)
+    fire = fire_assumptions(entity)
+    return t.Settings(
+        name=entity["name"],
+        time_zone=entity["time_zone"],
+        today=entity_today(datetime.now(UTC), entity["time_zone"]),
+        default_return_percent=str(entity["default_return_percent"]),
+        fire_annual_spending=fire["annual_spending"],
+        fire_withdrawal_percent=fire["withdrawal_percent"],
+        revision=entity["revision"],
+    )
 
 
 # Inbox writes that run in Ask first and Apply directly ---------------------------
@@ -1045,6 +1064,22 @@ def build_routine(args: t.SaveRoutine):
     )
 
 
+def build_entity_settings(args: t.SaveEntitySettings):
+    summary = f"Update settings: name {args.name}, time zone {args.time_zone}"
+    if args.default_return_percent is not None:
+        summary += f", default return {args.default_return_percent}%"
+    return Command("edit_entity", args.model_dump(mode="json")), summary
+
+
+def build_fire_assumptions(args: t.SaveFireAssumptions):
+    spending = args.annual_spending or "none"
+    return (
+        Command("edit_fire_assumptions", args.model_dump(mode="json")),
+        f"Update FIRE assumptions: spending {spending}, "
+        f"withdrawal {args.withdrawal_percent}%",
+    )
+
+
 def build_agent_instructions(args: t.ProposeAgentInstructions):
     return (
         Command(
@@ -1257,6 +1292,17 @@ CATALOG: tuple[CatalogTool, ...] = (
         get_agent_instructions,
     ),
     _read(
+        "get_settings",
+        "The Entity's editable settings with their one revision: name, time "
+        "zone and today, default expected return for Projections, and FIRE "
+        "assumptions. The Agent mode, assistant enablement, the YNAB token and "
+        "sources, API keys and sign-in are not settings you can see or change; "
+        "the owner changes them in Settings in Accanto.",
+        t.NoInput,
+        t.Settings,
+        get_settings,
+    ),
+    _read(
         "list_pending_changes",
         "Changes drafted by agents, waiting for the owner.",
         t.NoInput,
@@ -1339,6 +1385,23 @@ CATALOG: tuple[CatalogTool, ...] = (
         "what it says unless the owner asked to change it.",
         t.ProposeAgentInstructions,
         build_agent_instructions,
+    ),
+    _write(
+        "save_entity_settings",
+        "Replace the Entity's name, time zone and (optionally) default expected "
+        "return, only when the owner asks. Read get_settings first and keep "
+        "what the owner did not ask to change. Changing the time zone never "
+        "moves existing entries between dates or months.",
+        t.SaveEntitySettings,
+        build_entity_settings,
+    ),
+    _write(
+        "save_fire_assumptions",
+        "Replace both FIRE assumptions for Projections, annual spending (or "
+        "null) and withdrawal percent, only when the owner asks. Read "
+        "get_settings first and keep the one they did not ask to change.",
+        t.SaveFireAssumptions,
+        build_fire_assumptions,
     ),
     _write(
         "save_activity",
