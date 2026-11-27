@@ -542,23 +542,6 @@ it("orders Plans by server update time and never recalculates saved worksheet re
   expect(screen.getByRole("button", { name: "Rename Plan: Local name" })).toBeDefined();
 });
 
-it("numbers workspace navigation without intercepting numeric input", async () => {
-  vi.spyOn(globalThis, "fetch").mockImplementation(async () => json([]));
-  render(<Workspace initial={session} signedOut={() => {}} />);
-  fireEvent.keyDown(document.body, { key: "4" });
-  expect(nav().getByRole("link", { name: "Plans" }).getAttribute("aria-current")).toBe("page");
-  expect(screen.queryByText("Compare saved scenarios")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /New Plan/ }));
-  const name = screen.getByLabelText("Plan name");
-  fireEvent.keyDown(name, { key: "1" });
-  fireEvent.change(name, { target: { value: "123" } });
-  expect(nav().getByRole("link", { name: "Plans" }).getAttribute("aria-current")).toBe("page");
-  fireEvent.keyDown(document.body, { key: "1" });
-  expect(nav().getByRole("link", { name: "Home" }).getAttribute("aria-current")).toBe("page");
-  fireEvent.keyDown(document.body, { key: "4" });
-  expect(screen.getByLabelText("Plan name").getAttribute("value")).toBe("123");
-});
-
 it("shows funding-based half-even percentages and never invents zero-funding ratios", () => {
   const input = {
     funding: 800,

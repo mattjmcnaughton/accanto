@@ -2993,7 +2993,7 @@ const HELP: Array<[string, string]> = [
   ],
   [
     "Ctrl K",
-    "Ask, or jump to another screen (⌘ K on a Mac). Here 1 – 6 set a category, so they do not switch screens. Ctrl J or ⌘ J opens the assistant and n adds activity.",
+    "Ask, or jump to another screen (⌘ K on a Mac). Ctrl J or ⌘ J opens the assistant and n adds activity.",
   ],
   ["?", "Show or hide this help."],
 ];

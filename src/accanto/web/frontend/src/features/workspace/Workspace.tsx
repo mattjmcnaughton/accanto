@@ -94,17 +94,8 @@ const TITLES = Object.fromEntries([
   ["settings", "Settings"],
   ["more", "More"],
 ]) as Record<Screen, string>;
-/**
- * Sidebar order; keys 1 to 9 jump to the first nine. The inbox has no number: it uses 1 to 6
- * itself for categories, and leaving it out keeps every other screen's number unchanged.
- * Routines and Schedules have none either, for the same reason.
- */
-const ORDER: Screen[] = [
-  ...NAV.flatMap((g) => g.items.map(([to]) => to)).filter(
-    (to) => to !== "inbox" && to !== "routines" && to !== "schedules",
-  ),
-  "settings",
-];
+/** Every screen the Ask bar can jump to, in sidebar order. */
+const JUMPS: Screen[] = [...NAV.flatMap((g) => g.items.map(([to]) => to)), "settings"];
 /** The phone's tabs, by how often they are used; More lists the rest in sidebar groups. */
 const TABBED: Screen[] = ["home", "inbox", "activity"];
 /** The screens that show one month, chosen in the top bar. */
@@ -441,10 +432,7 @@ export function Workspace({
       keysBelongElsewhere(event.target)
     )
       return;
-    if (/^[1-9]$/.test(event.key)) {
-      event.preventDefault();
-      go(ORDER[Number(event.key) - 1]);
-    } else if (event.key === "?") setShortcuts(true);
+    if (event.key === "?") setShortcuts(true);
     else if (event.key === "n") {
       event.preventDefault();
       addActivity();
@@ -478,9 +466,6 @@ export function Workspace({
       className="nav"
       href={hrefFor(to, month === thisMonth ? undefined : month, linkEntity)}
       aria-current={(to === "more" ? !TABBED.includes(screen) : screen === to) ? "page" : undefined}
-      aria-keyshortcuts={
-        ORDER.indexOf(to) >= 0 && ORDER.indexOf(to) < 9 ? String(ORDER.indexOf(to) + 1) : undefined
-      }
       onClick={(event: MouseEvent) => {
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
           return;
@@ -525,7 +510,7 @@ export function Workspace({
       slash: "/pending",
       run: () => toAssistant({ tab: "pending" }),
     },
-    ...[...ORDER, "inbox" as const].map((to) => ({
+    ...JUMPS.map((to) => ({
       text: `Go to ${TITLES[to]}`,
       hint: "Screen",
       run: () => go(to),
@@ -928,10 +913,6 @@ const Shortcuts = ({ close }: { close: () => void }) => (
         {[
           ["Ctrl K or ⌘ K", "Ask the assistant, jump to a screen, or run a / command"],
           ["Ctrl J or ⌘ J", "Open or close the assistant"],
-          [
-            "1 to 9",
-            "Go to a screen, in sidebar order. In the Transactions inbox, 1 to 6 set a category",
-          ],
           ["N", "Add activity"],
           ["[ and ]", "Previous and next month on Home, Activity and Review"],
           ["J and K", "Move through rows, then Enter to open one"],
