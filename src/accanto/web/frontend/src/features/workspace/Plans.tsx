@@ -194,13 +194,18 @@ export function Plans(
     plan.revisions[0]?.name ??
     "Unavailable Plan";
   const versionsOf = (plan: PlanGroup) => newestFirst(plan.revisions.filter((r) => r.saved));
-  // Home's Plan split shows the latest saved version of the Plan the month's Review links,
-  // or, without a Review, of the most recently edited Plan that has a saved version.
-  const reviewed = review.kind === "ready" ? review.data?.version?.uuid : undefined;
-  const splitPlan =
-    plans.find((plan) => plan.revisions.some((r) => r.uuid === reviewed)) ??
-    plans.find((plan) => versionsOf(plan).length > 0);
-  const splitVersion = splitPlan && versionsOf(splitPlan)[0];
+  // Home's Plan split shows the version the month's Review links, read from the Plans list
+  // for its totals; without a Review, the latest saved version of the most recently edited
+  // Plan that has one.
+  const linked =
+    review.kind === "ready" && review.data?.review
+      ? plans.flatMap((plan) => plan.revisions).find((r) => r.uuid === review.data.version?.uuid)
+      : undefined;
+  const latestPlan =
+    review.kind === "not_found" || review.kind === "empty" || (review.kind === "ready" && !linked)
+      ? plans.find((plan) => versionsOf(plan).length > 0)
+      : undefined;
+  const splitVersion = linked ?? (latestPlan && versionsOf(latestPlan)[0]);
   const focus = (selector: string) =>
     requestAnimationFrame(() => root.current?.querySelector<HTMLElement>(selector)?.focus());
   function open(plan: PlanGroup) {
