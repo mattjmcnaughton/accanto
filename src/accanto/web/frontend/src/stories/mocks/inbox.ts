@@ -65,6 +65,8 @@ function staged(
     proposal: proposal ?? null,
     proposal_rejection: null,
     proposed_by: proposal ? AGENT : null,
+    note: "",
+    noted_at: null,
     staged_at: "2026-11-20T13:00:00Z",
     revision: proposal ? 2 : 1,
     ...extra,
@@ -367,6 +369,19 @@ export function inboxApi(
     if (next.length < 25) state.run = { ...state.run, state: "succeeded" };
   }
   const find = (id: string) => state.items.find((i) => i.id === id);
+  function noteOne(it: StagedTransaction | undefined, revision: unknown, note: string) {
+    if (!it) return { status: 404, code: "record_not_found", message: "Record is unavailable." };
+    if (!["waiting", "skipped"].includes(it.status))
+      return {
+        status: 409,
+        code: "inbox_status",
+        message: "This item is recorded. Its note is on the actual entry.",
+      };
+    if (revision !== it.revision)
+      return { status: 409, code: "stale_revision", message: "Reload and reconcile." };
+    bump(it, { note, noted_at: note ? new Date().toISOString() : null });
+    return { ok: true as const, item: it };
+  }
   const bump = (it: StagedTransaction, changes: Partial<StagedTransaction>) =>
     Object.assign(it, changes, { revision: it.revision + 1 });
 
@@ -402,7 +417,12 @@ export function inboxApi(
     }
     const uuid = crypto.randomUUID();
     const recorded: Activity = {
-      ...entry(uuid, it.financial_date, Math.abs(amount).toFixed(2), it.payee),
+      ...entry(
+        uuid,
+        it.financial_date,
+        Math.abs(amount).toFixed(2),
+        [it.payee, it.memo, it.note].filter(Boolean).join(" · "),
+      ),
       category: c.refund_of ? "spending" : (c.category ?? "spending"),
       refund_of: c.refund_of ?? null,
     };
@@ -480,6 +500,27 @@ export function inboxApi(
             : { item_id: x.item_id, ok: false, error: { code: r.code, message: r.message } };
         }),
       });
+    }),
+    http.put(`${entity}/inbox/note`, async ({ request }) => {
+      const body = (await request.json()) as {
+        note: string;
+        items: Array<{ item_id: string; expected_revision: number }>;
+      };
+      await delay(200);
+      return HttpResponse.json({
+        results: body.items.map((x) => {
+          const r = noteOne(find(x.item_id), x.expected_revision, body.note);
+          return "ok" in r
+            ? { item_id: x.item_id, ...r }
+            : { item_id: x.item_id, ok: false, error: { code: r.code, message: r.message } };
+        }),
+      });
+    }),
+    http.put(`${entity}/inbox/:item/note`, async ({ params, request }) => {
+      const body = (await request.json()) as { expected_revision: number; note: string };
+      await delay(200);
+      const r = noteOne(find(String(params.item)), body.expected_revision, body.note);
+      return "ok" in r ? HttpResponse.json(r) : reject(r.status, r.code, r.message);
     }),
     http.post(`${entity}/inbox/:item/:action`, async ({ params, request }) => {
       const body = (await request.json()) as Record<string, unknown>;

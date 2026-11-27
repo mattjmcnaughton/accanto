@@ -737,6 +737,37 @@ async def scenario():
         assert undone.json()["results"][0]["item"]["status"] == "waiting"
         assert await entries() == before_entries
 
+        # The owner's note: one note on several items, each its own write; it
+        # survives a re-sync and recording keeps it after the payee and memo.
+        coffee, second = await item("t-coffee"), await item("t-return2")
+        noted = await command(
+            "PUT",
+            "/inbox/note",
+            {
+                "note": "  A gift card for a friend, not dining out.  ",
+                "items": [
+                    {"item_id": coffee["id"], "expected_revision": coffee["revision"]},
+                    {"item_id": second["id"], "expected_revision": 1},
+                ],
+            },
+        )
+        assert noted.status_code == 200, noted.text
+        noted_coffee, stale_note = noted.json()["results"]
+        assert (
+            noted_coffee["item"]["note"] == "A gift card for a friend, not dining out."
+        )
+        assert noted_coffee["item"]["noted_at"] is not None
+        assert stale_note["error"]["code"] == "stale_revision"
+        assert (await item("t-return2"))["note"] == ""
+        await client.post(prefix + sync_path)
+        assert (await item("t-coffee"))["note"] == noted_coffee["item"]["note"]
+        too_long = await command(
+            "PUT",
+            f"/inbox/{coffee['id']}/note",
+            {"expected_revision": noted_coffee["item"]["revision"], "note": "x" * 1001},
+        )
+        assert too_long.status_code == 422
+
         # Retries don't duplicate: Enter twice records one entry and one audit.
         coffee = await item("t-coffee")
         body = {
@@ -753,6 +784,16 @@ async def scenario():
         )
         assert first_press.status_code == second_press.status_code == 200
         assert first_press.json() == second_press.json()
+        assert first_press.json()["entry"]["note"] == (
+            "Example Coffee Cart · A gift card for a friend, not dining out."
+        )
+        locked = await command(
+            "PUT",
+            f"/inbox/{coffee['id']}/note",
+            {"expected_revision": first_press.json()["item"]["revision"], "note": ""},
+        )
+        assert locked.status_code == 409
+        assert locked.json()["detail"]["code"] == "inbox_status"
         assert await entries() == before_entries + 1
         assert await count(m.audit, m.audit.c.entity_id == entity_id) == audits
         entry_audit = await count(

@@ -66,6 +66,9 @@ type Undo = Array<{ id: string; action: "undo" | "unskip" | "skip" | "later" }>;
  * leave it when they stop waiting, and Later moves one to the end without saving anything.
  */
 type Flow = { ids: string[]; queue: string[]; later: string[]; editing: boolean };
+type Noting = { ids: string[]; text: string };
+/** Statuses whose note can still change; a recorded item's note is on its actual entry. */
+const NOTABLE = new Set(["waiting", "skipped"]);
 const RUN_ERRORS: Record<string, string> = {
   agent_disabled: "the assistant is turned off in Settings.",
   read_only: "the Agent mode is Read only.",
@@ -165,6 +168,8 @@ export function Inbox(
   const [drafts, setDrafts] = useState<Record<string, Completion>>({});
   const [hints, setHints] = useState<Record<string, string>>({});
   const [picker, setPicker] = useState<Picker | null>(null);
+  /** The note being written: the items it is for and its text so far. */
+  const [noting, setNoting] = useState<Noting | null>(null);
   const [help, setHelp] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [busy, setBusy] = useState(false);
@@ -748,7 +753,7 @@ export function Inbox(
         editing(false);
         return true;
       }
-      if (["1", "2", "3", "4", "5", "6", "a", "f", "t", "r"].includes(key)) return false;
+      if (["1", "2", "3", "4", "5", "6", "a", "f", "t", "r", "c"].includes(key)) return false;
     }
     switch (key) {
       case "Enter":
@@ -764,6 +769,9 @@ export function Inbox(
       case "e":
         editing(true);
         break;
+      case "c":
+        if (current) openNote([current]);
+        break;
       case "z":
         void flowUndo();
         break;
@@ -776,6 +784,10 @@ export function Inbox(
     }
     return true;
   }
+
+  // A note being written belongs to the item or selection it was opened on.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Close it when the cursor or selection moves.
+  useEffect(() => setNoting(null), [current?.id, chosen.length]);
 
   // Proposal run ----------------------------------------------------------------
   // biome-ignore lint/correctness/useExhaustiveDependencies: Poll while a run is active.
@@ -808,6 +820,35 @@ export function Inbox(
   async function stopRun() {
     const stopped = await run<ProposalRun>(inbox.stopRun(p.entity.id));
     if (stopped) setProposals(stopped);
+  }
+  /** c: write a note on the current item, or one note for every selected item. */
+  function openNote(its: StagedTransaction[]) {
+    const open = its.filter((it) => NOTABLE.has(it.status));
+    if (!open.length)
+      return setToast({
+        text: "A recorded item's note is on its actual entry. Change it in Activity.",
+        tone: "warn",
+      });
+    const shared = new Set(open.map((it) => it.note));
+    setNoting({ ids: open.map((it) => it.id), text: shared.size === 1 ? [...shared][0] : "" });
+  }
+  /** Save the note on the items it was opened for; an empty note clears it. */
+  async function saveNote() {
+    if (!noting) return;
+    const its = noting.ids.flatMap((id) => all.find((it) => it.id === id) ?? []);
+    const text = noting.text.trim();
+    const saved =
+      its.length === 1
+        ? (await run(inbox.note(p.entity.id, its[0], text)))
+          ? 1
+          : 0
+        : (await many(inbox.noteMany(p.entity.id, its, text), its)).filter((r) => r.ok).length;
+    if (!saved) return;
+    setNoting(null);
+    const what = its.length === 1 ? its[0].payee : `${saved} of ${its.length} selected`;
+    setToast({
+      text: text ? `Saved the note on ${what}.` : `Cleared the note on ${what}.`,
+    });
   }
 
   function setDraft(next: Record<string, Completion>) {
@@ -1006,7 +1047,8 @@ export function Inbox(
           undefined,
           taggable.map((it) => it.id),
         );
-    } else if (key === "r")
+    } else if (key === "c") openNote(chosen);
+    else if (key === "r")
       warn("A refund links one purchase. Press Esc to clear the selection, then link it.");
     else if (key === "Escape") {
       anchor.current = null;
@@ -1126,6 +1168,9 @@ export function Inbox(
             tone: "warn",
           });
         return void skip(current);
+      case "c":
+        if (!current) return notHere();
+        return openNote([current]);
       case "x":
         if (!current || !waiting || view !== "waiting") return notHere();
         return toggle(current.id);
@@ -1199,6 +1244,14 @@ export function Inbox(
         text: `Synced ${target.name}: ${result.counts.added} new, ${result.counts.changed} changed, ${result.counts.removed + result.counts.conflicts} removed or in conflict.`,
       });
   }
+
+  const note: NoteEdit = {
+    text: noting?.text ?? null,
+    busy,
+    setText: (text) => setNoting((n) => n && { ...n, text }),
+    save: () => void saveNote(),
+    cancel: () => setNoting(null),
+  };
 
   return (
     <div className="ix ar" aria-label="Transactions inbox">
@@ -1317,7 +1370,7 @@ export function Inbox(
                 ref={search}
                 className="input"
                 type="search"
-                placeholder="Search payee, memo, amount…"
+                placeholder="Search payee, memo, note, amount…"
                 aria-label="Search the inbox"
                 aria-keyshortcuts="/"
                 value={query}
@@ -1506,6 +1559,7 @@ export function Inbox(
                       choices={choices}
                       hint={hints[current.id]}
                       press={press}
+                      note={note}
                     />
                     <button type="button" className="btn quiet" onClick={() => press("Escape")}>
                       Back to flow <Key k="Esc" />
@@ -1524,6 +1578,7 @@ export function Inbox(
                       choices={choices}
                       later={flow.later.includes(current.id)}
                       press={press}
+                      note={note}
                     />
                   </>
                 )}
@@ -1662,6 +1717,7 @@ export function Inbox(
                 choices={choices}
                 busy={busy}
                 press={press}
+                note={note}
               />
             ) : current ? (
               <Detail
@@ -1671,6 +1727,7 @@ export function Inbox(
                 choices={choices}
                 hint={hints[current.id]}
                 press={press}
+                note={note}
               />
             ) : (
               <div className="ix-empty">
@@ -1710,6 +1767,7 @@ export function Inbox(
                   [["l", "→"], "Later"],
                   [["s"], "Ignore"],
                   [["e"], "Edit"],
+                  [["c"], "Note"],
                   [["z"], "Undo"],
                   [["Esc"], "Leave flow"],
                 ]
@@ -1727,6 +1785,7 @@ export function Inbox(
                   [["X"], "Select all"],
                   [["1–6"], "Category for all"],
                   [["a", "f", "t"], "Pickers for all"],
+                  [["c"], "Note for all"],
                   [["Enter"], `Record ${chosen.length}`],
                   [["s"], `Ignore ${chosen.length}`],
                   [["z"], "Undo"],
@@ -1740,6 +1799,7 @@ export function Inbox(
                   [["f"], "Funding origin"],
                   [["r"], "Refund"],
                   [["t"], "Tags"],
+                  [["c"], "Note"],
                   [["s"], "Ignore"],
                   [["x"], "Select"],
                   [["z"], "Undo"],
@@ -1914,6 +1974,12 @@ function ItemRow({
             </>
           )}
           {hint && <span className="ix-why-row"> · {hint}</span>}
+          {it.note && (
+            <span className="ix-note-row">
+              {" "}
+              · <span aria-hidden="true">✎</span> {it.note}
+            </span>
+          )}
         </small>
       </div>
       <div className={`a${isInflow(it) ? " good" : ""}`}>{signed(it)}</div>
@@ -1928,12 +1994,14 @@ function FlowCard({
   choices,
   later,
   press,
+  note,
 }: {
   it: StagedTransaction;
   c: Completion;
   choices: Choices;
   later: boolean;
   press: (key: string) => void;
+  note: NoteEdit;
 }) {
   const unsure = !c.skip && !c.category && !c.refund_of;
   const inflow = isInflow(it);
@@ -1968,6 +2036,7 @@ function FlowCard({
       ) : (
         <div className="ix-msg">No proposal yet. Enter opens edit to choose a category.</div>
       )}
+      <NoteBox its={[it]} edit={note} press={press} />
       <div className="ix-do">
         <button type="button" className="btn pri" onClick={() => press("Enter")}>
           {unsure ? "Choose" : c.skip ? "Accept: ignore" : "Accept"} <Key k="Enter" />
@@ -1980,6 +2049,9 @@ function FlowCard({
         </button>
         <button type="button" className="btn" onClick={() => press("e")}>
           Edit <Key k="e" />
+        </button>
+        <button type="button" className="btn" onClick={() => press("c")}>
+          {it.note ? "Edit note" : "Note"} <Key k="c" />
         </button>
         <button type="button" className="btn quiet" onClick={() => press("z")}>
           Undo <Key k="z" />
@@ -1996,6 +2068,7 @@ function Detail({
   choices,
   hint,
   press,
+  note,
 }: {
   it: StagedTransaction;
   c: Completion;
@@ -2003,6 +2076,7 @@ function Detail({
   choices: Choices;
   hint?: string;
   press: (key: string) => void;
+  note: NoteEdit;
 }) {
   const waiting = it.status === "waiting";
   const inflow = isInflow(it);
@@ -2094,6 +2168,7 @@ function Detail({
           )}
         </div>
       )}
+      <NoteBox its={[it]} edit={note} press={press} />
       {c.skip ? (
         <>
           <div className="lab">
@@ -2235,6 +2310,110 @@ function Detail({
   );
 }
 
+type NoteEdit = {
+  /** The text being written, or null when no note is open. */
+  text: string | null;
+  busy: boolean;
+  setText: (text: string) => void;
+  save: () => void;
+  cancel: () => void;
+};
+
+/**
+ * The owner's note on an item or a selection: context, or why the agent's proposal is wrong.
+ * It is an annotation only; recording keeps it on the actual entry's note.
+ */
+function NoteBox({
+  its,
+  edit,
+  press,
+}: {
+  its: StagedTransaction[];
+  edit: NoteEdit;
+  press: (key: string) => void;
+}) {
+  const one = its.length === 1 ? its[0] : null;
+  const open = its.some((it) => NOTABLE.has(it.status));
+  if (edit.text !== null)
+    return (
+      <div className="ix-note editing">
+        <label className="lab" htmlFor="ix-note-text">
+          {one ? "Your note" : `One note for all ${its.length}`}
+          <span>Kept on the actual entry</span>
+        </label>
+        <textarea
+          id="ix-note-text"
+          // biome-ignore lint/a11y/noAutofocus: c opens the note to type in it.
+          autoFocus
+          rows={3}
+          maxLength={1000}
+          value={edit.text}
+          placeholder="Context, or why the proposal is wrong, such as: a birthday gift for a friend."
+          onChange={(e) => edit.setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              edit.cancel();
+            } else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              edit.save();
+            }
+          }}
+        />
+        <div className="ix-note-do">
+          <button type="button" className="btn pri sm" disabled={edit.busy} onClick={edit.save}>
+            Save note <Key k="Enter" />
+          </button>
+          <button type="button" className="btn quiet sm" onClick={edit.cancel}>
+            Cancel <Key k="Esc" />
+          </button>
+        </div>
+      </div>
+    );
+  if (!one) {
+    const notes = new Set(its.map((it) => it.note));
+    const shared = notes.size === 1 ? [...notes][0] : "Mixed";
+    return (
+      <button type="button" className="ix-fld" onClick={() => press("c")}>
+        <Key k="c" />
+        <span>
+          <span className="fl">Note</span>
+          <span className={`fv${shared ? "" : " none"}`}>{shared || "None"}</span>
+          <span className="fx">Optional. One note replaces each selected item's note.</span>
+        </span>
+      </button>
+    );
+  }
+  if (!one.note)
+    return open ? (
+      <button type="button" className="ix-fld" onClick={() => press("c")}>
+        <Key k="c" />
+        <span>
+          <span className="fl">Note</span>
+          <span className="fv none">Add a note</span>
+          <span className="fx">Context, or why the proposal is wrong. Kept on the entry.</span>
+        </span>
+      </button>
+    ) : null;
+  return (
+    <div className="ix-note">
+      <div className="lab">
+        Your note
+        <span>
+          {one.noted_at && fmtShort(one.noted_at.slice(0, 10))}
+          {!open && " · on the actual entry"}
+        </span>
+      </div>
+      <p className="ix-why">{one.note}</p>
+      {open && (
+        <button type="button" className="btn quiet sm" onClick={() => press("c")}>
+          Edit note <Key k="c" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** The batch panel: what the selection will record, and one choice set on all of it. */
 function BatchDetail({
   its,
@@ -2242,12 +2421,14 @@ function BatchDetail({
   choices,
   busy,
   press,
+  note,
 }: {
   its: StagedTransaction[];
   cs: Completion[];
   choices: Choices;
   busy: boolean;
   press: (key: string) => void;
+  note: NoteEdit;
 }) {
   const ready = its.filter((it, i) => !cs[i].skip && !precheck(it, cs[i])).length;
   const ignoring = cs.filter((c) => c.skip).length;
@@ -2329,6 +2510,7 @@ function BatchDetail({
           tagged.length ? tagged.map((tag) => tag.name).join(", ") : null,
           "Optional. A tag chosen here is added to every selected item.",
         )}
+      <NoteBox its={its} edit={note} press={press} />
       <div className="ix-msg">
         Each item records on its own, from its proposal or these choices. Any that cannot stay
         selected, with the reason on its row.
@@ -2371,23 +2553,27 @@ const HELP: Array<[string, string]> = [
   ["t", "Add or remove tags. A refund carries its purchase's tags."],
   ["r", "Link an inflow as a refund from ranked purchase candidates."],
   [
+    "c",
+    "Write a note: context, or why the proposal is wrong. With a selection, one note for all of them. In the note, Enter saves, Shift Enter adds a line, Esc cancels. Recording keeps it on the actual entry.",
+  ],
+  [
     "s",
     "Ignore: it stays out of totals, even after a re-sync. Under Ignored, return it to the inbox.",
   ],
   [
     "x",
-    "Select or deselect for a batch; shift-click a box to select a range. X selects every waiting item shown. With a selection, 1–6, a, f and t set the same choice on all of them, Enter records them, s ignores them, and Esc clears it.",
+    "Select or deselect for a batch; shift-click a box to select a range. X selects every waiting item shown. With a selection, 1–6, a, f, t and c set the same choice on all of them, Enter records them, s ignores them, and Esc clears it.",
   ],
   ["z", "Undo the last recording or ignore."],
   ["v", "Change the view: Waiting, Ignored, Recorded."],
   ["p", "Show only items with a proposal, or all items again."],
   [
     "/",
-    "Search by payee, memo, YNAB category, amount, the proposal and its question, or what was recorded, including its line or subcategory and tags. Every word must match. It narrows every view and the proposals filter, and X selects only matching rows. Enter returns to the list; Esc clears the search.",
+    "Search by payee, memo, YNAB category, amount, the proposal and its question, your note, or what was recorded, including its line or subcategory and tags. Every word must match. It narrows every view and the proposals filter, and X selects only matching rows. Enter returns to the list; Esc clears the search.",
   ],
   [
     "F",
-    "Flow: one waiting item at a time. Enter accepts, l or → leaves it for later (nothing is saved), s ignores, e edits, z undoes, Esc leaves.",
+    "Flow: one waiting item at a time. Enter accepts, l or → leaves it for later (nothing is saved), s ignores, e edits, c writes a note, z undoes, Esc leaves.",
   ],
   ["↑ ↓ Enter Esc", "In a picker: move, choose, cancel."],
   [

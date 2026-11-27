@@ -60,6 +60,8 @@ class StagedFacts:
     amount: Decimal  # signed, inflow positive
     payee: str
     memo: str | None = None
+    # The owner's note on the staged transaction (an annotation, never a choice).
+    note: str = ""
 
 
 @dataclass(frozen=True)
@@ -139,10 +141,11 @@ def validate_shape(c: Completion) -> None:
         )
 
 
-def entry_note(payee: str, memo: str | None) -> str:
-    """F8 (open): the payee is kept in the entry's note, with any memo."""
-    note = " · ".join(part for part in (payee.strip(), (memo or "").strip()) if part)
-    return note[:2000]
+def entry_note(payee: str, memo: str | None, owner_note: str = "") -> str:
+    """F8 (open): the payee is kept in the entry's note, with any memo and the
+    owner's inbox note, in that order."""
+    parts = (payee.strip(), (memo or "").strip(), owner_note.strip())
+    return " · ".join(part for part in parts if part)[:2000]
 
 
 def command_for(facts: StagedFacts, c: Completion) -> EntryCommand:
@@ -154,7 +157,7 @@ def command_for(facts: StagedFacts, c: Completion) -> EntryCommand:
         )
     inflow = facts.amount > 0
     amount = str(abs(facts.amount))
-    note = entry_note(facts.payee, facts.memo)
+    note = entry_note(facts.payee, facts.memo, facts.note)
     base = {"date": facts.financial_date.isoformat(), "amount": amount, "note": note}
     tags = {"tag_ids": list(c.tag_ids)} if c.tag_ids else {}
     if c.refund_of:
@@ -212,6 +215,8 @@ def command_for(facts: StagedFacts, c: Completion) -> EntryCommand:
 # Which statuses each inbox action accepts, and the status it leaves.
 TRANSITIONS: dict[str, tuple[set[str], str | None]] = {
     "propose": ({"waiting"}, None),
+    # A recorded item's note lives on its actual entry; edit it there.
+    "note": ({"waiting", "skipped"}, None),
     "record": ({"waiting"}, "recorded"),
     "skip": ({"waiting"}, "skipped"),
     "unskip": ({"skipped"}, "waiting"),

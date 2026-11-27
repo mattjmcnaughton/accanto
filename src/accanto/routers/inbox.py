@@ -8,9 +8,11 @@ from uuid import UUID
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 
 from accanto.dtos.inbox import (
+    BulkNoteInput,
     BulkProposalInput,
     BulkRecordInput,
     BulkRevisionInput,
+    NoteInput,
     ProposalInput,
     RecordInput,
     ResolveInput,
@@ -155,6 +157,51 @@ async def clear_proposal(
         request_key,
         body.model_dump(),
         item_id,
+    )
+
+
+@router.put("/note")
+async def set_notes(
+    entity_id: UUID,
+    body: BulkNoteInput,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    """One owner's note on many waiting or ignored items; each reports its outcome."""
+    results = []
+    for item in body.items:
+        fields = {"expected_revision": item.expected_revision, "note": body.note}
+        try:
+            result = await write(
+                session,
+                token,
+                entity_id,
+                "inbox_note",
+                item_key(request_key, item.item_id),
+                fields,
+                item.item_id,
+            )
+            results.append({"item_id": str(item.item_id), "ok": True, "item": result})
+        except RejectionError as error:
+            if error.status == 401:
+                raise
+            results.append(outcome(item.item_id, error))
+    return {"results": results}
+
+
+@router.put("/{item_id}/note")
+async def set_note(
+    entity_id: UUID,
+    item_id: UUID,
+    body: NoteInput,
+    session: Session,
+    token: Token,
+    request_key: RequestKey,
+):
+    """Set or clear the owner's note. Recording keeps it on the entry's note."""
+    return await write(
+        session, token, entity_id, "inbox_note", request_key, body.model_dump(), item_id
     )
 
 

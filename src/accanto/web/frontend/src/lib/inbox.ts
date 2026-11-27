@@ -84,6 +84,9 @@ export interface StagedTransaction {
   proposal: Proposal | null;
   proposal_rejection: Rejection | null;
   proposed_by: { user_id: UUID; interface: string; at: string } | null;
+  /** The owner's note: context or a correction for the agent; "" when none. */
+  note: string;
+  noted_at: string | null;
   staged_at: string;
   revision: number;
 }
@@ -195,6 +198,21 @@ export const inbox = {
     method: "POST",
     path: `${root(entityId)}/inbox/${action}`,
     body: { items: items.map((it) => ({ item_id: it.id, expected_revision: it.revision })) },
+  }),
+  /** Set or clear the owner's note on one item; "" clears it. */
+  note: (entityId: UUID, it: StagedTransaction, note: string): InboxWrite => ({
+    method: "PUT",
+    path: `${item(entityId, it.id)}/note`,
+    body: { expected_revision: it.revision, note },
+  }),
+  /** The same note on several items; each reports its own outcome. */
+  noteMany: (entityId: UUID, items: StagedTransaction[], note: string): InboxWrite => ({
+    method: "PUT",
+    path: `${root(entityId)}/inbox/note`,
+    body: {
+      note,
+      items: items.map((it) => ({ item_id: it.id, expected_revision: it.revision })),
+    },
   }),
   resolve: (entityId: UUID, it: StagedTransaction, resolution: "keep" | "delete"): InboxWrite => ({
     method: "POST",

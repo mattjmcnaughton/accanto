@@ -39,6 +39,8 @@ const item = (over: Partial<StagedTransaction>): StagedTransaction => ({
   proposal: null,
   proposal_rejection: null,
   proposed_by: null,
+  note: "",
+  noted_at: null,
   staged_at: "2026-11-20T00:00:00Z",
   revision: 3,
   ...over,
@@ -704,4 +706,55 @@ it("batch resolves a shift-click range with one choice and keeps only failures s
     path: "/api/entities/e/inbox/skip",
     body: { items: [{ item_id: "b", expected_revision: 5 }] },
   });
+});
+
+it("c writes the owner's note, Enter saves it with the item's revision, and search finds it", async () => {
+  const sent: Array<{ path: string; method?: string; body: unknown }> = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (init?.method === "PUT") {
+      const body = JSON.parse(String(init.body));
+      sent.push({ path: url, method: init.method, body });
+      return new Response(
+        JSON.stringify(item({ revision: 4, note: body.note, noted_at: "2026-11-21T09:00:00Z" })),
+      );
+    }
+    if (url.endsWith("/inbox"))
+      return new Response(
+        JSON.stringify([
+          item({}),
+          item({ id: "i2", source_ref: "tx-2", payee: "Sample Hardware", amount: "-8.00" }),
+        ]),
+      );
+    return new Response("[]");
+  });
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+    />,
+  );
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  fireEvent.keyDown(document.body, { key: "c" });
+  const note = (await screen.findByRole("textbox", { name: /Your note/ })) as HTMLTextAreaElement;
+  expect(document.activeElement).toBe(note);
+  fireEvent.change(note, { target: { value: "  A gift card for a friend.  " } });
+  fireEvent.keyDown(note, { key: "Enter" });
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]).toEqual({
+    path: "/api/entities/e/inbox/i1/note",
+    method: "PUT",
+    body: { expected_revision: 3, note: "A gift card for a friend." },
+  });
+  await screen.findByText("A gift card for a friend.", { selector: ".ix-why" });
+  const input = screen.getByRole("searchbox", { name: "Search the inbox" });
+  fireEvent.change(input, { target: { value: "friend gift" } });
+  const rows = screen.queryAllByRole("option").map((o) => o.querySelector(".tt span")?.textContent);
+  expect(rows).toEqual(["Example Coffee Cart"]);
 });

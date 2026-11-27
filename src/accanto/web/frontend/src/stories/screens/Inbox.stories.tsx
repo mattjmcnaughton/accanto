@@ -161,6 +161,78 @@ export const FlowPassComplete: Story = {
 
 export const Help: Story = { play: () => press("?") };
 
+/** Owner notes: an unsure inflow explained, and a proposal refuted after the agent made it. */
+const noted = () =>
+  proposedInbox().map((it) =>
+    it.payee === "Placeholder Pay App"
+      ? {
+          ...it,
+          note: "My share of a group dinner, paid back by a friend. A refund of the Example Bistro meal.",
+          noted_at: "2026-11-21T09:10:00Z",
+        }
+      : it.payee === "Example Coffee Cart"
+        ? {
+            ...it,
+            note: "Not spending: a gift card for my sister's birthday. Giving.",
+            noted_at: "2026-11-21T09:12:00Z",
+          }
+        : it,
+  );
+const notes = { msw: [...inboxApi(noted(), [source], { run: "done" }), ...mockApi()] };
+type Canvas = { findAllByText: (text: string) => Promise<HTMLElement[]> };
+const open = async (canvas: Canvas, payee: string) =>
+  userEvent.click((await canvas.findAllByText(payee))[0]);
+
+/** The owner's note disagrees with the proposal: the row and the panel show it beside the rationale. */
+export const NoteRefutesProposal: Story = {
+  parameters: notes,
+  play: ({ canvas }) => open(canvas, "Example Coffee Cart"),
+};
+
+/** c opens the note on the current item; Enter saves, Esc cancels. */
+export const WritingNote: Story = {
+  parameters: proposed,
+  play: async ({ canvas }) => {
+    await open(canvas, "Placeholder Pay App");
+    await press("c");
+    await userEvent.keyboard("Payback from a friend for concert tickets. A refund, not income.");
+  },
+};
+
+/** A noted item after Enter: recorded, its note kept on the actual entry. */
+export const NoteRecorded: Story = {
+  parameters: notes,
+  play: async ({ canvas }) => {
+    await open(canvas, "Example Coffee Cart");
+    await press("{Enter}");
+    await new Promise((done) => setTimeout(done, 800));
+    await press("v", "v");
+    await open(canvas, "Example Coffee Cart");
+  },
+};
+
+/** In flow, c writes a note on the item in front of you without leaving the pass. */
+export const FlowNote: Story = {
+  parameters: notes,
+  play: async ({ canvas }) => {
+    await canvas.findAllByText("Sample Street Market");
+    await press("F");
+    await new Promise((done) => setTimeout(done, 300));
+    await press("c");
+    await userEvent.keyboard("Market run for the block party; split with neighbours.");
+  },
+};
+
+/** With a selection, c writes one note for every selected item. */
+export const BatchNote: Story = {
+  parameters: notes,
+  play: async ({ canvas }) => {
+    await canvas.findAllByText("Sample Street Market");
+    await press("j", "j", "x", "j", "x", "j", "x", "c");
+    await userEvent.keyboard("Trip to the coast in November.");
+  },
+};
+
 /** Every item is recorded or skipped. */
 export const NothingWaiting: Story = {
   parameters: {

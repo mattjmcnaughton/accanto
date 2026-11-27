@@ -87,6 +87,10 @@ staged = table(
     Column("proposed_by_user_id", ForeignKey("app_user.id")),
     Column("proposed_interface", String),
     Column("proposed_at", DateTime(timezone=True)),
+    # The owner's note: context, or why a proposal is wrong. Kept on the
+    # recorded entry's note; the agent reads it but never writes it.
+    Column("note", String(1000), nullable=False, server_default=""),
+    Column("noted_at", DateTime(timezone=True)),
     Column(
         "staged_at", DateTime(timezone=True), server_default=func.now(), nullable=False
     ),

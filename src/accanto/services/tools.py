@@ -1263,7 +1263,7 @@ CATALOG: tuple[CatalogTool, ...] = (
     _read(
         "list_inbox",
         "Staged transactions in the Transactions inbox (default: all but removed), "
-        "with source facts, proposal and revision. Capped at 200.",
+        "with source facts, proposal, the owner's note and revision. Capped at 200.",
         t.InboxQuery,
         t.InboxList,
         list_inbox,
