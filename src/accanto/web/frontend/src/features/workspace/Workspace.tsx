@@ -104,7 +104,8 @@ const ORDER: Screen[] = [
   ),
   "settings",
 ];
-const TABBED: Screen[] = ["home", "activity", "review", "plans"];
+/** The phone's tabs, by how often they are used; More lists the rest in sidebar groups. */
+const TABBED: Screen[] = ["home", "inbox", "activity"];
 /** The screens that show one month, chosen in the top bar. */
 const MONTHLY: Screen[] = ["home", "activity", "review"];
 const typing = (target: EventTarget | null) =>
@@ -487,6 +488,23 @@ export function Workspace({
       {label}
     </a>
   );
+  /** A row on the phone's More screen. */
+  const moreRow = (to: Screen) => (
+    <a
+      key={to}
+      className="row"
+      href={hrefFor(to, undefined, linkEntity)}
+      data-row
+      onClick={(e) => {
+        e.preventDefault();
+        go(to);
+      }}
+    >
+      <Icon name={to} />
+      <span className="t">{TITLES[to]}</span>
+      <Icon name="right" />
+    </a>
+  );
   const commands: Action[] = [
     {
       text: "Process my inbox",
@@ -667,7 +685,7 @@ export function Workspace({
               </button>
               <button
                 type="button"
-                className="btn"
+                className="btn top-agent-btn"
                 aria-pressed={assistant}
                 aria-keyshortcuts="Control+J Meta+J"
                 onClick={() => setAssistant((open) => !open)}
@@ -793,36 +811,20 @@ export function Workspace({
               )}
               {screen === "more" && !concealed && (
                 <div className="screen">
-                  <div className="card">
-                    {(
-                      [
-                        "inbox",
-                        "routines",
-                        "schedules",
-                        "projections",
-                        "savings",
-                        "investments",
-                        "giving",
-                        "loans",
-                        "settings",
-                      ] as const
-                    ).map((to) => (
-                      <a
-                        key={to}
-                        className="row"
-                        href={hrefFor(to, undefined, linkEntity)}
-                        data-row
-                        onClick={(e) => {
-                          e.preventDefault();
-                          go(to);
-                        }}
-                      >
-                        <Icon name={to} />
-                        <span className="t">{TITLES[to]}</span>
-                        <Icon name="right" />
-                      </a>
+                  <div>
+                    {NAV.map((g) => (
+                      <div key={g.group}>
+                        <div className="navlabel">{g.group}</div>
+                        <div className="card">
+                          {g.items
+                            .map(([to]) => to)
+                            .filter((to) => !TABBED.includes(to))
+                            .map(moreRow)}
+                        </div>
+                      </div>
                     ))}
                   </div>
+                  <div className="card">{moreRow("settings")}</div>
                   <div className="more-user">
                     <span className="note">Signed in to {entity.name}</span>
                     {switchEntity && (
@@ -867,9 +869,17 @@ export function Workspace({
       {entity && (
         <nav className="tabs" aria-label="Sections" hidden={concealed}>
           {link("home", "Home")}
+          {link("inbox", "Inbox")}
+          <button
+            type="button"
+            className="nav"
+            aria-pressed={assistant}
+            onClick={() => setAssistant((open) => !open)}
+          >
+            <Icon name="chat" />
+            Assistant
+          </button>
           {link("activity", "Activity")}
-          {link("review", "Review")}
-          {link("plans", "Plans")}
           {link("more", "More")}
         </nav>
       )}

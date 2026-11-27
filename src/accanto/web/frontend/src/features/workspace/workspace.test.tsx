@@ -202,6 +202,49 @@ it("sends free text from the Ask bar to the assistant and runs / commands withou
   await waitFor(() => expect(asked).toEqual(["How much went to Example Bistro?"]));
   expect(screen.getByRole("complementary", { name: "Assistant" })).toBeDefined();
 });
+it("gives the phone tabs to daily screens and groups the rest in More", async () => {
+  const session = {
+    user: { id: "u" },
+    csrf_token: "test",
+    entities: [{ id: "e", name: "Synthetic Entity", today: "2026-11-10", time_zone: "UTC" }],
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("[]"));
+  const navigate = vi.fn();
+  render(
+    <Workspace initial={session} signedOut={vi.fn()} screen="schedules" navigate={navigate} />,
+  );
+  const bar = screen.getByRole("navigation", { name: "Sections" });
+  const tabs = within(bar);
+  expect(Array.from(bar.children, (tab) => tab.textContent)).toEqual([
+    "Home",
+    "Inbox",
+    "Assistant",
+    "Activity",
+    "More",
+  ]);
+  // Schedules has no tab, so More stays current on it.
+  expect(tabs.getByRole("link", { name: "More" }).getAttribute("aria-current")).toBe("page");
+  fireEvent.click(tabs.getByRole("link", { name: "Inbox" }));
+  expect(navigate).toHaveBeenLastCalledWith("inbox", false, undefined);
+  fireEvent.click(tabs.getByRole("button", { name: "Assistant" }));
+  expect(await screen.findByRole("complementary", { name: "Assistant" })).toBeDefined();
+  cleanup();
+
+  render(<Workspace initial={session} signedOut={vi.fn()} screen="more" navigate={navigate} />);
+  const main = within(screen.getByRole("main"));
+  expect(main.getAllByRole("link").map((row) => row.textContent)).toEqual([
+    "Review",
+    "Routines",
+    "Schedules",
+    "Plans",
+    "Projections",
+    "Savings",
+    "Investments",
+    "Giving",
+    "Loans",
+    "Settings",
+  ]);
+});
 it("returns focus after a dialog and starts j in a screen's own rows", async () => {
   const session = {
     user: { id: "u" },

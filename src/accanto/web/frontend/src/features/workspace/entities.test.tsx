@@ -113,7 +113,7 @@ it("blocks switching while an assistant reply streams, and names the Entity in t
   serve();
   render(<ProductionHome />);
   await screen.findByRole("combobox", { name: "Entity" });
-  fireEvent.click(screen.getByRole("button", { name: "Assistant" }));
+  fireEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: "Assistant" }));
   const panel = screen.getByRole("complementary", { name: "Assistant" });
   expect(within(panel).getByText("Synthetic Family")).toBeDefined();
   const box = await within(panel).findByLabelText("Message the assistant");
