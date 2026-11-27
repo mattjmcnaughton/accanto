@@ -157,15 +157,23 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
   const again = () => setReload((value) => value + 1);
   const deps = [p.entity.id, p.refresh, reload];
   const rows = {
-    investment: useLoad(() => destinations.list(p.entity.id, "investment"), deps),
-    giving: useLoad(() => destinations.list(p.entity.id, "giving"), deps),
+    investment: useLoad(() => destinations.list(p.entity.id, "investment"), deps, {
+      share: "investments",
+    }),
+    giving: useLoad(() => destinations.list(p.entity.id, "giving"), deps, { share: "giving" }),
   };
   const history = {
-    investment: useLoad(() => destinations.history(p.entity.id, "investment"), deps),
-    giving: useLoad(() => destinations.history(p.entity.id, "giving"), deps),
+    investment: useLoad(() => destinations.history(p.entity.id, "investment"), deps, {
+      share: "investment-history",
+    }),
+    giving: useLoad(() => destinations.history(p.entity.id, "giving"), deps, {
+      share: "giving-history",
+    }),
   };
-  const observed = useLoad(() => balances.list(p.entity.id, "investment"), deps);
-  const accounts = useLoad(() => savings.list(p.entity.id), deps);
+  const observed = useLoad(() => balances.list(p.entity.id, "investment"), deps, {
+    share: "investment-observations",
+  });
+  const accounts = useLoad(() => savings.list(p.entity.id), deps, { share: "savings" });
   const editor = useRecordEditor<Form>(p, again);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [help, setHelp] = useState(false);

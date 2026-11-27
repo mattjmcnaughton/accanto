@@ -13,7 +13,7 @@ import {
 import type { ComparisonGroup, PlanRevision, ReviewResult } from "../../lib/monthly";
 import type { Dollars, Projection } from "../../lib/projections";
 import type { Routine } from "../../lib/routines";
-import { Band, type BandPart, Empty, tint } from "../../ui";
+import { Band, type BandPart, Empty, tint, Wait } from "../../ui";
 import { share } from "./PlanBreakdown";
 import type { Screen } from "./Workspace";
 import { storedCents, storedGroups } from "./planWorksheetModel";
@@ -196,11 +196,16 @@ export function Home({
     <div className="screen home">
       <NeedsYou items={items} />
       {review.kind === "loading" ? (
-        <div className="card pad sk-card" aria-busy="true" aria-label="Loading this month">
-          <div className="sk" style={{ width: "55%", height: 28 }} />
-          <div className="sk" style={{ width: "40%", height: 14 }} />
-          <div className="sk" style={{ height: 8 }} />
-        </div>
+        <Wait>
+          <div className="card pad sk-card" aria-busy="true" aria-label="Loading this month">
+            {/* Shaped like the month's hero: headline, spent line, pace bar and its dates, fixed costs. */}
+            <div className="sk" style={{ width: "55%", height: 32 }} />
+            <div className="sk" style={{ width: "40%", height: 16 }} />
+            <div className="sk" style={{ height: 8 }} />
+            <div className="sk" style={{ height: 12 }} />
+            <div className="sk" style={{ width: "45%", height: 18, marginTop: 16 }} />
+          </div>
+        </Wait>
       ) : result ? (
         comparison && (
           <Hero
@@ -518,11 +523,13 @@ function NetWorthCard({
 }) {
   if (worth.kind === "loading")
     return (
-      <div className="card pad glance-card" aria-busy="true" aria-label="Loading net worth">
-        <div className="sk" style={{ width: "40%", height: 14 }} />
-        <div className="sk" style={{ width: "60%", height: 28 }} />
-        <div className="sk" style={{ height: 60 }} />
-      </div>
+      <Wait>
+        <div className="card pad glance-card" aria-busy="true" aria-label="Loading net worth">
+          <div className="sk" style={{ width: "40%", height: 14 }} />
+          <div className="sk" style={{ width: "60%", height: 28 }} />
+          <div className="sk" style={{ height: 60 }} />
+        </div>
+      </Wait>
     );
   if (worth.kind !== "ready")
     return (

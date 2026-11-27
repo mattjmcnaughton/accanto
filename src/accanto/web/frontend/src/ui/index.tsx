@@ -416,23 +416,35 @@ export function AmountInput({
     />
   );
 }
-export const Skeleton = () => (
-  <div className="screen" aria-busy="true" aria-label="Loading">
-    <div className="sk" style={{ width: "42%", height: 30 }} />
-    <div className="card pad sk-card">
-      <div className="sk" style={{ width: "60%", height: 22 }} />
-      <div className="sk" style={{ height: 30 }} />
-      {[72, 64, 80, 58].map((w) => (
-        <div key={w} className="sk" style={{ width: `${w}%`, height: 14 }} />
-      ))}
+/** Shows a loading placeholder only once a read takes a moment, so a quick read never flashes one. */
+export function Wait({ children }: { children: ReactNode }) {
+  const [waited, setWaited] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setWaited(true), 250);
+    return () => clearTimeout(timer);
+  }, []);
+  return waited ? children : null;
+}
+/** A screen's placeholder; `heading={false}` for a screen without a title, such as Home. */
+export const Skeleton = ({ heading = true }: { heading?: boolean }) => (
+  <Wait>
+    <div className="screen" aria-busy="true" aria-label="Loading">
+      {heading && <div className="sk" style={{ width: "42%", height: 30 }} />}
+      <div className="card pad sk-card">
+        <div className="sk" style={{ width: "60%", height: 22 }} />
+        <div className="sk" style={{ height: 30 }} />
+        {[72, 64, 80, 58].map((w) => (
+          <div key={w} className="sk" style={{ width: `${w}%`, height: 14 }} />
+        ))}
+      </div>
+      <div className="grid3">
+        {[1, 2, 3].map((n) => (
+          <div key={n} className="card pad sk-card">
+            <div className="sk" style={{ width: "50%", height: 12 }} />
+            <div className="sk" style={{ width: "70%", height: 22 }} />
+          </div>
+        ))}
+      </div>
     </div>
-    <div className="grid3">
-      {[1, 2, 3].map((n) => (
-        <div key={n} className="card pad sk-card">
-          <div className="sk" style={{ width: "50%", height: 12 }} />
-          <div className="sk" style={{ width: "70%", height: 22 }} />
-        </div>
-      ))}
-    </div>
-  </div>
+  </Wait>
 );

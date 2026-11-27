@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { agent } from "../../lib/agentStream";
 import { fmtMonth, monthName } from "../../lib/format";
 import { monthly } from "../../lib/monthly";
-import { Dialog, Icon } from "../../ui";
+import { Dialog, Icon, Wait } from "../../ui";
 import { Hero, MonthBreakdown } from "./Home";
 import { type Entity, LoadMessage, composing, useLoad } from "./shared";
 
@@ -172,10 +172,12 @@ export function AskBar({
             </button>
           </div>
           {review.kind === "loading" ? (
-            <div className="card pad sk-card" aria-busy="true" aria-label="Loading this month">
-              <div className="sk" style={{ width: "55%", height: 28 }} />
-              <div className="sk" style={{ height: 8 }} />
-            </div>
+            <Wait>
+              <div className="card pad sk-card" aria-busy="true" aria-label="Loading this month">
+                <div className="sk" style={{ width: "55%", height: 28 }} />
+                <div className="sk" style={{ height: 8 }} />
+              </div>
+            </Wait>
           ) : result?.comparison ? (
             card === "left" ? (
               <Hero

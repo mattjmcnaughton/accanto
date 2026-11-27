@@ -111,10 +111,13 @@ function lifecycleChoices(account: SavingsAccount, goal?: Goal): Action[] {
 
 export function Savings(p: ScreenProps) {
   const [reload, setReload] = useState(0);
-  const accountsState = useLoad(() => savings.list(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const accountsState = useLoad(() => savings.list(p.entity.id), [p.entity.id, p.refresh, reload], {
+    share: "savings",
+  });
   const movesState = useLoad(
     () => savings.movements(p.entity.id),
     [p.entity.id, p.refresh, reload],
+    { share: "savings-movements" },
   );
   // Keep the last loaded rows during a reload so the focused cell and selection survive a save.
   const loaded = useRef<{ accounts: SavingsAccount[]; movements: SavingsMovement[] }>({

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { type BrowserSession, fetchJson, loadResource } from "../../lib/api";
 import { fmtDate } from "../../lib/format";
 import { parseTimestamp } from "../../lib/timestamp";
+import { Wait } from "../../ui";
 import { useLoad } from "../workspace/shared";
 
 interface KeyMetadata {
@@ -38,7 +39,9 @@ export function ApiKeys({
       live.current = false;
     };
   }, []);
-  const state = useLoad(() => loadResource<KeyMetadata[]>("/api/keys", () => false), [attempt]);
+  const state = useLoad(() => loadResource<KeyMetadata[]>("/api/keys", () => false), [attempt], {
+    share: "api-keys",
+  });
   const locked = busy || disabled;
   function clearSecret() {
     setSecret(null);
@@ -176,9 +179,11 @@ export function ApiKeys({
           </div>
         )}
         {state.kind === "loading" && (
-          <output className="setting" aria-label="Loading API keys">
-            <span className="sk set-sk" />
-          </output>
+          <Wait>
+            <output className="setting" aria-label="Loading API keys">
+              <span className="sk set-sk" />
+            </output>
+          </Wait>
         )}
         {state.kind === "ready" &&
           state.data.map((key) => (

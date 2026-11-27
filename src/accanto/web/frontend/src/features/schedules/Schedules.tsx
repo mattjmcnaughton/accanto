@@ -17,7 +17,7 @@ import {
   schedules,
 } from "../../lib/schedules";
 import { spendingSubcategories } from "../../lib/spendingSubcategories";
-import { Empty, Field, Head, Icon, tint } from "../../ui";
+import { Empty, Field, Head, Icon, Wait, tint } from "../../ui";
 import { CATEGORIES, CATEGORY, type Option } from "../inbox/inboxModel";
 import { CadenceFields } from "../routines/Routines";
 import { type ScreenProps, sourceChoices, useLoad } from "../workspace/shared";
@@ -30,7 +30,9 @@ const OUTFLOWS: InboxCategory[] = ["fixed_cost", "spending", "investing", "givin
 export function Schedules(p: ScreenProps) {
   const [reload, setReload] = useState(0);
   const [view, setView] = useState<View>({ kind: "list" });
-  const state = useLoad(() => schedules.list(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const state = useLoad(() => schedules.list(p.entity.id), [p.entity.id, p.refresh, reload], {
+    share: "schedules",
+  });
   if (p.concealed) return null;
   const records = state.kind === "ready" ? state.data : [];
   const back = () => {
@@ -79,11 +81,13 @@ export function Schedules(p: ScreenProps) {
         </button>
       </Head>
       {state.kind === "loading" && (
-        <output className="card pad sk-card" aria-label="Loading schedules">
-          <div className="sk" style={{ width: "40%", height: 20 }} />
-          <div className="sk" style={{ height: 34 }} />
-          <div className="sk" style={{ height: 34 }} />
-        </output>
+        <Wait>
+          <output className="card pad sk-card" aria-label="Loading schedules">
+            <div className="sk" style={{ width: "40%", height: 20 }} />
+            <div className="sk" style={{ height: 34 }} />
+            <div className="sk" style={{ height: 34 }} />
+          </output>
+        </Wait>
       )}
       {"error" in state && (
         <div className="banner bad" role="alert">

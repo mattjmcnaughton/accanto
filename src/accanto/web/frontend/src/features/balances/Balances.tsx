@@ -111,12 +111,12 @@ export function Balances(p: ScreenProps) {
   const [view, setView] = useRecordView("loans");
   const [reload, setReload] = useState(0);
   const again = () => setReload((value) => value + 1);
-  const loans = useLoad(() => balances.loans(p.entity.id), [p.entity.id, p.refresh, reload]);
-  const payments = useLoad(() => monthly.activity(p.entity.id), [p.entity.id, p.refresh, reload]);
-  const observed = useLoad(
-    () => balances.list(p.entity.id, "debt"),
-    [p.entity.id, p.refresh, reload],
-  );
+  const deps = [p.entity.id, p.refresh, reload];
+  const loans = useLoad(() => balances.loans(p.entity.id), deps, { share: "loans" });
+  const payments = useLoad(() => monthly.activity(p.entity.id), deps, { share: "activity" });
+  const observed = useLoad(() => balances.list(p.entity.id, "debt"), deps, {
+    share: "debt-observations",
+  });
   const editor = useRecordEditor<Form>(p, again);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [help, setHelp] = useState(false);

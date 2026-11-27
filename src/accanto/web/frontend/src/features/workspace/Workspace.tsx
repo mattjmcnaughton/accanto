@@ -27,7 +27,7 @@ import { type Action, AskBar } from "./AskBar";
 import { CreateEntityDialog, EntitySwitcher, createEntity } from "./Entities";
 import { MonthlyReview } from "./MonthlyReview";
 import { Plans } from "./Plans";
-import { WorkspaceReads, keysBelongElsewhere, useTheme } from "./shared";
+import { WorkspaceLastReads, WorkspaceReads, keysBelongElsewhere, useTheme } from "./shared";
 
 /** Every screen has its own address; "more" is the phone's list of the screens without a tab. */
 export const SCREENS = [
@@ -179,6 +179,9 @@ export function Workspace({
   // A pending read started before a write or credential change cannot satisfy a new load.
   // biome-ignore lint/correctness/useExhaustiveDependencies: A new scope invalidates pending reads.
   const reads = useMemo(() => new Map(), [entity?.id, session.csrf_token, refresh, concealed]);
+  // What a screen last showed outlives a refresh, but never a change of Entity, session or User.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A new scope drops what was shown.
+  const lastReads = useMemo(() => new Map(), [entity?.id, session.csrf_token, concealed]);
   const changed = () => setRefresh((x) => x + 1);
   // Several Entities: links carry the Entity so a copied or new-tab address opens the same one.
   const linkEntity = session.entities.length > 1 ? entity?.id : undefined;
@@ -730,108 +733,110 @@ export function Workspace({
           )}
           {entity && (
             <WorkspaceReads.Provider value={reads}>
-              <div hidden={screen !== "home" && screen !== "plans"}>
-                <Plans
-                  {...props}
-                  home={screen === "home"}
-                  visible={screen === "home" || screen === "plans"}
-                  month={month}
-                  showPlans={() => go("plans", true)}
-                  go={(to) => go(to)}
-                  openRoutine={(routine, on) => {
-                    if (go("routines")) setRoutineStart({ routine, on });
-                  }}
-                  retainedDirty={(value) => {
-                    planDirty.current = value;
-                  }}
-                />
-              </div>
-              {screen === "activity" && (
-                <ActivityScreen
-                  key={month}
-                  {...props}
-                  month={month}
-                  add={add}
-                  added={() => setAdd(0)}
-                />
-              )}
-              {screen === "review" && (
-                <MonthlyReview key={month} {...props} month={month} go={(to) => go(to)} />
-              )}
-              {screen === "inbox" && (
-                <Inbox
-                  {...props}
-                  session={session}
-                  credentials={credentials}
-                  changed={changed}
-                  flow={flow}
-                  flowStarted={() => setFlow(0)}
-                  openSettings={() => go("settings")}
-                  openReview={(m) => go("review", false, m)}
-                />
-              )}
-              {screen === "routines" && (
-                <Routines
-                  {...props}
-                  credentials={credentials}
-                  start={routineStart}
-                  open={(to, m) => go(to, false, m ?? month)}
-                />
-              )}
-              {screen === "schedules" && <Schedules {...props} />}
-              {screen === "projections" && (
-                <Projections
-                  {...props}
-                  openInvestments={() => go("investments")}
-                  interview={() => toAssistant({ ask: FIRE_INTERVIEW_PROMPT })}
-                />
-              )}
-              {screen === "savings" && <Savings {...props} />}
-              {screen === "investments" && <Destinations {...props} kind="investment" />}
-              {screen === "giving" && <Destinations {...props} kind="giving" />}
-              {screen === "loans" && <Balances {...props} />}
-              {screen === "settings" && (
-                <Settings
-                  {...props}
-                  credentials={credentials}
-                  saved={() => void refreshMetadata()}
-                  openInbox={() => go("inbox")}
-                />
-              )}
-              {screen === "more" && !concealed && (
-                <div className="screen">
-                  <div>
-                    {NAV.map((g) => (
-                      <div key={g.group}>
-                        <div className="navlabel">{g.group}</div>
-                        <div className="card">
-                          {g.items
-                            .map(([to]) => to)
-                            .filter((to) => !TABBED.includes(to))
-                            .map(moreRow)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="card">{moreRow("settings")}</div>
-                  <div className="more-user">
-                    <span className="note">Signed in to {entity.name}</span>
-                    {switchEntity && (
-                      <EntitySwitcher
-                        className="more-entity"
-                        entities={session.entities}
-                        current={entity}
-                        disabled={props.busy}
-                        choose={(id) => void switchTo(id)}
-                        create={() => setCreating(true)}
-                      />
-                    )}
-                    <button type="button" className="btn" onClick={() => void signOut()}>
-                      Sign out
-                    </button>
-                  </div>
+              <WorkspaceLastReads.Provider value={lastReads}>
+                <div hidden={screen !== "home" && screen !== "plans"}>
+                  <Plans
+                    {...props}
+                    home={screen === "home"}
+                    visible={screen === "home" || screen === "plans"}
+                    month={month}
+                    showPlans={() => go("plans", true)}
+                    go={(to) => go(to)}
+                    openRoutine={(routine, on) => {
+                      if (go("routines")) setRoutineStart({ routine, on });
+                    }}
+                    retainedDirty={(value) => {
+                      planDirty.current = value;
+                    }}
+                  />
                 </div>
-              )}
+                {screen === "activity" && (
+                  <ActivityScreen
+                    key={month}
+                    {...props}
+                    month={month}
+                    add={add}
+                    added={() => setAdd(0)}
+                  />
+                )}
+                {screen === "review" && (
+                  <MonthlyReview key={month} {...props} month={month} go={(to) => go(to)} />
+                )}
+                {screen === "inbox" && (
+                  <Inbox
+                    {...props}
+                    session={session}
+                    credentials={credentials}
+                    changed={changed}
+                    flow={flow}
+                    flowStarted={() => setFlow(0)}
+                    openSettings={() => go("settings")}
+                    openReview={(m) => go("review", false, m)}
+                  />
+                )}
+                {screen === "routines" && (
+                  <Routines
+                    {...props}
+                    credentials={credentials}
+                    start={routineStart}
+                    open={(to, m) => go(to, false, m ?? month)}
+                  />
+                )}
+                {screen === "schedules" && <Schedules {...props} />}
+                {screen === "projections" && (
+                  <Projections
+                    {...props}
+                    openInvestments={() => go("investments")}
+                    interview={() => toAssistant({ ask: FIRE_INTERVIEW_PROMPT })}
+                  />
+                )}
+                {screen === "savings" && <Savings {...props} />}
+                {screen === "investments" && <Destinations {...props} kind="investment" />}
+                {screen === "giving" && <Destinations {...props} kind="giving" />}
+                {screen === "loans" && <Balances {...props} />}
+                {screen === "settings" && (
+                  <Settings
+                    {...props}
+                    credentials={credentials}
+                    saved={() => void refreshMetadata()}
+                    openInbox={() => go("inbox")}
+                  />
+                )}
+                {screen === "more" && !concealed && (
+                  <div className="screen">
+                    <div>
+                      {NAV.map((g) => (
+                        <div key={g.group}>
+                          <div className="navlabel">{g.group}</div>
+                          <div className="card">
+                            {g.items
+                              .map(([to]) => to)
+                              .filter((to) => !TABBED.includes(to))
+                              .map(moreRow)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="card">{moreRow("settings")}</div>
+                    <div className="more-user">
+                      <span className="note">Signed in to {entity.name}</span>
+                      {switchEntity && (
+                        <EntitySwitcher
+                          className="more-entity"
+                          entities={session.entities}
+                          current={entity}
+                          disabled={props.busy}
+                          choose={(id) => void switchTo(id)}
+                          create={() => setCreating(true)}
+                        />
+                      )}
+                      <button type="button" className="btn" onClick={() => void signOut()}>
+                        Sign out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </WorkspaceLastReads.Provider>
             </WorkspaceReads.Provider>
           )}
         </main>

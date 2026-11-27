@@ -4,7 +4,7 @@ import type { Observation } from "../../lib/balances";
 import { decimalToCents, fmtDate, formatMoney } from "../../lib/format";
 import { SIGNED_USD_AMOUNT, USD_AMOUNT } from "../../lib/money";
 import type { WriteSpec } from "../../lib/monthly";
-import { Dialog, Field, Meter } from "../../ui";
+import { Dialog, Field, Meter, Wait } from "../../ui";
 import type { ScreenProps } from "../workspace/shared";
 import { useGridKeys } from "../workspace/useGridKeys";
 import "./records.css";
@@ -339,10 +339,12 @@ export function PendingEdit({
 
 export function Loading({ what }: { what: string }) {
   return (
-    <div className="card pad rec-loading" aria-busy="true" aria-label={`Loading ${what}`}>
-      <div className="sk" />
-      <div className="sk" />
-    </div>
+    <Wait>
+      <div className="card pad rec-loading" aria-busy="true" aria-label={`Loading ${what}`}>
+        <div className="sk" />
+        <div className="sk" />
+      </div>
+    </Wait>
   );
 }
 
