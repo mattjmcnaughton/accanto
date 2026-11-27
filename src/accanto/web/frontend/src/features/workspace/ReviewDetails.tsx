@@ -282,12 +282,15 @@ function standing(s: ReviewSection, current: boolean): string {
       return current ? `${amount} to go.` : `${amount} short of plan.`;
   }
 }
-function verdict(s: ReviewSection, current: boolean): string {
+function verdict(s: ReviewSection, current: boolean, ended: boolean): string {
   if (s.category === "spending" && s.recorded === null)
-    return "No guilt-free spending is recorded for this month.";
+    return ended
+      ? "No guilt-free spending is recorded for this month."
+      : "No guilt-free spending is recorded yet.";
   if (s.unknown.length) {
     const known = s.lines.length - s.unknown.length;
-    return `${known} of ${plural(s.lines.length, "line")} ${known === 1 ? "has" : "have"} an entry.`;
+    const has = `${known} of ${plural(s.lines.length, "line")} ${known === 1 ? "has" : "have"} an entry.`;
+    return ended ? has : `${has} ${s.unknown.length} still to come.`;
   }
   if (s.recorded == null) return "The recorded amount is unknown for this Plan version.";
   const lead = s.incomplete
@@ -315,18 +318,60 @@ const entryName = (entry: Entry) =>
     .filter(Boolean)
     .join(", ");
 
+type AskProps = {
+  section: ReviewSection;
+  busy: boolean;
+  resolve?: (resolution: Resolution) => void;
+  /** The month is over: a line with no entry is a warning, not a line still to come. */
+  ended: boolean;
+};
+
+/**
+ * A section's lines with no entry. While the month runs they are still to come: quiet, and
+ * folded into one row when there are several. Once it has ended they warn and are listed.
+ */
+function Unrecorded(props: AskProps) {
+  const { section, ended } = props;
+  const [open, setOpen] = useState(ended);
+  const lines = section.unknown;
+  if (lines.length === 1) return <Ask {...props} line={lines[0]} />;
+  const planned = lines.map((line) => cents(line.planned));
+  const total = planned.every((amount) => amount !== null)
+    ? planned.reduce<number>((n, amount) => n + (amount ?? 0), 0)
+    : null;
+  return (
+    <>
+      <div className={`ask${ended ? "" : " quiet"}`}>
+        <span>
+          <b>
+            {lines.length} {ended ? "with no entry" : "still to come"}
+          </b>
+          {total !== null && `, ${money(total)} planned`}: {lines.map((l) => l.name).join(", ")}.
+          {ended && " Unknown is not treated as $0.00."}
+        </span>
+        <button
+          type="button"
+          className="btn sm quiet"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? "Hide" : "Choose each"}
+        </button>
+      </div>
+      {open && lines.map((line) => <Ask key={line.key} {...props} line={line} grouped />)}
+    </>
+  );
+}
+
 /** Answers one unknown line where it sits: the planned amount, nothing, or another amount. */
 function Ask({
   section,
   line,
   busy,
   resolve,
-}: {
-  section: ReviewSection;
-  line: ReviewLine;
-  busy: boolean;
-  resolve?: (resolution: Resolution) => void;
-}) {
+  ended,
+  grouped = false,
+}: AskProps & { line: ReviewLine; grouped?: boolean }) {
   const [other, setOther] = useState<string | null>(null);
   const [error, setError] = useState("");
   const answerable =
@@ -340,9 +385,13 @@ function Ask({
     resolve?.({ category: section.category, id: line.id, name: line.name, amount });
   const planned = cents(line.planned);
   return (
-    <div className="ask">
+    <div className={`ask${ended ? "" : " quiet"}${grouped ? " line" : ""}`}>
       <span>
-        {line.name} has no entry. Unknown is not treated as $0.00.
+        {grouped
+          ? `${line.name}${line.planned == null ? "" : `, ${formatMoney(line.planned)} planned`}.`
+          : ended
+            ? `${line.name} has no entry. Unknown is not treated as $0.00.`
+            : `${line.name} has no entry yet.`}
         {!answerable &&
           (section.category === "investing" || section.category === "giving") &&
           ` Record it in ${section.category === "investing" ? "Investments" : "Giving"}.`}
@@ -599,6 +648,7 @@ function Strip({ label, items }: { label: string; items: Array<[string, string]>
 export function ReviewDetails({
   review,
   current = false,
+  ended = true,
   busy = false,
   resolve,
   open: openEntry,
@@ -606,6 +656,8 @@ export function ReviewDetails({
 }: {
   review: ReviewView;
   current?: boolean;
+  /** The month is over; while it runs, lines with no entry are still to come. */
+  ended?: boolean;
   busy?: boolean;
   resolve?: (resolution: Resolution) => void;
   /** Opens an entry listed under a section to view or edit it. */
@@ -642,14 +694,15 @@ export function ReviewDetails({
           const diff = cents(s.difference);
           const recorded = cents(s.recorded);
           const planned = cents(s.planned);
+          const toCome = !ended && s.unknown.length > 0;
           return (
             <section className="step" key={s.category} aria-label={s.name}>
               <span
-                className={`mark${complete(s) ? "" : " q"}`}
+                className={`mark${complete(s) ? "" : toCome ? " pending" : " q"}`}
                 role="img"
-                aria-label={complete(s) ? "Complete" : "Not complete"}
+                aria-label={complete(s) ? "Complete" : toCome ? "Still to come" : "Not complete"}
               >
-                {complete(s) ? "✓" : "?"}
+                {complete(s) ? "✓" : toCome ? "…" : "?"}
               </span>
               <div>
                 <h3 className="nm">
@@ -678,18 +731,19 @@ export function ReviewDetails({
                         : plural(s.lines.length, "line")}
                   </button>
                 </h3>
-                <p className="say">{verdict(s, current)}</p>
+                <p className="say">{verdict(s, current, ended)}</p>
               </div>
-              <div className={`amt-col${s.recorded === null ? " warn" : ""}`}>
+              <div className={`amt-col${s.recorded === null && !toCome ? " warn" : ""}`}>
                 {formatMoney(s.recorded)}
                 <small>
+                  {toCome && s.recorded !== null && "so far, "}
                   of {s.planned == null ? "an unknown plan" : formatMoney(s.planned)}
                   {complete(s) &&
                     diff !== null &&
                     (diff === 0
                       ? ", on plan"
                       : `, ${money(Math.abs(diff))} ${diff < 0 ? "under" : "over"}`)}
-                  {s.incomplete && s.recorded !== null && ", incomplete"}
+                  {s.incomplete && s.recorded !== null && !toCome && ", incomplete"}
                 </small>
               </div>
               {recorded !== null && planned !== null ? (
@@ -697,9 +751,9 @@ export function ReviewDetails({
               ) : (
                 <Meter value={0} max={1} kind={kinds[s.category]} faint />
               )}
-              {s.unknown.map((line) => (
-                <Ask key={line.key} section={s} line={line} busy={busy} resolve={resolve} />
-              ))}
+              {s.unknown.length > 0 && (
+                <Unrecorded section={s} busy={busy} resolve={resolve} ended={ended} />
+              )}
               {expanded && <Lines section={s} open={openEntry} />}
             </section>
           );

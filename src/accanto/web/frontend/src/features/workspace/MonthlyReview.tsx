@@ -154,6 +154,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
   const sections = state.kind === "ready" ? reviewSections(state.data) : [];
   const unknown = sections.reduce((n, s) => n + s.unknown.length, 0);
   const done = sections.filter(complete).length;
+  const ended = month < p.entity.today.slice(0, 7);
   const status =
     state.kind !== "ready"
       ? null
@@ -191,7 +192,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
           }
           sub={
             state.kind === "ready"
-              ? `${done} of 6 sections are complete${unknown ? `, with ${plural(unknown, "unknown amount")}` : ""}.`
+              ? `${done} of 6 sections are complete${!unknown ? "" : ended ? `, with ${plural(unknown, "unknown amount")}` : `, with ${plural(unknown, "line")} still to come`}.`
               : state.kind === "empty"
                 ? "Choose the saved Plan version to compare this month against. Starting a Review creates no activity, and you can change the version later."
                 : undefined
@@ -338,6 +339,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
           <ReviewDetails
             review={state.data}
             current={month === p.entity.today.slice(0, 7)}
+            ended={ended}
             busy={p.busy || refreshing}
             resolve={resolve}
             open={(uuid) => !p.busy && setEntry(uuid)}
