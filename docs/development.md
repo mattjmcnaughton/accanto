@@ -183,6 +183,8 @@ Set these environment variables through deployment secret/config management:
 - `OIDC_ISSUER`: exact issuer, including any provider-required path/trailing slash.
 - `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`: confidential web application credentials.
 - `OIDC_ALLOWED_EMAILS`: JSON array of exactly admitted verified email addresses.
+- `REPORT_BUG_EMAILS` (optional): JSON array of admitted emails that see Report
+  bug, checked at each sign-in ([TDD 21](tdds/21-report-bug.md)).
 
 Register the exact callback `${BROWSER_ORIGIN}/api/auth/callback`; enable the
 `openid email` scopes, authorization code, S256 PKCE and `client_secret_basic`.

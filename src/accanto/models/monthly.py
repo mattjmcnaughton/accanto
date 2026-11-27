@@ -47,6 +47,8 @@ users = table(
     Column("subject", String, nullable=False),
     # Verified email of the latest browser sign-in; finds a member to add (TDD 19).
     Column("email", String(320)),
+    # Set at each sign-in from REPORT_BUG_EMAILS (TDD 21); not an Entity role.
+    Column("report_bug_enabled", Boolean, nullable=False, server_default="false"),
     UniqueConstraint("issuer", "subject"),
 )
 entities = table(

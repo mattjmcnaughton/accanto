@@ -21,3 +21,5 @@ export const Loaded: Story = {};
 export const Empty: Story = stateStory("empty");
 export const Loading: Story = stateStory("loading");
 export const Failed: Story = stateStory("failed");
+/** A User the operator listed for Report bug sees their reports below API keys. */
+export const WithBugReports: Story = { args: { reportBug: true } };

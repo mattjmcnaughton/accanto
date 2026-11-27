@@ -136,3 +136,23 @@ export const AskBarCard: Story = {
     await userEvent.keyboard("/left{Enter}");
   },
 };
+
+/** Report bug (TDD 21): the bubble in the corner for a User the operator listed. */
+const reporter = { ...data.session, report_bug: true };
+export const ReportBug: Story = {
+  args: { initial: reporter },
+  parameters: { msw: mockApi("loaded", { session: reporter }) },
+};
+/** The form, opened with the bubble (Ctrl + . opens it too). */
+export const ReportBugOpen: Story = {
+  ...ReportBug,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Report bug" }));
+    await userEvent.type(
+      await canvas.findByLabelText("What happened, or what should change?"),
+      "Needs you card should link straight to the over-allocated line",
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Idea" }));
+  },
+};

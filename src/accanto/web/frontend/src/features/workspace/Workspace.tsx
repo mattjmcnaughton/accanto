@@ -14,6 +14,7 @@ import {
 } from "../../lib/recoverableWrite";
 import { Dialog, Icon, Mark, useDialogSlot } from "../../ui";
 import { AgentPanel } from "../agent/AgentPanel";
+import { ReportBug } from "../bugReport/ReportBug";
 import { Balances } from "../balances/Balances";
 import { Destinations } from "../destinations/Destinations";
 import { Inbox } from "../inbox/Inbox";
@@ -171,6 +172,8 @@ export function Workspace({
   // A one-shot request for the Inbox's flow mode, from /inbox.
   const [flow, setFlow] = useState(0);
   const [shortcuts, setShortcuts] = useState(false);
+  // Report bug (TDD 19), only for Users the operator listed.
+  const [reporting, setReporting] = useState(false);
   const [theme, setTheme] = useTheme();
   const [refresh, setRefresh] = useState(0);
   const [metadataStale, setMetadataStale] = useState(false);
@@ -420,7 +423,7 @@ export function Workspace({
     document.documentElement.scrollTop = 0;
   }, [screen, concealed]);
   useEffect(() => {
-    if (message !== "Saved.") return;
+    if (message !== "Saved." && message !== "Report saved.") return;
     const timer = window.setTimeout(() => setMessage(""), 6000);
     return () => window.clearTimeout(timer);
   }, [message]);
@@ -431,6 +434,17 @@ export function Workspace({
       if (document.querySelector("dialog[open]")) return;
       event.preventDefault();
       setAssistant((open) => !open);
+      return;
+    }
+    if (
+      session.report_bug &&
+      (event.metaKey || event.ctrlKey) &&
+      !event.altKey &&
+      event.key === "."
+    ) {
+      if (!reporting && document.querySelector("dialog[open]")) return;
+      event.preventDefault();
+      setReporting(!reporting);
       return;
     }
     if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
@@ -559,6 +573,9 @@ export function Workspace({
         hint: "Appearance",
         run: () => setTheme(choice),
       })),
+    ...(session.report_bug
+      ? [{ text: "Report bug", hint: "Help", run: () => setReporting(true) }]
+      : []),
     { text: "Show keyboard shortcuts", hint: "Help", run: () => setShortcuts(true) },
     { text: "Sign out", hint: "Account", run: () => void signOut() },
   ];
@@ -827,6 +844,7 @@ export function Workspace({
                     userId={session.user.id}
                     saved={() => void refreshMetadata()}
                     openInbox={() => go("inbox")}
+                    reportBug={session.report_bug}
                   />
                 )}
                 {screen === "more" && !concealed && (
@@ -915,7 +933,19 @@ export function Workspace({
           close={() => setPalette(false)}
         />
       )}
-      {shortcuts && !concealed && <Shortcuts close={() => setShortcuts(false)} />}
+      {shortcuts && !concealed && (
+        <Shortcuts reportBug={Boolean(session.report_bug)} close={() => setShortcuts(false)} />
+      )}
+      {session.report_bug && entity && !concealed && (
+        <ReportBug
+          open={reporting}
+          setOpen={setReporting}
+          screen={screen}
+          month={MONTHLY.includes(screen) ? month : null}
+          credentials={() => credentials()}
+          saved={setMessage}
+        />
+      )}
       {creating && entity && !concealed && (
         <CreateEntityDialog
           zone={entity.time_zone}
@@ -938,13 +968,14 @@ export function Workspace({
   );
 }
 
-const Shortcuts = ({ close }: { close: () => void }) => (
+const Shortcuts = ({ close, reportBug }: { close: () => void; reportBug: boolean }) => (
   <Dialog title="Keyboard shortcuts" onClose={close}>
     <div className="dlg-b">
       <div className="keys">
         {[
           ["Ctrl K or ⌘ K", "Ask the assistant, jump to a screen, or run a / command"],
           ["Ctrl J or ⌘ J", "Open or close the assistant"],
+          ...(reportBug ? [["Ctrl . or ⌘ .", "Report a bug, idea or fix for this screen"]] : []),
           ["N", "Add activity"],
           ["[ and ]", "Previous and next month on Home, Activity and Review"],
           ["J and K", "Move through rows, then Enter to open one"],

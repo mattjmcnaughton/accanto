@@ -43,6 +43,9 @@ Runtime configuration lives on the deployment, never in Git:
   serves its public key and `jobs` signs pushes with it. Unset hides
   Notifications and sends nothing. Replacing it invalidates every Device's
   subscription; each must turn Notifications on again.
+- Optional environment variable: `REPORT_BUG_EMAILS`, a JSON list of the
+  signed-in emails that see Report bug ([TDD 21](../tdds/21-report-bug.md)).
+  It takes effect at each User's next sign-in.
 - Set by Amp: `PORT` and `AMP_DEPLOYMENT_URL`, which becomes `BROWSER_ORIGIN`.
 
 List what is stored, without values, with `manage_amp` (topics `secrets` and
