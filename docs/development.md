@@ -58,8 +58,7 @@ the Entity's current month. With several Entities the address also carries
 creates one, and the last-used Entity ID is kept in browser storage. Add activity in the top bar opens the entry dialog from
 any screen. Keys: Ctrl/⌘ K opens the Ask bar, which jumps to a screen, runs a / command
 (`/inbox`, `/left`, `/month`, `/pending`, `/add`) without the model, or sends other text
-to the assistant; 1 to 9 open the first nine screens in
-sidebar order, N adds activity, [ and ] change the month, J and K move through rows,
+to the assistant; N adds activity, [ and ] change the month, J and K move through rows,
 and ? lists the shortcuts. Edit forms open in dialogs; a failed save's recovery
 notice appears inside the open dialog. The theme choice lasts until reload.
 Estimates save per-payment assumptions and show server-calculated monthly line and
