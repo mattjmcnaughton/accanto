@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Loan, PayoffSummary } from "../../lib/balances";
+import { activityPage } from "../../stories/mocks/activity";
 import { ActivityScreen } from "../workspace/Activity";
 import type { ScreenProps } from "../workspace/shared";
 import { Balances } from "./Balances";
@@ -172,6 +173,7 @@ const mock = (debts = loans) =>
     if (scheduled) return json({ ...scheduled.payoff, rows: [] });
     if (url.endsWith("/debt-observations")) return json(debts.map((loan) => loan.latest));
     if (url.endsWith("/activity")) return json(entries);
+    if (url.includes("/activity/page")) return json(activityPage(url, entries));
     return json([]);
   });
 const show = async (view: "Cards" | "Table") =>

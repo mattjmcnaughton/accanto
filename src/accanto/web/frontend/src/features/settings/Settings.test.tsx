@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { activityPage } from "../../stories/mocks/activity";
 import { Settings } from "./Settings";
 const navLink = (name: string | RegExp) =>
   within(screen.getByRole("navigation", { name: "Workspace" })).getByRole("link", { name });
@@ -187,6 +188,7 @@ it("refreshes Entity defaults after confirmed settings and uses them for new act
     if (String(path) === "/api/auth/session") return json({ ...session, entities: [nextEntity] });
     if (String(path).endsWith("/settings"))
       return json({ ...nextEntity, revision: init?.method === "PUT" ? 2 : 1 });
+    if (String(path).includes("/activity/page")) return json(activityPage(String(path), []));
     return json([]);
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);
@@ -204,6 +206,7 @@ it("conceals settings and prevents key issuance when fresh credentials belong to
     if (init?.method === "POST") writes++;
     if (String(path) === "/api/auth/session") return json({ ...session, user: { id: "other" } });
     if (String(path).endsWith("/settings")) return json({ ...entity, revision: 1 });
+    if (String(path).includes("/activity/page")) return json(activityPage(String(path), []));
     return json([]);
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);
@@ -223,6 +226,7 @@ it("blocks stale date defaults until metadata refresh succeeds", async () => {
       return json(session);
     }
     if (String(path).endsWith("/settings")) return json({ ...entity, revision: 1 });
+    if (String(path).includes("/activity/page")) return json(activityPage(String(path), []));
     return json([]);
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);
@@ -249,6 +253,7 @@ it("reauthenticates after a confirmed save when refreshing defaults encounters s
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
     if (String(path) === "/api/auth/session") return new Response("{}", { status: 401 });
     if (String(path).endsWith("/settings")) return json({ ...entity, revision: 1 });
+    if (String(path).includes("/activity/page")) return json(activityPage(String(path), []));
     return json([]);
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);
@@ -278,6 +283,7 @@ it("does not let a delayed key credential read overwrite refreshed Entity defaul
     if (String(path).endsWith("/settings")) return json({ ...entity, revision: 1 });
     if (init?.method === "POST")
       return json({ id: "key", name: "Script", key: "deliberately-synthetic-secret" });
+    if (String(path).includes("/activity/page")) return json(activityPage(String(path), []));
     return json([]);
   });
   render(<Workspace initial={session} signedOut={vi.fn()} />);

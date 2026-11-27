@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6v042`.
+   supported revision is `6w043`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -198,6 +198,9 @@ sequence:
 `GRANT SELECT, INSERT, UPDATE, DELETE ON plan_spending_estimate_line TO accanto_app;`
 `GRANT USAGE, SELECT ON SEQUENCE plan_spending_estimate_line_id_seq TO accanto_app;`
 (or rerun the whole recipe). The downgrade drops the estimates.
+`6w043` adds the index `actual_entry_entity_date` on current activity (Entity,
+newest financial date first) for Activity pages. No row changes; `6v042` code
+runs unchanged against it. No grant changes.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

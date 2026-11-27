@@ -2,12 +2,27 @@
 
 import hashlib
 import json
+import re
+import unicodedata
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 import logfire
-from sqlalchemy import BigInteger, any_, bindparam, delete, func, insert, select, update
+from sqlalchemy import (
+    BigInteger,
+    String,
+    and_,
+    any_,
+    bindparam,
+    case,
+    delete,
+    func,
+    insert,
+    select,
+    true,
+    update,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1805,3 +1820,241 @@ async def read_activity(session, token, entity_uuid, tag_id: UUID | None = None)
         )
         with logfire.span("monthly.entry_snapshots", entry_count=len(entries)):
             return await entry_snapshots(session, entries)
+
+
+ACTIVITY_PAGE_LIMIT = 500
+# Activity's own category names, so a search for "fixed costs" or "guilt-free"
+# finds what the screen shows.
+CATEGORY_LABELS = {
+    "income": "Income",
+    "fixed_cost": "Fixed costs",
+    "spending": "Guilt-free spending",
+    "saving": "Saving",
+    "investing": "Investing",
+    "giving": "Giving",
+}
+_ACCENTED, _PLAIN = "àáâãäåçèéêëìíîïñòóôõöùúûüýÿ", "aaaaaaceeeeiiiinooooouuuuyy"
+
+
+def search_words(query: str) -> list[tuple[str, int | None, bool]]:
+    """Each query word, folded like the browser's search, with the amount in
+    cents it names (or None) and whether it was typed with a sign."""
+    folded = "".join(
+        c
+        for c in unicodedata.normalize("NFD", query)
+        if not unicodedata.category(c).startswith("M")
+    )
+    words = []
+    for word in folded.replace("\u2212", "-").lower().split():
+        number = re.fullmatch(
+            r"(-?)(\d+)(?:\.(\d{1,2}))?", re.sub(r"[$,]", "", word.removeprefix("+"))
+        )
+        cents = None
+        if number:
+            cents = int(number[2]) * 100 + int((number[3] or "").ljust(2, "0"))
+            cents = -cents if number[1] else cents
+        words.append((word, cents, word[0] in "+-"))
+    return words
+
+
+def _fold(expression):
+    return func.translate(func.lower(expression), _ACCENTED, _PLAIN)
+
+
+def _search_text(e):
+    """What Activity search reads on an entry: its dates, category, note and the
+    names it is assigned to (cost, subcategory, source, goal, destination, loan,
+    tags, and a refund's purchase note)."""
+    from accanto.models import debts as b
+    from accanto.models import destinations as d
+    from accanto.models import refunds as r
+    from accanto.models import savings as s
+
+    def name(links, targets, foreign_key, label=None):
+        column = targets.c.name if label is None else func.concat(label, targets.c.name)
+        return (
+            select(column)
+            .select_from(links.join(targets, targets.c.id == links.c[foreign_key]))
+            .where(links.c.actual_entry_id == e.c.id)
+            .scalar_subquery()
+        )
+
+    lines = m.income_lines
+    purchase = m.entries.alias("purchase")
+    return func.concat_ws(
+        "\n",
+        func.cast(e.c.financial_date, String),
+        func.to_char(e.c.financial_date, "Mon FMDD, YYYY"),
+        case(CATEGORY_LABELS, value=e.c.category),
+        e.c.note,
+        select(m.fixed_cost_assignments.c.name)
+        .where(m.fixed_cost_assignments.c.actual_entry_id == e.c.id)
+        .scalar_subquery(),
+        name(
+            m.spending_subcategory_assignments,
+            m.spending_subcategories,
+            "spending_subcategory_id",
+        ),
+        select(func.string_agg(lines.c.name, " "))
+        .select_from(
+            m.assignments.join(
+                lines, lines.c.income_source_id == m.assignments.c.income_source_id
+            )
+        )
+        .where(m.assignments.c.actual_entry_id == e.c.id)
+        .scalar_subquery(),
+        select(func.concat_ws(" ", s.accounts.c.name, s.goals.c.name))
+        .select_from(
+            s.linked_activity.join(
+                s.goals, s.goals.c.id == s.linked_activity.c.goal_id
+            ).join(s.accounts, s.accounts.c.id == s.goals.c.account_id)
+        )
+        .where(
+            s.linked_activity.c.actual_entry_id == e.c.id,
+            s.linked_activity.c.deleted_at.is_(None),
+        )
+        .limit(1)
+        .scalar_subquery(),
+        name(d.investment_entries, d.investments, "investment_id"),
+        name(d.giving_entries, d.recipients, "giving_recipient_id"),
+        name(b.entry_debts, b.debts, "debt_account_id", "Loan: "),
+        select(func.string_agg(m.tags.c.name, " "))
+        .select_from(m.entry_tags.join(m.tags, m.tags.c.id == m.entry_tags.c.tag_id))
+        .where(m.entry_tags.c.actual_entry_id == e.c.id)
+        .scalar_subquery(),
+        select(func.concat("Refund ", purchase.c.note))
+        .select_from(
+            r.refunds.join(purchase, purchase.c.id == r.refunds.c.original_entry_id)
+        )
+        .where(r.refunds.c.refund_entry_id == e.c.id)
+        .scalar_subquery(),
+    )
+
+
+async def read_activity_page(
+    session,
+    token,
+    entity_uuid,
+    *,
+    month: date | None = None,
+    category: str | None = None,
+    tag_id: UUID | None = None,
+    query: str = "",
+    entry_id: UUID | None = None,
+    cursor: UUID | None = None,
+    limit: int = 100,
+):
+    """Current entries, newest financial date first, in pages.
+
+    `total` counts the month (or all history) and `matching` what the filters
+    and search keep. `purchases` are the purchases of refunds on the page that
+    the page itself does not hold. `next_cursor` is the last entry's UUID;
+    passing it returns the entries after it.
+    """
+    e = m.entries
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
+        scope = [e.c.entity_id == entity["id"], e.c.deleted_at.is_(None)]
+        if month is not None:
+            scope += [
+                e.c.financial_date >= month,
+                e.c.financial_date
+                < date(month.year + (month.month == 12), month.month % 12 + 1, 1),
+            ]
+        kept = []
+        if category is not None:
+            kept.append(e.c.category == category)
+        if entry_id is not None:
+            kept.append(e.c.uuid == entry_id)
+        if tag_id is not None:
+            kept.append(
+                select(m.entry_tags.c.id)
+                .join(m.tags, m.tags.c.id == m.entry_tags.c.tag_id)
+                .where(
+                    m.entry_tags.c.actual_entry_id == e.c.id, m.tags.c.uuid == tag_id
+                )
+                .exists()
+            )
+        if words := search_words(query):
+            # Materialized, so each entry's text is built once for every word.
+            text = (
+                select(e.c.id, e.c.amount, _fold(_search_text(e)).label("text"))
+                .where(*scope)
+                .cte("searched")
+                .prefix_with("MATERIALIZED")
+            )
+            conditions = []
+            for word, cents, signed in words:
+                pattern = re.sub(r"([\\%_])", r"\\\1", word)
+                found = text.c.text.like(f"%{pattern}%", escape="\\")
+                if cents is not None:
+                    amount = Decimal(cents) / 100
+                    found |= (
+                        text.c.amount == amount
+                        if signed
+                        else func.abs(text.c.amount) == abs(amount)
+                    )
+                conditions.append(found)
+            kept.append(e.c.id.in_(select(text.c.id).where(*conditions)))
+        total, matching = (
+            await session.execute(
+                select(func.count(), func.count().filter(and_(true(), *kept))).where(
+                    *scope
+                )
+            )
+        ).one()
+        after = []
+        if cursor is not None:
+            last = (
+                await session.execute(
+                    select(e.c.financial_date, e.c.id).where(
+                        e.c.uuid == cursor, e.c.entity_id == entity["id"]
+                    )
+                )
+            ).first()
+            if last is None:
+                raise RejectionError(
+                    "invalid_cursor", "Start again from the first page.", 422
+                )
+            after.append(
+                (e.c.financial_date < last.financial_date)
+                | ((e.c.financial_date == last.financial_date) & (e.c.id > last.id))
+            )
+        rows = (
+            (
+                await session.execute(
+                    select(e)
+                    .where(*scope, *kept, *after)
+                    .order_by(e.c.financial_date.desc(), e.c.id)
+                    .limit(limit + 1)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        page = rows[:limit]
+        with logfire.span("monthly.entry_snapshots", entry_count=len(page)):
+            entries = await entry_snapshots(session, page)
+        held = {entry["uuid"] for entry in entries}
+        wanted = {
+            entry["refund_of"]
+            for entry in entries
+            if entry["refund_of"] and entry["refund_of"] not in held
+        }
+        purchases = []
+        if wanted:
+            found_rows = await session.execute(
+                select(e).where(
+                    e.c.entity_id == entity["id"],
+                    e.c.deleted_at.is_(None),
+                    e.c.uuid.in_([UUID(uuid) for uuid in wanted]),
+                )
+            )
+            purchases = await entry_snapshots(session, found_rows.mappings().all())
+        return {
+            "entries": entries,
+            "purchases": purchases,
+            "next_cursor": entries[-1]["uuid"] if len(rows) > limit else None,
+            "total": total,
+            "matching": matching,
+        }

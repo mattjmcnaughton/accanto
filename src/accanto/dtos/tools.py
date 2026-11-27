@@ -389,6 +389,9 @@ class Entry(Output):
 class ActivityList(Output):
     entries: list[Entry]
     truncated: bool
+    next_cursor: UUID | None = Field(
+        description="Pass as cursor for the next entries; null on the last page."
+    )
 
 
 class Goal(Output):
@@ -966,6 +969,9 @@ class ActivityQuery(Input):
     month: FirstDay
     category: Category | None = None
     tag_id: UUID | None = Field(default=None, description="Only entries with this tag.")
+    cursor: UUID | None = Field(
+        default=None, description="next_cursor from the previous page."
+    )
 
 
 class ActivitySummaryQuery(Input):

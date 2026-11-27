@@ -400,11 +400,11 @@ def test_signed_in_workspace(tmp_path):
         browser("wait", "--text", "$210.00")
         # A failed reload must be explicit rather than an empty financial workspace.
         go("Plans")
-        browser("network", "route", "**/api/entities/*/activity*", "--abort")
+        browser("network", "route", "**/api/entities/*/activity/page*", "--abort")
         go("Activity")
         browser("wait", "--text", "Could not load this workspace.")
         assert "Nothing is recorded in" not in browser("get", "text", "#main")
-        browser("network", "unroute", "**/api/entities/*/activity*")
+        browser("network", "unroute", "**/api/entities/*/activity/page*")
         tab_to_button("Try loading again")
         browser("press", "Enter")
         browser("wait", "--text", "$210.00")

@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PlanRevision } from "../../lib/monthly";
+import { activityPage } from "../../stories/mocks/activity";
 import { MonthlyReview } from "./MonthlyReview";
 import type { ScreenProps } from "./shared";
 const entity = { id: "entity", name: "Synthetic Entity", today: "2026-11-10", time_zone: "UTC" };
@@ -505,6 +506,8 @@ function mockMonth(spent: () => string) {
     const url = String(path);
     if (url.endsWith("/plans")) return json(plans);
     if (url.endsWith("/activity")) return json([{ ...groceries, amount: spent() }]);
+    if (url.includes("/activity/page"))
+      return json(activityPage(url, [{ ...groceries, amount: spent() }]));
     if (url.endsWith("2026-11-01"))
       return json({
         ...review,

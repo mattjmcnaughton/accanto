@@ -4,7 +4,6 @@ import { balances } from "../../lib/balances";
 import { destinations } from "../../lib/destinations";
 import {
   daysInMonth,
-  decimalToCents,
   fmtDate,
   fmtDay,
   fmtMonth,
@@ -19,13 +18,15 @@ import { SIGNED_USD_AMOUNT, USD_AMOUNT } from "../../lib/money";
 import {
   type Activity,
   type ActivityInput,
+  type ActivityPage,
+  type ActivityQuery,
   type KnownTotalInput,
   type PlanGroup,
   type RefundInput,
   monthly,
 } from "../../lib/monthly";
 import { type SavingsAccount, savings } from "../../lib/savings";
-import { matches, searchable, searching } from "../../lib/search";
+import { searching } from "../../lib/search";
 import {
   type SpendingSubcategory,
   spendingSubcategories as subcategoryApi,
@@ -86,6 +87,8 @@ const typing = (target: EventTarget | null) =>
   Boolean(target.closest("input,textarea,select,[contenteditable]"));
 const isNewRow = (id: string) => id === "new" || id === "new-refund";
 const AMOUNT = "[0-9]{1,9}([.][0-9]{1,2})?";
+/** Entries per page; the next page loads as the list's end nears. */
+const PAGE = 100;
 
 /** The date a new entry gets: today in the current month, else the month's last or first day. */
 export function defaultDate(month: string, today: string) {
@@ -137,10 +140,6 @@ export function ActivityScreen(
   const [reload, setReload] = useState(0);
   const deps = [p.entity.id, p.refresh, reload];
   const visible = !p.concealed;
-  const entries = useLoad(() => monthly.activity(p.entity.id), deps, {
-    enabled: visible,
-    share: "activity",
-  });
   const tagState = useLoad(() => tagApi.list(p.entity.id), deps, {
     enabled: visible,
     share: "tags",
@@ -161,11 +160,102 @@ export function ActivityScreen(
   /** A search reaches every month unless the shown month is chosen while searching. */
   const [searchMonth, setSearchMonth] = useState(false);
   const searchBox = useRef<HTMLInputElement>(null);
+  // The server searches once typing pauses; clearing the search applies at once.
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    if (!searching(search)) {
+      setQuery("");
+      return;
+    }
+    const timer = setTimeout(() => setQuery(search.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
   const shown = p.month ?? p.entity.today.slice(0, 7);
-  const finding = searching(search);
+  const finding = searching(query);
   const month = (finding ? searchMonth : !allMonths) ? shown : "";
   const [category, setCategory] = useState<Activity["category"] | "">("");
   const [tagFilter, setTagFilter] = useState("");
+  const scope: ActivityQuery = p.detail
+    ? { entry_id: p.detail.id }
+    : {
+        month: month ? `${month}-01` : undefined,
+        category: category || undefined,
+        tag_id: tagFilter || undefined,
+        q: finding ? query : undefined,
+      };
+  const scopeKey = JSON.stringify(scope);
+  /** How many entries showed, so a refresh after a save reloads the same stretch of the list. */
+  const kept = useRef({ key: "", count: 0 });
+  const entries = useLoad(
+    () =>
+      monthly.activityPage(p.entity.id, {
+        ...scope,
+        limit:
+          kept.current.key === scopeKey ? Math.min(500, Math.max(PAGE, kept.current.count)) : PAGE,
+      }),
+    [...deps, scopeKey],
+    { enabled: visible },
+  );
+  // While another filter, search or refresh loads, the last list stays in place.
+  const settled = useRef<{ entity: string; page: ActivityPage } | null>(null);
+  if (entries.kind === "ready") settled.current = { entity: p.entity.id, page: entries.data };
+  const firstPage =
+    entries.kind === "ready"
+      ? entries.data
+      : entries.kind === "loading" && settled.current?.entity === p.entity.id
+        ? settled.current.page
+        : null;
+  const [more, setMore] = useState<{ base: ActivityPage; pages: ActivityPage[] } | null>(null);
+  const [fetching, setFetching] = useState<ActivityPage | null>(null);
+  const [moreProblem, setMoreProblem] = useState<LoadState<unknown> | null>(null);
+  const pages = firstPage ? [firstPage, ...(more?.base === firstPage ? more.pages : [])] : [];
+  const data = [
+    ...new Map(pages.flatMap((page) => page.entries).map((entry) => [entry.uuid, entry])).values(),
+  ];
+  /** Entries and the purchases their refunds name, for titles and refund records. */
+  const known = [...data, ...pages.flatMap((page) => page.purchases)];
+  const lastPage = pages[pages.length - 1];
+  const nextCursor = lastPage?.next_cursor ?? null;
+  if (entries.kind === "ready") kept.current = { key: scopeKey, count: data.length };
+  function loadMore() {
+    const base = firstPage;
+    const last = lastPage;
+    // A list shown while another filter loads is not continued with that filter.
+    if (entries.kind !== "ready" || !base || !last?.next_cursor || fetching === last) return;
+    setFetching(last);
+    void monthly
+      .activityPage(p.entity.id, { ...scope, cursor: last.next_cursor, limit: PAGE })
+      .then((result) => {
+        setFetching(null);
+        if (result.kind !== "ready") {
+          setMoreProblem(result);
+          return;
+        }
+        setMoreProblem(null);
+        setMore((current) => {
+          const chain = current?.base === base ? current.pages : [];
+          return (chain[chain.length - 1] ?? base) === last
+            ? { base, pages: [...chain, result.data] }
+            : current;
+        });
+      });
+  }
+  const loadMoreLatest = useRef(loadMore);
+  loadMoreLatest.current = loadMore;
+  const listEnd = useRef<HTMLDivElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Each new last page needs a fresh look at the list's end.
+  useEffect(() => {
+    const node = listEnd.current;
+    if (!node || !nextCursor || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (seen) => {
+        if (seen.some((entry) => entry.isIntersecting)) loadMoreLatest.current();
+      },
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [nextCursor, firstPage]);
   const [managing, setManaging] = useState(false);
   const [managingSubcategories, setManagingSubcategories] = useState(false);
   const [infoTags, setInfoTags] = useState<string[] | null>(null);
@@ -198,12 +288,11 @@ export function ActivityScreen(
   useEffect(() => {
     if (submitRequest) form.current?.requestSubmit();
   }, [submitRequest]);
-  const data = entries.kind === "ready" ? entries.data : [];
   // Row names need lookups too, including purchases referenced by refunds in another month.
   const formOpen = open && draft?.kind === "activity";
   const knownTotal = open && draft?.kind === "known";
   const plans = useLoad(() => monthly.plans(p.entity.id), deps, {
-    enabled: visible && (formOpen || knownTotal || data.some((entry) => entry.source_id)),
+    enabled: visible && (formOpen || knownTotal || known.some((entry) => entry.source_id)),
     share: "plans",
   });
   const accounts = useLoad(() => savings.list(p.entity.id), deps, {
@@ -211,25 +300,23 @@ export function ActivityScreen(
       visible &&
       (formOpen ||
         knownTotal ||
-        data.some((entry) => entry.saving_goal_id || entry.funding_goal_id)),
+        known.some((entry) => entry.saving_goal_id || entry.funding_goal_id)),
     share: "savings",
   });
   const loans = useLoad(() => balances.loans(p.entity.id), deps, {
-    enabled: visible && (formOpen || data.some((entry) => entry.debt_account_id)),
+    enabled: visible && (formOpen || known.some((entry) => entry.debt_account_id)),
     share: "loans",
   });
   const investments = useLoad(() => destinations.list(p.entity.id, "investment"), deps, {
-    enabled: visible && data.some((entry) => entry.investment_id),
+    enabled: visible && known.some((entry) => entry.investment_id),
     share: "investments",
   });
   const recipients = useLoad(() => destinations.list(p.entity.id, "giving"), deps, {
-    enabled: visible && data.some((entry) => entry.giving_recipient_id),
+    enabled: visible && known.some((entry) => entry.giving_recipient_id),
     share: "giving",
   });
   const tagList = tagState.kind === "ready" ? tagState.data : [];
   const subcategoryList = subcategoryState.kind === "ready" ? subcategoryState.data : [];
-  const tagNames = (entry: Activity) =>
-    (entry.tag_ids ?? []).map((id) => tagList.find((tag) => tag.uuid === id)?.name ?? "");
   const today = p.entity.today;
   const sources = plans.kind === "ready" ? sourceChoices(plans.data) : [];
   const fixedCosts =
@@ -274,7 +361,7 @@ export function ActivityScreen(
   /** What an entry was: the note for guilt-free spending, otherwise the line it belongs to. */
   const title = (entry: Activity): string => {
     if (entry.refund_of) {
-      const purchase = data.find((row) => row.uuid === entry.refund_of);
+      const purchase = known.find((row) => row.uuid === entry.refund_of);
       return `Refund: ${purchase ? title(purchase) : "an earlier purchase"}`;
     }
     return entry.category === "spending"
@@ -291,7 +378,7 @@ export function ActivityScreen(
               : "Unassigned";
   };
   const refundedDate = (entry: Activity) => {
-    const date = data.find((row) => row.uuid === entry.refund_of)?.financial_date;
+    const date = known.find((row) => row.uuid === entry.refund_of)?.financial_date;
     return date ? fmtDate(date) : "an earlier date";
   };
   const describe = (entry: Activity) =>
@@ -380,37 +467,14 @@ export function ActivityScreen(
     return null;
   }
   const pendingRow = draftView();
-  const inMonth = data.filter((entry) => !month || entry.financial_date.startsWith(month));
+  // The server filters and searches; a changed date regroups an unsaved row in place.
   const rows: Row[] = [
     ...(pendingRow && isNewRow(pendingRow.id) ? [pendingRow] : []),
-    ...[...data]
-      .sort((a, b) => b.financial_date.localeCompare(a.financial_date))
+    ...data
       .map((entry) =>
         pendingRow?.id === entry.uuid ? pendingRow : { id: entry.uuid, view: entry },
       )
-      .filter(
-        ({ id, view }) =>
-          id === pendingRow?.id ||
-          ((!month || view.financial_date.startsWith(month)) &&
-            (!category || view.category === category) &&
-            (!tagFilter || (view.tag_ids ?? []).includes(tagFilter)) &&
-            (!finding ||
-              matches(
-                searchable(
-                  [
-                    view.financial_date,
-                    fmtDate(view.financial_date),
-                    categoryNames[view.category],
-                    title(view),
-                    view.note,
-                    ...describe(view),
-                    ...tagNames(view),
-                  ],
-                  decimalToCents(view.amount),
-                ),
-                search,
-              ))),
-      ),
+      .sort((a, b) => b.view.financial_date.localeCompare(a.view.financial_date)),
   ];
   const groups: Array<{ key: string; label: string; rows: Row[] }> = [];
   for (const row of rows) {
@@ -431,14 +495,52 @@ export function ActivityScreen(
   );
   const activeRow = rows[rowIndex];
   const captureDate = defaultDate(month, today);
-  const loaded = entries.kind === "ready" || entries.kind === "empty";
+  // A known total captures every current entry of its month and category, read on their own.
+  const knownForm = draft?.kind === "known" ? draft.form : null;
+  const knownKey = (month: string, category: string) => `${month.slice(0, 7)} ${category}`;
+  const knownScope = knownForm ? knownKey(knownForm.month, knownForm.category) : "";
+  const knownEntries = useLoad(
+    () =>
+      monthly.activityAll(p.entity.id, {
+        month: knownForm?.month,
+        category: knownForm?.category,
+      }),
+    // Not the refresh: the captured entries stay what the person viewed.
+    [p.entity.id, reload, knownScope],
+    { enabled: visible && Boolean(knownForm) },
+  );
+  useEffect(() => {
+    if (knownEntries.kind !== "ready") return;
+    setDraft((current) =>
+      current?.kind === "known"
+        ? {
+            ...current,
+            form: {
+              ...current.form,
+              contributing_entries: fingerprint(
+                current.form.month,
+                current.form.category,
+                (current.form.category === "saving"
+                  ? current.form.saving_goal_id
+                  : current.form.source_id) || null,
+              ),
+            },
+          }
+        : current,
+    );
+  }, [knownEntries]);
+  const loaded = firstPage !== null;
+  const total = firstPage?.total ?? 0;
+  const matching = firstPage?.matching ?? 0;
 
   function fingerprint(
     month: string,
     category: "income" | "spending" | "saving" | "fixed_cost",
     selectionId: string | null,
   ) {
-    return data
+    // Another month or category is read first; the effect below fills it in.
+    if (knownEntries.kind !== "ready" || knownKey(month, category) !== knownScope) return [];
+    return knownEntries.data
       .filter(
         (entry) =>
           entry.financial_date.slice(0, 7) === month.slice(0, 7) &&
@@ -514,7 +616,7 @@ export function ActivityScreen(
     if (!p.guard()) return false;
     const entry = row.view;
     if (entry.refund_of) {
-      const target = data.find((r) => r.uuid === entry.refund_of);
+      const target = known.find((r) => r.uuid === entry.refund_of);
       if (!target) return false;
       start(
         {
@@ -686,7 +788,8 @@ export function ActivityScreen(
           : monthly.createRefund(p.entity.id, next.target.uuid, next.form),
         done,
       );
-    else if (loaded) p.save(monthly.recordKnownTotal(p.entity.id, next.form), done);
+    else if (loaded && knownEntries.kind === "ready")
+      p.save(monthly.recordKnownTotal(p.entity.id, next.form), done);
   }
   /** One line records guilt-free spending: an amount, then what it was. */
   function capture() {
@@ -744,7 +847,11 @@ export function ActivityScreen(
       position: { row: index, col },
       rows: rows.length,
       columns,
-      move: (next) => focusCell(rows[next.row].id, next.col),
+      move: (next) => {
+        focusCell(rows[next.row].id, next.col);
+        // Moving into the last rows reads the next page, so j and G keep going.
+        if (next.row >= rows.length - 5) loadMore();
+      },
       edit: () => begin(row, col),
       add: () => openNew(),
       remove: () => remove(row),
@@ -995,7 +1102,11 @@ export function ActivityScreen(
               <button type="button" className="btn" onClick={done}>
                 {changed ? "Discard changes" : "Cancel"}
               </button>
-              <button className="btn pri" type="submit">
+              <button
+                className="btn pri"
+                type="submit"
+                disabled={draft.kind === "known" && knownEntries.kind !== "ready"}
+              >
                 {draft.kind === "known"
                   ? "Save adjustment"
                   : draft.kind === "refund"
@@ -1032,8 +1143,8 @@ export function ActivityScreen(
           !loaded
             ? undefined
             : month
-              ? `${fmtMonth(month)}, ${plural(inMonth.length, "entry", "entries")}`
-              : `All months, ${plural(data.length, "entry", "entries")}${finding ? " searched" : ""}`
+              ? `${fmtMonth(month)}, ${plural(total, "entry", "entries")}`
+              : `All months, ${plural(total, "entry", "entries")}${finding ? " searched" : ""}`
         }
       >
         <select
@@ -1128,6 +1239,7 @@ export function ActivityScreen(
       <LoadProblem
         states={[
           entries,
+          knownEntries,
           plans,
           accounts,
           investments,
@@ -1138,14 +1250,14 @@ export function ActivityScreen(
         ]}
         retry={() => setReload((x) => x + 1)}
       />
-      {entries.kind === "loading" ? (
-        <LoadingCard label="Loading activity" />
-      ) : !loaded ? null : data.length === 0 && !pendingRow ? (
+      {!loaded ? (
+        entries.kind === "loading" && <LoadingCard label="Loading activity" />
+      ) : total === 0 && !month && !pendingRow && entries.kind === "ready" ? (
         <Empty title={`Nothing is recorded in ${month ? monthName(month) : "any month"} yet`}>
           Record spending in the line above.
         </Empty>
       ) : (
-        <section aria-label="Entries">
+        <section aria-label="Entries" aria-busy={entries.kind === "loading"}>
           <div className="filters">
             {/* biome-ignore lint/a11y/useSemanticElements: The kit's segmented control is a button group. */}
             <div role="group" className="seg-control" aria-label="Show category">
@@ -1210,14 +1322,15 @@ export function ActivityScreen(
               {!search && <kbd className="kbd">/</kbd>}
             </div>
             <output className="note">
-              {plural(rows.length, "entry", "entries")}
+              {data.length < matching ? `${data.length} of ` : ""}
+              {plural(matching, "entry", "entries")}
               {finding && !month ? " in all months" : ""}
             </output>
           </div>
           {rows.length === 0 &&
             (finding ? (
               <p className="note ar-under">
-                Nothing {month ? `in ${monthName(month)} ` : ""}matches “{search.trim()}”
+                Nothing {month ? `in ${monthName(month)} ` : ""}matches “{query}”
                 {category || tagFilter ? " with this filter" : ""}.{" "}
                 <button
                   type="button"
@@ -1230,7 +1343,7 @@ export function ActivityScreen(
                   Clear search
                 </button>
               </p>
-            ) : inMonth.length === 0 ? (
+            ) : total === 0 ? (
               <Empty title={`Nothing is recorded in ${monthName(shown)} yet`}>
                 Record spending above, or search other months.
               </Empty>
@@ -1344,6 +1457,18 @@ export function ActivityScreen(
               </div>
             </div>
           ))}
+          {nextCursor && (
+            <div ref={listEnd} className="ar-more">
+              <button type="button" className="btn" disabled={Boolean(fetching)} onClick={loadMore}>
+                {fetching ? "Loading…" : "Show more"}
+              </button>
+            </div>
+          )}
+          {moreProblem && (
+            <div className="ar-under">
+              <LoadProblem states={[moreProblem]} retry={loadMore} />
+            </div>
+          )}
           {cellError && (
             <p id="activity-cell-error" role="alert" className="err ar-under">
               {cellError}

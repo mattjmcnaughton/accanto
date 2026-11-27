@@ -49,6 +49,11 @@
 .ar .ar-keys {
   margin-top: 10px;
 }
+.ar .ar-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
 .ar-keylist {
   display: grid;
   gap: 8px;

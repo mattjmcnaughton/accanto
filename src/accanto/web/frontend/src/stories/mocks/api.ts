@@ -10,6 +10,7 @@
 import { http, HttpResponse, delay } from "msw";
 import { fn } from "storybook/test";
 import type { ScreenProps } from "../../features/workspace/shared";
+import { activityPage } from "./activity";
 import * as data from "./fixtures";
 import { payoffSchedules } from "./loans";
 import * as projection from "./projections";
@@ -109,17 +110,16 @@ const resources = {
 } satisfies Record<string, { path: string; loaded: unknown; empty: unknown }>;
 export type Resource = keyof typeof resources;
 
+const outage = () =>
+  HttpResponse.json(
+    { detail: { code: "unavailable", message: "Synthetic outage: the server did not answer." } },
+    { status: 503 },
+  );
 function reader(resource: Resource, choice: State | unknown) {
   const { path, ...bodies } = resources[resource];
   return http.get(path, async ({ params, request }) => {
     if (choice === "loading") await delay("infinite");
-    if (choice === "failed")
-      return HttpResponse.json(
-        {
-          detail: { code: "unavailable", message: "Synthetic outage: the server did not answer." },
-        },
-        { status: 503 },
-      );
+    if (choice === "failed") return outage();
     const body = choice === "loaded" || choice === "empty" ? bodies[choice] : choice;
     // Projections are keyed by the requested horizon in years and dollars.
     if (resource === "projections") {
@@ -133,6 +133,16 @@ function reader(resource: Resource, choice: State | unknown) {
     if (resource !== "reviews") return HttpResponse.json(body as object);
     const review = (body as Record<string, unknown>)[String(params.month)];
     return review ? HttpResponse.json(review) : missingReview();
+  });
+}
+
+/** Activity's pages come from the same entries as its full list. */
+function activityPages(choice: State | unknown) {
+  return http.get(`${entity}/activity/page`, async ({ request }) => {
+    if (choice === "loading") await delay("infinite");
+    if (choice === "failed") return outage();
+    const body = choice === "loaded" || choice === "empty" ? resources.activity[choice] : choice;
+    return HttpResponse.json(activityPage(request.url, body as Parameters<typeof activityPage>[1]));
   });
 }
 
@@ -154,6 +164,7 @@ export function mockApi(
   overrides: Partial<Record<Resource, State | unknown>> = {},
 ) {
   return [
+    activityPages(overrides.activity ?? state),
     ...(Object.keys(resources) as Resource[]).map((resource) =>
       reader(resource, overrides[resource] ?? state),
     ),
