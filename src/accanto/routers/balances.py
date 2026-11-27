@@ -10,11 +10,16 @@ from accanto.dtos.balances import (
     EditDebt,
     ObservationInput,
     ObservationResult,
+    PayoffSchedule,
 )
 from accanto.dtos.monthly import RevisionInput
 from accanto.routers.authentication import Session, Token
 from accanto.routers.monthly import RequestKey
-from accanto.services.balances import read_debts, read_observations
+from accanto.services.balances import (
+    read_debts,
+    read_observations,
+    read_payoff_schedule,
+)
 from accanto.services.monthly import write
 
 router = APIRouter(prefix="/api/entities/{entity_id}", tags=["balances"])
@@ -23,6 +28,13 @@ router = APIRouter(prefix="/api/entities/{entity_id}", tags=["balances"])
 @router.get("/debts", response_model=list[DebtResult])
 async def debts(entity_id: UUID, session: Session, token: Token):
     return await read_debts(session, token, entity_id)
+
+
+@router.get("/debts/{debt_id}/payoff-schedule", response_model=PayoffSchedule)
+async def payoff_schedule(
+    entity_id: UUID, debt_id: UUID, session: Session, token: Token
+):
+    return await read_payoff_schedule(session, token, entity_id, debt_id)
 
 
 @router.post("/debts", response_model=DebtResult)

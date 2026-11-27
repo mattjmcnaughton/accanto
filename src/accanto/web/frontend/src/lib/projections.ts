@@ -26,13 +26,31 @@ export interface ProjectedInvestment {
   milestones: { years: number; amount: DecimalString | null }[];
 }
 /**
- * One point in time, in nominal dollars: inflation is not modelled yet. Savings and loans are
- * held at today's amounts. Totals are null while any investment has no observed value.
+ * A loan with a fixed rate and a payment that covers its interest is paid down month by month
+ * from its latest recorded amount owed; any other loan stays at that amount.
+ */
+export interface ProjectedLoan {
+  debt_id: string;
+  name: string;
+  active: boolean;
+  status: "amortizing" | "no_terms" | "interest_not_covered" | "paid_off";
+  latest: { date: IsoDate; amount: DecimalString };
+  interest_rate_percent: DecimalString | null;
+  monthly_payment: DecimalString | null;
+  /** Within the projection's span; null when not repaid in it or not amortizing. */
+  payoff_date: IsoDate | null;
+  milestones: { years: number; amount: DecimalString }[];
+}
+/**
+ * One point in time, in nominal dollars: inflation is not modelled yet. Savings are held at
+ * today's amount; loans are paid down where they have terms. Totals are null while any
+ * investment has no observed value.
  */
 export interface ProjectionYear {
   years: number;
   date: IsoDate;
   investments: DecimalString | null;
+  loans: DecimalString;
   net_worth: DecimalString | null;
   contributed: DecimalString;
 }
@@ -58,6 +76,7 @@ export interface Projection {
   /** Always 5, 10 and 20 years, whatever the horizon. */
   milestones: ProjectionYear[];
   investments: ProjectedInvestment[];
+  loans: ProjectedLoan[];
   fire: FireResult | null;
 }
 export interface FireAssumptions {

@@ -15,7 +15,8 @@ FIRE functions this reuses.
 
 Excluded: inflation and real (today's-dollar) figures, decided against for now
 because costs inflate unevenly ([#44](https://github.com/mattjmcnaughton/accanto/issues/44));
-taxes, fees and market risk; growth of savings or amortization of loans; an
+taxes, fees and market risk; growth of savings; amortization of loans (since
+added by [TDD 15](15-debt-payoff.md)); an
 agent write tool for the FIRE assumptions.
 
 ## Data model
@@ -47,7 +48,7 @@ Home and any later caller.
   an annual contribution is a twelfth each month; an inactive investment keeps
   growing but takes no new contributions.
 - Savings (remaining saved) and loans (latest observations) stay at today's
-  amounts. Net worth = projected investments + savings − loans.
+  amounts; [TDD 15](15-debt-payoff.md) now pays down loans with fixed-rate terms. Net worth = projected investments + savings − loans.
 - An active investment without an observation is `no_value` and makes every
   total and the FIRE date unknown (null), as Net position is.
 - Full precision month to month; reported amounts round half-even to cents. The

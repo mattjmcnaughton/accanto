@@ -1,6 +1,13 @@
 import { type KeyboardEvent, useState } from "react";
-import { type Loan, type Observation, type ObservationInput, balances } from "../../lib/balances";
-import { fmtDate, formatMoney, plural } from "../../lib/format";
+import {
+  type Loan,
+  type LoanTerms,
+  type Observation,
+  type ObservationInput,
+  type PayoffSummary,
+  balances,
+} from "../../lib/balances";
+import { decimalToCents, fmtDate, fmtMon, fmtMonth, formatMoney, plural } from "../../lib/format";
 import { monthly } from "../../lib/monthly";
 import { Dialog, Empty, Field, Head, Icon, Trend } from "../../ui";
 import {
@@ -24,7 +31,43 @@ import {
 } from "../destinations/records";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 
-type LoanForm = { name: string; date: string; amount: string };
+type LoanForm = { name: string; date: string; amount: string; rate: string; payment: string };
+
+/** A fixed annual percent, from 0 to 40, with up to two decimals. */
+const RATE = /^\d{1,2}(\.\d{1,2})?$/;
+
+/** Why the terms cannot be saved, or "". Both are optional. */
+function termsProblem(rate: string, payment: string): string {
+  if (rate.trim() && !(RATE.test(rate.trim()) && Number(rate) <= 40))
+    return "Enter the interest rate as a percent from 0 to 40 with up to two decimals.";
+  if (payment.trim() && !(validMoney(payment) && Number(payment) > 0))
+    return "Enter the monthly payment as a USD amount above zero with up to two decimals.";
+  return "";
+}
+const terms = (rate: string, payment: string): LoanTerms => ({
+  interest_rate_percent: rate.trim() || null,
+  monthly_payment: payment.trim() || null,
+});
+
+/** One line on a loan's payoff, from its latest recorded amount owed. */
+export function payoffLine(payoff: PayoffSummary): string {
+  switch (payoff.status) {
+    case "scheduled":
+      return `Paid off ${fmtMonth(payoff.payoff_date as string)}, ${formatMoney(payoff.total_interest)} interest left`;
+    case "interest_not_covered":
+      return `The ${formatMoney(payoff.monthly_payment)} payment does not cover ${formatMoney(payoff.monthly_interest)} monthly interest, so this loan never pays down.`;
+    case "beyond_limit":
+      return "Not repaid within 100 years at this payment.";
+    case "paid_off":
+      return "Paid off.";
+    default:
+      return "Add the interest rate and monthly payment to see a payoff schedule.";
+  }
+}
+const termsLine = (loan: LoanTerms) =>
+  loan.interest_rate_percent && loan.monthly_payment
+    ? `${loan.interest_rate_percent}% fixed, ${formatMoney(loan.monthly_payment)} a month`
+    : null;
 type Form =
   | { type: "loan"; record: Loan | null; value: LoanForm }
   | { type: "observation"; record: Observation | null; value: ObservationInput };
@@ -33,6 +76,8 @@ function problem(form: Form): string {
   if (form.type === "loan") {
     if (form.record) return "";
     if (!form.value.name.trim()) return "Enter a name.";
+    const terms = termsProblem(form.value.rate, form.value.payment);
+    if (terms) return terms;
   } else if (!form.value.account_id) return "Choose a loan.";
   if (!form.value.date) return "Enter a date.";
   return validMoney(form.value.amount)
@@ -73,7 +118,7 @@ export function Balances(p: ScreenProps) {
     editor.start(`loan:${loan?.uuid ?? "new"}`, {
       type: "loan",
       record: loan,
-      value: { name: "", date: p.entity.today, amount: "" },
+      value: { name: "", date: p.entity.today, amount: "", rate: "", payment: "" },
     });
   function editObservation(row: Observation | null, account?: string) {
     if (row?.is_opening) {
@@ -140,6 +185,7 @@ export function Balances(p: ScreenProps) {
         balances.createLoan(p.entity.id, {
           name: form.value.name.trim(),
           opening: { date: form.value.date, amount: form.value.amount.trim() },
+          ...terms(form.value.rate, form.value.payment),
         }),
       );
     } else {
@@ -169,6 +215,27 @@ export function Balances(p: ScreenProps) {
       numeric: true,
       cell: (loan) =>
         payments.kind === "ready" || payments.kind === "empty" ? paymentsFor(loan).length : dash,
+    },
+    {
+      header: "Rate",
+      numeric: true,
+      cell: (loan) => (loan.interest_rate_percent ? `${loan.interest_rate_percent}%` : dash),
+    },
+    {
+      header: "Monthly payment",
+      numeric: true,
+      cell: (loan) => (loan.monthly_payment ? formatMoney(loan.monthly_payment) : dash),
+    },
+    {
+      header: "Payoff",
+      cell: (loan) =>
+        loan.payoff.status === "scheduled" ? (
+          <Day iso={loan.payoff.payoff_date as string} />
+        ) : loan.payoff.status === "interest_not_covered" ? (
+          <span className="chip warn">Payment under interest</span>
+        ) : (
+          dash
+        ),
     },
     {
       header: "",
@@ -308,6 +375,15 @@ export function Balances(p: ScreenProps) {
                     label={`${account.name}, amount owed`}
                   />
                 </div>
+                <div className="loan-payoff">
+                  {termsLine(account) && <span className="cap">{termsLine(account)}</span>}
+                  <p
+                    className={account.payoff.status === "interest_not_covered" ? "warn" : "cap"}
+                    role={account.payoff.status === "interest_not_covered" ? "note" : undefined}
+                  >
+                    {payoffLine(account.payoff)}
+                  </p>
+                </div>
                 {payments.kind === "ready" || payments.kind === "empty" ? (
                   <span className="cap">
                     {count ? `${plural(count, "payment")} recorded.` : "No payments recorded."}{" "}
@@ -396,6 +472,23 @@ export function Balances(p: ScreenProps) {
                       {formatMoney(loan.latest.amount)} on {fmtDate(loan.latest.financial_date)}
                     </dd>
                   </dl>
+                  <LoanTermsForm
+                    key={`${loan.uuid}:${loan.revision}`}
+                    loan={loan}
+                    busy={p.busy}
+                    save={(value) =>
+                      p.save(
+                        balances.editLoan(p.entity.id, loan.uuid, {
+                          name: loan.name,
+                          active: loan.active,
+                          expected_revision: loan.revision,
+                          ...value,
+                        }),
+                        editor.saved,
+                      )
+                    }
+                  />
+                  <PayoffDetails entity={p.entity.id} loan={loan} refresh={p.refresh} />
                   <h3>Payment history</h3>
                   {loanPayments.length === 0 ? (
                     <p className="note">No payments recorded for this loan.</p>
@@ -485,6 +578,26 @@ export function Balances(p: ScreenProps) {
                             onChange={(amount) => set<LoanForm>({ amount })}
                           />
                         </div>
+                        <div className="two">
+                          <Field label="Fixed interest rate (% a year, optional)">
+                            <input
+                              inputMode="decimal"
+                              placeholder="0.00"
+                              value={form.value.rate}
+                              onChange={(event) => set<LoanForm>({ rate: event.target.value })}
+                            />
+                          </Field>
+                          <MoneyField
+                            label="Monthly payment (USD, optional)"
+                            value={form.value.payment}
+                            required={false}
+                            onChange={(payment) => set<LoanForm>({ payment })}
+                          />
+                        </div>
+                        <p className="note">
+                          With both, Accanto shows a payoff schedule and pays the loan down in
+                          Projections. Only fixed rates are supported.
+                        </p>
                       </>
                     ) : (
                       <>
@@ -570,6 +683,150 @@ export function Balances(p: ScreenProps) {
       )}
       <ConfirmDialog confirmation={confirmation} close={() => setConfirmation(null)} />
       <Shortcuts open={help} close={() => setHelp(false)} />
+    </section>
+  );
+}
+
+function LoanTermsForm({
+  loan,
+  busy,
+  save,
+}: {
+  loan: Loan;
+  busy: boolean;
+  save: (value: LoanTerms) => void;
+}) {
+  const [rate, setRate] = useState(loan.interest_rate_percent ?? "");
+  const [payment, setPayment] = useState(loan.monthly_payment ?? "");
+  const [error, setError] = useState("");
+  const changed =
+    rate.trim() !== (loan.interest_rate_percent ?? "") ||
+    payment.trim() !== (loan.monthly_payment ?? "");
+  return (
+    <form
+      className="loan-terms"
+      aria-label={`Terms for ${loan.name}`}
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        const problem = termsProblem(rate, payment);
+        setError(problem);
+        if (!problem) save(terms(rate, payment));
+      }}
+    >
+      <h3>Loan terms</h3>
+      <div className="two">
+        <Field label="Fixed interest rate (% a year)">
+          <input
+            inputMode="decimal"
+            placeholder="0.00"
+            value={rate}
+            onChange={(event) => setRate(event.target.value)}
+          />
+        </Field>
+        <MoneyField
+          label="Monthly payment (USD)"
+          value={payment}
+          required={false}
+          onChange={setPayment}
+        />
+      </div>
+      {error && (
+        <p className="err" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="actions">
+        <button type="submit" className="btn sm" disabled={busy || !changed}>
+          Save terms
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** The month-by-month schedule from the latest recorded amount owed. */
+function PayoffDetails({ entity, loan, refresh }: { entity: string; loan: Loan; refresh: number }) {
+  const state = useLoad(
+    () => balances.schedule(entity, loan.uuid),
+    [entity, loan.uuid, loan.revision, loan.latest.uuid, loan.latest.revision, refresh],
+  );
+  const schedule = state.kind === "ready" ? state.data : null;
+  const payoff = schedule ?? loan.payoff;
+  const points = schedule
+    ? [
+        { date: schedule.as_of, value: decimalToCents(schedule.balance) ?? 0 },
+        // One point a year and the last payment keep a long schedule legible.
+        ...schedule.rows
+          .filter((row, i) => row.month % 12 === 0 || i === schedule.rows.length - 1)
+          .map((row) => ({ date: row.date, value: decimalToCents(row.balance) ?? 0 })),
+      ]
+    : [];
+  return (
+    <section className="loan-schedule" aria-label={`Payoff schedule for ${loan.name}`}>
+      <h3>Payoff schedule</h3>
+      <p className="note">
+        From {formatMoney(payoff.balance)} owed on {fmtDate(payoff.as_of)}, at a fixed rate with a
+        level monthly payment. Illustrative: it is not recorded activity.
+      </p>
+      {payoff.status === "scheduled" ? (
+        <dl>
+          <dt>Payoff date</dt>
+          <dd>
+            {fmtDate(payoff.payoff_date as string)}, in {plural(payoff.months ?? 0, "payment")}
+          </dd>
+          <dt>Interest remaining</dt>
+          <dd>{formatMoney(payoff.total_interest)}</dd>
+          <dt>Total to pay</dt>
+          <dd>{formatMoney(payoff.total_paid)}</dd>
+          <dt>First month&apos;s interest</dt>
+          <dd>{formatMoney(payoff.monthly_interest)}</dd>
+        </dl>
+      ) : (
+        <p className={payoff.status === "interest_not_covered" ? "warn" : "note"} role="note">
+          {payoffLine(payoff)}
+        </p>
+      )}
+      <LoadFailure state={state} retry={() => undefined} />
+      {schedule && schedule.rows.length > 0 && (
+        <>
+          <Trend points={points} kind="fixed" label={`${loan.name}, scheduled amount owed`} />
+          <div className="rec-scroll loan-rows">
+            <table className="rec-grid" aria-label={`Payoff schedule rows for ${loan.name}`}>
+              <thead>
+                <tr>
+                  <th scope="col">Month</th>
+                  <th scope="col" className="num">
+                    Payment
+                  </th>
+                  <th scope="col" className="num">
+                    Interest
+                  </th>
+                  <th scope="col" className="num">
+                    Principal
+                  </th>
+                  <th scope="col" className="num">
+                    Owed after
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedule.rows.map((row) => (
+                  <tr key={row.month}>
+                    <td className="loan-month">
+                      {fmtMon(row.date)} {row.date.slice(0, 4)}
+                    </td>
+                    <td className="num">{formatMoney(row.payment)}</td>
+                    <td className="num">{formatMoney(row.interest)}</td>
+                    <td className="num">{formatMoney(row.principal)}</td>
+                    <td className="num">{formatMoney(row.balance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </section>
   );
 }

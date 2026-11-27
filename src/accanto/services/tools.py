@@ -1184,7 +1184,8 @@ CATALOG: tuple[CatalogTool, ...] = (
     ),
     _read(
         "list_debts",
-        "Loans and their balance observations.",
+        "Loans with their fixed rate, monthly payment and payoff date and "
+        "interest remaining, and their balance observations.",
         t.NoInput,
         t.DebtList,
         list_debts,
@@ -1485,7 +1486,13 @@ CATALOG: tuple[CatalogTool, ...] = (
         build_delete_contribution,
         "delete",
     ),
-    _write("save_debt", "Add or edit a loan.", t.SaveDebt, build_debt),
+    _write(
+        "save_debt",
+        "Add or edit a loan, including its fixed annual interest rate and "
+        "monthly payment; an edit that omits them keeps them.",
+        t.SaveDebt,
+        build_debt,
+    ),
     _write(
         "save_observation",
         "Record or correct an investment or loan balance observation.",

@@ -270,6 +270,7 @@ def prepay_or_invest(
 MILESTONES = (5, 10, 20)
 RETURN_RANGE = (Decimal("-10"), Decimal("30"))
 WITHDRAWAL_RANGE = (Decimal("0"), Decimal("10"))
+DEBT_RATE_RANGE = (Decimal("0"), Decimal("40"))
 
 
 def percent(value: str, low: Decimal, high: Decimal, *, low_open=False) -> Decimal:
@@ -293,6 +294,104 @@ def withdrawal_rate(value: str) -> Decimal:
     return percent(value, *WITHDRAWAL_RANGE, low_open=True)
 
 
+def debt_rate(value: str) -> Decimal:
+    """A Debt account's fixed annual interest rate (TDD 15)."""
+    return percent(value, *DEBT_RATE_RANGE)
+
+
+# Payoff schedules (TDD 15): a Debt account at a fixed annual rate, paid a level
+# monthly payment from its latest recorded balance. Interest rounds half-even to
+# cents each month as in amortize; the last payment clears the balance exactly.
+
+
+def debt_status(
+    balance: Decimal, annual_percent: Decimal | None, payment: Decimal | None
+) -> str | None:
+    """Why a debt has no schedule, or None when it amortizes."""
+    if balance <= 0:
+        return "paid_off"
+    if annual_percent is None or payment is None:
+        return "no_terms"
+    if payment <= cents(balance * monthly_loan_rate(annual_percent)):
+        return "interest_not_covered"
+    return None
+
+
+def _payoff_rows(
+    balance: Decimal, annual_percent: Decimal, payment: Decimal, limit: int
+) -> list[dict]:
+    """Months of payments until repaid or limit months; the payment covers interest."""
+    rate = monthly_loan_rate(annual_percent)
+    rows = []
+    while balance > 0 and len(rows) < limit:
+        interest = cents(balance * rate)
+        paid = min(payment, balance + interest)
+        balance = balance + interest - paid
+        rows.append(
+            {
+                "month": len(rows) + 1,
+                "payment": paid,
+                "interest": interest,
+                "principal": paid - interest,
+                "balance": balance,
+            }
+        )
+    return rows
+
+
+def payoff_schedule(
+    balance: Decimal,
+    as_of,
+    annual_percent: Decimal | None,
+    payment: Decimal | None,
+) -> dict:
+    """The schedule from a latest recorded balance, its payoff date and interest.
+
+    The first payment falls one month after the balance's date. Status is
+    scheduled, or why there is no schedule: paid_off, no_terms (no rate or no
+    payment), interest_not_covered (the payment does not exceed the first
+    month's interest, so the balance never falls) or beyond_limit (not repaid
+    within 100 years). Only a scheduled debt has rows and totals.
+    """
+    status = debt_status(balance, annual_percent, payment)
+    rows = []
+    if status is None:
+        assert annual_percent is not None and payment is not None
+        rows = _payoff_rows(balance, annual_percent, payment, MAX_MONTHS)
+        status = "scheduled" if rows[-1]["balance"] == 0 else "beyond_limit"
+        if status != "scheduled":
+            rows = []
+    interest = sum((r["interest"] for r in rows), ZERO)
+    return {
+        "status": status,
+        "as_of": as_of.isoformat(),
+        "balance": str(balance),
+        "interest_rate_percent": None
+        if annual_percent is None
+        else str(annual_percent),
+        "monthly_payment": None if payment is None else str(payment),
+        "monthly_interest": None
+        if annual_percent is None
+        else str(cents(balance * monthly_loan_rate(annual_percent))),
+        "months": len(rows) if rows else None,
+        "payoff_date": _add_months(as_of, len(rows)).isoformat() if rows else None,
+        "total_interest": str(interest) if rows else None,
+        "total_paid": str(balance + interest) if rows else None,
+        "rows": [
+            {
+                **{k: str(v) for k, v in r.items() if k != "month"},
+                "month": r["month"],
+                "date": _add_months(as_of, r["month"]).isoformat(),
+            }
+            for r in rows
+        ],
+    }
+
+
+def payoff_summary(schedule: dict) -> dict:
+    return {k: v for k, v in schedule.items() if k != "rows"}
+
+
 def _add_months(day, months: int):
     import calendar
 
@@ -309,7 +408,7 @@ def project_entity(
     investments: list[dict],
     *,
     savings: Decimal,
-    loans: Decimal | None,
+    loans: list[dict],
     today,
     years: int,
     default_return: Decimal,
@@ -324,8 +423,13 @@ def project_entity(
     compounds monthly at its own expected return, or default_return without
     one, plus its expected contribution at each month's end (an annual amount
     is a twelfth each month; inactive investments take no new contributions).
-    Savings and loans stay at today's amounts. An active investment without an
-    observed value, or loans that are unknown, make every total unknown (None):
+    Savings stay at today's amount. Each loan dict has id, name, active, latest
+    ({date, amount}), interest_rate_percent and monthly_payment: from today, a
+    loan with both terms whose payment covers its interest is paid down month by
+    month (TDD 15); any other loan stays at its latest amount. Payments are not
+    taken from investment contributions, which are entered net of the budget
+    that pays them, and a repaid loan's payment is not invested. An active
+    investment without an observed value makes every total unknown (None):
     unknown is never projected from zero.
     """
     if not 1 <= years <= 100:
@@ -379,13 +483,49 @@ def project_entity(
                 ],
             }
         )
-    known = loans is not None and all(
+    known = all(
         line["status"] == "projected"
         for line, inv in zip(lines, investments, strict=True)
         if inv["active"]
     )
 
-    owed = ZERO if loans is None else loans
+    loan_lines, owed_by_month = [], [ZERO] * (span + 1)
+    for loan in loans:
+        amount = Decimal(loan["latest"]["amount"])
+        rate = loan["interest_rate_percent"]
+        payment = loan["monthly_payment"]
+        rate = None if rate is None else Decimal(rate)
+        payment = None if payment is None else Decimal(payment)
+        status = debt_status(amount, rate, payment)
+        owed = [amount] * (span + 1)
+        paid_in = None
+        if status is None:
+            assert rate is not None and payment is not None
+            rows = _payoff_rows(amount, rate, payment, span)
+            owed = [amount, *(r["balance"] for r in rows)]
+            owed += [ZERO] * (span + 1 - len(owed))
+            status = "amortizing"
+            if rows[-1]["balance"] == 0:
+                paid_in = len(rows)
+        for month, value in enumerate(owed):
+            owed_by_month[month] += value
+        loan_lines.append(
+            {
+                "debt_id": loan["id"],
+                "name": loan["name"],
+                "active": loan["active"],
+                "status": status,
+                "latest": loan["latest"],
+                "interest_rate_percent": loan["interest_rate_percent"],
+                "monthly_payment": loan["monthly_payment"],
+                "payoff_date": None
+                if paid_in is None
+                else _add_months(today, paid_in).isoformat(),
+                "milestones": [
+                    {"years": y, "amount": str(owed[y * 12])} for y in MILESTONES
+                ],
+            }
+        )
 
     def invested(month: int) -> Decimal:
         with localcontext() as context:
@@ -399,7 +539,10 @@ def project_entity(
             "years": y,
             "date": _add_months(today, month).isoformat(),
             "investments": str(cents(total)) if known else None,
-            "net_worth": str(cents(total + savings - owed)) if known else None,
+            "loans": str(owed_by_month[month]),
+            "net_worth": str(cents(total + savings - owed_by_month[month]))
+            if known
+            else None,
             "contributed": str(cents(sum((m * month for _, m in series), ZERO))),
         }
 
@@ -409,12 +552,15 @@ def project_entity(
         "today": {
             "investments": str(cents(invested(0))) if known else None,
             "savings": str(savings),
-            "loans": None if loans is None else str(loans),
-            "net_worth": str(cents(invested(0) + savings - owed)) if known else None,
+            "loans": str(owed_by_month[0]),
+            "net_worth": str(cents(invested(0) + savings - owed_by_month[0]))
+            if known
+            else None,
         },
         "timeline": [row(y) for y in range(years + 1)],
         "milestones": [row(y) for y in MILESTONES],
         "investments": lines,
+        "loans": loan_lines,
         "fire": None,
     }
     if fire:

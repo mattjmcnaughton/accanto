@@ -153,11 +153,22 @@ def _future_value(start, monthly, annual_percent, months):
         return Decimal(start) * growth + Decimal(monthly) * (growth - 1) / g
 
 
+def _loan(name, amount, rate=None, payment=None, active=True):
+    return {
+        "id": name,
+        "name": name,
+        "active": active,
+        "latest": {"date": "2026-11-01", "amount": amount},
+        "interest_rate_percent": rate,
+        "monthly_payment": payment,
+    }
+
+
 def _project(investments, **kw):
     return project_entity(
         investments,
         savings=kw.pop("savings", Decimal("15900.00")),
-        loans=kw.pop("loans", Decimal("20500.00")),
+        loans=kw.pop("loans", [_loan("car", "20500.00")]),
         today=ENTITY_TODAY,
         years=kw.pop("years", 20),
         default_return=Decimal("6.00"),
@@ -190,7 +201,7 @@ def test_each_investment_grows_at_its_own_or_the_default_return():
 
 
 def test_zero_return_adds_contributions_only():
-    result = _project([_investment("flat", "1000.00", "0", "100.00")], loans=ZERO)
+    result = _project([_investment("flat", "1000.00", "0", "100.00")], loans=[])
     assert result["milestones"][0]["investments"] == "7000.00"
 
 
@@ -216,7 +227,7 @@ def test_inactive_investments_count_but_take_no_new_contributions():
             _investment("closed-unseen", None, active=False),
         ],
         savings=ZERO,
-        loans=ZERO,
+        loans=[],
     )
     assert result["today"]["net_worth"] == "1000.00"
     assert result["milestones"][0]["net_worth"] == "1000.00"
@@ -260,3 +271,107 @@ def test_projection_assumption_ranges():
     for bad in ("0", "10.01", "-1"):
         with pytest.raises(ValueError):
             withdrawal_rate(bad)
+
+
+# Payoff schedules and amortizing loans in projections (TDD 15).
+
+AS_OF = date(2026, 11, 1)
+
+
+def _closed_balance(principal, annual_percent, payment, months):
+    r = Decimal(annual_percent) / 1200
+    with localcontext() as context:
+        context.prec = 34
+        g = (1 + r) ** months
+        return Decimal(principal) * g - Decimal(payment) * (g - 1) / r
+
+
+def test_a_published_car_loan_schedule_from_the_latest_balance():
+    # $10,000 at 6% for 5 years: $193.33 a month (any loan table).
+    s = p.payoff_schedule(
+        Decimal("10000.00"), AS_OF, Decimal("6.00"), Decimal("193.33")
+    )
+    assert s["status"] == "scheduled"
+    assert s["months"] == 60
+    assert s["payoff_date"] == "2031-11-01"
+    rows = s["rows"]
+    assert rows[0]["date"] == "2026-12-01"
+    # First month: 10000 × 0.005 = 50.00 interest, 143.33 principal.
+    assert (rows[0]["interest"], rows[0]["principal"]) == ("50.00", "143.33")
+    assert rows[-1]["balance"] == "0.00"
+    assert sum(Decimal(r["principal"]) for r in rows) == Decimal("10000.00")
+    interest = sum(Decimal(r["interest"]) for r in rows)
+    assert s["total_interest"] == str(interest)
+    # 60 × 193.33 − 10,000 = 1,599.80, less the smaller last payment's cents.
+    assert abs(interest - Decimal("1599.80")) < 1
+    after_year = _closed_balance("10000", "6", "193.33", 12)
+    assert abs(Decimal(rows[11]["balance"]) - after_year) < Decimal("0.05")
+
+
+def test_a_payment_that_does_not_exceed_the_interest_is_flagged_not_endless():
+    # $10,000 at 12%: interest is $100.00 a month.
+    flat = p.payoff_schedule(
+        Decimal("10000.00"), AS_OF, Decimal("12"), Decimal("100.00")
+    )
+    assert flat["status"] == "interest_not_covered"
+    assert flat["monthly_interest"] == "100.00"
+    assert flat["rows"] == [] and flat["payoff_date"] is None
+    assert flat["total_interest"] is None
+    # One cent more repays it, slowly: ln(10001) / ln(1.01) ≈ 926 months
+    # unrounded; interest rounded to the cent each month (99.9999 → 100.00)
+    # adds months while principal falls by cents, but it still ends.
+    slow = p.payoff_schedule(
+        Decimal("10000.00"), AS_OF, Decimal("12"), Decimal("100.01")
+    )
+    assert slow["status"] == "scheduled"
+    assert 926 <= slow["months"] < p.MAX_MONTHS
+
+
+def test_no_terms_paid_off_and_zero_rate():
+    assert p.payoff_schedule(Decimal("500.00"), AS_OF, None, Decimal("50"))[
+        "status"
+    ] == ("no_terms")
+    assert p.payoff_schedule(Decimal("500.00"), AS_OF, Decimal("5"), None)[
+        "status"
+    ] == ("no_terms")
+    assert p.payoff_schedule(ZERO, AS_OF, Decimal("5"), Decimal("50"))["status"] == (
+        "paid_off"
+    )
+    free = p.payoff_schedule(Decimal("1200.00"), AS_OF, Decimal("0"), Decimal("100"))
+    assert (free["months"], free["total_interest"]) == (12, "0.00")
+
+
+def test_debt_rate_range():
+    assert p.debt_rate("0") == ZERO and p.debt_rate("40") == Decimal("40.00")
+    for bad in ("-0.01", "40.01", "5.255", "x"):
+        with pytest.raises(ValueError):
+            p.debt_rate(bad)
+
+
+def test_projected_loans_pay_down_and_loans_without_terms_stay_flat():
+    fund = _investment("fund", "10000.00", "0", "100.00")
+    car = _loan("car", "10000.00", "6.00", "193.33")
+    flat = _loan("family", "2000.00")
+    result = _project([fund], savings=ZERO, loans=[car, flat], years=5)
+    alone = _project([fund], savings=ZERO, loans=[], years=5)
+    # Investments are unchanged: the payment is not taken from contributions.
+    assert result["timeline"][5]["investments"] == alone["timeline"][5]["investments"]
+    year1 = result["timeline"][1]
+    owed1 = _closed_balance("10000", "6", "193.33", 12) + 2000
+    assert abs(Decimal(year1["loans"]) - owed1) < Decimal("0.05")
+    # Repaid within 5 years: only the flat loan remains.
+    assert result["timeline"][5]["loans"] == "2000.00"
+    assert result["timeline"][5]["net_worth"] == str(Decimal("16000.00") - 2000)
+    assert result["today"]["loans"] == "12000.00"
+    lines = {line["debt_id"]: line for line in result["loans"]}
+    assert lines["car"]["status"] == "amortizing"
+    assert lines["car"]["payoff_date"] == "2031-11-10"
+    assert lines["family"]["status"] == "no_terms"
+    assert lines["family"]["milestones"][2]["amount"] == "2000.00"
+
+
+def test_a_loan_whose_payment_misses_the_interest_stays_flat_in_projections():
+    stuck = _loan("stuck", "10000.00", "12", "100.00")
+    result = _project([], savings=ZERO, loans=[stuck], years=5)
+    assert result["loans"][0]["status"] == "interest_not_covered"
+    assert result["timeline"][5]["loans"] == "10000.00"

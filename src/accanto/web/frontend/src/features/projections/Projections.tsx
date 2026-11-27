@@ -160,7 +160,7 @@ export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
     <section aria-labelledby="projections-title" className="screen proj">
       <Head
         title={<span id="projections-title">Projections</span>}
-        sub="Illustrative figures from each investment's expected return and contribution. They are not recorded activity or observed values, and they ignore inflation, taxes, fees, and market risk."
+        sub="Illustrative figures from each investment's expected return and contribution, with loans paid down at their fixed rate and monthly payment. They are not recorded activity or observed values, and they ignore inflation, taxes, fees, and market risk."
       >
         {/* biome-ignore lint/a11y/useSemanticElements: The kit\'s segmented control is a button group. */}
         <div className="seg-control" role="group" aria-label="Horizon">
@@ -197,7 +197,9 @@ export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
                   Net worth in {m.years} years, {fmtDate(m.date)}
                 </span>
                 <div className="fig">{formatMoney(m.net_worth)}</div>
-                <span className="cap">{formatMoney(m.investments)} invested</span>
+                <span className="cap">
+                  {formatMoney(m.investments)} invested, {formatMoney(m.loans)} owed
+                </span>
               </div>
             ))}
           </div>
@@ -295,6 +297,64 @@ export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
               </div>
             )}
           </div>
+          {data.loans.length > 0 && (
+            <div className="card pad stack">
+              <h2 className="h2">By loan</h2>
+              <p className="note">
+                A loan with a fixed rate and a monthly payment that covers its interest is paid down
+                from today, starting at its latest amount owed; other loans stay at that amount. A
+                loan last observed months ago pays off later here than in its Loans schedule, which
+                starts at the observation; record a new amount owed to align them. Payments are not
+                taken from investment contributions, and a repaid loan&apos;s payment is not
+                invested.
+              </p>
+              <table className="proj-table">
+                <thead>
+                  <tr>
+                    <th>Loan</th>
+                    <th>Owed now</th>
+                    <th>Terms</th>
+                    <th>Paid off</th>
+                    {data.milestones.map((m) => (
+                      <th key={m.years}>In {m.years} yr</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.loans.map((row) => (
+                    <tr key={row.debt_id}>
+                      <td>
+                        <div className="proj-name">
+                          <b>{row.name}</b>
+                          {row.status === "interest_not_covered" && (
+                            <span className="chip warn">Payment under interest</span>
+                          )}
+                        </div>
+                      </td>
+                      <td data-label="Owed now">{formatMoney(row.latest.amount)}</td>
+                      <td data-label="Terms">
+                        {row.interest_rate_percent && row.monthly_payment
+                          ? `${row.interest_rate_percent}%, ${formatMoney(row.monthly_payment)} a month`
+                          : "No terms, held flat"}
+                      </td>
+                      <td data-label="Paid off">
+                        {row.payoff_date
+                          ? fmtDate(row.payoff_date)
+                          : row.status === "paid_off"
+                            ? "Paid off"
+                            : dash}
+                      </td>
+                      {row.milestones.map((m) => (
+                        <td key={m.years} data-label={`In ${m.years} yr`}>
+                          {formatMoney(m.amount)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
       {assumptions.kind === "ready" && (

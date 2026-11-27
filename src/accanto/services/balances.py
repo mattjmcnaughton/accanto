@@ -12,6 +12,8 @@ from accanto.domains.balances import (
     observation_date_allowed,
     require_archive_allowed,
 )
+from accanto.domains.projections import payoff_schedule, payoff_summary
+from accanto.dtos.balances import TERMS
 from accanto.models import debts as b
 from accanto.models import destinations as d
 from accanto.models import monthly as m
@@ -101,6 +103,8 @@ async def debt_snapshot(session, row):
         "name": row["name"],
         "active": row["active"],
         "revision": row["revision"],
+        **terms(row),
+        "payoff": payoff_summary(schedule(row, latest)),
         "opening": {
             "date": opening["financial_date"].isoformat(),
             "amount": str(opening["amount"]),
@@ -108,6 +112,31 @@ async def debt_snapshot(session, row):
         "latest": observation_result(latest),
         "draft_fixed_cost_lines": [str(item) for item in draft_lines],
     }
+
+
+def terms(row) -> dict:
+    """A Debt account's loan terms as the API reports them."""
+    return {f: None if row[f] is None else str(row[f]) for f in TERMS}
+
+
+def schedule(row, latest) -> dict:
+    return payoff_schedule(
+        latest["amount"],
+        latest["financial_date"],
+        row["interest_rate_percent"],
+        row["monthly_payment"],
+    )
+
+
+async def read_payoff_schedule(session, token, entity_uuid, debt_uuid):
+    async with read_snapshot(session):
+        _, entity = await authorize(session, token, entity_uuid, lock=False)
+        row = await scoped(session, b.debts, entity["id"], debt_uuid)
+        rows = await observations_for(session, "debt", entity["id"], row["id"])
+    latest = max(
+        rows, key=lambda item: (item["financial_date"], not item["is_opening"])
+    )
+    return schedule(row, latest)
 
 
 async def read_debts(session, token, entity_uuid):
@@ -133,7 +162,11 @@ async def write_debt(session, entity, operation, payload, target, audit):
             (
                 await session.execute(
                     insert(b.debts)
-                    .values(entity_id=entity["id"], name=payload["name"])
+                    .values(
+                        entity_id=entity["id"],
+                        name=payload["name"],
+                        **{f: payload.get(f) for f in TERMS},
+                    )
                     .returning(b.debts)
                 )
             )
@@ -181,6 +214,11 @@ async def write_debt(session, entity, operation, payload, target, audit):
                     name=payload["name"],
                     active=payload["active"],
                     revision=row["revision"] + 1,
+                    **{
+                        f: payload.get(f)
+                        for f in TERMS
+                        if f not in payload.get("unchanged", TERMS)
+                    },
                 )
                 .returning(b.debts)
             )

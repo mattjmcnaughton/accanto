@@ -234,6 +234,135 @@ async def scenario():
         assert large_cost == small_cost
         print(f"projection read: {small_cost} statements for 2 and 12 investments")
 
+        # TDD 15: fixed-rate loan terms, the payoff schedule and amortizing loans.
+        car = await accepted(
+            "POST",
+            "/debts",
+            {
+                "name": "Synthetic car loan",
+                "opening": {"date": "2026-01-01", "amount": "10000.00"},
+                "interest_rate_percent": "6",
+                "monthly_payment": "193.33",
+            },
+        )
+        assert (car["interest_rate_percent"], car["monthly_payment"]) == (
+            "6.00",
+            "193.33",
+        )
+        assert car["payoff"]["status"] == "scheduled"
+        assert car["payoff"]["months"] == 60
+        assert car["payoff"]["payoff_date"] == "2031-01-01"
+        for bad in (
+            {"interest_rate_percent": "40.01"},
+            {"interest_rate_percent": "-1"},
+            {"monthly_payment": "0"},
+        ):
+            response = await command(
+                "POST",
+                "/debts",
+                {
+                    "name": "Bad terms",
+                    "opening": {"date": "2026-01-01", "amount": "1.00"},
+                    **bad,
+                },
+            )
+            assert response.status_code == 422
+        schedule = (
+            await client.get(f"{path}/debts/{car['uuid']}/payoff-schedule")
+        ).json()
+        assert len(schedule["rows"]) == 60 and schedule["rows"][-1]["balance"] == "0.00"
+        assert schedule["rows"][0] == {
+            "month": 1,
+            "date": "2026-02-01",
+            "payment": "193.33",
+            "interest": "50.00",
+            "principal": "143.33",
+            "balance": "9856.67",
+        }
+        # A rename that omits the terms keeps them; an explicit null clears one.
+        renamed = await accepted(
+            "PUT",
+            f"/debts/{car['uuid']}",
+            {
+                "name": "Synthetic auto loan",
+                "active": True,
+                "expected_revision": car["revision"],
+            },
+        )
+        assert renamed["monthly_payment"] == "193.33"
+        cleared = await accepted(
+            "PUT",
+            f"/debts/{car['uuid']}",
+            {
+                "name": "Synthetic auto loan",
+                "active": True,
+                "monthly_payment": None,
+                "expected_revision": renamed["revision"],
+            },
+        )
+        assert cleared["monthly_payment"] is None
+        assert cleared["interest_rate_percent"] == "6.00"
+        assert cleared["payoff"]["status"] == "no_terms"
+        car = await accepted(
+            "PUT",
+            f"/debts/{car['uuid']}",
+            {
+                "name": "Synthetic auto loan",
+                "active": True,
+                "monthly_payment": "193.33",
+                "expected_revision": cleared["revision"],
+            },
+        )
+        # A payment at or under the interest is flagged, not an endless schedule.
+        stuck = await accepted(
+            "POST",
+            "/debts",
+            {
+                "name": "Synthetic stuck loan",
+                "opening": {"date": "2026-01-01", "amount": "1000.00"},
+                "interest_rate_percent": "12",
+                "monthly_payment": "10.00",
+            },
+        )
+        assert stuck["payoff"]["status"] == "interest_not_covered"
+        stuck_schedule = (
+            await client.get(f"{path}/debts/{stuck['uuid']}/payoff-schedule")
+        ).json()
+        assert stuck_schedule["rows"] == [] and stuck_schedule["months"] is None
+
+        # Projections: the car loan is repaid within ten years; others stay flat.
+        paid_down = (await client.get(path + "/projections?years=10")).json()
+        assert paid_down["today"]["loans"] == "11500.00"
+        assert paid_down["timeline"][10]["loans"] == "1500.00"
+        by_name = {line["name"]: line for line in paid_down["loans"]}
+        assert by_name["Synthetic auto loan"]["status"] == "amortizing"
+        assert by_name["Synthetic stuck loan"]["status"] == "interest_not_covered"
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {other_key['key']}"},
+        ) as outsider:
+            response = await outsider.get(f"{path}/debts/{car['uuid']}/payoff-schedule")
+            assert response.status_code == 404
+
+        # §9 again: the same SQL for 3 or 13 loans.
+        _, few_loans = await counted_get(client, engine, path + "/projections")
+        for i in range(10):
+            await accepted(
+                "POST",
+                "/debts",
+                {
+                    "name": f"Synthetic loan {i}",
+                    "opening": {"date": "2026-01-01", "amount": "100.00"},
+                    "interest_rate_percent": "5",
+                    "monthly_payment": "10.00",
+                },
+            )
+        loaded, many_loans = await counted_get(client, engine, path + "/projections")
+        assert len(loaded["loans"]) == 13
+        assert many_loans == few_loans == large_cost
+        print(f"projection read: {few_loans} statements for 3 and 13 loans")
+
     # The settings and FIRE changes are each audited on the Entity.
     async with sessions() as session:
         audited = await session.scalar(

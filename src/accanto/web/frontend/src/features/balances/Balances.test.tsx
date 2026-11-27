@@ -1,9 +1,24 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import type { Loan, PayoffSummary } from "../../lib/balances";
 import { ActivityScreen } from "../workspace/Activity";
 import type { ScreenProps } from "../workspace/shared";
 import { Balances } from "./Balances";
 
+function payoff(value: Partial<PayoffSummary> & Pick<PayoffSummary, "status">): PayoffSummary {
+  return {
+    as_of: "2026-10-01",
+    balance: "0.00",
+    interest_rate_percent: null,
+    monthly_payment: null,
+    monthly_interest: null,
+    months: null,
+    payoff_date: null,
+    total_interest: null,
+    total_paid: null,
+    ...value,
+  };
+}
 const entity = { id: "entity", name: "Synthetic Entity", today: "2026-10-02", time_zone: "UTC" };
 const props: ScreenProps = {
   entity,
@@ -14,7 +29,7 @@ const props: ScreenProps = {
   dirty: vi.fn(),
   save: vi.fn(),
 };
-const loans = [
+const loans: Loan[] = [
   {
     uuid: "loan-a",
     name: "Example loan A",
@@ -30,6 +45,9 @@ const loans = [
       revision: 1,
       deleted: false,
     },
+    interest_rate_percent: null,
+    monthly_payment: null,
+    payoff: payoff({ status: "paid_off", as_of: "2026-10-01", balance: "0.00" }),
     draft_fixed_cost_lines: [],
   },
   {
@@ -47,9 +65,53 @@ const loans = [
       revision: 1,
       deleted: false,
     },
+    // $500.00 at 12% (1% a month) paying $200.00: 5.00, 3.05 and 1.08 interest over 3 months.
+    interest_rate_percent: "12.00",
+    monthly_payment: "200.00",
+    payoff: payoff({
+      status: "scheduled",
+      as_of: "2026-10-01",
+      balance: "500.00",
+      interest_rate_percent: "12.00",
+      monthly_payment: "200.00",
+      monthly_interest: "5.00",
+      months: 3,
+      payoff_date: "2027-01-01",
+      total_interest: "9.13",
+      total_paid: "509.13",
+    }),
     draft_fixed_cost_lines: [],
   },
 ];
+const scheduleB = {
+  ...loans[1].payoff,
+  rows: [
+    {
+      month: 1,
+      date: "2026-11-01",
+      payment: "200.00",
+      interest: "5.00",
+      principal: "195.00",
+      balance: "305.00",
+    },
+    {
+      month: 2,
+      date: "2026-12-01",
+      payment: "200.00",
+      interest: "3.05",
+      principal: "196.95",
+      balance: "108.05",
+    },
+    {
+      month: 3,
+      date: "2027-01-01",
+      payment: "109.13",
+      interest: "1.08",
+      principal: "108.05",
+      balance: "0.00",
+    },
+  ],
+};
 const entries = [
   {
     uuid: "payment-a",
@@ -105,6 +167,9 @@ const mock = (debts = loans) =>
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
     const url = String(path);
     if (url.endsWith("/debts")) return json(debts);
+    if (url.endsWith("/debts/loan-b/payoff-schedule")) return json(scheduleB);
+    const scheduled = debts.find((loan) => url.endsWith(`/debts/${loan.uuid}/payoff-schedule`));
+    if (scheduled) return json({ ...scheduled.payoff, rows: [] });
     if (url.endsWith("/debt-observations")) return json(debts.map((loan) => loan.latest));
     if (url.endsWith("/activity")) return json(entries);
     return json([]);
@@ -249,6 +314,97 @@ it("corrects an observation against its loaded revision and refuses an invalid a
       method: "PUT",
       path: "/api/entities/entity/debt-observations/obs-a",
       body: { date: "2026-10-01", amount: "12.30", account_id: "loan-a", expected_revision: 1 },
+    }),
+    expect.any(Function),
+  );
+});
+
+it("adds a loan with optional fixed-rate terms, refusing an out-of-range rate", async () => {
+  mock();
+  const save = vi.fn();
+  render(<Balances {...props} save={save} />);
+  await screen.findByRole("grid", { name: "Loans" });
+  fireEvent.click(screen.getByRole("button", { name: "Add loan" }));
+  const panel = await screen.findByRole("dialog", { name: "Add loan" });
+  fireEvent.change(within(panel).getByLabelText("Name"), { target: { value: "Example loan C" } });
+  fireEvent.change(within(panel).getByLabelText(/Opening amount owed/), {
+    target: { value: "1200" },
+  });
+  const rate = within(panel).getByLabelText(/Fixed interest rate/);
+  fireEvent.change(rate, { target: { value: "40.5" } });
+  fireEvent.click(within(panel).getByRole("button", { name: "Save loan" }));
+  expect(save).not.toHaveBeenCalled();
+  expect(within(panel).getByRole("alert").textContent).toMatch(/from 0 to 40/);
+  fireEvent.change(rate, { target: { value: " 6.5 " } });
+  fireEvent.change(within(panel).getByLabelText(/Monthly payment/), {
+    target: { value: "110" },
+  });
+  fireEvent.click(within(panel).getByRole("button", { name: "Save loan" }));
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "POST",
+      body: {
+        name: "Example loan C",
+        opening: { date: "2026-10-02", amount: "1200" },
+        interest_rate_percent: "6.5",
+        monthly_payment: "110",
+      },
+    }),
+    expect.any(Function),
+  );
+});
+
+it("shows the payoff on each card and flags a payment under the interest", async () => {
+  const stuck = {
+    ...loans[1],
+    monthly_payment: "5.00",
+    payoff: {
+      ...loans[1].payoff,
+      status: "interest_not_covered" as const,
+      monthly_payment: "5.00",
+    },
+  };
+  mock([loans[1], { ...stuck, uuid: "loan-c", name: "Example loan C" }]);
+  render(<Balances {...props} />);
+  expect(await screen.findByText("Paid off January 2027, $9.13 interest left")).toBeDefined();
+  expect(
+    screen.getByText(
+      "The $5.00 payment does not cover $5.00 monthly interest, so this loan never pays down.",
+    ),
+  ).toBeDefined();
+  const grid = screen.getByRole("grid", { name: "Loans" });
+  const row = within(grid).getByText("Example loan C").closest("tr") as HTMLElement;
+  expect(within(row).getByText("Payment under interest")).toBeDefined();
+});
+
+it("shows the schedule in details and saves terms against the loan's revision", async () => {
+  mock();
+  const save = vi.fn();
+  render(<Balances {...props} save={save} />);
+  const grid = await screen.findByRole("grid", { name: "Loans" });
+  fireEvent.click(within(grid).getByRole("button", { name: "Details for Example loan B" }));
+  const rows = await screen.findByRole("table", {
+    name: "Payoff schedule rows for Example loan B",
+  });
+  const all = within(rows).getAllByRole("row");
+  const last = all[all.length - 1];
+  expect(within(last).getByText("$109.13")).toBeDefined();
+  expect(within(last).getByText("$0.00")).toBeDefined();
+  expect(screen.getByText("Jan 1, 2027, in 3 payments")).toBeDefined();
+  const terms = screen.getByRole("form", { name: "Terms for Example loan B" });
+  fireEvent.change(within(terms).getByLabelText(/Monthly payment/), { target: { value: "" } });
+  fireEvent.click(within(terms).getByRole("button", { name: "Save terms" }));
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "PUT",
+      path: "/api/entities/entity/debts/loan-b",
+      body: {
+        name: "Example loan B",
+        active: true,
+        expected_revision: 1,
+        interest_rate_percent: "12.00",
+        monthly_payment: null,
+      },
     }),
     expect.any(Function),
   );
