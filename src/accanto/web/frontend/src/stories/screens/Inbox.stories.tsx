@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent } from "storybook/test";
 import { Inbox } from "../../features/inbox/Inbox";
 import { data, mockApi, screenArgs } from "../mocks/api";
-import { inboxApi, proposedInbox, seedInbox, source } from "../mocks/inbox";
+import { inboxApi, proposedInbox, scheduledPayday, seedInbox, source } from "../mocks/inbox";
 
 /**
  * The Transactions inbox over a stateful synthetic inbox: the keys in the legend really record,
@@ -83,6 +83,14 @@ export const Ignored: Story = {
     await canvas.findAllByText("Sample Street Market");
     await press("v");
   },
+};
+
+/**
+ * A schedule's items wait with their planned proposals; YNAB's deposit of the same paycheck
+ * pairs with the schedule's income, and m keeps this one and ignores the other.
+ */
+export const ScheduleItems: Story = {
+  parameters: { msw: [...inboxApi([...scheduledPayday(), ...seedInbox()]), ...mockApi()] },
 };
 
 export const Recorded: Story = { play: () => press("v", "v") };

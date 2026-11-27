@@ -64,6 +64,7 @@ it.each([
     ],
   ],
   ["plans", ["plans"]],
+  ["schedules", ["schedules"]],
   ["activity", ["activity", "spending-subcategories", "tags"]],
   ["review", ["plans", "reviews/2026-10-01", "reviews/2026-11-01"]],
   [

@@ -667,6 +667,25 @@ export function Inbox(
     });
     return true;
   }
+  /**
+   * Same money from a schedule and from YNAB (TDD 18): ignore the waiting one of the pair,
+   * keeping the other, so it counts once. When both wait, the other one is ignored.
+   */
+  async function ignorePair(it: StagedTransaction): Promise<boolean> {
+    const pair = it.pair;
+    if (!pair) return false;
+    const other = all.find((x) => x.id === pair.item_id);
+    const drop = pair.status === "waiting" && other ? other : it;
+    if (!(await run(inbox.action(p.entity.id, drop, "skip")))) return false;
+    undo.current.push([{ id: drop.id, action: "unskip" }]);
+    advance([drop.id]);
+    const kept = drop === it ? pair.payee : it.payee;
+    setToast({
+      text: `Ignored ${drop.payee} on ${fmtShort(drop.financial_date)} as the same money as ${kept}. It counts once.`,
+      undo: true,
+    });
+    return true;
+  }
   async function undoLast(): Promise<boolean> {
     const id = undo.current[undo.current.length - 1]?.[0]?.id;
     if (id && pendingIds.has(id)) {
@@ -841,6 +860,9 @@ export function Inbox(
         break;
       case "s":
         if (current) void skip(current);
+        break;
+      case "m":
+        if (current?.pair) void ignorePair(current);
         break;
       case "e":
         editing(true);
@@ -1408,6 +1430,14 @@ export function Inbox(
       case "c":
         if (!current) return notHere();
         return openNote([current]);
+      case "m":
+        if (!current || !waiting) return notHere();
+        if (!current.pair)
+          return setToast({
+            text: "Nothing else in the inbox looks like the same money. Record or ignore it instead.",
+            tone: "warn",
+          });
+        return void ignorePair(current);
       case "x":
         if (!current || !waiting || view !== "waiting") return notHere();
         return toggle(current.id);
@@ -2293,6 +2323,8 @@ function ItemRow({
           {it.proposal_rejection && it.status === "waiting" && !it.rejection && (
             <span className="chip warn">Proposal rejected</span>
           )}
+          {it.schedule && <span className="chip">Scheduled</span>}
+          {it.pair && it.status === "waiting" && <span className="chip warn">Same money?</span>}
           {!it.approved && <span className="chip">Unapproved</span>}
           {!it.cleared && <span className="chip">Uncleared</span>}
           {it.changed_after_staging && it.status !== "conflict" && (
@@ -2332,6 +2364,25 @@ function ItemRow({
 }
 
 /** Flow mode's card: the item, the agent's proposal and why, and the flow's keys. */
+function PairNotice({ it, press }: { it: StagedTransaction; press: (key: string) => void }) {
+  const pair = it.pair;
+  if (!pair || it.status !== "waiting") return null;
+  const other = pair.from_schedule ? `your schedule ${pair.payee}` : `${pair.payee} from YNAB`;
+  const recorded = pair.status === "recorded";
+  return (
+    <output className="ix-msg warn ix-match">
+      <b>Likely the same money</b> as {other}, {formatMoney(pair.amount.replace("-", ""))} on{" "}
+      {fmtDay(pair.financial_date)}
+      {recorded ? ", already recorded" : ""}. Keep one and ignore the other so it counts once.
+      <div className="ix-do">
+        <button type="button" className="btn pri" onClick={() => press("m")}>
+          {recorded ? "Ignore this one" : "Keep this, ignore the other"} <Key k="m" />
+        </button>
+      </div>
+    </output>
+  );
+}
+
 function FlowCard({
   it,
   c,
@@ -2355,7 +2406,7 @@ function FlowCard({
         <div>
           <div className="ix-d-t">{it.payee}</div>
           <div className="note">
-            {fmtDay(it.financial_date)} · {it.account_name}
+            {fmtDay(it.financial_date)} · {it.schedule ? "Scheduled" : it.account_name}
             {it.source_category && ` · YNAB: ${it.source_category.name}`}
             {it.memo && ` · ${it.memo}`}
           </div>
@@ -2363,6 +2414,7 @@ function FlowCard({
         <div className={`ix-fig${inflow ? " good" : ""}`}>{signed(it)}</div>
       </div>
       {later && <div className="ix-msg">You passed this one with Later.</div>}
+      <PairNotice it={it} press={press} />
       {it.proposal ? (
         <div className={`ix-proposal${unsure ? " ix-needs" : ""}`}>
           <div className="lab">
@@ -2459,8 +2511,16 @@ function Detail({
         <div className={`ix-fig${inflow ? " good" : ""}`}>{signed(it)}</div>
       </div>
       <div className="note">
-        Source YNAB: {it.source_category?.name ?? "Uncategorized"} · {it.account_name} ·{" "}
-        {it.cleared ? "cleared" : "uncleared"}, {it.approved ? "approved" : "unapproved"}
+        {it.schedule ? (
+          <>
+            From your schedule {it.schedule.name}, planned for {fmtDay(it.schedule.scheduled_on)}
+          </>
+        ) : (
+          <>
+            Source YNAB: {it.source_category?.name ?? "Uncategorized"} · {it.account_name} ·{" "}
+            {it.cleared ? "cleared" : "uncleared"}, {it.approved ? "approved" : "unapproved"}
+          </>
+        )}
         {it.split && ` · split line in a ${formatMoney(it.split.total.replace("-", ""))} split`}
         {it.kind !== "ordinary" && ` · ${it.kind.split("_").join(" ")}`}
         {it.memo && (
@@ -2470,6 +2530,7 @@ function Detail({
           </>
         )}
       </div>
+      <PairNotice it={it} press={press} />
       {it.rejection && waiting && (
         <div className="ix-msg bad" role="alert">
           Not recorded. {readable(choices, it.rejection.message)}
@@ -2907,6 +2968,10 @@ const HELP: Array<[string, string]> = [
   [
     "x",
     "Select or deselect for a batch; shift-click a box to select a range. X selects every waiting item shown. With a selection, 1–6, a, f, t and c set the same choice on all of them, Enter records them, s ignores them, and Esc clears it.",
+  ],
+  [
+    "m",
+    "Same money from a schedule and from YNAB: keep this item and ignore its pair (or this one, when the pair is recorded), so it counts once. z returns it.",
   ],
   ["z", "Undo the last recording or ignore."],
   ["v", "Change the view: Waiting, Ignored, Recorded."],

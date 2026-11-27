@@ -133,6 +133,66 @@ it("records with Enter, keeps 1–6 inside the inbox, and sends the item's revis
   ).toBeDefined();
 });
 
+it("ignores the other item of a schedule and YNAB pair with m, and z returns it", async () => {
+  const writes: Array<{ path: string; body: unknown }> = [];
+  const scheduled = item({
+    id: "i2",
+    source_id: null,
+    amount: "1200.00",
+    payee: "401(k) payday",
+    financial_date: "2026-11-30",
+    revision: 1,
+    schedule: { schedule_id: "sched", name: "401(k) payday", scheduled_on: "2026-11-30" },
+  });
+  const deposit = item({
+    amount: "1200.00",
+    payee: "Example Employer Payroll",
+    financial_date: "2026-11-29",
+    pair: {
+      item_id: "i2",
+      status: "waiting",
+      from_schedule: true,
+      payee: "401(k) payday",
+      financial_date: "2026-11-30",
+      amount: "1200.00",
+    },
+  });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (init?.method === "POST") {
+      writes.push({ path: url, body: JSON.parse(String(init.body)) });
+      const status = url.endsWith("/skip") ? "skipped" : "waiting";
+      return new Response(JSON.stringify({ ...scheduled, status, revision: 2 }));
+    }
+    if (url.endsWith("/inbox")) return new Response(JSON.stringify([deposit, scheduled]));
+    return new Response("[]");
+  });
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+    />,
+  );
+  expect(await screen.findByText(/as your schedule 401\(k\) payday, \$1,200.00/)).toBeDefined();
+  fireEvent.keyDown(document.body, { key: "m" });
+  await waitFor(() => expect(writes).toHaveLength(1));
+  // The schedule's waiting item is ignored; the YNAB deposit stays to be recorded.
+  expect(writes[0]).toEqual({
+    path: "/api/entities/e/inbox/i2/skip",
+    body: { expected_revision: 1 },
+  });
+  expect(await screen.findByText(/It counts once/)).toBeDefined();
+  fireEvent.keyDown(document.body, { key: "z" });
+  await waitFor(() => expect(writes).toHaveLength(2));
+  expect(writes[1].path).toBe("/api/entities/e/inbox/i2/unskip");
+});
+
 it("leaves keys pressed in the assistant panel to the panel", async () => {
   const writes: string[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
