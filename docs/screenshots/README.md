@@ -1,11 +1,11 @@
 # Screenshots
 
 Every screen of the workspace in the light theme, the dark theme, and at 390 px wide.
-They were captured on November 27, 2026 from the production frontend running against
+They were captured on November 28, 2026 from the production frontend running against
 the synthetic `managing-fixtures` workspace ("Synthetic fixture workspace"), with the
 fake YNAB server (`tests/fakes/ynab_server.py`) connected through Settings, and a
-synthetic routine, schedule, investment value and FIRE assumptions added through
-the API. They contain no personal financial data. Retake them from the same
+synthetic routine, schedule, investment value, FIRE assumptions and spending
+alert added through the API. They contain no personal financial data. Retake them from the same
 fixtures when a screen changes. Never capture them from a real workspace.
 
 Desktop captures are 1280 × 800 and phone captures 390 × 844, both at 2x, with
@@ -23,6 +23,6 @@ metadata stripped and colors reduced to 256.
 | Projections | [light](projections-light.png) | [dark](projections-dark.png) | [390 px](projections-phone.png) |
 | Savings | [light](savings-light.png) | [dark](savings-dark.png) | [390 px](savings-phone.png) |
 | Investments | [light](investments-light.png) | [dark](investments-dark.png) | [390 px](investments-phone.png) |
+| Debts | [light](loans-light.png) | [dark](loans-dark.png) | [390 px](loans-phone.png) |
 | Giving | [light](giving-light.png) | [dark](giving-dark.png) | [390 px](giving-phone.png) |
-| Loans | [light](loans-light.png) | [dark](loans-dark.png) | [390 px](loans-phone.png) |
 | Settings | [light](settings-light.png) | [dark](settings-dark.png) | [390 px](settings-phone.png) |
