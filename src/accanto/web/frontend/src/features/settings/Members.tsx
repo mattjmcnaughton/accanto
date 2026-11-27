@@ -155,11 +155,8 @@ export function EntityMembers({
               <div>
                 How to add someone
                 <ol>
-                  <li>
-                    The operator allows their email to sign in and provisions their account (without
-                    an Entity of its own, if they only share this one).
-                  </li>
-                  <li>They sign in to Accanto once.</li>
+                  <li>The operator allows their email to sign in.</li>
+                  <li>They sign in to Accanto once, which creates their account.</li>
                   <li>
                     Enter their name and the email they sign in with below. They get full access to
                     this Entity, except setting up transaction sources, and the audit history
@@ -179,7 +176,7 @@ export function EntityMembers({
                   <label htmlFor="member-name">Add a person</label>
                   <small>Their name as you want to see it, and the email they sign in with.</small>
                 </div>
-                <div className="set-actions">
+                <div className="set-actions set-member-add">
                   <input
                     id="member-name"
                     className="input set-key-name"
