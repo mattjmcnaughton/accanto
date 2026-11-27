@@ -11,7 +11,12 @@ import { spendingSubcategories } from "../../lib/spendingSubcategories";
 import { tags } from "../../lib/tags";
 import { parseTimestamp } from "../../lib/timestamp";
 import { cleanName, sameName } from "../../ui";
-import { type Frequency, planInput, revisionLines } from "../workspace/planWorksheetModel";
+import {
+  type Frequency,
+  planInput,
+  revisionEstimates,
+  revisionLines,
+} from "../workspace/planWorksheetModel";
 
 export type CreatableKind =
   | "tag"
@@ -85,6 +90,7 @@ export function createSpec(entityId: UUID, request: CreateRequest): WriteSpec<un
             },
           ],
           request.draft.revision,
+          revisionEstimates(request.draft),
         ),
       );
   }

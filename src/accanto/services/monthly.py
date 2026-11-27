@@ -254,6 +254,16 @@ async def write(
                         ),
                     )
                 },
+                # A copy keeps estimates on archived subcategories, as it keeps
+                # inactive destinations.
+                "spending_estimates": [
+                    {
+                        "spending_subcategory_id": line["spending_subcategory_id"],
+                        "amount": str(line["amount"]),
+                        "_kept": True,
+                    }
+                    for line in allocations["spending_estimates"]
+                ],
             }
 
         if operation == "edit_entity":
@@ -425,6 +435,7 @@ async def write(
                     m.saving_goal_lines,
                     m.investment_lines,
                     m.giving_lines,
+                    m.spending_estimate_lines,
                 ):
                     await session.execute(
                         delete(table).where(table.c.plan_revision_id == old["id"])
@@ -657,6 +668,18 @@ async def write(
                             amount=money(line["amount"]),
                         )
                     )
+            from accanto.services.spending_subcategories import plan_estimates
+
+            await plan_estimates(
+                session,
+                entity["id"],
+                record["id"],
+                payload.get("spending_estimates", []),
+                kept={
+                    line["spending_subcategory_id"]
+                    for line in (before or {}).get("spending_estimates", [])
+                },
+            )
             response = {
                 "plan_id": str(plan["uuid"]),
                 "draft": await plan_snapshot(session, record),
@@ -766,6 +789,7 @@ async def write(
                 m.saving_goal_lines,
                 m.investment_lines,
                 m.giving_lines,
+                m.spending_estimate_lines,
             ):
                 allocation_rows = (
                     (

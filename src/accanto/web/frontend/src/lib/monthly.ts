@@ -23,6 +23,8 @@ export interface PlanInput {
   saving_goals: Array<{ goal_id: UUID; amount: DecimalString }>;
   investments: Array<{ destination_id: UUID; amount: DecimalString }>;
   giving: Array<{ destination_id: UUID; amount: DecimalString }>;
+  /** Optional, informational estimates per Spending subcategory; omitted clears them. */
+  spending_estimates?: Array<{ spending_subcategory_id: UUID; amount: DecimalString }>;
   expected_revision?: number;
 }
 export interface KnownTotalInput {
@@ -93,6 +95,12 @@ export interface PlanRevision {
   saving_goals?: Array<{ goal_id: UUID; goal_name: string; amount: DecimalString }>;
   investments?: Array<{ destination_id: UUID; destination_name: string; amount: DecimalString }>;
   giving?: Array<{ destination_id: UUID; destination_name: string; amount: DecimalString }>;
+  /** Optional estimates per Spending subcategory, named by its current name. No total reads them. */
+  spending_estimates?: Array<{
+    spending_subcategory_id: UUID;
+    spending_subcategory_name: string;
+    amount: DecimalString;
+  }>;
   income: DecimalString;
   spending: DecimalString;
   fixed_cost_total: DecimalString;
@@ -179,9 +187,15 @@ export interface ComparisonGroup {
   breakdown?: Array<{
     id: UUID | null;
     name: string | null;
-    recorded: DecimalString;
+    /** Null only for an estimated subcategory with no entry. */
+    recorded: DecimalString | null;
+    /** The Plan's optional estimate; null when none is set. */
+    estimated?: DecimalString | null;
     entries: Activity[];
   }>;
+  /** Spending only, null without estimates: their sum, and planned minus it (negative when over). */
+  estimated?: DecimalString | null;
+  unestimated?: DecimalString | null;
 }
 export interface ReviewResult {
   comparison?: Record<

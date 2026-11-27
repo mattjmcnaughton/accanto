@@ -15,6 +15,8 @@ from accanto.models.monthly import (
     saving_goal_lines,
     savings_funding_lines,
     sources,
+    spending_estimate_lines,
+    spending_subcategories,
 )
 from accanto.models.savings import accounts, goals
 
@@ -51,6 +53,20 @@ async def plan_details(session: AsyncSession, revision_ids: list[int]) -> dict:
             )
             .join(fixed_costs, fixed_costs.c.id == fixed_cost_lines.c.fixed_cost_id)
             .outerjoin(debts, debts.c.id == fixed_cost_lines.c.debt_account_id),
+        ),
+        (
+            # Named by the subcategory's current name, as its entries are.
+            "spending_estimates",
+            spending_estimate_lines,
+            select(
+                spending_subcategories.c.uuid.label("spending_subcategory_id"),
+                spending_subcategories.c.name.label("spending_subcategory_name"),
+                spending_estimate_lines.c.amount,
+            ).join(
+                spending_subcategories,
+                spending_subcategories.c.id
+                == spending_estimate_lines.c.spending_subcategory_id,
+            ),
         ),
     ):
         for collections in details.values():

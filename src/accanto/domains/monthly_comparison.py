@@ -68,6 +68,44 @@ def breakdown(entries, identity_key, name_key):
     )
 
 
+def with_estimates(lines, estimates, planned):
+    """Put a Plan's optional Spending estimates beside the recorded breakdown.
+
+    estimates are {"id", "name", "amount"}. Each breakdown line gains `estimated`
+    (None when its subcategory has none); an estimated subcategory with no entry
+    joins as a line whose recorded is None, so recorded lines still add up to the
+    category total. Estimates need not add up to planned: `unestimated` is planned
+    minus their sum, negative when they exceed it, and None without estimates.
+    """
+    amounts = {line["id"]: line for line in estimates}
+    result = [
+        {**line, "estimated": amounts[line["id"]]["amount"]}
+        if line["id"] in amounts
+        else {**line, "estimated": None}
+        for line in lines
+    ]
+    shown = {line["id"] for line in lines}
+    waiting = [
+        {
+            "id": line["id"],
+            "name": line["name"],
+            "entries": [],
+            "recorded": None,
+            "estimated": line["amount"],
+        }
+        for line in estimates
+        if line["id"] not in shown
+    ]
+    # Estimated lines with nothing recorded go before Unassigned, which stays last.
+    split = len(result) - (1 if result and result[-1]["id"] is None else 0)
+    result[split:split] = waiting
+    estimated = sum((Decimal(line["amount"]) for line in estimates), ZERO)
+    return result, {
+        "estimated": str(estimated) if estimates else None,
+        "unestimated": str(Decimal(planned) - estimated) if estimates else None,
+    }
+
+
 def summary(comparisons, entries):
     def known(category):
         value = comparisons[category]

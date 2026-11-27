@@ -25,6 +25,7 @@ import {
   money,
   newestFirst,
   planInput,
+  revisionEstimates,
   revisionLines,
   savedLabel,
   storedGroups,
@@ -39,8 +40,16 @@ type OpenDraft = { revision: PlanRevision; input?: WorksheetDraft; generation: n
 const changed = (draft: OpenDraft | undefined) =>
   !!draft?.input &&
   (draft.input.editing ||
-    JSON.stringify({ name: draft.input.name, lines: draft.input.lines }) !==
-      JSON.stringify({ name: draft.revision.name, lines: revisionLines(draft.revision) }));
+    JSON.stringify({
+      name: draft.input.name,
+      lines: draft.input.lines,
+      estimates: draft.input.estimates ?? revisionEstimates(draft.revision),
+    }) !==
+      JSON.stringify({
+        name: draft.revision.name,
+        lines: revisionLines(draft.revision),
+        estimates: revisionEstimates(draft.revision),
+      }));
 
 export function Plans(
   p: ScreenProps & {
@@ -722,12 +731,12 @@ export function Plans(
                     : undefined
                 }
                 onChange={(input) => setOpened((all) => ({ ...all, [id]: { ...all[id], input } }))}
-                onSave={(title, lines) =>
+                onSave={(title, lines, estimates) =>
                   p.save(
                     monthly.editPlan(
                       p.entity.id,
                       id,
-                      planInput(title, lines, local.revision.revision),
+                      planInput(title, lines, local.revision.revision, estimates),
                     ),
                     (result) => accepted(id, result.draft),
                   )

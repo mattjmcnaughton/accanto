@@ -1,7 +1,7 @@
 # 07 — Spending subcategories
 
 Status: Implemented
-Updated: 2026-11-26
+Updated: 2026-11-27
 
 ## Purpose and scope
 
@@ -15,7 +15,8 @@ Read with the [constitution](../../CONSTITUTION.md) and
 [architecture](../architecture.md).
 
 Excluded: planned amounts per subcategory (the Plan's guilt-free spending stays
-one number, and Plans and saved versions do not change); subcategories for other
+one number; optional, informational estimates were added later, see
+[Spending estimates](#amendment-2026-11-27-spending-estimates)); subcategories for other
 categories (a Fixed cost already is the fixed-cost subcategory); nesting; merging;
 deleting; a label-only bulk command. Tags ([TDD 05](05-tags.md)) are a separate,
 overlapping concept: several per entry, any category, totals that overlap. A
@@ -133,3 +134,36 @@ tables after upgrading ([deployment](../technical/deployment.md)).
 - **No bulk label command in v1.** Backfilling history goes entry by entry
   through `save_activity`; a `set_entry_spending_subcategories` command can be
   added if agent backfill is wanted.
+
+## Amendment 2026-11-27: Spending estimates
+
+The owner asked: "I want the ability to set estimated amount for sub-categories
+in guilt-free, I just don't want it to be mandatory." This adds the **Spending
+estimate** from [CONTEXT.md](../../CONTEXT.md): an optional monthly amount per
+subcategory in a Plan revision.
+
+**Where estimates live (decided here): per Plan revision**, in
+`plan_spending_estimate_line`, like every other Plan line. A draft edit replaces
+them, saving a version copies them, and a copy keeps them, so a saved version's
+estimates never change and Reviews read the version they compare against.
+Rejected: a column on `spending_subcategory`, which would rewrite past Reviews
+whenever an estimate changed (constitution §1).
+
+| Rule (domain name) | Authoritative source | Commands affected | Enforcement | Verification |
+| --- | --- | --- | --- | --- |
+| Estimates are optional and informational: no Plan total, unassigned amount or Review difference reads them | CONTEXT.md, Spending estimate | Create/edit/copy Plan, save version, Review read | Plan results ignore `spending_estimates`; `with_estimates` only annotates the breakdown | Unit: `test_monthly_comparison.py`; integration: totals unchanged after adding estimates |
+| Estimates need not add up to guilt-free spending; uncovered money is Unestimated, an excess is shown as the amount over | CONTEXT.md, Spending estimate | Review read, Plan worksheet | Pure `domains/monthly_comparison.with_estimates` (`unestimated` = planned − sum, may be negative) | Unit and integration: `-25.50` when estimates exceed the total |
+| At most one estimate per subcategory per revision; nonnegative cents | This amendment | Create/edit Plan | DTO money validator; `UNIQUE (plan_revision_id, spending_subcategory_id)`; `duplicate_allocation` | Database constraint |
+| An estimate names a subcategory of its Entity; an archived one keeps an estimate it had but gains none | CONTEXT.md, Spending subcategory | Create/edit/copy Plan | Composite FK; `services/spending_subcategories.plan_estimates` with `check_assignment` | Integration: `archived_spending_subcategory`, `spending_subcategory_not_found`, kept on edit and copy |
+| An estimated subcategory with no entry is not an unknown to answer | Constitution §1 (unknown is not zero) | Review read | Breakdown row with `recorded: null`; the UI shows "—" and asks nothing | UI unit: `ReviewDetails.test.tsx` |
+
+Changing estimates is a draft edit (revision bump and audit, in `write()` under
+the Entity lock). Interfaces: `spending_estimates` on Plan inputs and snapshots
+([api.md](../api.md#spending-estimates)); `PlanDetail.spending_estimates`,
+`BreakdownLine.estimated` and `CategoryComparison.estimated`/`unestimated` in the
+agent tools (`create_plan`, `edit_plan_draft`); the Plan worksheet's subcategory
+rows take an optional estimate and show Unestimated below them; the Review's
+guilt-free spending lines show Recorded beside Estimated. Migration `6v042`
+(after `6u041`) is additive with no backfill and needs runtime grants for the new
+table and its identity sequence ([deployment](../technical/deployment.md)).
+

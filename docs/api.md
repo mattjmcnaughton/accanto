@@ -202,6 +202,27 @@ so the rows add up exactly to `comparison.spending.recorded`. Rows are sorted
 largest first, with Unassigned last. `items` stays empty, so every spending entry
 is also in `unplanned`.
 
+### Spending estimates
+
+Plan create and draft replacement accept optional `spending_estimates` lines with
+`spending_subcategory_id` and a nonnegative `amount`, at most one per
+subcategory. They are informational: they need not add up to `spending`, may
+exceed it, and change no Plan total. Leave them out and nothing changes; like
+other lines, a draft replacement without them clears the draft's estimates. An
+archived subcategory keeps an estimate its draft or copied version already had
+but returns `422 archived_spending_subcategory` for a new one; another Entity's
+returns `404 spending_subcategory_not_found`. Saving a version copies them.
+Drafts, copies and versions return them with the subcategory's current
+`spending_subcategory_name`.
+
+In a Review, each `breakdown` row adds `estimated` (null when its subcategory has
+no estimate), and an estimated subcategory with no entry joins the breakdown with
+`recorded: null` before Unassigned, so recorded rows still add up to
+`comparison.spending.recorded`. `comparison.spending.estimated` is the estimates'
+sum and `unestimated` is `planned` minus it (negative when estimates exceed it);
+both are null when the version has no estimates. No difference is computed per
+subcategory.
+
 ## Savings accounts and goals
 
 Create an account with an opening date, amount and designated ordinary goals:

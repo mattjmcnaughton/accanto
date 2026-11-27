@@ -288,3 +288,111 @@ it("creates an investment from a new investing line's Destination, then saves th
     { destination_id: "inv-new", amount: "250.00" },
   ]);
 });
+
+it("keeps optional subcategory estimates beside guilt-free spending, never in its total", async () => {
+  const draft = {
+    uuid: "draft",
+    name: "Estimate Plan",
+    number: 1,
+    revision: 2,
+    saved: false,
+    saved_at: null,
+    rule_version: "2",
+    incomes: [{ source_id: "income", name: "Income", amount: "3000.00" }],
+    fixed_costs: [],
+    spending: "900.00",
+    // An archived subcategory keeps the estimate the draft already has.
+    spending_estimates: [
+      { spending_subcategory_id: "old", spending_subcategory_name: "Old hobby", amount: "100.00" },
+    ],
+    income: "3000.00",
+    fixed_cost_total: "0.00",
+    tithe_target: "300.00",
+    unassigned: "2100.00",
+    allocation_total: "900.00",
+    funding_total: "3000.00",
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    const data = url.endsWith("/plans")
+      ? [{ plan_id: "plan", revisions: [draft] }]
+      : url.endsWith("/spending-subcategories")
+        ? [
+            { uuid: "books", name: "Books", active: true, revision: 1, entries: 0 },
+            { uuid: "old", name: "Old hobby", active: false, revision: 2, entries: 0 },
+          ]
+        : [];
+    return new Response(JSON.stringify(data), { status: 200 });
+  });
+  const save = vi.fn();
+  render(
+    <Plans
+      entity={{ id: "entity", name: "Synthetic Entity", today: "2026-10-18", time_zone: "UTC" }}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={vi.fn()}
+      save={save}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Estimate Plan" }));
+  await screen.findByText("Books");
+  const text = (id: string) => document.getElementById(id)?.textContent;
+  expect(text("cell-subcategory-old-3")).toBe("$100.00");
+  expect(text("cell-subcategory-books-3")).toBe("—");
+  expect(text("cell-unestimated-0")).toBe("Unestimated");
+  expect(text("cell-unestimated-3")).toBe("$800.00");
+
+  // Estimate Books; the rest of guilt-free spending stays plain unestimated money.
+  fireEvent.doubleClick(document.getElementById("cell-subcategory-books-1") as HTMLElement);
+  const input = screen.getByRole("textbox", { name: "Estimate for Books" });
+  fireEvent.change(input, { target: { value: "150" } });
+  expect(text("cell-unestimated-3")).toBe("$650.00");
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(text("cell-subcategory-books-1")).toBe("$150.00");
+  // A click opens an estimate like any amount; Escape discards the edit.
+  fireEvent.click(document.getElementById("cell-subcategory-books-3") as HTMLElement);
+  fireEvent.change(screen.getByRole("textbox", { name: "Estimate for Books" }), {
+    target: { value: "999" },
+  });
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Estimate for Books" }), {
+    key: "Escape",
+  });
+  expect(text("cell-subcategory-books-1")).toBe("$150.00");
+  // Estimates do not touch the Plan's totals.
+  expect(text("cell-spending-3")).toBe("$900.00");
+  expect(screen.getAllByText("$2,100.00").length).toBeGreaterThan(0);
+
+  // Over the total is shown quietly, as how much the estimates exceed it.
+  fireEvent.doubleClick(document.getElementById("cell-subcategory-books-1") as HTMLElement);
+  fireEvent.change(screen.getByRole("textbox", { name: "Estimate for Books" }), {
+    target: { value: "850" },
+  });
+  expect(text("cell-unestimated-0")).toBe("Estimates over");
+  expect(text("cell-unestimated-3")).toBe("$50.00");
+  expect(document.getElementById("row-unestimated")?.querySelector(".warn, .bad, .err")).toBeNull();
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Estimate for Books" }), {
+    key: "Enter",
+  });
+
+  // Blank clears an estimate; with none left, the Unestimated row goes away.
+  fireEvent.doubleClick(document.getElementById("cell-subcategory-old-1") as HTMLElement);
+  fireEvent.change(screen.getByRole("textbox", { name: "Estimate for Old hobby" }), {
+    target: { value: "" },
+  });
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Estimate for Old hobby" }), {
+    key: "Enter",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  expect(save).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      method: "PUT",
+      body: expect.objectContaining({
+        spending: "900.00",
+        spending_estimates: [{ spending_subcategory_id: "books", amount: "850.00" }],
+      }),
+    }),
+    expect.any(Function),
+  );
+});
