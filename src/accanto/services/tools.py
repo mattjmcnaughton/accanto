@@ -518,6 +518,7 @@ async def get_settings(ctx, entity_id, args, key):
         default_return_percent=str(entity["default_return_percent"]),
         fire_annual_spending=fire["annual_spending"],
         fire_withdrawal_percent=fire["withdrawal_percent"],
+        inflation_percent=fire["inflation_percent"],
         revision=entity["revision"],
     )
 
@@ -1073,11 +1074,21 @@ def build_entity_settings(args: t.SaveEntitySettings):
 
 def build_fire_assumptions(args: t.SaveFireAssumptions):
     spending = args.annual_spending or "none"
-    return (
-        Command("edit_fire_assumptions", args.model_dump(mode="json")),
+    summary = (
         f"Update FIRE assumptions: spending {spending}, "
-        f"withdrawal {args.withdrawal_percent}%",
+        f"withdrawal {args.withdrawal_percent}%"
     )
+    if args.inflation_percent is not None:
+        summary += f", inflation {args.inflation_percent}%"
+    level = args.fixed_costs_not_rising_with_inflation
+    if level is not None:
+        summary += (
+            "; every fixed cost rises with inflation"
+            if not level
+            else f"; {len(level)} fixed cost{'s' if len(level) != 1 else ''} "
+            f"{'do' if len(level) != 1 else 'does'} not rise with inflation"
+        )
+    return Command("edit_fire_assumptions", args.model_dump(mode="json")), summary
 
 
 def build_agent_instructions(args: t.ProposeAgentInstructions):
@@ -1398,8 +1409,10 @@ CATALOG: tuple[CatalogTool, ...] = (
     _write(
         "save_fire_assumptions",
         "Replace both FIRE assumptions for Projections, annual spending (or "
-        "null) and withdrawal percent, only when the owner asks. Read "
-        "get_settings first and keep the one they did not ask to change.",
+        "null) and withdrawal percent, and optionally average inflation and the "
+        "Fixed costs that do not rise with inflation, only when the owner asks. "
+        "Read get_settings (and get_plan for Fixed costs) first and keep what "
+        "they did not ask to change.",
         t.SaveFireAssumptions,
         build_fire_assumptions,
     ),

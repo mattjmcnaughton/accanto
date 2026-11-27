@@ -57,7 +57,7 @@ it.each([
       "debts",
       "investments",
       "plans",
-      "projections?years=20",
+      "projections?years=20&dollars=today",
       "reviews/2026-11-01",
       "routines",
       "savings-accounts",

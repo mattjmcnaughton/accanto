@@ -95,9 +95,9 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | DELETE | `/savings-accounts/movements/{movement_id}` | Soft delete with `{kind, expected_revision}`; replay later history |
 | GET/POST | `/investments`, `/giving-recipients` | List/create named destinations with optional positive cumulative target; investments may have an optional dated opening observation and [projection assumptions](#projections) |
 | PUT | `/investments/{destination_id}`, `/giving-recipients/{destination_id}` | Name, target, active state and `expected_revision`; investments also take optional `opening_date` and projection assumptions, and an omitted assumption is left unchanged |
-| GET | `/projections?years=N` | A Projection of investments, loans and net worth, 1–100 years ([Projections](#projections)) |
+| GET | `/projections?years=N&dollars=today\|future` | A Projection of investments, loans and net worth, 1–100 years ([Projections](#projections)) |
 | GET | `/debts/{debt_id}/payoff-schedule` | A loan's month-by-month payoff from its latest amount owed at its fixed rate and monthly payment ([Loan accounts](#loan-accounts-and-dated-balance-observations)) |
-| GET/PUT | `/fire-assumptions` | Annual spending and withdrawal rate for the FIRE target ([Projections](#projections)) |
+| GET/PUT | `/fire-assumptions` | Annual spending, withdrawal rate, inflation and Fixed costs held level for the FIRE target ([Projections](#projections)) |
 | GET/POST | `/investment-activity`, `/giving-activity` | Current history or create contribution/adjustment with optional `investment_id` or `giving_recipient_id` |
 | PUT/DELETE | `/investment-activity/{entry_id}`, `/giving-activity/{entry_id}` | Correct entry or soft delete with `expected_revision` |
 | POST | `/activity/{purchase_id}/refunds` | Record a linked refund using positive `amount`, `date`, and optional `note` |
@@ -619,8 +619,9 @@ source_connected_elsewhere` naming that Entity. Disconnect it there first.
 ## Projections
 
 Illustrative figures from explicit assumptions ([TDD 14](tdds/14-projections.md)),
-never activity, observations or balances. Nominal dollars only: inflation is not
-modelled yet ([#44](https://github.com/mattjmcnaughton/accanto/issues/44)).
+never activity, observations or balances. Inflation follows
+[TDD 17](tdds/17-inflation.md): `dollars=today` (the default) divides each amount
+by (1 + inflation)^(years); `dollars=future` reports nominal amounts.
 
 Investments carry three optional assumptions on create and edit:
 `expected_return_percent` (annual percent, −10 to 30, two decimals; null uses the
@@ -654,12 +655,26 @@ net_worth}`, `timeline` (one row per year from 0), `milestones` (always 5, 10 an
 makes every total and the FIRE date null (unknown, never zero). Amounts round
 half-even to cents at reporting.
 
-`GET /fire-assumptions` returns `{annual_spending, withdrawal_percent, revision}`
-(defaults null and `4.00`); `PUT` takes them with `expected_revision` (the
-Entity's revision) and an `Idempotency-Key`. With annual spending set, `fire` is
-`{annual_spending, withdrawal_percent, target, months_to_target, reached_on}`:
-the target is spending ÷ withdrawal rate, rounded up, and the date is the first
-month projected investments (not cash savings) reach it, null beyond 100 years.
+The response also has `dollars`, `inflation_percent`, `fire_target` on each row
+and `planned_fixed_costs`: the latest saved version of the Plan this month's
+Review compares with (else the Plan saved most recently), as `{plan_name,
+version_number, month, monthly_total, annual_total, steady_annual, lines}`, each
+line `{fixed_cost_id, name, monthly_amount, annual_amount,
+rises_with_inflation}`; null when no Plan has a saved version.
+
+`GET /fire-assumptions` returns `{annual_spending, withdrawal_percent,
+inflation_percent, revision}` (defaults null, `4.00` and `3.00`); `PUT` takes them
+with `expected_revision` (the Entity's revision) and an `Idempotency-Key`.
+`inflation_percent` (0–15) and `fixed_costs_not_rising_with_inflation` (the full
+list of Fixed cost ids held level; every other cost rises with inflation) are
+optional and left unchanged when omitted; an id outside the Entity returns 404.
+With annual spending set, `fire` is `{annual_spending, steady_spending,
+withdrawal_percent, target_today, target, months_to_target, reached_on}`:
+`target_today` is spending ÷ withdrawal rate, rounded up; spending rises with
+inflation except `steady_spending` (the planned fixed costs held level, at most
+all of it); the date is the first month projected investments (not cash savings)
+reach that rising target, null beyond 100 years, the same in either dollars; and
+`target` is the target on that date in the chosen dollars.
 
 ## Entity settings and API key metadata
 
@@ -680,8 +695,9 @@ may change ([TDD 03](tdds/03-agent-access.md#entity-settings-for-agents-2026-11-
 Agents use the catalog tools `get_settings` (all of them with the one Entity
 `revision`), `save_entity_settings` (`{name, time_zone, default_return_percent?,
 expected_revision}`) and `save_fire_assumptions` (`{annual_spending,
-withdrawal_percent, expected_revision}`, both required so neither resets by
-omission). They follow the Agent mode like any write: Read only refuses them,
+withdrawal_percent, inflation_percent?, fixed_costs_not_rising_with_inflation?,
+expected_revision}`, spending and withdrawal required so neither resets by
+omission). `get_plan` shows `rises_with_inflation` on fixed-cost lines. They follow the Agent mode like any write: Read only refuses them,
 Ask first drafts a Pending change, Apply directly records them, audited as `mcp`
 or `agent`. Everything else in Settings is sensitive and browser-session only;
 API keys get `403 browser_session_required` and no tool reaches it: the Agent

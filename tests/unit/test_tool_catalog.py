@@ -87,6 +87,8 @@ SAFE_SETTINGS = {
     "save_fire_assumptions": {
         "annual_spending",
         "withdrawal_percent",
+        "inflation_percent",
+        "fixed_costs_not_rising_with_inflation",
         "expected_revision",
     },
 }
@@ -125,6 +127,7 @@ def test_settings_tools_take_only_safe_settings():
         "default_return_percent",
         "fire_annual_spending",
         "fire_withdrawal_percent",
+        "inflation_percent",
         "revision",
     }
 

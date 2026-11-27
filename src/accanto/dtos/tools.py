@@ -294,6 +294,8 @@ class PlanLine(Output):
     name: Untrusted
     amount: Money
     frequency: str | None = None
+    # Fixed costs only: the Fixed cost's current flag (TDD 17), not a snapshot.
+    rises_with_inflation: bool | None = None
 
 
 class PlanRevision(Output):
@@ -607,6 +609,7 @@ def project_plan(plan) -> PlanView:
                 name=row.get(name_key) or "",
                 amount=row["amount"],
                 frequency=row.get("frequency"),
+                rises_with_inflation=row.get("rises_with_inflation"),
             )
             for row in rows
         ]
@@ -1498,6 +1501,7 @@ class Settings(Output):
     default_return_percent: Amount
     fire_annual_spending: Amount | None
     fire_withdrawal_percent: Amount
+    inflation_percent: Amount
     revision: int
 
 
@@ -1520,6 +1524,20 @@ class SaveFireAssumptions(FireAssumptionsInput):
     )
     withdrawal_percent: str = Field(
         description="Safe withdrawal rate, a percent such as 4.00."
+    )
+    inflation_percent: str | None = Field(
+        default=None,
+        description="Average annual inflation, a percent from 0 to 15, such as "
+        "3.00. Omit to keep the saved value from get_settings.",
+    )
+    fixed_costs_not_rising_with_inflation: list[UUID] | None = Field(
+        default=None,
+        max_length=500,
+        description="The full list of Fixed cost ids (from get_plan) that will not "
+        "rise with inflation, such as a fixed-rate mortgage payment. Every listed "
+        "cost is held level and every other cost rises with inflation. Start from "
+        "the costs get_plan already shows with rises_with_inflation false, and "
+        "change only what the owner says. Omit to leave every Fixed cost as it is.",
     )
     expected_revision: int = Field(ge=1, description="revision from get_settings.")
 

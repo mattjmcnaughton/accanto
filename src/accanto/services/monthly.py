@@ -286,16 +286,57 @@ async def write(
             }
         elif operation == "edit_fire_assumptions":
             check_revision(entity, payload.get("expected_revision"))
+            values = {
+                "fire_annual_spending": payload["annual_spending"],
+                "fire_withdrawal_percent": payload["withdrawal_percent"],
+                "revision": entity["revision"] + 1,
+            }
+            if payload.get("inflation_percent") is not None:
+                values["inflation_percent"] = payload["inflation_percent"]
+            level = payload.get("fixed_costs_not_rising_with_inflation")
+            if level is not None:
+                # The full set held level (TDD 17): listed costs stop rising with
+                # inflation, every other Fixed cost of the Entity rises with it.
+                costs = (
+                    (
+                        await session.execute(
+                            select(m.fixed_costs)
+                            .where(m.fixed_costs.c.entity_id == entity["id"])
+                            .order_by(m.fixed_costs.c.id)
+                            .with_for_update()
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                wanted = {str(uuid) for uuid in level}
+                if not wanted <= {str(cost["uuid"]) for cost in costs}:
+                    raise RejectionError(
+                        "record_not_found", "Record is unavailable in this Entity.", 404
+                    )
+                for cost in costs:
+                    rises = str(cost["uuid"]) not in wanted
+                    if cost["rises_with_inflation"] == rises:
+                        continue
+                    after = (
+                        (
+                            await session.execute(
+                                update(m.fixed_costs)
+                                .where(m.fixed_costs.c.id == cost["id"])
+                                .values(rises_with_inflation=rises)
+                                .returning(m.fixed_costs)
+                            )
+                        )
+                        .mappings()
+                        .one()
+                    )
+                    await audit(m.fixed_costs, cost["uuid"], dict(cost), dict(after))
             record = (
                 (
                     await session.execute(
                         update(m.entities)
                         .where(m.entities.c.id == entity["id"])
-                        .values(
-                            fire_annual_spending=payload["annual_spending"],
-                            fire_withdrawal_percent=payload["withdrawal_percent"],
-                            revision=entity["revision"] + 1,
-                        )
+                        .values(**values)
                         .returning(m.entities)
                     )
                 )

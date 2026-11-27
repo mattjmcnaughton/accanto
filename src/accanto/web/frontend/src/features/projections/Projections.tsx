@@ -1,7 +1,16 @@
 import { useState } from "react";
-import { decimalToCents, fmtDate, formatMoney, money } from "../../lib/format";
-import { type FireAssumptions, type Projection, projections } from "../../lib/projections";
-import { Empty, Field, Head, tint } from "../../ui";
+import { fmtDate, formatMoney, monthName } from "../../lib/format";
+import {
+  type Dollars,
+  type FireAssumptions,
+  type PlannedFixedCosts,
+  projections,
+  saveDollars,
+  savedDollars,
+} from "../../lib/projections";
+import { Empty, Field, Head } from "../../ui";
+import { Chart } from "./Chart";
+import { FixedInDollars } from "./FixedInDollars";
 import { LoadFailure, Loading, MoneyField, dash, validMoney } from "../destinations/records";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 import "./projections.css";
@@ -10,96 +19,41 @@ const HORIZONS = [10, 20, 30] as const;
 const PER = { monthly: "a month", annual: "a year" } as const;
 const WITHDRAWAL = /^\d{1,2}(\.\d{1,2})?$/;
 
-const cents = (value: string | null) => (value === null ? null : decimalToCents(value));
 const ago = (months: number) => {
   const years = Math.floor(months / 12);
   const rest = months % 12;
   return [years && `${years} yr`, rest && `${rest} mo`].filter(Boolean).join(" ") || "now";
 };
 
-type Row = Projection["timeline"][number];
-
-/** Projected investments and net worth by year, with the FIRE target as a line. */
-function Chart({ data }: { data: Projection }) {
-  const rows = data.timeline;
-  const target = cents(data.fire?.target ?? null);
-  const invested = (row: Row) => cents(row.investments);
-  const worth = (row: Row) => cents(row.net_worth);
-  const known = [...rows.flatMap((row) => [invested(row), worth(row)]), target].filter(
-    (v): v is number => v !== null,
-  );
-  const top = Math.max(...known, 1) * 1.08;
-  const low = Math.min(0, ...known);
-  const x = (i: number) => (i / Math.max(1, rows.length - 1)) * 100;
-  const y = (v: number) => 100 - ((v - low) / (top - low)) * 100;
-  const line = (pick: (row: Row) => number | null) =>
-    rows
-      .flatMap((row, i) => {
-        const v = pick(row);
-        return v === null ? [] : [`${x(i)},${y(v)}`];
-      })
-      .join(" ");
-  const last = rows[rows.length - 1];
-  return (
-    <figure className="proj-chart">
-      <div
-        className="proj-plot"
-        role="img"
-        aria-label={`Projected investments ${formatMoney(last.investments)} in ${last.years} years${target !== null ? `; FIRE target ${money(target)}` : ""}`}
-      >
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          {target !== null && (
-            <line className="proj-target" x1="0" x2="100" y1={y(target)} y2={y(target)} />
-          )}
-          <polyline className="proj-net" points={line(worth)} />
-          <polyline className="proj-inv" style={tint("invest")} points={line(invested)} />
-        </svg>
-        {target !== null && (
-          <span className="proj-target-label" style={{ top: `${y(target)}%` }}>
-            FIRE target {money(target)}
-          </span>
-        )}
-        {data.milestones.map((m) => {
-          const i = rows.findIndex((row) => row.years === m.years);
-          const v = invested(m);
-          return i < 0 || v === null ? null : (
-            <b
-              key={m.years}
-              style={{ left: `${x(i)}%`, top: `${y(v)}%`, ...tint("invest") }}
-              title={`In ${m.years} years: ${money(v)}`}
-            />
-          );
-        })}
-      </div>
-      <figcaption>
-        <span>Today</span>
-        <span>{Math.round(last.years / 2)} years</span>
-        <span>{last.years} years</span>
-      </figcaption>
-      <div className="proj-legend">
-        <span className="proj-key inv" style={tint("invest")}>
-          Investments
-        </span>
-        <span className="proj-key net">Net worth</span>
-        {target !== null && <span className="proj-key tgt">FIRE target</span>}
-      </div>
-    </figure>
-  );
-}
-
 function FireForm({
   saved,
+  planned,
   busy,
   save,
 }: {
   saved: FireAssumptions;
+  planned: PlannedFixedCosts | null;
   busy: boolean;
-  save: (value: { annual_spending: string | null; withdrawal_percent: string }) => void;
+  save: (value: {
+    annual_spending: string | null;
+    withdrawal_percent: string;
+    inflation_percent: string;
+    fixed_costs_not_rising_with_inflation?: string[];
+  }) => void;
 }) {
+  const steadyNow = (planned?.lines ?? [])
+    .filter((l) => !l.rises_with_inflation)
+    .map((l) => l.fixed_cost_id);
+  const [steady, setSteady] = useState(steadyNow);
   const [spending, setSpending] = useState(saved.annual_spending ?? "");
   const [rate, setRate] = useState(saved.withdrawal_percent);
+  const [inflation, setInflation] = useState(saved.inflation_percent);
   const [error, setError] = useState("");
-  const changed = spending !== (saved.annual_spending ?? "") || rate !== saved.withdrawal_percent;
+  const changed =
+    spending !== (saved.annual_spending ?? "") ||
+    rate !== saved.withdrawal_percent ||
+    inflation !== saved.inflation_percent ||
+    [...steady].sort().join() !== [...steadyNow].sort().join();
   return (
     <form
       className="card pad stack proj-fire"
@@ -110,26 +64,56 @@ function FireForm({
           return setError("Enter annual spending as USD with up to two decimals.");
         if (!WITHDRAWAL.test(rate.trim()) || Number(rate) <= 0 || Number(rate) > 10)
           return setError("Enter a withdrawal rate above 0 and up to 10 percent.");
+        if (!WITHDRAWAL.test(inflation.trim()) || Number(inflation) > 15)
+          return setError("Enter average inflation from 0 to 15 percent.");
         setError("");
-        save({ annual_spending: spending.trim() || null, withdrawal_percent: rate.trim() });
+        save({
+          annual_spending: spending.trim() || null,
+          withdrawal_percent: rate.trim(),
+          inflation_percent: inflation.trim(),
+          // Without a saved Plan version there is no list to replace: keep every flag.
+          ...(planned ? { fixed_costs_not_rising_with_inflation: steady } : {}),
+        });
       }}
     >
       <h2 className="h2">FIRE assumptions</h2>
       <p className="note">
-        The FIRE target is annual spending ÷ the withdrawal rate. It is compared with projected
-        investments, not cash savings.
+        The FIRE target is annual spending ÷ the withdrawal rate, compared with projected
+        investments, not cash savings. Spending is in today&apos;s dollars and rises with inflation,
+        except planned fixed costs marked fixed in dollars.
       </p>
-      <div className="two">
+      <div className="proj-fire-fields">
+        <Field label="Withdrawal rate (%, often 4)">
+          <input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} />
+        </Field>
         <MoneyField
-          label="Annual spending in retirement (USD)"
+          label="Annual spending in retirement (USD, today's dollars)"
           value={spending}
           required={false}
           onChange={setSpending}
         />
-        <Field label="Withdrawal rate (%, often 4)">
-          <input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} />
+        <Field label="Average annual inflation (%)">
+          <input
+            inputMode="decimal"
+            value={inflation}
+            onChange={(e) => setInflation(e.target.value)}
+          />
         </Field>
       </div>
+      {planned ? (
+        <FixedInDollars planned={planned} selected={steady} onChange={setSteady} />
+      ) : (
+        <p className="note">
+          Save a Plan version to choose fixed costs that do not rise with inflation.
+        </p>
+      )}
+      {planned && (
+        <p className="note proj-planned-ref">
+          For reference: {monthName(planned.month)}&apos;s planned fixed costs are{" "}
+          <b>{formatMoney(planned.annual_total)} a year</b> ({formatMoney(planned.monthly_total)} a
+          month, {planned.plan_name} version {planned.version_number}).
+        </p>
+      )}
       {error && (
         <p className="err" role="alert">
           {error}
@@ -146,10 +130,18 @@ function FireForm({
 
 export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
   const [years, setYears] = useState<(typeof HORIZONS)[number]>(20);
+  const [dollars, setDollars] = useState<Dollars>(savedDollars);
+  const choose = (value: Dollars) => {
+    setDollars(value);
+    saveDollars(value);
+  };
   const [reload, setReload] = useState(0);
   const again = () => setReload((n) => n + 1);
   const deps = [p.entity.id, p.refresh, reload];
-  const state = useLoad(() => projections.read(p.entity.id, years), [...deps, years]);
+  const state = useLoad(
+    () => projections.read(p.entity.id, years, dollars),
+    [...deps, years, dollars],
+  );
   const assumptions = useLoad(() => projections.assumptions(p.entity.id), deps);
   if (p.concealed) return null;
 
@@ -160,8 +152,16 @@ export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
     <section aria-labelledby="projections-title" className="screen proj">
       <Head
         title={<span id="projections-title">Projections</span>}
-        sub="Illustrative figures from each investment's expected return and contribution, with loans paid down at their fixed rate and monthly payment. They are not recorded activity or observed values, and they ignore inflation, taxes, fees, and market risk."
+        sub="Illustrative figures from each investment's expected return and contribution, with loans paid down at their fixed rate and monthly payment. They are not recorded activity or observed values, and they ignore taxes, fees, and market risk."
       >
+        {/* biome-ignore lint/a11y/useSemanticElements: The kit\'s segmented control is a button group. */}
+        <div className="seg-control" role="group" aria-label="Dollars">
+          {(["today", "future"] as const).map((d) => (
+            <button key={d} type="button" aria-pressed={dollars === d} onClick={() => choose(d)}>
+              {d === "today" ? "Today's dollars" : "Future dollars"}
+            </button>
+          ))}
+        </div>
         {/* biome-ignore lint/a11y/useSemanticElements: The kit\'s segmented control is a button group. */}
         <div className="seg-control" role="group" aria-label="Horizon">
           {HORIZONS.map((h) => (
@@ -190,23 +190,16 @@ export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
       )}
       {data && (
         <>
-          <div className="grid3 proj-figs">
-            {data.milestones.map((m) => (
-              <div key={m.years} className="card pad">
-                <span className="cap">
-                  Net worth in {m.years} years, {fmtDate(m.date)}
-                </span>
-                <div className="fig">{formatMoney(m.net_worth)}</div>
-                <span className="cap">
-                  {formatMoney(m.investments)} invested, {formatMoney(m.loans)} owed
-                </span>
-              </div>
-            ))}
-          </div>
           <div className="card pad stack">
             <div className="proj-fire-head">
               <div>
-                <span className="cap">FIRE</span>
+                <span className="cap">
+                  FIRE date{" "}
+                  <span className="muted">
+                    {dollars === "today" ? "today's dollars" : "future dollars"},{" "}
+                    {data.inflation_percent}% inflation
+                  </span>
+                </span>
                 <div className="fig">
                   {fire
                     ? fire.reached_on
@@ -218,8 +211,8 @@ export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
                 </div>
                 <span className="cap">
                   {fire
-                    ? `Target ${formatMoney(fire.target)}: ${formatMoney(fire.annual_spending)} a year at ${fire.withdrawal_percent}%${fire.months_to_target !== null ? `, in ${ago(fire.months_to_target)}` : ""}`
-                    : "Enter annual spending below to see a FIRE target and date."}
+                    ? `Target ${formatMoney(fire.target ?? fire.target_today)}${fire.target && dollars === "future" ? " then" : ""}: ${formatMoney(fire.annual_spending)} a year at ${fire.withdrawal_percent}%${fire.months_to_target !== null ? `, in ${ago(fire.months_to_target)}` : ""}`
+                    : "Enter annual spending to see a FIRE target and date."}
                 </span>
               </div>
               <div className="proj-today">
@@ -238,8 +231,40 @@ export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
                 project them.
               </p>
             ) : (
-              <Chart data={data} />
+              <Chart data={data} dollars={dollars} />
             )}
+          </div>
+          <div className="proj-assume">
+            {assumptions.kind === "ready" && (
+              <FireForm
+                key={assumptions.data.revision}
+                saved={assumptions.data}
+                planned={data?.planned_fixed_costs ?? null}
+                busy={p.busy}
+                save={(value) =>
+                  p.save(
+                    projections.saveAssumptions(p.entity.id, {
+                      ...value,
+                      expected_revision: assumptions.data.revision,
+                    }),
+                    again,
+                  )
+                }
+              />
+            )}
+          </div>
+          <div className="grid3 proj-figs">
+            {data.milestones.map((m) => (
+              <div key={m.years} className="card pad">
+                <span className="cap">
+                  Net worth in {m.years} years, {fmtDate(m.date)}
+                </span>
+                <div className="fig">{formatMoney(m.net_worth)}</div>
+                <span className="cap">
+                  {formatMoney(m.investments)} invested, {formatMoney(m.loans)} owed
+                </span>
+              </div>
+            ))}
           </div>
           <div className="card pad stack">
             <h2 className="h2">By investment</h2>
@@ -356,22 +381,6 @@ export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
             </div>
           )}
         </>
-      )}
-      {assumptions.kind === "ready" && (
-        <FireForm
-          key={assumptions.data.revision}
-          saved={assumptions.data}
-          busy={p.busy}
-          save={(value) =>
-            p.save(
-              projections.saveAssumptions(p.entity.id, {
-                ...value,
-                expected_revision: assumptions.data.revision,
-              }),
-              again,
-            )
-          }
-        />
       )}
     </section>
   );

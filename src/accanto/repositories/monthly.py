@@ -46,6 +46,7 @@ async def plan_details(session: AsyncSession, revision_ids: list[int]) -> dict:
                 fixed_cost_lines.c.debt_account_name,
                 fixed_costs.c.uuid.label("fixed_cost_id"),
                 fixed_costs.c.name.label("canonical_name"),
+                fixed_costs.c.rises_with_inflation,
                 debts.c.uuid.label("debt_account_id"),
             )
             .join(fixed_costs, fixed_costs.c.id == fixed_cost_lines.c.fixed_cost_id)

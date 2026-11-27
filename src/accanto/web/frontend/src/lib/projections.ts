@@ -42,9 +42,8 @@ export interface ProjectedLoan {
   milestones: { years: number; amount: DecimalString }[];
 }
 /**
- * One point in time, in nominal dollars: inflation is not modelled yet. Savings are held at
- * today's amount; loans are paid down where they have terms. Totals are null while any
- * investment has no observed value.
+ * One point in time, in the projection's dollars. Savings are held at today's amount; loans are
+ * paid down where they have terms. Totals are null while any investment has no observed value.
  */
 export interface ProjectionYear {
   years: number;
@@ -53,17 +52,52 @@ export interface ProjectionYear {
   loans: DecimalString;
   net_worth: DecimalString | null;
   contributed: DecimalString;
+  /** The FIRE target at this date; null without annual spending. */
+  fire_target: DecimalString | null;
 }
+/**
+ * Future dollars are nominal, as balances will read. Today's dollars divide each amount by
+ * (1 + inflation)^years, so they buy what that amount buys today.
+ */
+export type Dollars = "today" | "future";
 export interface FireResult {
+  /** Entered in today's dollars. */
   annual_spending: DecimalString;
+  /** The part of annual spending that stays level: planned fixed costs that do not rise with inflation. */
+  steady_spending: DecimalString;
   withdrawal_percent: DecimalString;
-  target: DecimalString;
+  /** Annual spending ÷ the withdrawal rate, today. */
+  target_today: DecimalString;
+  /** The target on the FIRE date, in the projection's dollars; null when not reached. */
+  target: DecimalString | null;
   /** Months until projected investments reach the target; null when unknown or beyond 100 years. */
   months_to_target: number | null;
   reached_on: IsoDate | null;
 }
+/** One planned fixed cost of the active month's latest saved Plan version. */
+export interface PlannedFixedCost {
+  fixed_cost_id: string;
+  name: string;
+  monthly_amount: DecimalString;
+  annual_amount: DecimalString;
+  /** False for a cost fixed in dollars, such as a fixed-rate mortgage payment. */
+  rises_with_inflation: boolean;
+}
+export interface PlannedFixedCosts {
+  plan_name: string;
+  version_number: number;
+  /** The active month, YYYY-MM. */
+  month: string;
+  monthly_total: DecimalString;
+  annual_total: DecimalString;
+  /** Annual total of the costs that do not rise with inflation. */
+  steady_annual: DecimalString;
+  lines: PlannedFixedCost[];
+}
 export interface Projection {
   as_of: IsoDate;
+  dollars: Dollars;
+  inflation_percent: DecimalString;
   default_return_percent: DecimalString;
   today: {
     investments: DecimalString | null;
@@ -78,24 +112,27 @@ export interface Projection {
   investments: ProjectedInvestment[];
   loans: ProjectedLoan[];
   fire: FireResult | null;
+  /** The active month's latest saved Plan version; null when no Plan has one. */
+  planned_fixed_costs: PlannedFixedCosts | null;
 }
 export interface FireAssumptions {
   annual_spending: DecimalString | null;
   withdrawal_percent: DecimalString;
+  inflation_percent: DecimalString;
   revision: number;
 }
 const root = (entity: string) => `/api/entities/${encodeURIComponent(entity)}`;
 export const projections = {
   /** Projects with the saved FIRE assumptions; financial inputs never travel in the URL. */
-  read: (entity: string, years: number): Promise<LoadState<Projection>> =>
+  read: (entity: string, years: number, dollars: Dollars): Promise<LoadState<Projection>> =>
     loadResource(
-      `${root(entity)}/projections?years=${years}`,
+      `${root(entity)}/projections?years=${years}&dollars=${dollars}`,
       (value: Projection) => value.investments.length === 0,
     ),
   /** Home's net worth card: today and the 5, 10 and 20 year milestones. */
-  netWorth: (entity: string): Promise<LoadState<Projection>> =>
+  netWorth: (entity: string, dollars: Dollars): Promise<LoadState<Projection>> =>
     loadResource(
-      `${root(entity)}/projections?years=20`,
+      `${root(entity)}/projections?years=20&dollars=${dollars}`,
       // An Entity with no investments, savings or loans has no net worth to show.
       (value: Projection) =>
         !value.investments.length && !Number(value.today.savings) && !Number(value.today.loans),
@@ -107,6 +144,9 @@ export const projections = {
     body: {
       annual_spending: string | null;
       withdrawal_percent: string;
+      inflation_percent: string;
+      /** Planned fixed costs that stay level; the rest rise with inflation. Omit to keep each. */
+      fixed_costs_not_rising_with_inflation?: string[];
       expected_revision: number;
     },
   ): WriteSpec<FireAssumptions> => ({
@@ -114,4 +154,21 @@ export const projections = {
     path: `${root(entity)}/fire-assumptions`,
     body,
   }),
+};
+
+const DOLLARS_KEY = "accanto.projection-dollars";
+/** The browser's last choice of dollars, shared by Projections and Home; today's by default. */
+export const savedDollars = (): Dollars => {
+  try {
+    return localStorage.getItem(DOLLARS_KEY) === "future" ? "future" : "today";
+  } catch {
+    return "today";
+  }
+};
+export const saveDollars = (value: Dollars) => {
+  try {
+    localStorage.setItem(DOLLARS_KEY, value);
+  } catch {
+    // Private browsing may refuse storage; the choice then lasts for this view only.
+  }
 };

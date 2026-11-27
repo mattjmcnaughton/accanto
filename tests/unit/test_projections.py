@@ -214,7 +214,8 @@ def test_an_unobserved_active_investment_makes_totals_unknown_not_zero():
     assert result["today"]["investments"] is None
     assert all(row["net_worth"] is None for row in result["milestones"])
     assert result["fire"]["months_to_target"] is None
-    assert result["fire"]["target"] == "1000000.00"
+    assert result["fire"]["target"] is None
+    assert result["fire"]["target_today"] == "1000000.00"
     unseen = result["investments"][1]
     assert unseen["status"] == "no_value"
     assert unseen["milestones"][0]["amount"] is None
@@ -375,3 +376,103 @@ def test_a_loan_whose_payment_misses_the_interest_stays_flat_in_projections():
     result = _project([], savings=ZERO, loans=[stuck], years=5)
     assert result["loans"][0]["status"] == "interest_not_covered"
     assert result["timeline"][5]["loans"] == "10000.00"
+
+
+# Inflation (TDD 17) ---------------------------------------------------------
+
+
+def _price(percent, months):
+    """1.03^(months/12) computed independently of the module."""
+    with localcontext() as context:
+        context.prec = 34
+        return (1 + Decimal(percent) / 100) ** (Decimal(months) / 12)
+
+
+def test_todays_dollars_divide_by_inflation_at_each_date():
+    fund = _investment("fund", "30900.00", "7.00", "800.00")
+    args = dict(loans=[_loan("car", "20500.00")], inflation_percent=Decimal("3.00"))
+    real = _project([fund], dollars="today", **args)
+    nominal = _project([fund], dollars="future", **args)
+    ten = real["milestones"][1]
+    grown = _future_value("30900", "800", "7", 120)
+    with localcontext() as context:
+        context.prec = 34
+        deflate = _price("3", 120)
+        assert ten["investments"] == str(cents(grown / deflate))
+        assert ten["loans"] == str(cents(Decimal("20500") / deflate))
+        # Each month's $800 is deflated at its own month: a geometric series.
+        q = 1 / _price("3", 1)
+        assert ten["contributed"] == str(cents(800 * q * (1 - q**120) / (1 - q)))
+    assert nominal["milestones"][1]["investments"] == str(cents(grown))
+    assert nominal["milestones"][1]["contributed"] == "96000.00"
+    assert real["today"] == nominal["today"]
+    assert real["dollars"] == "today" and real["inflation_percent"] == "3.00"
+
+
+def test_fire_target_rises_with_inflation_except_costs_fixed_in_dollars():
+    # $60,000 a year at 4%, $12,000 of it a fixed-rate mortgage, 3% inflation.
+    assert p.fire_target_at(
+        Decimal("60000"), Decimal("12000"), Decimal("4"), Decimal("3"), 0
+    ) == p.fire_target(Decimal("60000"), Decimal("4"))
+    with localcontext() as context:
+        context.prec = 34
+        expected = (48000 * _price("3", 240) + 12000) / Decimal("0.04")
+    assert p.fire_target_at(
+        Decimal("60000"), Decimal("12000"), Decimal("4"), Decimal("3"), 240
+    ) == p.needed(expected)
+    # A steady part above annual spending is capped: the target never falls.
+    assert p.fire_target_at(
+        Decimal("60000"), Decimal("90000"), Decimal("4"), Decimal("3"), 240
+    ) == Decimal("1500000.00")
+
+
+def test_fire_date_with_inflation_is_the_same_in_either_dollars():
+    fund = _investment("fund", "100000.00", "7", "2000.00")
+    args = dict(
+        annual_spending=Decimal("60000.00"),
+        withdrawal_percent=Decimal("4.00"),
+        inflation_percent=Decimal("3.00"),
+        steady_spending=Decimal("12000.00"),
+    )
+    real = _project([fund], dollars="today", **args)["fire"]
+    nominal = _project([fund], dollars="future", **args)["fire"]
+    months = real["months_to_target"]
+    assert months == nominal["months_to_target"]
+    assert real["reached_on"] == nominal["reached_on"]
+
+    def target(m):
+        with localcontext() as context:
+            context.prec = 34
+            return (48000 * _price("3", m) + 12000) / Decimal("0.04")
+
+    assert _future_value("100000", "2000", "7", months) >= target(months)
+    assert _future_value("100000", "2000", "7", months - 1) < target(months - 1)
+    # Later than without inflation, and the steady mortgage brings it closer.
+    flat = _project([fund], annual_spending=Decimal("60000.00"))["fire"]
+    rising = _project(
+        [fund], **{**args, "steady_spending": Decimal("0")}, dollars="today"
+    )["fire"]
+    assert flat["months_to_target"] < months < rising["months_to_target"]
+    assert nominal["target"] == str(p.needed(target(months)))
+    with localcontext() as context:
+        context.prec = 34
+        today_target = (48000 + 12000 / _price("3", months)) / Decimal("0.04")
+    assert real["target"] == str(p.needed(today_target))
+    assert real["target_today"] == "1500000.00"
+    assert real["steady_spending"] == "12000.00"
+
+
+def test_zero_inflation_reads_the_same_in_either_dollars():
+    fund = _investment("fund", "5000.00", "6", "100.00")
+    args = dict(annual_spending=Decimal("40000"), inflation_percent=Decimal("0"))
+    real = _project([fund], dollars="today", **args)
+    nominal = _project([fund], dollars="future", **args)
+    assert {**real, "dollars": "future"} == nominal
+
+
+def test_inflation_range():
+    assert p.inflation_rate("3") == Decimal("3.00")
+    assert p.inflation_rate("0") == Decimal("0.00")
+    for bad in ("-0.5", "15.01", "3.001", "x"):
+        with pytest.raises(ValueError):
+            p.inflation_rate(bad)

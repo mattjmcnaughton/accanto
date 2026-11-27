@@ -14,7 +14,8 @@ Net position) and [TDD 09](09-agent-financial-math.md), whose pure growth and
 FIRE functions this reuses.
 
 Excluded: inflation and real (today's-dollar) figures, decided against for now
-because costs inflate unevenly ([#44](https://github.com/mattjmcnaughton/accanto/issues/44));
+because costs inflate unevenly ([#44](https://github.com/mattjmcnaughton/accanto/issues/44);
+since added by [TDD 17](17-inflation.md));
 taxes, fees and market risk; growth of savings; amortization of loans (since
 added by [TDD 15](15-debt-payoff.md)); an
 agent write tool for the FIRE assumptions.
