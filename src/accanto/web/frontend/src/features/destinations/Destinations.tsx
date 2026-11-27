@@ -369,7 +369,7 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
   if (p.concealed) return null;
 
   const destinationColumns = (kind: DestinationKind): Column<Destination>[] => [
-    { header: "Name", cell: (row) => row.name },
+    { header: "Name", cell: (row) => <span className="rec-wrap">{row.name}</span> },
     { header: "Status", cell: (row) => (row.active ? "Active" : "Inactive") },
     {
       header: kind === "investment" ? "Contributions" : "Net donations",
