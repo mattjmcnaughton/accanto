@@ -36,6 +36,29 @@ trace context and baggage sent by clients.
 
 ### Custom spans
 
+`browser.screen` measures signed-in hash navigation. The session enables it only
+when a server export token is configured. A visible tab samples 1 in 4 screen
+visits and sends one same-origin, CSRF-protected summary when the screen unmounts
+or the tab first becomes hidden. Dropped reports are not retried. The collector
+accepts only known screen codes, a cold-load boolean, bounded integer durations
+and a request count. No browser SDK, tokens for Logfire, URLs, DOM targets,
+financial values or event payloads leave the browser in the timing body.
+
+Compare medians and upper percentiles of the **attributes**, not of the collector
+span's duration. Separate cold document loads from warm changes of screen:
+
+- `shell_ms`: start of document or hash-screen navigation to two animation frames
+  after the workspace commits. This is a paint opportunity, not data readiness.
+- `inbox_ms`: same start to a paint opportunity after Inbox items and sources
+  arrive (includes the empty state). Other screens do not report data readiness.
+- `api_count` and `api_window_ms`: completed same-origin API fetches during the
+  visit and the time from the first start to the last end. Includes idle gaps
+  and later actions, not summed server work. Excludes timing reports themselves.
+- `long_task_ms` and `event_ms`: longest observed main-thread task and longest
+  interaction event duration. Event Timing covers input through next paint, with
+  a 16 ms reporting threshold. This maximum is not the INP web vital. A zero
+  means no observation (including unsupported APIs), not instantaneous work.
+
 | Name | Where | Attributes |
 | --- | --- | --- |
 | `access.credential` | session lookup in `routers/authentication.py` | none |

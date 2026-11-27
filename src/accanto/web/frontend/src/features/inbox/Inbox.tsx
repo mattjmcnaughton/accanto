@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, type BrowserSession, type LoadState } from "../../lib/api";
 import { destinations } from "../../lib/destinations";
 import { decimalToCents, fmtDay, fmtMonth, fmtShort, formatMoney, money } from "../../lib/format";
+import { inboxRowsCommitted } from "../../lib/screenTiming";
 import {
   type Completion,
   type InboxCategory,
@@ -161,6 +162,10 @@ export function Inbox(
     useLoad(() => inbox.list(p.entity.id), [...deps, proposalRevision], { enabled }),
   );
   const sources = useSettled(useLoad(() => inbox.sources(p.entity.id), deps, { enabled }));
+  useEffect(() => {
+    if (enabled && items.kind === "ready" && (sources.kind === "ready" || sources.kind === "empty"))
+      inboxRowsCommitted();
+  }, [enabled, items.kind, sources.kind]);
   const plans = useSettled(
     useLoad(() => monthly.plans(p.entity.id), deps, { enabled, share: "plans" }),
   );
@@ -1945,6 +1950,14 @@ export function Inbox(
               tabIndex={-1}
               aria-label={`${view} items`}
               aria-activedescendant={current ? `ix-${current.id}` : undefined}
+              onKeyDown={undefined}
+              onClick={(event) => {
+                if (!(event.target instanceof Element)) return;
+                const id = event.target.closest<HTMLElement>("[data-id]")?.dataset.id;
+                if (!id) return;
+                if (event.target.closest('[role="checkbox"]')) toggle(id, event.shiftKey);
+                else setCur(id);
+              }}
             >
               {shown.length === 0 && (
                 <div className="ix-empty">
@@ -2015,8 +2028,6 @@ export function Inbox(
                       false
                     }
                     inWaiting={view === "waiting"}
-                    onClick={() => setCur(row.it.id)}
-                    onCheck={(range) => toggle(row.it.id, range)}
                   />
                 ),
               )}
@@ -2252,7 +2263,7 @@ export function Inbox(
   );
 }
 
-function ItemRow({
+const ItemRow = memo(function ItemRow({
   it,
   c,
   choices,
@@ -2261,8 +2272,6 @@ function ItemRow({
   hint,
   undoable,
   inWaiting,
-  onClick,
-  onCheck,
 }: {
   it: StagedTransaction;
   c: Completion;
@@ -2272,8 +2281,6 @@ function ItemRow({
   hint?: string;
   undoable: boolean;
   inWaiting: boolean;
-  onClick: () => void;
-  onCheck: (range: boolean) => void;
 }) {
   const s = summary(it, c, choices);
   const kid = Boolean(it.parent_ref) && inWaiting;
@@ -2285,10 +2292,8 @@ function ItemRow({
       id={`ix-${it.id}`}
       tabIndex={-1}
       className={`ix-row it${current ? " cur" : ""}${kid ? " kid" : ""}`}
-      onKeyDown={undefined}
       aria-selected={current}
       data-id={it.id}
-      onClick={onClick}
     >
       {it.status === "waiting" && inWaiting && (
         <button
@@ -2301,10 +2306,6 @@ function ItemRow({
           aria-label={`Select ${it.payee}, ${signed(it)}`}
           // Keep focus off the box, so Enter still records instead of pressing it again.
           onMouseDown={(e) => e.preventDefault()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onCheck(e.shiftKey);
-          }}
         >
           <span className={`ix-chk${checked ? " on" : ""}`} aria-hidden="true">
             {checked ? "✓" : ""}
@@ -2361,7 +2362,7 @@ function ItemRow({
       <div className={`a${isInflow(it) ? " good" : ""}`}>{signed(it)}</div>
     </div>
   );
-}
+});
 
 /** Flow mode's card: the item, the agent's proposal and why, and the flow's keys. */
 function PairNotice({ it, press }: { it: StagedTransaction; press: (key: string) => void }) {

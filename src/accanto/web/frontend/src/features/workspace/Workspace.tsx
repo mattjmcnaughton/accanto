@@ -2,6 +2,7 @@ import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type BrowserSession, readSession } from "../../lib/api";
 import { addMonths, daysInMonth, fmtMonth } from "../../lib/format";
+import { observeScreen } from "../../lib/screenTiming";
 import type { WriteSpec } from "../../lib/monthly";
 import {
   RecoverableWrite,
@@ -150,6 +151,9 @@ export function Workspace({
   const target = requested ?? local.screen;
   const targetMonth = (navigate ? requestedMonth : local.month) ?? thisMonth;
   const [screen, setScreen] = useState<Screen>(target);
+  useEffect(() => {
+    if (session.screen_timing) return observeScreen(screen, session.csrf_token);
+  }, [screen, session.screen_timing, session.csrf_token]);
   const [month, setMonth] = useState(targetMonth);
   // A one-shot request for Activity's entry dialog, from Add activity or the N key.
   const [add, setAdd] = useState(0);

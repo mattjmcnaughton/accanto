@@ -81,9 +81,11 @@ export const isInflow = (it: StagedTransaction) => cents(it) > 0;
 export const isReadyToAssign = (it: StagedTransaction) =>
   /ready to assign/i.test(it.source_category?.name ?? "");
 
+const noProposal: Completion = Object.freeze({});
+
 /** The local edit if there is one, otherwise the stored proposal. */
 export function effective(it: StagedTransaction, draft?: Completion): Completion {
-  return draft ?? it.proposal ?? {};
+  return draft ?? it.proposal ?? noProposal;
 }
 
 /** Why Enter cannot record this completion yet, mirroring the server's record command. */
