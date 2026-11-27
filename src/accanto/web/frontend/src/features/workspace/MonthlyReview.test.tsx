@@ -254,7 +254,7 @@ it("shows unknown rather than zero, retaining incomplete recorded income", async
           actual: { ...review.actual, income_recorded: "0.00" },
         }),
   );
-  render(<MonthlyReview {...props()} />);
+  render(<MonthlyReview {...props()} month="2026-10" />);
   const income = await screen.findByRole("region", { name: "Net income" });
   expect(income.textContent).toContain("$0.00");
   expect(within(income).getByLabelText("Not complete")).toBeDefined();
@@ -266,6 +266,56 @@ it("shows unknown rather than zero, retaining incomplete recorded income", async
     2,
   );
   expect(screen.getByText("Destination comparison for this older version: Unknown")).toBeDefined();
+});
+it("folds lines with no entry as still to come until the month ends", async () => {
+  const sources = {
+    ...version,
+    income: "4500.00",
+    incomes: [...version.incomes, { source_id: "side", name: "Side work", amount: "500.00" }],
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/plans")
+      ? json(plans)
+      : json({
+          ...review,
+          version: sources,
+          actual: { ...review.actual, missing_sources: ["source", "side"] },
+        }),
+  );
+  const p = props();
+  // Today is 2026-11-10: November is running, so its lines are still to come.
+  const running = render(<MonthlyReview {...p} />);
+  let income = await screen.findByRole("region", { name: "Net income" });
+  expect(screen.getByText(/sections are complete, with 3 lines still to come\.$/)).toBeDefined();
+  expect(within(income).getByLabelText("Still to come")).toBeDefined();
+  expect(income.textContent).toContain("2 still to come, $4,500.00 planned: Salary, Side work.");
+  expect(income.textContent).not.toContain("Unknown is not treated as $0.00");
+  // Still unknown, never $0.00.
+  expect(within(income).getByText("Unknown")).toBeDefined();
+  expect(within(income).queryByRole("button", { name: "Record $500.00" })).toBeNull();
+  fireEvent.click(within(income).getByRole("button", { name: "Choose each" }));
+  fireEvent.click(within(income).getByRole("button", { name: "Record $500.00" }));
+  expect(p.save).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      body: expect.objectContaining({ source_id: "side", amount: "500.00", date: "2026-11-10" }),
+    }),
+    expect.any(Function),
+  );
+  running.unmount();
+  // October has ended: the same lines warn and each asks its question.
+  const ended = render(<MonthlyReview {...p} month="2026-10" />);
+  income = await screen.findByRole("region", { name: "Net income" });
+  expect(screen.getByText(/sections are complete, with 3 unknown amounts\.$/)).toBeDefined();
+  expect(within(income).getByLabelText("Not complete")).toBeDefined();
+  expect(income.textContent).toContain(
+    "2 with no entry, $4,500.00 planned: Salary, Side work. Unknown is not treated as $0.00.",
+  );
+  expect(within(income).getByRole("button", { name: "Record $500.00" })).toBeDefined();
+  ended.unmount();
+  // A month that has not started is not overdue either.
+  render(<MonthlyReview {...p} month="2026-12" />);
+  income = await screen.findByRole("region", { name: "Net income" });
+  expect(within(income).getByLabelText("Still to come")).toBeDefined();
 });
 it("shows saved destination expectations and category differences in Review", async () => {
   const planned = {
