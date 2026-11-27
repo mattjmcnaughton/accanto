@@ -220,7 +220,7 @@ def test_agent_journey(tmp_path):
         if recording:
             browser("record", "start", recording)
         browser("open", origin)
-        browser("wait", "a[href='/api/auth/login']")
+        browser("wait", "a[href^='/api/auth/login']")
         browser("find", "role", "link", "click", "--name", "Sign in", "--exact")
         until(f"document.querySelector('.side-user span')?.textContent === {ENTITY!r}")
 

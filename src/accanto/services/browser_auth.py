@@ -4,13 +4,25 @@ import hashlib
 import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 from sqlalchemy import delete, insert, select, update
+from sqlalchemy.dialects.postgresql import insert as upsert
 
 from accanto.db import read_snapshot
-from accanto.domains.entity import entity_today
+from accanto.domains.entity import entity_settings, entity_today, valid_time_zone
 from accanto.models import monthly as m
-from accanto.services.access import RejectionError, issue_session, revalidate_actor
+from accanto.services.access import (
+    RejectionError,
+    issue_session,
+    lock_user,
+    revalidate_actor,
+)
+from accanto.services.monthly import json_values
+
+# The Entity a User gets when they own none: on their first sign-in, or when they
+# were provisioned without one and so far only see Entities shared with them.
+FIRST_ENTITY_NAME = "Personal"
 
 
 def digest(value):
@@ -69,7 +81,20 @@ async def consume_login(session, state, binding):
     return row
 
 
-async def admit_identity(session, claims, config):
+def sign_in_time_zone(value):
+    """The browser's zone for a first Entity, or UTC when it sent none or a bad one."""
+    try:
+        return valid_time_zone(value)
+    except ValueError:
+        return "UTC"
+
+
+async def admit_identity(session, claims, config, time_zone="UTC"):
+    """Admit an allowlisted, verified email and make sure its User owns an Entity.
+
+    The first sign-in creates the User for this exact (issuer, subject); a
+    matching email never links a new subject to an existing User.
+    """
     if (
         claims.get("iss") != config.oidc_issuer
         or claims.get("email_verified") is not True
@@ -79,24 +104,67 @@ async def admit_identity(session, claims, config):
             "identity_not_admitted", "This identity is not admitted.", 403
         )
     async with session.begin():
+        # Two first sign-ins at once create one User: the loser finds the winner's.
+        await session.execute(
+            upsert(m.users)
+            .values(issuer=config.oidc_issuer, subject=claims["sub"])
+            .on_conflict_do_nothing(index_elements=["issuer", "subject"])
+        )
         user = await session.scalar(
             select(m.users.c.id).where(
                 m.users.c.issuer == config.oidc_issuer,
                 m.users.c.subject == claims["sub"],
             )
         )
-        if user is None:
-            raise RejectionError(
-                "identity_setup_required",
-                "An operator must provision this identity before sign-in.",
-                403,
-            )
         # Kept so an Entity owner can add this User by email (TDD 19). Only an
         # admitted, verified email is stored, and it never links identities.
         await session.execute(
             update(m.users).where(m.users.c.id == user).values(email=claims["email"])
         )
-        return await issue_session(session, user)
+        issued = await issue_session(session, user)
+        await ensure_own_entity(session, user, issued["id"], time_zone)
+        return issued
+
+
+async def ensure_own_entity(session, user_id, session_uuid, time_zone):
+    """Create Entity "Personal" for a User who owns none, audited like Create Entity.
+
+    Entities shared with the User do not count. The User row lock keeps two
+    concurrent sign-ins from creating two. The caller owns the transaction.
+    """
+    await lock_user(session, user_id)
+    if await session.scalar(
+        select(m.entities.c.id).where(m.entities.c.owner_id == user_id).limit(1)
+    ):
+        return
+    record = (
+        (
+            await session.execute(
+                insert(m.entities)
+                .values(
+                    owner_id=user_id,
+                    **entity_settings(FIRST_ENTITY_NAME, sign_in_time_zone(time_zone)),
+                )
+                .returning(m.entities)
+            )
+        )
+        .mappings()
+        .one()
+    )
+    await session.execute(
+        insert(m.audit).values(
+            entity_id=record["id"],
+            actor_id=user_id,
+            session_uuid=session_uuid,
+            interface="browser",
+            operation_uuid=uuid4(),
+            record_type=m.entities.name,
+            record_uuid=record["uuid"],
+            action="create_entity",
+            before=None,
+            after=json_values(dict(record)),
+        )
+    )
 
 
 async def account_metadata(session, actor):

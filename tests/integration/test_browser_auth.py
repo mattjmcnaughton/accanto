@@ -100,8 +100,10 @@ async def scenario():
         transport=httpx.ASGITransport(app=app), base_url=provider.origin
     ) as browser:
 
-        async def start():
-            response = await browser.get("/api/auth/login")
+        async def start(zone=None):
+            response = await browser.get(
+                "/api/auth/login", params={"tz": zone} if zone else None
+            )
             assert response.status_code == 302, response.text
             assert response.headers["cache-control"] == "no-store"
             assert "Secure" in response.headers["set-cookie"]
@@ -110,9 +112,9 @@ async def scenario():
             )
             return auth.headers["location"]
 
-        async def sign_in(overrides=None):
+        async def sign_in(overrides=None, zone=None):
             provider.claim_overrides = overrides or {}
-            callback = await start()
+            callback = await start(zone)
             response = await browser.get(callback)
             return response, callback
 
@@ -219,14 +221,87 @@ async def scenario():
             ({"iss": "https://other.test"}, 401),
             ({"aud": "other-client"}, 401),
             ({"exp": int(datetime.now(UTC).timestamp()) - 1}, 401),
-            ({"email_verified": False}, 403),
-            ({"email_verified": "true"}, 403),
-            ({"email": "unadmitted@example.test"}, 403),
-            ({"sub": "another-user"}, 403),
+            ({"email_verified": False}, 303),
+            ({"email_verified": "true"}, 303),
+            ({"email": "unadmitted@example.test"}, 303),
         ]:
             response, _ = await sign_in(claims)
             assert response.status_code == status, (claims, response.text)
+            if status == 303:
+                # A refused person returns to the sign-in page with a reason.
+                assert response.headers["location"] == "/?refused=not_invited"
             assert "accanto_session" not in browser.cookies
+
+        async def owned(subject):
+            async with sessions() as db:
+                return (
+                    await db.execute(
+                        select(m.entities.c.name, m.entities.c.time_zone)
+                        .join(m.users, m.users.c.id == m.entities.c.owner_id)
+                        .where(
+                            m.users.c.issuer == provider.issuer,
+                            m.users.c.subject == subject,
+                        )
+                    )
+                ).all()
+
+        # The owner who already has an Entity gets no second one on sign-in.
+        response, _ = await sign_in()
+        assert response.status_code == 303
+        assert await owned("synthetic-user") == [
+            ("Synthetic Entity", "Pacific/Kiritimati")
+        ]
+        browser.cookies.clear()
+
+        # A first sign-in by an admitted email creates its own User and its own
+        # Entity in the browser's zone; email never links it to the existing User.
+        response, _ = await sign_in({"sub": "newcomer"}, zone="America/Chicago")
+        assert response.status_code == 303 and response.headers["location"] == "/"
+        newcomer = (await browser.get("/api/auth/session")).json()
+        assert newcomer["user"]["id"] != str(user["uuid"])
+        assert [
+            (e["name"], e["time_zone"], e["role"]) for e in newcomer["entities"]
+        ] == [("Personal", "America/Chicago", "owner")]
+        async with sessions() as db:
+            audited = await db.scalar(
+                select(func.count())
+                .select_from(m.audit)
+                .join(m.entities, m.entities.c.id == m.audit.c.entity_id)
+                .join(m.users, m.users.c.id == m.entities.c.owner_id)
+                .where(
+                    m.users.c.issuer == provider.issuer,
+                    m.users.c.subject == "newcomer",
+                    m.audit.c.action == "create_entity",
+                )
+            )
+        assert audited == 1
+        browser.cookies.clear()
+        # Signing in again creates nothing more.
+        await sign_in({"sub": "newcomer"})
+        assert len(await owned("newcomer")) == 1
+        browser.cookies.clear()
+
+        # Provisioned without an Entity and sharing another User's (TDD 19): the
+        # next sign-in gives them their own as well, and keeps the shared one.
+        async with sessions() as db, db.begin():
+            member = await db.scalar(
+                insert(m.users)
+                .values(issuer=provider.issuer, subject="member-only")
+                .returning(m.users.c.id)
+            )
+            await db.execute(
+                insert(m.members).values(
+                    entity_id=entity["id"], user_id=member, name="Member"
+                )
+            )
+        response, _ = await sign_in({"sub": "member-only"}, zone="Bad/Zone")
+        assert response.status_code == 303
+        shared = (await browser.get("/api/auth/session")).json()["entities"]
+        assert sorted((e["name"], e["time_zone"], e["role"]) for e in shared) == [
+            ("Personal", "UTC", "owner"),
+            ("Synthetic Entity", "Pacific/Kiritimati", "member"),
+        ]
+        browser.cookies.clear()
 
         # A login transaction expires independently of the provider's code/token.
         provider.claim_overrides = {}

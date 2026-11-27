@@ -391,7 +391,7 @@ def test_signed_in_workspace(tmp_path):
         wait_ready(origin + "/readyz", processes[1])
         browser("open", origin)
         # The session request completes after navigation; find does not wait.
-        browser("wait", "a[href='/api/auth/login']")
+        browser("wait", "a[href^='/api/auth/login']")
         browser("find", "role", "link", "click", "--name", "Sign in", "--exact")
         signed_in()
         assert "Sign out" in browser("snapshot", "-i")
