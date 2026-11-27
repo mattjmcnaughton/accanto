@@ -690,7 +690,7 @@ export function Plans(
                 { name: "Savings accounts and goals", state: accounts },
                 { name: "Investments", state: investments },
                 { name: "Giving recipients", state: giving },
-                { name: "Loan accounts", state: loans },
+                { name: "Debt accounts", state: loans },
                 { name: "Spending subcategories", state: subcategories },
               ].map((item) =>
                 // While loading, the worksheet marks these references unknown; only a failure

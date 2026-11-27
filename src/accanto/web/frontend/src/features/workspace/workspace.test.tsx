@@ -248,7 +248,7 @@ it("gives the phone tabs to daily screens and groups the rest in More", async ()
     "Projections",
     "Savings",
     "Investments",
-    "Loans",
+    "Debts",
     "Giving",
     "Routines",
     "Schedules",

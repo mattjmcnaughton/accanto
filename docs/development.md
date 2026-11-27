@@ -48,10 +48,11 @@ tab memory until the server confirms it; stale conflicts require explicit
 reconciliation. Session recovery opens a separate sign-in window and verifies the
 same User through `/api/auth/session` before retrying with fresh CSRF. This memory
 is cleared on explicit logout and does not survive closing or reloading the tab.
-The workspace shell has a sidebar grouped by job (This month: Home, Activity,
-Transactions inbox, Review, Routines, Schedules; Planning: Plans, Projections;
-Balances: Savings, Investments, Giving, Loans; then Settings) and, below 760 px,
-the tabs Home, Inbox, Assistant, Activity and More, which lists the rest. Every
+The workspace shell has a sidebar grouped by job (This month: Home, Transactions
+inbox, Activity, Review; Planning: Plans, Projections; Balances: Savings,
+Investments, Debts, Giving; Recurring: Routines, Schedules; then Settings) and,
+below 760 px, the tabs Home, Inbox, Assistant, Activity and More, which lists the
+rest in the same groups. Every
 screen has its own hash address, such as `#/giving`. Home, Activity and Review share
 the month chosen in the top bar, kept in the address as `?m=YYYY-MM` when it is not
 the Entity's current month. With several Entities the address also carries

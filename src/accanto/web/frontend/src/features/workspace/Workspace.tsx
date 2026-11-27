@@ -83,7 +83,7 @@ const NAV: { group: string; items: [Screen, string][] }[] = [
     items: [
       ["savings", "Savings"],
       ["investments", "Investments"],
-      ["loans", "Loans"],
+      ["loans", "Debts"],
       ["giving", "Giving"],
     ],
   },

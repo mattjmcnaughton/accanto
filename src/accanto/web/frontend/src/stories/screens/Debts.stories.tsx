@@ -4,7 +4,7 @@ import { mockApi, screenArgs, stateStory } from "../mocks/api";
 import { loans } from "../mocks/fixtures";
 
 const meta = {
-  title: "Screens/Loans",
+  title: "Screens/Debts",
   component: Balances,
   args: screenArgs(),
 } satisfies Meta<typeof Balances>;

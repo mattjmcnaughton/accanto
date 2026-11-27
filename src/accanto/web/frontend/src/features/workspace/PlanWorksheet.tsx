@@ -1033,7 +1033,7 @@ export function PlanWorksheet({
                                   <span className="nm">{row.line?.name}</span>
                                   {row.line?.link && (
                                     <span className="chip">
-                                      Pays {loanName(row.line.link) ?? "a loan"}
+                                      Pays {loanName(row.line.link) ?? "a debt"}
                                     </span>
                                   )}
                                   {needsRevision(row.line) && (
@@ -1290,7 +1290,7 @@ export function PlanWorksheet({
                         </select>
                       </div>
                       <div className="field">
-                        <label htmlFor="detail-loan">Linked loan</label>
+                        <label htmlFor="detail-loan">Linked debt</label>
                         <select
                           id="detail-loan"
                           value={selectedLine.link || ""}
@@ -1304,7 +1304,7 @@ export function PlanWorksheet({
                               <option value={selectedLine.link}>
                                 {snapshot?.fixed_costs.find(
                                   (line) => line.fixed_cost_id === selectedLine.reference,
-                                )?.debt_account_name ?? "Unavailable loan"}
+                                )?.debt_account_name ?? "Unavailable debt"}
                               </option>
                             )}
                           {loans

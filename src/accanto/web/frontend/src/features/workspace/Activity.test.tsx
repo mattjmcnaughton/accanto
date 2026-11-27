@@ -215,7 +215,7 @@ it("shows both the destination and savings origin for funded outflows", async ()
   render(<ActivityScreen {...props()} />);
   const row = (text: string) => screen.getByText(text).closest('[role="row"]');
   await waitFor(() => {
-    expect(row("Synthetic service")?.textContent).toContain("Loan: Synthetic loan");
+    expect(row("Synthetic service")?.textContent).toContain("Debt: Synthetic loan");
     expect(row("Synthetic service")?.textContent).toContain("from Synthetic cash · Reserve");
   });
   await screen.findByText("Example recipient");

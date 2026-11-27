@@ -81,7 +81,7 @@ const LOOKS_AT: Record<string, string> = {
   list_tags: "your tags",
   list_savings: "savings goals",
   list_destinations: "investments and giving",
-  list_debts: "loans",
+  list_debts: "debts",
   list_investment_observations: "investment balances",
   list_routines: "your routines",
   get_routine_occurrence: "a routine",

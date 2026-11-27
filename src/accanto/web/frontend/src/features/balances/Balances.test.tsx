@@ -200,7 +200,7 @@ it("shows each loan's payment history apart from dated observations", async () =
   mock();
   render(<Balances {...props} />);
   await show("Table");
-  const table = await screen.findByRole("grid", { name: "Loans" });
+  const table = await screen.findByRole("grid", { name: "Debts" });
   const loanB = within(table).getByText("Example loan B").closest("tr") as HTMLElement;
   expect(within(loanB).getByText("Active")).toBeDefined();
   expect(within(loanB).getAllByText("$500.00")).toHaveLength(2);
@@ -215,11 +215,11 @@ it("archives only at zero owed and asks first", async () => {
   mock();
   render(<Balances {...props} />);
   await show("Table");
-  const table = await screen.findByRole("grid", { name: "Loans" });
+  const table = await screen.findByRole("grid", { name: "Debts" });
   fireEvent.click(within(table).getByRole("button", { name: "Details for Example loan B" }));
-  expect(screen.getByRole("button", { name: "Archive loan" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Archive debt" })).toBeDisabled();
   fireEvent.click(within(table).getByRole("button", { name: "Details for Example loan A" }));
-  expect(screen.getByRole("button", { name: "Reopen loan" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Reopen debt" })).toBeEnabled();
 
   const zero = { ...loans[1], latest: { ...loans[1].latest, amount: "0.00", is_opening: false } };
   cleanup();
@@ -227,13 +227,13 @@ it("archives only at zero owed and asks first", async () => {
   const save = vi.fn();
   render(<Balances {...props} save={save} />);
   await show("Table");
-  const again = await screen.findByRole("grid", { name: "Loans" });
+  const again = await screen.findByRole("grid", { name: "Debts" });
   fireEvent.click(within(again).getByRole("button", { name: "Details for Example loan B" }));
-  fireEvent.click(screen.getByRole("button", { name: "Archive loan" }));
+  fireEvent.click(screen.getByRole("button", { name: "Archive debt" }));
   expect(save).not.toHaveBeenCalled();
   fireEvent.click(
     within(screen.getByRole("dialog", { name: "Archive Example loan B?" })).getByRole("button", {
-      name: "Archive loan",
+      name: "Archive debt",
     }),
   );
   expect(save).toHaveBeenCalledWith(
@@ -249,18 +249,18 @@ it("archives only at zero owed and asks first", async () => {
 it("names the debt account beside a fixed-cost payment in Activity", async () => {
   mock();
   render(<ActivityScreen {...props} />);
-  expect(await screen.findByText("Loan: Example loan A")).toBeDefined();
-  expect(screen.getByText("Loan: Example loan B")).toBeDefined();
-  expect(screen.queryByText("Loan: Ordinary cost")).toBeNull();
+  expect(await screen.findByText("Debt: Example loan A")).toBeDefined();
+  expect(screen.getByText("Debt: Example loan B")).toBeDefined();
+  expect(screen.queryByText("Debt: Ordinary cost")).toBeNull();
 });
 
 it("closes an untouched new record panel with Close and with Escape", async () => {
   mock();
   render(<Balances {...props} />);
   await show("Table");
-  await screen.findByRole("grid", { name: "Loans" });
-  fireEvent.click(screen.getByRole("button", { name: "Add loan" }));
-  const panel = await screen.findByRole("dialog", { name: "Add loan" });
+  await screen.findByRole("grid", { name: "Debts" });
+  fireEvent.click(screen.getByRole("button", { name: "Add debt" }));
+  const panel = await screen.findByRole("dialog", { name: "Add debt" });
   fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByText("Enter a name.")).toBeNull();
@@ -268,15 +268,15 @@ it("closes an untouched new record panel with Close and with Escape", async () =
   const observation = await screen.findByRole("dialog", { name: "Record amount owed" });
   fireEvent.keyDown(within(observation).getByLabelText("Observation date"), { key: "Escape" });
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(screen.queryByText("Choose a loan.")).toBeNull();
+  expect(screen.queryByText("Choose a debt.")).toBeNull();
 });
 
 it("keeps an invalid edited panel open on Escape and shows the problem", async () => {
   mock();
   render(<Balances {...props} />);
   await show("Table");
-  await screen.findByRole("grid", { name: "Loans" });
-  fireEvent.click(screen.getByRole("button", { name: "Add loan" }));
+  await screen.findByRole("grid", { name: "Debts" });
+  fireEvent.click(screen.getByRole("button", { name: "Add debt" }));
   const panel = await screen.findByRole("dialog");
   fireEvent.change(within(panel).getByLabelText("Name"), { target: { value: "  " } });
   fireEvent.keyDown(within(panel).getByLabelText("Name"), { key: "Escape" });
@@ -288,10 +288,10 @@ it("retains a valid observation edit on Escape and writes only on Ctrl+S, trimme
   const save = vi.fn();
   render(<Balances {...props} save={save} />);
   await show("Table");
-  await screen.findByRole("grid", { name: "Loans" });
+  await screen.findByRole("grid", { name: "Debts" });
   fireEvent.click(screen.getByRole("button", { name: "Record observation" }));
   const panel = await screen.findByRole("dialog");
-  fireEvent.change(within(panel).getByLabelText("Loan"), { target: { value: "loan-b" } });
+  fireEvent.change(within(panel).getByLabelText("Debt"), { target: { value: "loan-b" } });
   fireEvent.change(within(panel).getByLabelText("Observation date"), {
     target: { value: "2026-10-03" },
   });
@@ -348,23 +348,23 @@ it("adds a loan with optional fixed-rate terms, refusing an out-of-range rate", 
   const save = vi.fn();
   render(<Balances {...props} save={save} />);
   await show("Table");
-  await screen.findByRole("grid", { name: "Loans" });
-  fireEvent.click(screen.getByRole("button", { name: "Add loan" }));
-  const panel = await screen.findByRole("dialog", { name: "Add loan" });
+  await screen.findByRole("grid", { name: "Debts" });
+  fireEvent.click(screen.getByRole("button", { name: "Add debt" }));
+  const panel = await screen.findByRole("dialog", { name: "Add debt" });
   fireEvent.change(within(panel).getByLabelText("Name"), { target: { value: "Example loan C" } });
   fireEvent.change(within(panel).getByLabelText(/Opening amount owed/), {
     target: { value: "1200" },
   });
   const rate = within(panel).getByLabelText(/Fixed interest rate/);
   fireEvent.change(rate, { target: { value: "40.5" } });
-  fireEvent.click(within(panel).getByRole("button", { name: "Save loan" }));
+  fireEvent.click(within(panel).getByRole("button", { name: "Save debt" }));
   expect(save).not.toHaveBeenCalled();
   expect(within(panel).getByRole("alert").textContent).toMatch(/from 0 to 40/);
   fireEvent.change(rate, { target: { value: " 6.5 " } });
   fireEvent.change(within(panel).getByLabelText(/Monthly payment/), {
     target: { value: "110" },
   });
-  fireEvent.click(within(panel).getByRole("button", { name: "Save loan" }));
+  fireEvent.click(within(panel).getByRole("button", { name: "Save debt" }));
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
       method: "POST",
@@ -394,11 +394,11 @@ it("shows the payoff on each card and flags a payment under the interest", async
   expect(await screen.findByText("Paid off January 2027, $9.13 interest left")).toBeDefined();
   expect(
     screen.getByText(
-      "The $5.00 payment does not cover $5.00 monthly interest, so this loan never pays down.",
+      "The $5.00 payment does not cover $5.00 monthly interest, so this debt never pays down.",
     ),
   ).toBeDefined();
   await show("Table");
-  const grid = await screen.findByRole("grid", { name: "Loans" });
+  const grid = await screen.findByRole("grid", { name: "Debts" });
   const row = within(grid).getByText("Example loan C").closest("tr") as HTMLElement;
   expect(within(row).getByText("Payment under interest")).toBeDefined();
 });
@@ -408,7 +408,7 @@ it("shows the schedule in details and saves terms and a moved opening date", asy
   const save = vi.fn();
   render(<Balances {...props} save={save} />);
   await show("Table");
-  const grid = await screen.findByRole("grid", { name: "Loans" });
+  const grid = await screen.findByRole("grid", { name: "Debts" });
   fireEvent.click(within(grid).getByRole("button", { name: "Details for Example loan B" }));
   const rows = await screen.findByRole("table", {
     name: "Payoff schedule rows for Example loan B",
@@ -440,7 +440,7 @@ it("shows the schedule in details and saves terms and a moved opening date", asy
   fireEvent.change(within(terms).getByLabelText("Opening date"), {
     target: { value: "2023-10-01" },
   });
-  fireEvent.click(within(terms).getByRole("button", { name: "Save loan" }));
+  fireEvent.click(within(terms).getByRole("button", { name: "Save debt" }));
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
       method: "PUT",
@@ -465,11 +465,11 @@ it("shows cards or the table, never both, and remembers the choice on reload", a
   await screen.findByRole("button", { name: "Example loan B details" });
   expect(screen.queryByRole("grid")).toBeNull();
   await show("Table");
-  expect(await screen.findByRole("grid", { name: "Loans" })).toBeDefined();
+  expect(await screen.findByRole("grid", { name: "Debts" })).toBeDefined();
   expect(screen.queryByRole("button", { name: "Example loan B details" })).toBeNull();
   cleanup();
   render(<Balances {...props} />);
-  expect(await screen.findByRole("grid", { name: "Loans" })).toBeDefined();
+  expect(await screen.findByRole("grid", { name: "Debts" })).toBeDefined();
   expect(screen.queryByRole("button", { name: "Example loan B details" })).toBeNull();
   await show("Cards");
   await screen.findByRole("button", { name: "Example loan B details" });
