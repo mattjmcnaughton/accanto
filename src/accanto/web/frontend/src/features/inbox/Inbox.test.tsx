@@ -916,3 +916,174 @@ it("says waiting items are hidden by the search or the proposals filter instead 
   ).toBeDefined();
   expect(zeroCard()).toBeNull();
 });
+
+const inboxScreen = () =>
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+    />,
+  );
+const type = (text: string) => {
+  for (const key of text) fireEvent.keyDown(document.body, { key });
+};
+
+it("creates a subcategory from the picker by name, keeping its case, then records with it", async () => {
+  const writes: Array<{ path: string; method: string; body: unknown; key: string | null }> = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (init?.method) {
+      writes.push({
+        path: url,
+        method: init.method,
+        body: JSON.parse(String(init.body)),
+        key: new Headers(init.headers).get("Idempotency-Key"),
+      });
+      if (url.endsWith("/spending-subcategories"))
+        return new Response(
+          JSON.stringify({ uuid: "sub-new", name: "Pet supplies", active: true, revision: 1 }),
+        );
+      return new Response(JSON.stringify({ item: {}, entry: {} }));
+    }
+    if (url.endsWith("/inbox")) return new Response(JSON.stringify([item({})]));
+    if (url.endsWith("/spending-subcategories"))
+      return new Response(
+        JSON.stringify([
+          { uuid: "sub-old", name: "Old hobby", active: false, revision: 2, entries: 4 },
+          ...(writes.length
+            ? [{ uuid: "sub-new", name: "Pet supplies", active: true, revision: 1, entries: 0 }]
+            : []),
+        ]),
+      );
+    return new Response("[]");
+  });
+  inboxScreen();
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  fireEvent.keyDown(document.body, { key: "3" });
+  fireEvent.keyDown(document.body, { key: "a" });
+  await screen.findByText(/Subcategory for Example Coffee Cart/);
+  // An archived subcategory keeps its name, so it is not offered as a new one.
+  type("OLD HOBBY");
+  expect(screen.queryByText(/^Create/)).toBeNull();
+  for (const _ of "OLD HOBBY") fireEvent.keyDown(document.body, { key: "Backspace" });
+  type("Pet supplies");
+  expect(screen.getByText("Create “Pet supplies”")).toBeDefined();
+  expect(writes).toEqual([]);
+  fireEvent.keyDown(document.body, { key: "Enter" });
+  expect(await screen.findByText("Pet supplies", { selector: ".fv" })).toBeDefined();
+  expect(writes).toEqual([
+    {
+      path: "/api/entities/e/spending-subcategories",
+      method: "POST",
+      body: { name: "Pet supplies" },
+      key: expect.stringMatching(/.+/),
+    },
+  ]);
+  fireEvent.keyDown(document.body, { key: "Enter" });
+  await waitFor(() => expect(writes).toHaveLength(2));
+  expect(writes[1].body).toMatchObject({
+    completion: { category: "spending", assignment: "sub-new", funding: "income" },
+  });
+});
+
+it("creates a fixed cost as a new line in a Plan's draft, keeping the draft's other lines", async () => {
+  const rent = {
+    fixed_cost_id: "fc-rent",
+    debt_account_id: null,
+    name: "Example rent",
+    canonical_name: "Example rent",
+    amount: "1000.00",
+    frequency: "monthly" as const,
+    monthly_amount: "1000.00",
+  };
+  const revision = {
+    uuid: "draft-1",
+    name: "Baseline",
+    number: 2,
+    revision: 7,
+    saved: false,
+    saved_at: null,
+    updated_at: "2026-11-19 10:00:00+00:00",
+    rule_version: "monthly-allocation-2",
+    incomes: [{ source_id: "src", name: "Salary", amount: "4000.00" }],
+    fixed_costs: [rent],
+    income: "4000.00",
+    spending: "800.00",
+    fixed_cost_total: "1000.00",
+    tithe_target: "400.00",
+    unassigned: "2200.00",
+  };
+  const writes: Array<{ path: string; method: string; body: Record<string, unknown> }> = [];
+  const saved = {
+    ...revision,
+    revision: 8,
+    fixed_costs: [rent, { ...rent, fixed_cost_id: "fc-gym", name: "Gym", canonical_name: "Gym" }],
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (init?.method) {
+      writes.push({ path: url, method: init.method, body: JSON.parse(String(init.body)) });
+      if (url.endsWith("/draft"))
+        return new Response(JSON.stringify({ plan_id: "plan-1", draft: saved }));
+      return new Response(JSON.stringify({ item: {}, entry: {} }));
+    }
+    if (url.endsWith("/inbox")) return new Response(JSON.stringify([item({})]));
+    if (url.endsWith("/plans"))
+      return new Response(
+        JSON.stringify([
+          {
+            plan_id: "plan-1",
+            revisions: [
+              { ...revision, uuid: "v1", number: 1, saved: true },
+              writes.length ? saved : revision,
+            ],
+          },
+        ]),
+      );
+    return new Response("[]");
+  });
+  inboxScreen();
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  fireEvent.keyDown(document.body, { key: "2" });
+  await screen.findByText(/Fixed cost for Example Coffee Cart/);
+  type("Gym");
+  fireEvent.keyDown(document.body, { key: "Enter" });
+  // A planned amount comes first; nothing is sent yet.
+  const amount = await screen.findByLabelText("Planned amount (USD)");
+  expect(writes).toEqual([]);
+  fireEvent.change(amount, { target: { value: "30.00" } });
+  fireEvent.change(screen.getByLabelText("Frequency"), { target: { value: "Annual" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create and choose" }));
+  expect(await screen.findByText("Gym", { selector: ".fv" })).toBeDefined();
+  expect(writes).toHaveLength(1);
+  expect(writes[0].method).toBe("PUT");
+  expect(writes[0].path).toBe("/api/entities/e/plans/plan-1/draft");
+  expect(writes[0].body).toMatchObject({
+    name: "Baseline",
+    expected_revision: 7,
+    incomes: [{ source_id: "src", name: "Salary", amount: "4000.00" }],
+    spending: "800.00",
+    fixed_costs: [
+      {
+        fixed_cost_id: "fc-rent",
+        name: "Example rent",
+        amount: "1000.00",
+        frequency: "monthly",
+      },
+      { name: "Gym", amount: "30.00", frequency: "annual", debt_account_id: null },
+    ],
+  });
+  expect(writes[0].body.fixed_costs).toHaveLength(2);
+  expect((writes[0].body.fixed_costs as object[])[1]).not.toHaveProperty("fixed_cost_id");
+  fireEvent.keyDown(document.body, { key: "Enter" });
+  await waitFor(() => expect(writes).toHaveLength(2));
+  expect(writes[1].body).toMatchObject({
+    completion: { category: "fixed_cost", assignment: "fc-gym" },
+  });
+});

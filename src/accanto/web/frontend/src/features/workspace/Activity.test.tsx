@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PlanRevision } from "../../lib/monthly";
 import { ActivityScreen } from "./Activity";
@@ -66,8 +66,10 @@ it("records a payment assigned to a saved cost removed from the current draft", 
   render(<ActivityScreen {...props()} save={save} />);
   fireEvent.click(await screen.findByRole("button", { name: "Record activity" }));
   fireEvent.change(screen.getByLabelText("Category"), { target: { value: "fixed_cost" } });
-  await screen.findByRole("option", { name: "Synthetic subscription" });
-  fireEvent.change(screen.getByLabelText("Fixed cost"), { target: { value: "fixed-a" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Fixed cost" }), {
+    target: { value: "subscription" },
+  });
+  fireEvent.click(await screen.findByRole("option", { name: "Synthetic subscription" }));
   fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "12.00" } });
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Record" }));
   expect(save).toHaveBeenCalledWith(
@@ -413,8 +415,9 @@ it("shows tags, filters by one, and saves a contribution's tags label-only", asy
   expect(screen.queryByText("Synthetic dinner")).toBeNull();
   fireEvent.click(screen.getByRole("gridcell", { name: /Unassigned/ }));
   fireEvent.change(screen.getByRole("combobox", { name: "Add a tag (Tags)" }), {
-    target: { value: "tag-trip" },
+    target: { value: "italy" },
   });
+  fireEvent.click(within(screen.getByRole("listbox")).getByRole("option", { name: "Italy trip" }));
   fireEvent.click(screen.getByRole("button", { name: "Remove tag Kids" }));
   fireEvent.click(screen.getByRole("button", { name: "Save tags" }));
   expect(p.save).toHaveBeenCalledWith(
@@ -543,4 +546,37 @@ it("searches every month by payee, line, subcategory, tag and exact amount, with
   expect(input.value).toBe("");
   expect(months.value).toBe("2026-11");
   expect(screen.getByText("Nothing is recorded in November yet")).toBeDefined();
+});
+it("creates a subcategory from the entry editor, then records the entry with it", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/spending-subcategories")
+      ? json([{ uuid: "sub-eat", name: "Eating out", active: true, revision: 1, entries: 2 }])
+      : json([]),
+  );
+  const save = vi.fn();
+  render(<ActivityScreen {...props()} save={save} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Record activity" }));
+  const box = screen.getByRole("combobox", { name: "Subcategory" });
+  await waitFor(() => {
+    fireEvent.change(box, { target: { value: "eat" } });
+    screen.getByRole("option", { name: "Eating out" });
+  });
+  fireEvent.change(box, { target: { value: "Pet supplies" } });
+  fireEvent.click(screen.getByRole("option", { name: /Create “Pet supplies”/ }));
+  // The new subcategory goes through its own create command; the entry is not saved yet.
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save.mock.calls[0][0]).toEqual({
+    method: "POST",
+    path: "/api/entities/entity/spending-subcategories",
+    body: { name: "Pet supplies" },
+  });
+  act(() => save.mock.calls[0][1]({ uuid: "sub-pets", name: "Pet supplies" }));
+  fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "9.50" } });
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Record" }));
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(save.mock.calls[1][0].body).toMatchObject({
+    category: "spending",
+    amount: "9.50",
+    spending_subcategory_id: "sub-pets",
+  });
 });

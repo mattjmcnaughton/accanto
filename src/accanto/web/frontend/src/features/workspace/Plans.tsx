@@ -14,6 +14,7 @@ import { Band, Dialog, Empty, Icon, Skeleton } from "../../ui";
 import { SubcategoriesDialog } from "../tags/Subcategories";
 import { Home } from "./Home";
 import { CopyPlan } from "./PlanScenarios";
+import { createSpec, createdId } from "../create/create";
 import { PlanWorksheet } from "./PlanWorksheet";
 import {
   type Catalog,
@@ -709,6 +710,13 @@ export function Plans(
                     : []
                 }
                 onSubcategories={() => setManagingSubcategories(true)}
+                accounts={accounts.kind === "ready" ? accounts.data : []}
+                onCreate={(request, chosen) =>
+                  p.save(createSpec(p.entity.id, request), (data) => {
+                    const created = createdId(request, data);
+                    if (created) chosen(created);
+                  })
+                }
                 busy={p.busy}
                 timeZone={p.entity.time_zone}
                 onBack={() => setActive(null)}

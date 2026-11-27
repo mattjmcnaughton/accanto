@@ -20,17 +20,20 @@ import {
   type Activity,
   type ActivityInput,
   type KnownTotalInput,
+  type PlanGroup,
   type RefundInput,
   monthly,
 } from "../../lib/monthly";
-import { savings } from "../../lib/savings";
+import { type SavingsAccount, savings } from "../../lib/savings";
 import { matches, searchable, searching } from "../../lib/search";
 import {
   type SpendingSubcategory,
   spendingSubcategories as subcategoryApi,
 } from "../../lib/spendingSubcategories";
 import { type Tag, tags as tagApi } from "../../lib/tags";
-import { Dialog, Empty, Field, Head, tint } from "../../ui";
+import { Combobox, Dialog, Empty, Field, Head, tint } from "../../ui";
+import { NewFixedCost, NewGoal } from "../create/CreateForms";
+import { type CreateRequest, createSpec, createdId, planDrafts } from "../create/create";
 import { SubcategoriesDialog } from "../tags/Subcategories";
 import { TagChips, TagPicker, TagsDialog } from "../tags/Tags";
 import { type ScreenProps, composing, keysBelongElsewhere, sourceChoices, useLoad } from "./shared";
@@ -469,6 +472,23 @@ export function ActivityScreen(
     setChanged(true);
     p.dirty(true);
   }
+  const latest = useRef(draft);
+  latest.current = draft;
+  /**
+   * Create a record from a picker through its own create command, then choose it on the entry
+   * that is open now. The entry itself is still saved only by Save.
+   */
+  function createFor(
+    request: CreateRequest,
+    apply: (form: ActivityInput, id: string) => ActivityInput,
+  ) {
+    p.save(createSpec(p.entity.id, request), (data) => {
+      const id = createdId(request, data);
+      const now = latest.current;
+      if (id && now?.kind === "activity") change({ ...now, form: apply(now.form, id) });
+      else if (now) change(now);
+    });
+  }
   function done() {
     setDraft(null);
     setInfo(null);
@@ -797,6 +817,14 @@ export function ActivityScreen(
               value={infoTags ?? info.tag_ids ?? []}
               disabled={p.busy}
               onChange={setInfoTags}
+              onCreate={(name) => {
+                const request: CreateRequest = { kind: "tag", name };
+                const shown = infoTags ?? info.tag_ids ?? [];
+                p.save(createSpec(p.entity.id, request), (data) => {
+                  const id = createdId(request, data);
+                  if (id) setInfoTags([...shown, id]);
+                });
+              }}
             />
             <p className="note">
               Change its tags here. Correct anything else in{" "}
@@ -861,6 +889,10 @@ export function ActivityScreen(
                 <ActivityFields
                   draft={draft}
                   change={change}
+                  busy={p.busy}
+                  create={createFor}
+                  plans={plans.kind === "ready" ? plans.data : []}
+                  accounts={accounts.kind === "ready" ? accounts.data : []}
                   fixedCosts={fixedCosts}
                   loans={loans.kind === "ready" ? loans.data : []}
                   sources={sources}
@@ -1397,6 +1429,10 @@ type GoalChoice = {
 function ActivityFields({
   draft,
   change,
+  busy,
+  create,
+  plans,
+  accounts,
   fixedCosts,
   loans,
   sources,
@@ -1406,6 +1442,13 @@ function ActivityFields({
 }: {
   draft: Extract<Draft, { kind: "activity" }>;
   change: (next: Draft) => void;
+  busy: boolean;
+  create: (
+    request: CreateRequest,
+    apply: (form: ActivityInput, id: string) => ActivityInput,
+  ) => void;
+  plans: PlanGroup[];
+  accounts: SavingsAccount[];
   fixedCosts: Array<{ fixed_cost_id: string; canonical_name: string }>;
   loans: Array<{ uuid: string; name: string; active: boolean }>;
   sources: Array<{ id: string; label: string }>;
@@ -1415,6 +1458,14 @@ function ActivityFields({
 }) {
   const form = draft.form;
   const selected = draft.entry;
+  /** A typed name that needs more than a name: a fixed cost's planned amount, a goal's account. */
+  const [making, setMaking] = useState<{ kind: "fixed_cost" | "saving_goal"; name: string } | null>(
+    null,
+  );
+  const made = (request: CreateRequest, apply: (f: ActivityInput, id: string) => ActivityInput) => {
+    setMaking(null);
+    create(request, apply);
+  };
   const update = (value: ActivityInput) => change({ ...draft, form: value });
   const fundable = form.category === "spending" || form.category === "fixed_cost";
   const openGoals = savingGoals.filter(
@@ -1468,21 +1519,29 @@ function ActivityFields({
             />
           </Field>
           <Field label="Subcategory">
-            <select
+            <Combobox
               name="spending-subcategory"
+              options={[
+                { id: "", name: "Unassigned" },
+                ...subcategories
+                  .filter((sub) => sub.active || sub.uuid === selected?.spending_subcategory_id)
+                  .map((sub) => ({
+                    id: sub.uuid,
+                    name: sub.active ? sub.name : `${sub.name} (archived)`,
+                  })),
+              ]}
               value={form.spending_subcategory_id || ""}
-              onChange={(e) => update({ ...form, spending_subcategory_id: e.target.value || null })}
-            >
-              <option value="">Unassigned</option>
-              {subcategories
-                .filter((sub) => sub.active || sub.uuid === selected?.spending_subcategory_id)
-                .map((sub) => (
-                  <option key={sub.uuid} value={sub.uuid}>
-                    {sub.name}
-                    {sub.active ? "" : " (archived)"}
-                  </option>
-                ))}
-            </select>
+              onChange={(id) => update({ ...form, spending_subcategory_id: id || null })}
+              create={{
+                noun: "spending subcategory",
+                taken: subcategories.map((sub) => sub.name),
+                onCreate: (name) =>
+                  create({ kind: "spending_subcategory", name }, (f, id) => ({
+                    ...f,
+                    spending_subcategory_id: id,
+                  })),
+              }}
+            />
           </Field>
         </div>
       )}
@@ -1504,18 +1563,23 @@ function ActivityFields({
       {form.category === "fixed_cost" && (
         <div className="two">
           <Field label="Fixed cost">
-            <select
+            <Combobox
               name="fixed-cost"
+              options={[
+                { id: "", name: "Unassigned fixed cost" },
+                ...fixedCosts.map((cost) => ({
+                  id: cost.fixed_cost_id,
+                  name: cost.canonical_name,
+                })),
+              ]}
               value={form.fixed_cost_id || ""}
-              onChange={(e) => update({ ...form, fixed_cost_id: e.target.value || null })}
-            >
-              <option value="">Unassigned fixed cost</option>
-              {fixedCosts.map((cost) => (
-                <option key={cost.fixed_cost_id} value={cost.fixed_cost_id}>
-                  {cost.canonical_name}
-                </option>
-              ))}
-            </select>
+              onChange={(id) => update({ ...form, fixed_cost_id: id || null })}
+              create={{
+                noun: "fixed cost",
+                taken: fixedCosts.map((cost) => cost.canonical_name),
+                onCreate: (name) => setMaking({ kind: "fixed_cost", name }),
+              }}
+            />
           </Field>
           <Field label="Loan account (optional)">
             <select
@@ -1535,22 +1599,41 @@ function ActivityFields({
           </Field>
         </div>
       )}
+      {form.category === "fixed_cost" && making?.kind === "fixed_cost" && (
+        <NewFixedCost
+          name={making.name}
+          drafts={planDrafts(plans)}
+          busy={busy}
+          onCancel={() => setMaking(null)}
+          onCreate={(request) => made(request, (f, id) => ({ ...f, fixed_cost_id: id }))}
+        />
+      )}
       {form.category === "saving" && (
         <Field label="Goal">
-          <select
+          <Combobox
             name="saving-goal"
             required
+            placeholder="Choose a goal"
+            options={openGoals.map(({ goal, label }) => ({ id: goal.uuid, name: label }))}
             value={form.saving_goal_id ?? ""}
-            onChange={(e) => update({ ...form, saving_goal_id: e.target.value || null })}
-          >
-            <option value="">Choose a goal</option>
-            {openGoals.map(({ goal, label }) => (
-              <option key={goal.uuid} value={goal.uuid}>
-                {label}
-              </option>
-            ))}
-          </select>
+            onChange={(id) => update({ ...form, saving_goal_id: id || null })}
+            create={{
+              noun: "saving goal",
+              // A goal's name repeats across accounts; the picker shows "Account · Goal".
+              taken: [],
+              onCreate: (name) => setMaking({ kind: "saving_goal", name }),
+            }}
+          />
         </Field>
+      )}
+      {form.category === "saving" && making?.kind === "saving_goal" && (
+        <NewGoal
+          name={making.name}
+          accounts={accounts.filter((account) => account.opening_date <= form.date)}
+          busy={busy}
+          onCancel={() => setMaking(null)}
+          onCreate={(request) => made(request, (f, id) => ({ ...f, saving_goal_id: id }))}
+        />
       )}
       <div>
         <Field label="Amount (USD)">
@@ -1612,6 +1695,12 @@ function ActivityFields({
         tags={tags}
         value={form.tag_ids ?? []}
         onChange={(tag_ids) => update({ ...form, tag_ids })}
+        onCreate={(name) =>
+          create({ kind: "tag", name }, (f, id) => ({
+            ...f,
+            tag_ids: [...(f.tag_ids ?? []).filter((t) => t !== id), id],
+          }))
+        }
       />
     </>
   );

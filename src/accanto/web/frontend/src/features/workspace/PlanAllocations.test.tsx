@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Plans } from "./Plans";
 import type { ScreenProps } from "./shared";
@@ -238,4 +238,55 @@ it("lists active spending subcategories under guilt-free spending without planne
   const manager = screen.getByRole("list", { name: "Spending subcategories" });
   expect(manager.textContent).toContain("Retired hobby");
   expect(screen.getAllByRole("button", { name: "Rename" }).length).toBe(3);
+});
+
+it("creates an investment from a new investing line's Destination, then saves the draft with it", async () => {
+  const draft = {
+    uuid: "draft",
+    name: "Synthetic Plan",
+    number: 1,
+    revision: 3,
+    saved: false,
+    saved_at: null,
+    rule_version: "2",
+    incomes: [{ source_id: "income", name: "Income", amount: "4000.00" }],
+    fixed_costs: [],
+    spending: "800.00",
+    income: "4000.00",
+    fixed_cost_total: "0.00",
+    tithe_target: "400.00",
+    unassigned: "3200.00",
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const data = String(path).endsWith("/plans") ? [{ plan_id: "plan", revisions: [draft] }] : [];
+    return new Response(JSON.stringify(data), { status: 200 });
+  });
+  const save = vi.fn();
+  const props: ScreenProps = {
+    entity: { id: "entity", name: "Synthetic Entity", today: "2026-10-18", time_zone: "UTC" },
+    concealed: false,
+    busy: false,
+    refresh: 0,
+    guard: () => true,
+    dirty: vi.fn(),
+    save,
+  };
+  render(<Plans {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Synthetic Plan" }));
+  // No investments yet: the line still opens, asking for one to be chosen or created.
+  fireEvent.click(await screen.findByRole("button", { name: "Add Investing line" }));
+  const box = await screen.findByRole("combobox", { name: "Destination" });
+  fireEvent.change(box, { target: { value: "Example index fund" } });
+  fireEvent.click(screen.getByRole("option", { name: /Create “Example index fund”/ }));
+  expect(save.mock.calls[0][0]).toEqual({
+    method: "POST",
+    path: "/api/entities/entity/investments",
+    body: { name: "Example index fund", target: null },
+  });
+  act(() => save.mock.calls[0][1]({ uuid: "inv-new", name: "Example index fund" }));
+  fireEvent.change(screen.getByLabelText("Monthly amount"), { target: { value: "250.00" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  expect(save.mock.calls[1][0].body.investments).toEqual([
+    { destination_id: "inv-new", amount: "250.00" },
+  ]);
 });

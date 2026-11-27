@@ -3,7 +3,7 @@ import type { UUID } from "../../lib/api";
 import { plural } from "../../lib/format";
 import type { WriteSpec } from "../../lib/monthly";
 import { type Tag, tags as tagApi } from "../../lib/tags";
-import { Dialog, Field } from "../../ui";
+import { Combobox, Dialog, Field } from "../../ui";
 import "./tags.css";
 
 /** Selected tags as removable chips, plus a menu of active tags to add. */
@@ -13,17 +13,23 @@ export function TagPicker({
   onChange,
   label = "Tags",
   disabled = false,
+  onCreate,
 }: {
   tags: Tag[];
   value: UUID[];
   onChange: (next: UUID[]) => void;
   label?: string;
   disabled?: boolean;
+  /** Create a tag from a typed name that no tag has; the caller adds it once it exists. */
+  onCreate?: (name: string) => void;
 }) {
   const name = (id: UUID) => tags.find((tag) => tag.uuid === id)?.name ?? "Deleted tag";
   const addable = tags.filter((tag) => tag.active && !value.includes(tag.uuid));
   return (
-    <Field label={label} hint={tags.length ? undefined : "Create tags with Manage tags."}>
+    <Field
+      label={label}
+      hint={tags.length || onCreate ? undefined : "Create tags with Manage tags."}
+    >
       <div className="tag-picker">
         {value.map((id) => {
           const archived = tags.find((tag) => tag.uuid === id)?.active === false;
@@ -43,23 +49,28 @@ export function TagPicker({
             </span>
           );
         })}
-        {addable.length > 0 && (
-          <select
-            className="input tag-add"
-            aria-label={`Add a tag (${label})`}
-            value=""
-            disabled={disabled}
-            onChange={(e) => e.target.value && onChange([...value, e.target.value])}
-          >
-            <option value="">Add a tag…</option>
-            {addable.map((tag) => (
-              <option key={tag.uuid} value={tag.uuid}>
-                {tag.name}
-              </option>
-            ))}
-          </select>
+        {(addable.length > 0 || onCreate) && (
+          <span className="tag-add">
+            <Combobox
+              label={`Add a tag (${label})`}
+              placeholder={onCreate ? "Add or create a tag…" : "Add a tag…"}
+              options={addable.map((tag) => ({ id: tag.uuid, name: tag.name }))}
+              value=""
+              disabled={disabled}
+              onChange={(id) => onChange([...value, id])}
+              create={
+                onCreate && {
+                  noun: "tag",
+                  taken: tags.map((tag) => tag.name),
+                  onCreate,
+                }
+              }
+            />
+          </span>
         )}
-        {value.length === 0 && addable.length === 0 && <span className="note">No tags</span>}
+        {value.length === 0 && addable.length === 0 && !onCreate && (
+          <span className="note">No tags</span>
+        )}
       </div>
     </Field>
   );
