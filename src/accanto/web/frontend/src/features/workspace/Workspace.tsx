@@ -840,6 +840,7 @@ export function Workspace({
           }}
           openSettings={() => go("settings")}
           changed={changed}
+          settingsChanged={() => void refreshMetadata()}
           request={request}
         />
       )}

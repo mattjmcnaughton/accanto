@@ -85,6 +85,59 @@ type Story = StoryObj<typeof meta>;
 /** A long conversation with pending changes: the header and close button stay on screen. */
 export const WithPendingChanges: Story = {};
 
+const settingsChanges = [
+  {
+    id: "pc4",
+    tool: "save_entity_settings",
+    summary: "Update settings: name Example Household, time zone America/Chicago",
+    status: "pending",
+    created_by_interface: "agent",
+    input: { name: "Example Household", time_zone: "America/Chicago", expected_revision: 3 },
+    created_at: "2026-11-20T00:00:00Z",
+    revision: 1,
+  },
+  {
+    id: "pc5",
+    tool: "save_fire_assumptions",
+    summary: "Update FIRE assumptions: spending 40000.00, withdrawal 3.50%",
+    status: "pending",
+    created_by_interface: "agent",
+    input: { annual_spending: "40000.00", withdrawal_percent: "3.50", expected_revision: 3 },
+    created_at: "2026-11-20T00:00:01Z",
+    revision: 1,
+  },
+];
+const settingsMessages = [
+  {
+    id: "s0",
+    role: "owner",
+    content: "We moved to Chicago. Also plan FIRE on 40,000 a year at 3.5%.",
+    image_count: 0,
+    pending_change_ids: [],
+    created_at: "2026-11-20T00:00:00Z",
+  },
+  {
+    id: "s1",
+    role: "agent",
+    content:
+      "I drafted both changes for Synthetic fixture workspace. Apply them to save the new settings.",
+    image_count: 0,
+    pending_change_ids: settingsChanges.map((c) => c.id),
+    created_at: "2026-11-20T00:00:01Z",
+  },
+];
+
+/** Entity settings drafted in Ask first: each is a card the owner applies. */
+export const SettingsChangesPending: Story = {
+  parameters: {
+    msw: [
+      http.get(`${agentRoot}/conversations/c1`, () => HttpResponse.json(settingsMessages)),
+      http.get(`${agentRoot}/pending-changes`, () => HttpResponse.json(settingsChanges)),
+      ...meta.parameters.msw,
+    ],
+  },
+};
+
 /** A synthetic reply long enough to outgrow a phone's log, streamed a few words at a time. */
 const longReply = Array.from(
   { length: 14 },

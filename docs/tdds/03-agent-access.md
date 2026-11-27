@@ -72,7 +72,8 @@ Enforced in code, then stated to the model.
    them goes into `source_text`, also untrusted.
 5. **MCP server instructions** carry the same rule for external clients.
 6. **Structural limits** make a successful injection low-impact: no tool reaches
-   keys, sources setup, agent settings, or Entity settings; Ask first is the
+   keys, sources setup, or agent settings (Entity settings are ordinary gated
+   writes since 2026-11-27, below); Ask first is the
    default; irreversible deletes always pend; replies render Markdown without
    images, raw HTML, or auto-loaded links, so a reply cannot exfiltrate data.
 
@@ -133,6 +134,8 @@ pairs, and `save_*` creates or, given `id` and `expected_revision`, edits.
 - **Debts and balances:** `save_debt`, `save_observation(kind)`,
   `delete_observation(kind)`.
 - **Estimates:** `save_income_estimate`, `duplicate_income_estimate`.
+- **Settings (2026-11-27, below):** `get_settings`; `save_entity_settings` and
+  `save_fire_assumptions` are gated.
 - **Routines ([TDD 13](13-routines.md)):** `save_routine` is gated;
   `set_routine_step` and `set_routine_occurrence` run directly like
   `set_proposals`, and `list_routines` and `get_routine_occurrence` read.
@@ -544,3 +547,56 @@ pended every sidebar change, so neither name said what happened.
   and reads "Agent mode: …" to screen readers. Apply directly uses the warning
   colour.
 
+## Entity settings for agents (2026-11-27)
+
+The owner asked for the API and MCP to edit settings, except the most sensitive
+ones. AG-05 had excluded Entity settings; they are now catalog writes. Domain
+impact: none new. The commands are the existing `edit_entity` and
+`edit_fire_assumptions` with their validation, revision check, audit and retry
+outcome; only who may call them widens.
+
+| Setting | Where | Class | API keys and agents |
+| --- | --- | --- | --- |
+| Entity name, time zone | Settings, Workspace | Safe | REST `PUT /settings`; `save_entity_settings` |
+| Default expected return | Settings, Workspace | Safe | Same |
+| FIRE annual spending and withdrawal percent | Projections | Safe | REST `PUT /fire-assumptions`; `save_fire_assumptions` |
+| Today | Derived from the time zone | Read only | `get_settings`, `get_context` |
+| AGENT.md | Settings, Assistant | Agent-proposed only (TDD 10) | Read; `propose_agent_instructions` always pends |
+| Agent mode | Settings, Assistant | Sensitive: an agent never raises its own permissions | Refused |
+| Assistant enablement | Settings, Assistant | Sensitive: consents to sending data to the model provider | Refused |
+| YNAB token | Settings, Transaction provider | Sensitive: credential | Refused; never returned |
+| Source setup: plan and start date, account selection, disconnect | Inbox, Settings | Sensitive: uses the token and decides what bank data flows in | Refused; listing and sync stay open |
+| API keys | Settings | Sensitive: grants access | No tool; REST accepts keys (see below) |
+| Sign-in, sessions, CSRF, OIDC | Browser auth | Sensitive | Refused |
+| Retention, daily cap, provider, model | Server configuration | Not a setting | Read in `GET /agent/settings` (browser) |
+| Agent panel width and full screen, last Entity | Browser storage | Device-local display preference | Not stored on the server |
+
+- **One read, one revision.** `get_settings` reads the Entity row once
+  (`read_snapshot`) and returns every safe setting with the Entity revision,
+  which both save tools take, so a FIRE edit after a rename needs the new
+  revision.
+- **Whole replacement.** `save_entity_settings` reuses `EntitySettingsInput`
+  (omitting `default_return_percent` keeps it, as REST does).
+  `save_fire_assumptions` makes both FIRE fields required, unlike REST's default
+  `withdrawal_percent`, so an agent never resets one by omission.
+- **Sensitive settings stay out by construction.** No tool input carries
+  `mode`, `enabled`, `instructions` (except the AGENT.md proposal) or
+  `access_token`; `extra="forbid"` refuses smuggled fields as
+  `invalid_arguments`. The routers for them keep `BrowserToken`.
+- **Surfaces.** The sidebar prompt and MCP instructions name the new tools and
+  what stays in Settings. The panel reloads the Entity's metadata (name, time
+  zone, today) after a turn that called `save_entity_settings` or after
+  applying one.
+- **Open question for the owner.** `POST /api/keys` accepts an API key, so a
+  script, or an MCP client holding a key, can issue another key. Recommended:
+  require a browser session to issue keys, keeping list and revoke open.
+
+Verification: unit, the catalog snapshot and that settings tools take exactly
+the safe fields; integration (`test_settings_tools.py`), over MCP JSON-RPC and
+the sidebar context, Ask first pends with no audit, apply audits once, Apply
+directly records and audits as `mcp`, replay and `key_reuse`, `stale_revision`,
+Read only refuses, smuggled `mode`/`enabled`/`instructions`/`access_token` and
+an unknown tool change nothing, API keys get `403 browser_session_required` on
+agent settings, the transaction provider and YNAB plans, and no response carries
+the stored token; `test_trace_privacy.py` sends a canary FIRE amount through
+`save_fire_assumptions` and finds it in no export or server log.

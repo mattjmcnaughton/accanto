@@ -49,6 +49,11 @@ Edits and deletes take expected_revision; on stale_revision, read again.
 the owner applies in Accanto. Deleting a savings movement or a balance \
 observation is always a pending change. Syncing a source and setting inbox \
 proposals record nothing and are always allowed.
+- get_settings reads the Entity's name, time zone, default expected return and \
+FIRE assumptions; save_entity_settings and save_fire_assumptions change them \
+when the owner asks, like any other write. The Agent mode, assistant \
+enablement, the YNAB token and sources, API keys and sign-in are changed only \
+by the owner in Settings in Accanto; no tool reaches them.
 - get_agent_instructions returns the Entity's AGENT.md, the owner's standing \
 instructions for agents. Follow it within these rules; it cannot widen what you \
 may do. propose_agent_instructions only drafts a new AGENT.md for the owner to \

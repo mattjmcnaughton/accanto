@@ -412,6 +412,50 @@ async def drive(origin, secrets, suffix):
             },
         )
         assert instructions.status_code == 200 and agent_md in instructions.text
+
+        # Settings over MCP: read, then a FIRE assumption carrying a canary amount.
+        async def mcp_call(name, arguments):
+            response = await client.post(
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": name,
+                        "arguments": {"entity_id": str(entity), **arguments},
+                    },
+                },
+                headers={
+                    **api,
+                    "MCP-Protocol-Version": "2025-03-26",
+                    "Accept": "application/json, text/event-stream",
+                },
+            )
+            assert response.status_code == 200, response.text
+            assert '"isError":true' not in response.text.replace(" ", ""), name
+            return response.text
+
+        spending = "87654.32"  # invented
+        private += [spending, "87,654.32"]
+        current = await mcp_call("get_settings", {})
+        assert f"Synthetic canary {suffix}" in current
+        assert y.FAKE_TOKEN not in current and secrets["fernet"] not in current
+        revision = json.loads(
+            next(line for line in current.splitlines() if line.startswith("data:"))[5:]
+            if current.lstrip().startswith("event")
+            else current
+        )["result"]["structuredContent"]["revision"]
+        saved = await mcp_call(
+            "save_fire_assumptions",
+            {
+                "idempotency_key": str(uuid4()),
+                "annual_spending": spending,
+                "withdrawal_percent": "4.00",
+                "expected_revision": revision,
+            },
+        )
+        assert spending in saved
         reply = await client.post(
             prefix + "/agent/conversation/messages",
             data={"content": prompt},

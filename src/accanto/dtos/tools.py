@@ -24,11 +24,13 @@ from accanto.dtos.destinations import (
     CreateDestination,
     EditDestination,
 )
+from accanto.dtos.entities import EntitySettingsInput, FireAssumptionsInput
 from accanto.dtos.inbox import BulkProposal, BulkRecordItem
 from accanto.dtos.monthly import (
     ActivityInput,
     EntryTagsInput,
     Input,
+    Name,
     PlanCopyInput,
     PlanInput,
     RefundInput,
@@ -1475,6 +1477,45 @@ class SaveSpendingSubcategory(Input):
         description="Omit to create a subcategory; set to rename, archive or restore.",
     )
     values: SpendingSubcategoryEditInput | SpendingSubcategoryInput
+
+
+class Settings(Output):
+    """The Entity settings agents may edit; one revision covers them all.
+
+    Sensitive settings (the Agent mode, enablement, the YNAB token and source
+    setup, API keys, sign-in) are not here: they stay in Settings in the browser.
+    """
+
+    name: Untrusted
+    time_zone: str
+    today: date
+    default_return_percent: Amount
+    fire_annual_spending: Amount | None
+    fire_withdrawal_percent: Amount
+    revision: int
+
+
+class SaveEntitySettings(EntitySettingsInput):
+    """Name, time zone and default expected return, replaced together."""
+
+    name: Name = Field(description="The Entity's name; keep it unless asked.")
+    time_zone: str = Field(
+        description="IANA time zone, such as America/Chicago. It decides what "
+        "today means for new entries; existing entries keep their dates."
+    )
+    expected_revision: int = Field(ge=1, description="revision from get_settings.")
+
+
+class SaveFireAssumptions(FireAssumptionsInput):
+    """Both FIRE inputs, replaced together, so neither resets by omission."""
+
+    annual_spending: str | None = Field(
+        description="Annual spending in retirement, or null for none yet."
+    )
+    withdrawal_percent: str = Field(
+        description="Safe withdrawal rate, a percent such as 4.00."
+    )
+    expected_revision: int = Field(ge=1, description="revision from get_settings.")
 
 
 class AgentInstructions(Output):
