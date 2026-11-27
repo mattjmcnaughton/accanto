@@ -1,14 +1,16 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createHashHistory, createRouter } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { beginScreen } from "./lib/screenTiming";
 import { routeTree } from "./routeTree.gen";
 import "./ui/tokens.css";
 import "./ui/ui.css";
 import "./index.css";
 
-const queryClient = new QueryClient();
 const router = createRouter({ routeTree, history: createHashHistory() });
+router.subscribe("onBeforeNavigate", ({ fromLocation, pathChanged }) => {
+  if (fromLocation && pathChanged) beginScreen();
+});
 
 declare module "@tanstack/react-router" {
   interface Register {
@@ -20,9 +22,7 @@ const rootElement = document.getElementById("root");
 if (rootElement) {
   createRoot(rootElement).render(
     <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
+      <RouterProvider router={router} />
     </StrictMode>,
   );
 }

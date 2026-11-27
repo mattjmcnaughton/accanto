@@ -54,6 +54,8 @@ ROOT = Path(__file__).parents[2]
 # Every attribute key the server exported in this scenario, reviewed against §6.
 # A new key (from a library upgrade or a new span) fails here until reviewed.
 REVIEWED_KEYS = {
+    "screen", "cold", "shell_ms", "inbox_ms", "api_count", "api_window_ms",
+    "event_ms", "long_task_ms",
     # Resource: service, host and SDK metadata
     "service.name", "service.version", "service.instance.id",
     "deployment.environment.name", "host.arch", "host.id", "host.name",
@@ -227,6 +229,28 @@ async def drive(origin, secrets, suffix):
             )
             assert response.status_code == 200, response.text
             return response.json()
+
+        timing = dict(
+            screen="inbox",
+            cold=False,
+            shell_ms=48,
+            inbox_ms=304,
+            api_count=10,
+            api_window_ms=285,
+            event_ms=16,
+            long_task_ms=55,
+        )
+        for screen, headers, status in [
+            ("inbox", browser, 204),
+            (note, browser, 422),
+            ("inbox", api, 403),
+        ]:
+            response = await client.post(
+                "/api/auth/screen-timing",
+                headers=headers,
+                json={**timing, "screen": screen, "extra": note},
+            )
+            assert response.status_code == status
 
         # Validation errors quote the rejected input.
         rejected = await client.post(
@@ -611,6 +635,12 @@ def check(found, documents, keys, private):
     attributes = [a for _, a in found]
     # Completeness first, so a broken or empty export cannot pass.
     assert {"access.authorize", "access.credential", "invoke_agent agent"} <= names
+    assert any(
+        n == "browser.screen"
+        and a.get("screen") == "inbox"
+        and str(a.get("inbox_ms")) == "304"
+        for n, a in found
+    )
     assert any(n == "access.authorize" and a.get("lock") is True for n, a in found)
     assert any(
         n == "monthly.entry_snapshots" and str(a.get("entry_count")) == "2"

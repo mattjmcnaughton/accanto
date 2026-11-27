@@ -1,9 +1,13 @@
 """Browser sign-in, metadata and logout with no provider tokens in responses."""
 
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from typing import Annotated, Literal
 
-from accanto.routers.authentication import SESSION_COOKIE, Session, Token
+import logfire
+from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import BaseModel, Field
+
+from accanto.routers.authentication import SESSION_COOKIE, BrowserToken, Session, Token
 from accanto.services.access import AuthenticatedActor, RejectionError, revoke_session
 from accanto.services.browser_auth import (
     account_metadata,
@@ -87,12 +91,50 @@ async def callback(request: Request, session: Session):
 @router.get("/session")
 async def current_session(request: Request, session: Session, token: Token):
     result = await account_metadata(session, token)
+    result["screen_timing"] = bool(
+        request.app.state.auth_settings.logfire_token.get_secret_value()
+    )
     result["csrf_token"] = (
         csrf_token(request.cookies[SESSION_COOKIE], request.app.state.auth_settings)
         if isinstance(token, AuthenticatedActor)
         else None
     )
     return no_store(JSONResponse(result))
+
+
+Milliseconds = Annotated[int, Field(strict=True, ge=0, le=86_400_000)]
+
+
+class ScreenTiming(BaseModel):
+    screen: Literal[
+        "home",
+        "activity",
+        "inbox",
+        "review",
+        "plans",
+        "routines",
+        "schedules",
+        "projections",
+        "savings",
+        "investments",
+        "giving",
+        "loans",
+        "settings",
+        "more",
+    ]
+    cold: bool = Field(strict=True)
+    shell_ms: Milliseconds
+    inbox_ms: Milliseconds
+    long_task_ms: Milliseconds
+    event_ms: Milliseconds
+    api_window_ms: Milliseconds
+    api_count: int = Field(strict=True, ge=0, le=100_000)
+
+
+@router.post("/screen-timing", status_code=204)
+async def screen_timing(timing: ScreenTiming, token: BrowserToken):
+    with logfire.span("browser.screen", **timing.model_dump()):
+        return Response(status_code=204)
 
 
 @router.post("/logout")

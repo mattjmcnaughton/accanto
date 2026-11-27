@@ -633,7 +633,8 @@ A popup closing is not proof of login: always re-read session metadata.
     "time_zone": "America/New_York",
     "today": "2026-10-16"
   }],
-  "csrf_token": "opaque-session-bound-value"
+  "csrf_token": "opaque-session-bound-value",
+  "screen_timing": false
 }
 ```
 
@@ -641,6 +642,11 @@ These UUIDs are deliberately synthetic examples. `today` is computed by the serv
 in each Entity's zone. A direct API-key request can also read this metadata and
 receives `csrf_token: null`. No request may supply both a session cookie and an
 Authorization header.
+
+`screen_timing` enables sampled browser performance reporting. Signed-in browsers
+can `POST /api/auth/screen-timing` with the fixed codes, counts and timings in
+[the telemetry reference](technical/telemetry.md#custom-spans). It requires the
+same origin and CSRF token as a write and returns 204 without changing records.
 
 Cookie-authenticated writes, including `POST /api/auth/logout`, require exact
 `Origin` and `X-CSRF-Token`. Logout returns `{"signed_out": true}`, invalidates the

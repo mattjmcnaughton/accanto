@@ -7,6 +7,7 @@ export interface BrowserSession {
   user: { id: UUID };
   entities: Array<{ id: UUID; name: string; time_zone: string; today: IsoDate }>;
   csrf_token: string;
+  screen_timing?: boolean;
 }
 
 export type ApiErrorKind =
