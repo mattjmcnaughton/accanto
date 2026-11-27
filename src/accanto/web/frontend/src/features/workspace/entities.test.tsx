@@ -10,7 +10,13 @@ const session = {
   csrf_token: "test",
   entities: [
     { id: FAMILY, name: "Synthetic Family", today: "2026-10-17", time_zone: "UTC" },
-    { id: PERSONAL, name: "Synthetic Personal", today: "2026-11-02", time_zone: "UTC" },
+    {
+      id: PERSONAL,
+      name: "Synthetic Personal",
+      today: "2026-11-02",
+      time_zone: "UTC",
+      role: "member",
+    },
   ],
 };
 
@@ -76,6 +82,29 @@ it("opens the last-used Entity, switches to another on its own month and remembe
   await waitFor(() => expect(reads).toContain(`/api/entities/${FAMILY}/plans`));
   expect(window.localStorage.getItem("accanto.entity")).toBe(FAMILY);
   expect([...stored.keys()]).toEqual(["accanto.entity"]);
+});
+
+it("switches from the Entity named in the top bar, marking the current and shared ones", async () => {
+  const reads = serve();
+  render(<ProductionHome />);
+  fireEvent.click(await screen.findByRole("button", { name: "Entity: Synthetic Family" }));
+  const list = screen.getByRole("dialog", { name: "Switch Entity" });
+  expect(
+    within(list).getByRole("button", { name: "Synthetic Family" }).getAttribute("aria-current"),
+  ).toBe("true");
+  const shared = within(list).getByRole("button", { name: /Synthetic Personal/ });
+  expect(shared.textContent).toContain("Shared with you");
+  expect(shared.getAttribute("aria-current")).toBeNull();
+  fireEvent.click(shared);
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole("banner")).getByRole("button", {
+        name: "Entity: Synthetic Personal",
+      }),
+    ).toBeDefined(),
+  );
+  expect(screen.queryByRole("dialog", { name: "Switch Entity" })).toBeNull();
+  await waitFor(() => expect(reads).toContain(`/api/entities/${PERSONAL}/plans`));
 });
 
 it("offers the other Entities and Create Entity in the command palette", async () => {

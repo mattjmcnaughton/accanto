@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { UUID } from "../../lib/api";
 import type { WriteSpec } from "../../lib/monthly";
-import { Dialog, Field } from "../../ui";
+import { Dialog, Field, Icon } from "../../ui";
 import type { Entity } from "./shared";
 
 /** Only the last-used Entity's ID is remembered; never its name or any financial data. */
@@ -70,6 +70,73 @@ export function EntitySwitcher({
         <option value={CREATE}>Create Entity…</option>
       </select>
     </label>
+  );
+}
+
+/** Phones: the current Entity's full name across the top bar; tapping it lists the User's Entities. */
+export function EntityMenu({
+  entities,
+  current,
+  disabled,
+  choose,
+  create,
+}: {
+  entities: Entity[];
+  current: Entity;
+  disabled: boolean;
+  choose: (id: UUID) => void;
+  create: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className="entity-row"
+        aria-haspopup="dialog"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+      >
+        <span className="sr-only">Entity: </span>
+        <span className="n">{current.name}</span>
+        <Icon name="down" />
+      </button>
+      {open && (
+        <Dialog title="Switch Entity" className="sheet" onClose={() => setOpen(false)}>
+          <div className="card entity-list">
+            {entities.map((e) => (
+              <button
+                key={e.id}
+                type="button"
+                className="row"
+                aria-current={e.id === current.id || undefined}
+                onClick={() => {
+                  setOpen(false);
+                  if (e.id !== current.id) choose(e.id);
+                }}
+              >
+                <span className="t">
+                  {e.name}
+                  {e.role === "member" && <small>Shared with you</small>}
+                </span>
+                {e.id === current.id && <Icon name="check" />}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="row"
+              onClick={() => {
+                setOpen(false);
+                create();
+              }}
+            >
+              <Icon name="plus" />
+              <span className="t">Create Entity…</span>
+            </button>
+          </div>
+        </Dialog>
+      )}
+    </>
   );
 }
 
