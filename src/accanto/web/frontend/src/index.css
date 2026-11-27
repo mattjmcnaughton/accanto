@@ -31,25 +31,16 @@
   gap: 8px;
   padding: 2px 8px 12px;
   font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-weight: 500;
   color: var(--brand);
 }
-.logo i {
+.logo .mark {
   width: 20px;
   height: 20px;
-  border-radius: 6px;
-  display: grid;
-  grid-template-columns: 6px 1fr;
-  overflow: hidden;
-}
-.logo i::before {
-  content: "";
-  background: var(--c-free);
-}
-.logo i::after {
-  content: "";
-  background: var(--brand);
+  flex: none;
+  fill: none;
+  stroke-width: 3.6;
+  stroke-linecap: round;
 }
 .navlabel {
   font-size: 12px;

@@ -20,9 +20,10 @@ FORBIDDEN_SUFFIXES = {
     ".mp4", ".mov", ".webm", ".gif",
 }  # fmt: skip
 FORBIDDEN_NAMES = re.compile(r"accanto-prototype-.*\.json|accanto-recovery\.json")
-# Screenshots are reviewed synthetic captures kept in one place.
+# Screenshots are reviewed synthetic captures kept in one place. App icons are
+# rendered from public/icons/icon.svg by scripts/render_icons.mjs, never captured.
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
-IMAGE_DIRS = ("docs/screenshots/",)
+IMAGE_DIRS = ("docs/screenshots/", "src/accanto/web/frontend/public/icons/")
 
 EMAIL = re.compile(
     r"[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})"
