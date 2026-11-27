@@ -15,7 +15,7 @@ from accanto.domains.destinations import (
     opening_move_allowed,
     require_new_destination,
 )
-from accanto.dtos.destinations import EXPECTATIONS
+from accanto.dtos.destinations import EXPECTATIONS, TRAITS
 from accanto.models import destinations as d
 from accanto.models import monthly as m
 from accanto.services.access import RejectionError
@@ -105,13 +105,25 @@ def expectations(row) -> dict:
         if row["expected_contribution"] is None
         else str(row["expected_contribution"]),
         "expected_contribution_frequency": row["expected_contribution_frequency"],
+        "tax_treatment": row["tax_treatment"],
+        "liquidity": row["liquidity"],
     }
 
 
 def expectation_values(kind, payload, unchanged=()) -> dict:
-    """Column values for the assumptions a write sets; giving has none."""
+    """Column values for the assumptions and traits a write sets; giving has none.
+
+    A trait left null keeps its current value, or the column default on create.
+    """
     given = {f: payload.get(f) for f in EXPECTATIONS if f not in unchanged}
+    traits = {f: payload[f] for f in TRAITS if payload.get(f) is not None}
     if kind == "giving":
+        if traits:
+            raise RejectionError(
+                "invalid_traits",
+                "Giving recipients do not have a tax treatment or liquidity.",
+                422,
+            )
         if (
             given.get("expected_return_percent") is not None
             or given.get("expected_contribution") is not None
@@ -126,7 +138,7 @@ def expectation_values(kind, payload, unchanged=()) -> dict:
         given["expected_contribution_frequency"] = (
             given["expected_contribution_frequency"] or "monthly"
         )
-    return given
+    return given | traits
 
 
 async def read_destinations(session, token, entity_uuid, kind):

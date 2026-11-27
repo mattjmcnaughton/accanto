@@ -1585,7 +1585,9 @@ CATALOG: tuple[CatalogTool, ...] = (
         "save_destination",
         "Add or edit an investment or giving destination. An investment edit "
         "may move opening_date when no current contribution or observation "
-        "would then predate it.",
+        "would then predate it. An investment carries tax_treatment "
+        "(taxable or tax_advantaged) and liquidity (liquid or illiquid); omit "
+        "either on an edit to keep it.",
         t.SaveDestination,
         build_destination,
     ),

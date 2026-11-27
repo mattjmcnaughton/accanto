@@ -19,8 +19,20 @@ export interface Destination {
   expected_return_percent?: string | null;
   expected_contribution?: string | null;
   expected_contribution_frequency?: ContributionFrequency;
+  /** Investments only: how the account is held. */
+  tax_treatment?: TaxTreatment;
+  liquidity?: Liquidity;
 }
 export type ContributionFrequency = "monthly" | "annual";
+/** Taxable brokerage, or tax-advantaged such as a 401(k), IRA or HSA. */
+export type TaxTreatment = "taxable" | "tax_advantaged";
+/** Liquid such as a stock fund, or illiquid such as a house. */
+export type Liquidity = "liquid" | "illiquid";
+/** An investment's traits; omit one on an edit to keep it. */
+export interface Traits {
+  tax_treatment: TaxTreatment;
+  liquidity: Liquidity;
+}
 /** The projection assumptions an investment carries; giving recipients have none. */
 export interface Expectations {
   expected_return_percent: string | null;
@@ -70,7 +82,9 @@ export const destinations = {
   create: (
     entity: string,
     kind: DestinationKind,
-    body: { name: string; target: string | null; opening?: Opening | null } & Partial<Expectations>,
+    body: { name: string; target: string | null; opening?: Opening | null } & Partial<
+      Expectations & Traits
+    >,
   ): WriteSpec<Destination> => ({
     method: "POST",
     path: root(entity, kind),
@@ -87,7 +101,7 @@ export const destinations = {
       expected_revision: number;
       /** Investments with an opening only; omit to keep the opening date. */
       opening_date?: string;
-    } & Partial<Expectations>,
+    } & Partial<Expectations & Traits>,
   ): WriteSpec<Destination> => ({
     method: "PUT",
     path: `${root(entity, kind)}/${encodeURIComponent(destination)}`,

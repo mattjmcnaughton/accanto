@@ -60,7 +60,29 @@ class Expectations(Input):
         return None if value is None else str(money(value))
 
 
-class CreateDestination(Expectations):
+TaxTreatment = Literal["taxable", "tax_advantaged"]
+Liquidity = Literal["liquid", "illiquid"]
+TRAITS = ("tax_treatment", "liquidity")
+
+
+class Traits(Expectations):
+    """How an investment is held, investments only. Classification, not math."""
+
+    tax_treatment: TaxTreatment | None = Field(
+        default=None,
+        description="Investments only: taxable (a brokerage account) or "
+        "tax_advantaged (a 401(k), IRA or HSA). Omit to keep the current value; "
+        "a new investment defaults to taxable.",
+    )
+    liquidity: Liquidity | None = Field(
+        default=None,
+        description="Investments only: liquid (a stock fund you can sell) or "
+        "illiquid (a house). Omit to keep the current value; a new investment "
+        "defaults to liquid.",
+    )
+
+
+class CreateDestination(Traits):
     name: Name
     target: str | None = None
     opening: Opening | None = None
@@ -76,7 +98,7 @@ class CreateDestination(Expectations):
         return str(result)
 
 
-class EditDestination(Expectations):
+class EditDestination(Traits):
     name: Name
     target: str | None = None
     active: bool
@@ -115,6 +137,8 @@ class DestinationResult(BaseModel):
     expected_return_percent: str | None = None
     expected_contribution: str | None = None
     expected_contribution_frequency: Frequency | None = None
+    tax_treatment: TaxTreatment | None = None
+    liquidity: Liquidity | None = None
 
 
 class ContributionInput(Input):

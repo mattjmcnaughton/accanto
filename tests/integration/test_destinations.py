@@ -400,6 +400,7 @@ async def scenario():
                 == 3
             )
         await moving_opening(client, command, sessions, path)
+        await tax_treatment_and_liquidity(client, command, sessions, path)
     await engine.dispose()
 
 
@@ -531,5 +532,81 @@ async def moving_opening(client, command, sessions, path):
                 update(d.observations)
                 .where(d.observations.c.id == opening["id"])
                 .values(financial_date="2026-03-21")
+            )
+        await session.rollback()
+
+
+async def tax_treatment_and_liquidity(client, command, sessions, path):
+    """Investments default to taxable and liquid; an edit that omits either keeps it."""
+    plain = (await command("POST", "/investments", {"name": "Synthetic index"})).json()
+    assert (plain["tax_treatment"], plain["liquidity"]) == ("taxable", "liquid")
+    house = (
+        await command(
+            "POST",
+            "/investments",
+            {
+                "name": "Synthetic house",
+                "tax_treatment": "tax_advantaged",
+                "liquidity": "illiquid",
+            },
+        )
+    ).json()
+    assert (house["tax_treatment"], house["liquidity"]) == (
+        "tax_advantaged",
+        "illiquid",
+    )
+    base = {"name": "Synthetic house", "target": None, "active": True}
+    renamed = await command(
+        "PUT", f"/investments/{house['uuid']}", base | {"expected_revision": 1}
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert (renamed.json()["tax_treatment"], renamed.json()["liquidity"]) == (
+        "tax_advantaged",
+        "illiquid",
+    )
+    changed = await command(
+        "PUT",
+        f"/investments/{house['uuid']}",
+        base | {"expected_revision": 2, "tax_treatment": "taxable"},
+    )
+    assert (changed.json()["tax_treatment"], changed.json()["liquidity"]) == (
+        "taxable",
+        "illiquid",
+    )
+    listed = {
+        row["uuid"]: row for row in (await client.get(path + "/investments")).json()
+    }
+    assert listed[house["uuid"]]["tax_treatment"] == "taxable"
+    assert listed[plain["uuid"]]["liquidity"] == "liquid"
+    assert (
+        await command(
+            "PUT",
+            f"/investments/{house['uuid']}",
+            base | {"expected_revision": 3, "liquidity": "frozen"},
+        )
+    ).status_code == 422
+    refused = await command(
+        "POST", "/giving-recipients", {"name": "Synthetic", "liquidity": "liquid"}
+    )
+    assert refused.json()["detail"]["code"] == "invalid_traits"
+    async with sessions() as session:
+        audits = (
+            await session.execute(
+                select(m.audit.c.after)
+                .where(m.audit.c.record_uuid == house["uuid"])
+                .order_by(m.audit.c.id)
+            )
+        ).scalars()
+        assert [row["tax_treatment"] for row in audits] == [
+            "tax_advantaged",
+            "tax_advantaged",
+            "taxable",
+        ]
+        # The database refuses a value outside each set even outside the service.
+        with pytest.raises(SQLAlchemyError):
+            await session.execute(
+                update(d.investments)
+                .where(d.investments.c.uuid == house["uuid"])
+                .values(liquidity="frozen")
             )
         await session.rollback()

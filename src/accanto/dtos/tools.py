@@ -424,6 +424,15 @@ class Destination(Output):
         default=None, description="Investments only: expected contribution."
     )
     expected_contribution_frequency: Literal["monthly", "annual"] | None = None
+    tax_treatment: Literal["taxable", "tax_advantaged"] | None = Field(
+        default=None,
+        description="Investments only: taxable brokerage or tax-advantaged "
+        "(401(k), IRA, HSA).",
+    )
+    liquidity: Literal["liquid", "illiquid"] | None = Field(
+        default=None,
+        description="Investments only: liquid (stock) or illiquid (house).",
+    )
 
 
 class DestinationList(Output):
@@ -755,6 +764,8 @@ def project_destinations(kind, rows) -> DestinationList:
                 expected_contribution_frequency=r.get(
                     "expected_contribution_frequency"
                 ),
+                tax_treatment=r.get("tax_treatment"),
+                liquidity=r.get("liquidity"),
             )
             for r in rows
         ],

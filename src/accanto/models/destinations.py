@@ -35,6 +35,9 @@ investments = table(
         nullable=False,
         server_default="monthly",
     ),
+    # Classification only; nothing calculates with these yet.
+    Column("tax_treatment", String(14), nullable=False, server_default="taxable"),
+    Column("liquidity", String(8), nullable=False, server_default="liquid"),
     UniqueConstraint("id", "entity_id"),
     CheckConstraint("target IS NULL OR target BETWEEN 0.01 AND 999999999.99"),
     CheckConstraint("revision >= 1"),

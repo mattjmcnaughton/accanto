@@ -391,15 +391,19 @@ export function MoneyField({
 /** A destination or loan at a glance: the card body is the caller's, actions sit at the foot. */
 export function TrackedCard({
   name,
-  chip,
+  chips = [],
   actions,
   children,
-}: { name: string; chip?: string; actions: ReactNode; children: ReactNode }) {
+}: { name: string; chips?: string[]; actions: ReactNode; children: ReactNode }) {
   return (
     <div className="card pad stack">
       <div className="rec-card-head">
         <b>{name}</b>
-        {chip && <span className="chip">{chip}</span>}
+        {chips.map((chip) => (
+          <span key={chip} className="chip">
+            {chip}
+          </span>
+        ))}
       </div>
       {children}
       <div className="actions rec-card-actions">{actions}</div>

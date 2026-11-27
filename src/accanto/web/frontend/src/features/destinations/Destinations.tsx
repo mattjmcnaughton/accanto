@@ -7,6 +7,8 @@ import {
   type ContributionInput,
   type Destination,
   type DestinationKind,
+  type Liquidity,
+  type TaxTreatment,
   assignmentField,
   assignmentOf,
   destinations,
@@ -46,12 +48,20 @@ type DestinationForm = {
   returnPercent: string;
   contribution: string;
   frequency: ContributionFrequency;
+  /** Investments only: how the account is held. */
+  taxTreatment: TaxTreatment;
+  liquidity: Liquidity;
 };
 /** An annual percent, from −10 to 30, with up to two decimals. */
 const RETURN_PERCENT = /^-?\d{1,2}(\.\d{1,2})?$/;
 const validReturn = (value: string) =>
   RETURN_PERCENT.test(value.trim()) && Number(value) >= -10 && Number(value) <= 30;
 const PER = { monthly: "a month", annual: "a year" } as const;
+export const TAX: Record<TaxTreatment, string> = {
+  taxable: "Taxable",
+  tax_advantaged: "Tax-advantaged",
+};
+export const LIQUIDITY: Record<Liquidity, string> = { liquid: "Liquid", illiquid: "Illiquid" };
 /** "6.00% a year, $500.00 a month", or null when neither assumption is set. */
 export function expectationText(row: Destination): string | null {
   const parts = [
@@ -188,6 +198,8 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
             returnPercent: row.expected_return_percent ?? "",
             contribution: row.expected_contribution ?? "",
             frequency: row.expected_contribution_frequency ?? "monthly",
+            taxTreatment: row.tax_treatment ?? "taxable",
+            liquidity: row.liquidity ?? "liquid",
           }
         : {
             name: "",
@@ -198,6 +210,8 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
             returnPercent: "",
             contribution: "",
             frequency: "monthly",
+            taxTreatment: "taxable",
+            liquidity: "liquid",
           },
     });
   }
@@ -298,6 +312,8 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
               expected_return_percent: v.returnPercent.trim() || null,
               expected_contribution: v.contribution.trim() || null,
               expected_contribution_frequency: v.frequency,
+              tax_treatment: v.taxTreatment,
+              liquidity: v.liquidity,
             }
           : {};
       editor.submit(
@@ -374,6 +390,14 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
           {
             header: "Observed on",
             cell: (row: Destination) => (row.latest ? <Day iso={row.latest.date} /> : dash),
+          },
+          {
+            header: "Tax treatment",
+            cell: (row: Destination) => TAX[row.tax_treatment ?? "taxable"],
+          },
+          {
+            header: "Liquidity",
+            cell: (row: Destination) => LIQUIDITY[row.liquidity ?? "liquid"],
           },
           {
             header: "Assumptions",
@@ -482,7 +506,12 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
         <TrackedCard
           key={row.uuid}
           name={name}
-          chip={row.active ? undefined : "Inactive"}
+          chips={[
+            ...(row.active ? [] : ["Inactive"]),
+            ...(investment
+              ? [TAX[row.tax_treatment ?? "taxable"], LIQUIDITY[row.liquidity ?? "liquid"]]
+              : []),
+          ]}
           actions={
             <>
               {row.active && investment && (
@@ -924,6 +953,24 @@ function DestinationFields({
         </>
       )}
       {kind === "investment" && (
+        <div className="two">
+          <Segmented
+            label="Tax treatment"
+            hint="Tax-advantaged covers a 401(k), IRA or HSA"
+            options={TAX}
+            value={value.taxTreatment}
+            set={(taxTreatment) => set({ taxTreatment })}
+          />
+          <Segmented
+            label="Liquidity"
+            hint="Liquid like a stock fund, illiquid like a house"
+            options={LIQUIDITY}
+            value={value.liquidity}
+            set={(liquidity) => set({ liquidity })}
+          />
+        </div>
+      )}
+      {kind === "investment" && (
         <fieldset className="rec-assume">
           <legend>Projection assumptions</legend>
           <p className="note">
@@ -991,6 +1038,41 @@ function DestinationFields({
         </label>
       )}
     </>
+  );
+}
+
+/** One choice from a small set, as the kit's segmented button group. */
+function Segmented<V extends string>({
+  label,
+  hint,
+  options,
+  value,
+  set,
+}: {
+  label: string;
+  hint: string;
+  options: Record<V, string>;
+  value: V;
+  set: (value: V) => void;
+}) {
+  return (
+    <div className="field rec-traits">
+      <span>{label}</span>
+      {/* biome-ignore lint/a11y/useSemanticElements: The kit\'s segmented control is a button group. */}
+      <div className="seg-control" role="group" aria-label={label}>
+        {(Object.keys(options) as V[]).map((option) => (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={value === option}
+            onClick={() => set(option)}
+          >
+            {options[option]}
+          </button>
+        ))}
+      </div>
+      <small>{hint}</small>
+    </div>
   );
 }
 
