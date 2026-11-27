@@ -376,9 +376,40 @@ it("lets the owner add by email and remove a member, and a member only leave", a
   expect(screen.queryByRole("button", { name: "Add person" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /^Remove/ })).not.toBeInTheDocument();
   expect(screen.getByText(/Only this Entity's owner sets up/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Delete Entity/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Leave this Entity" }));
   fireEvent.click(screen.getByRole("button", { name: "Leave Entity" }));
   await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
   expect(leaving).toEqual(["/api/entities/entity/members/row-1"]);
+  vi.unstubAllGlobals();
+});
+it("deletes the Entity only once its owner types its exact name, then starts again", async () => {
+  const deletes: Array<{ path: string; body: unknown }> = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    if (init?.method === "DELETE") {
+      deletes.push({ path: String(path), body: JSON.parse(String(init.body)) });
+      return json({ deleted: true, id: "entity" });
+    }
+    if (String(path).includes("/members")) return json({ role: "owner", members: [] });
+    return json(String(path).endsWith("/keys") ? [] : { ...entity, revision: 1 });
+  });
+  const assign = vi.fn();
+  vi.stubGlobal("location", { ...window.location, assign });
+  render(<Settings {...props()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Delete Entity…" }));
+  const dialog = screen.getByRole("dialog", { name: "Delete Synthetic?" });
+  expect(within(dialog).getByText(/can't undo this/)).toBeInTheDocument();
+  const confirm = within(dialog).getByRole("button", { name: "Delete permanently" });
+  const field = within(dialog).getByLabelText("Type Synthetic to confirm");
+  // Case matters, as on the server; a near miss sends nothing.
+  fireEvent.change(field, { target: { value: "synthetic" } });
+  expect(confirm).toBeDisabled();
+  fireEvent.submit(field.closest("form") as HTMLFormElement);
+  expect(deletes).toEqual([]);
+  fireEvent.change(field, { target: { value: " Synthetic " } });
+  expect(confirm).toBeEnabled();
+  fireEvent.click(confirm);
+  await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
+  expect(deletes).toEqual([{ path: "/api/entities/entity", body: { confirm_name: "Synthetic" } }]);
   vi.unstubAllGlobals();
 });

@@ -738,7 +738,7 @@ must be 1–120 characters; a valid IANA zone is required (422 otherwise). The E
 and its `create_entity` audit record (`before: null`) and retry outcome commit
 together. The retry identity is per User: the same key and input returns the first
 result, the same key with other input returns `409 key_reuse`. Nothing is copied
-from another Entity; there is no delete, archive or copy. A new Entity appears in
+from another Entity; there is no archive or copy (see Delete Entity below). A new Entity appears in
 `GET /api/auth/session`; other Users get 404 for it like any unowned Entity.
 
 Each Entity is a separate boundary: a record UUID from another Entity of the same
@@ -746,6 +746,28 @@ User is `404 record_not_found`, exactly like a foreign one. A YNAB plan can be
 connected to only one of the User's Entities at a time: connecting a plan that is
 connected (not disconnected) in another of them returns `409
 source_connected_elsewhere` naming that Entity. Disconnect it there first.
+
+## Delete Entity
+
+`DELETE /api/entities/{id}` with `{"confirm_name": "Personal"}` ([TDD 22](tdds/22-entity-deletion.md))
+deletes the Entity for everyone who shares it. Owner only (`403 owner_required`
+for a member, who can leave instead), signed-in browser only (`403
+browser_session_required` for an API key, so no agent or MCP client can delete).
+`confirm_name`, trimmed, must equal the Entity's name exactly (`422
+name_mismatch`). Returns `{"deleted": true, "id"}`; afterwards every request to
+the Entity, through any credential and including a write that was waiting on the
+Entity lock, is `404 entity_not_found`, and it leaves `GET /api/auth/session`.
+It takes no Idempotency-Key: a retry after a lost reply is 404, the same outcome.
+
+Under the Entity lock, in one transaction: members are removed, the Transaction
+provider token is erased, connected sources are disconnected, active job runs are
+cancelled and every person's assistant conversations in it are deleted. Plans,
+activity, balances, inbox, schedules, routines and other records stay stored but
+unreachable (soft deletion), and audit history is never changed: the delete adds
+`delete_entity`, `remove_member`, `edit_transaction_provider` and
+`disconnect_source` audit rows under one operation. Scheduled entries and
+Notifications skip a deleted Entity. Deleting the last Entity you own is allowed;
+your next browser sign-in creates a new empty "Personal".
 
 ## Entity members
 

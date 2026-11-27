@@ -2,9 +2,8 @@ import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type BrowserSession, readSession } from "../../lib/api";
 import { addMonths, daysInMonth, fmtMonth } from "../../lib/format";
-import { disable as disablePush, refresh as refreshPush } from "../../lib/push";
-import { observeScreen } from "../../lib/screenTiming";
 import type { WriteSpec } from "../../lib/monthly";
+import { disable as disablePush, refresh as refreshPush } from "../../lib/push";
 import {
   RecoverableWrite,
   confirmInAppNavigation,
@@ -12,6 +11,7 @@ import {
   logout,
   reauthenticate,
 } from "../../lib/recoverableWrite";
+import { observeScreen } from "../../lib/screenTiming";
 import { Dialog, Icon, Mark, useDialogSlot } from "../../ui";
 import { AgentPanel } from "../agent/AgentPanel";
 import { ReportBug } from "../bugReport/ReportBug";
@@ -21,8 +21,8 @@ import { Inbox } from "../inbox/Inbox";
 import { FIRE_INTERVIEW_PROMPT, Projections } from "../projections/Projections";
 import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice";
 import { Routines } from "../routines/Routines";
-import { Schedules } from "../schedules/Schedules";
 import { Savings } from "../savings/Savings";
+import { Schedules } from "../schedules/Schedules";
 import { Settings } from "../settings/Settings";
 import { ActivityScreen } from "./Activity";
 import { type Action, AskBar } from "./AskBar";
@@ -769,9 +769,16 @@ export function Workspace({
             <div className="screen">
               <p>No Entity is available yet.</p>
               <p>
-                To join someone else's Entity, ask its owner to add the email you sign in with, in
-                Settings under Shared with. Then reload this page.
+                Create one to start planning. To join someone else's Entity, ask its owner to add
+                the email you sign in with, in Settings under Shared with. Then reload this page.
               </p>
+              {!concealed && (
+                <p>
+                  <button type="button" className="btn pri" onClick={() => setCreating(true)}>
+                    Create Entity
+                  </button>
+                </p>
+              )}
             </div>
           )}
           {entity && (
@@ -946,9 +953,9 @@ export function Workspace({
           saved={setMessage}
         />
       )}
-      {creating && entity && !concealed && (
+      {creating && !concealed && (
         <CreateEntityDialog
-          zone={entity.time_zone}
+          zone={entity?.time_zone ?? Intl.DateTimeFormat().resolvedOptions().timeZone}
           busy={props.busy}
           submit={create}
           close={() => {

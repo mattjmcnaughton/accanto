@@ -475,8 +475,9 @@ class AgentTurns:
 
     async def _settle(self, turn: Turn, reply: Reply):
         async with self.sessions() as session, session.begin():
-            # A session revoked during the turn stores nothing.
-            await authorize(session, turn.actor, turn.entity_uuid, lock=False)
+            # A session revoked, or the Entity deleted (TDD 22), during the turn
+            # stores nothing: the Entity lock orders this after a Delete Entity.
+            await authorize(session, turn.actor, turn.entity_uuid, lock=True)
             return await conversations.insert_turn(
                 session,
                 turn.user_id,

@@ -141,7 +141,9 @@ async def ensure_own_entity(session, user_id, session_uuid, time_zone):
     """
     await lock_user(session, user_id)
     if await session.scalar(
-        select(m.entities.c.id).where(m.entities.c.owner_id == user_id).limit(1)
+        select(m.entities.c.id)
+        .where(m.entities.c.owner_id == user_id, m.entities.c.deleted_at.is_(None))
+        .limit(1)
     ):
         return
     record = (
@@ -194,7 +196,8 @@ async def account_metadata(session, actor):
                             select(m.members.c.entity_id).where(
                                 m.members.c.user_id == current.user_id
                             )
-                        )
+                        ),
+                        m.entities.c.deleted_at.is_(None),
                     )
                     .order_by(m.entities.c.id)
                 )

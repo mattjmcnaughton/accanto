@@ -157,3 +157,31 @@ it("blocks switching while an assistant reply streams, and names the Entity in t
     FAMILY,
   );
 });
+
+it("lets someone with no Entity left, after deleting their last, create one and open it", async () => {
+  let entities: typeof session.entities = [];
+  const created: unknown[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const path = String(input);
+    if (path === "/api/entities" && init?.method === "POST") {
+      created.push(JSON.parse(String(init.body)));
+      entities = [session.entities[1]];
+      return new Response(
+        JSON.stringify({ id: PERSONAL, name: "Synthetic Personal", time_zone: "UTC", revision: 1 }),
+      );
+    }
+    if (path === "/api/auth/session") return new Response(JSON.stringify({ ...session, entities }));
+    return new Response("[]");
+  });
+  render(<ProductionHome />);
+  expect(await screen.findByText("No Entity is available yet.")).toBeDefined();
+  fireEvent.click(screen.getByRole("button", { name: "Create Entity" }));
+  const dialog = screen.getByRole("dialog", { name: "Create Entity" });
+  fireEvent.change(within(dialog).getByLabelText("Entity name"), {
+    target: { value: "Synthetic Personal" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Create Entity" }));
+  await waitFor(() => expect(screen.queryByText("No Entity is available yet.")).toBeNull());
+  expect(created).toEqual([{ name: "Synthetic Personal", time_zone: expect.any(String) }]);
+  expect(screen.getAllByText("Synthetic Personal").length).toBeGreaterThan(0);
+});
