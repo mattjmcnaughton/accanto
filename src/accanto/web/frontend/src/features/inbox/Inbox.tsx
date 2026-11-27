@@ -13,6 +13,7 @@ import {
 } from "../../lib/inbox";
 import { monthly } from "../../lib/monthly";
 import { savings } from "../../lib/savings";
+import { matches } from "../../lib/search";
 import { spendingSubcategories } from "../../lib/spendingSubcategories";
 import { tags } from "../../lib/tags";
 import { tint } from "../../ui";
@@ -31,7 +32,6 @@ import {
   isInflow,
   isReadyToAssign,
   lineName,
-  matches,
   precheck,
   purchaseLabel,
   readable,
@@ -316,10 +316,15 @@ export function Inbox(
   };
   // Every item is loaded already, so search filters in the browser with no request (§9).
   // biome-ignore lint/correctness/useExhaustiveDependencies: `all` and `shownAs` derive from these.
-  const texts = useMemo(
-    () => new Map(all.map((i) => [i.id, searchable(i, shownAs(i), choices)])),
-    [items, patched, drafts, choices],
-  );
+  const texts = useMemo(() => {
+    const entries = new Map(choices.entries.map((e) => [e.uuid, e]));
+    return new Map(
+      all.map((i) => [
+        i.id,
+        searchable(i, shownAs(i), choices, entries.get(i.actual_entry_id ?? "")),
+      ]),
+    );
+  }, [items, patched, drafts, choices]);
   const found = (i: StagedTransaction) => {
     const entry = texts.get(i.id);
     return !entry || matches(entry, query);

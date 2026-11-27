@@ -4,6 +4,7 @@ import { balances } from "../../lib/balances";
 import { destinations } from "../../lib/destinations";
 import {
   daysInMonth,
+  decimalToCents,
   fmtDate,
   fmtDay,
   fmtMonth,
@@ -23,15 +24,16 @@ import {
   monthly,
 } from "../../lib/monthly";
 import { savings } from "../../lib/savings";
+import { matches, searchable, searching } from "../../lib/search";
 import {
   type SpendingSubcategory,
   spendingSubcategories as subcategoryApi,
 } from "../../lib/spendingSubcategories";
 import { type Tag, tags as tagApi } from "../../lib/tags";
+import { Dialog, Empty, Field, Head, tint } from "../../ui";
 import { SubcategoriesDialog } from "../tags/Subcategories";
 import { TagChips, TagPicker, TagsDialog } from "../tags/Tags";
-import { Dialog, Empty, Field, Head, tint } from "../../ui";
-import { type ScreenProps, composing, sourceChoices, useLoad } from "./shared";
+import { type ScreenProps, composing, keysBelongElsewhere, sourceChoices, useLoad } from "./shared";
 import { useGridKeys } from "./useGridKeys";
 import "./activity-review.css";
 
@@ -76,6 +78,9 @@ const draftRow = (draft: Draft | null) =>
     : draft?.kind === "refund"
       ? (draft.entry?.uuid ?? "new-refund")
       : null;
+const typing = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  Boolean(target.closest("input,textarea,select,[contenteditable]"));
 const isNewRow = (id: string) => id === "new" || id === "new-refund";
 const AMOUNT = "[0-9]{1,9}([.][0-9]{1,2})?";
 
@@ -143,10 +148,14 @@ export function ActivityScreen(
   const [cellError, setCellError] = useState("");
   const [selection, setSelection] = useState({ id: "", col: 0 });
   const [allMonths, setAllMonths] = useState(false);
-  const shown = p.month ?? p.entity.today.slice(0, 7);
-  const month = allMonths ? "" : shown;
-  const [category, setCategory] = useState<Activity["category"] | "">("");
   const [search, setSearch] = useState("");
+  /** A search reaches every month unless the shown month is chosen while searching. */
+  const [searchMonth, setSearchMonth] = useState(false);
+  const searchBox = useRef<HTMLInputElement>(null);
+  const shown = p.month ?? p.entity.today.slice(0, 7);
+  const finding = searching(search);
+  const month = (finding ? searchMonth : !allMonths) ? shown : "";
+  const [category, setCategory] = useState<Activity["category"] | "">("");
   const [tagFilter, setTagFilter] = useState("");
   const [managing, setManaging] = useState(false);
   const [managingSubcategories, setManagingSubcategories] = useState(false);
@@ -163,6 +172,19 @@ export function ActivityScreen(
     p.added?.();
     openNew();
   }, [p.add]);
+  // / focuses the search from anywhere on the screen, like the inbox; it selects what is there,
+  // so typing starts a new search.
+  useEffect(() => {
+    const listener = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "/" || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (typing(e.target) || keysBelongElsewhere(e.target) || !searchBox.current) return;
+      e.preventDefault();
+      searchBox.current.focus();
+      searchBox.current.select();
+    };
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
   // Ctrl/⌘+S submits after a committed amount edit has rendered into the record form.
   useEffect(() => {
     if (submitRequest) form.current?.requestSubmit();
@@ -349,7 +371,6 @@ export function ActivityScreen(
     return null;
   }
   const pendingRow = draftView();
-  const query = search.trim().toLowerCase();
   const inMonth = data.filter((entry) => !month || entry.financial_date.startsWith(month));
   const rows: Row[] = [
     ...(pendingRow && isNewRow(pendingRow.id) ? [pendingRow] : []),
@@ -364,18 +385,22 @@ export function ActivityScreen(
           ((!month || view.financial_date.startsWith(month)) &&
             (!category || view.category === category) &&
             (!tagFilter || (view.tag_ids ?? []).includes(tagFilter)) &&
-            (!query ||
-              [
-                view.financial_date,
-                fmtDate(view.financial_date),
-                categoryNames[view.category],
-                title(view),
-                ...describe(view),
-                ...tagNames(view),
-              ]
-                .join(" ")
-                .toLowerCase()
-                .includes(query))),
+            (!finding ||
+              matches(
+                searchable(
+                  [
+                    view.financial_date,
+                    fmtDate(view.financial_date),
+                    categoryNames[view.category],
+                    title(view),
+                    view.note,
+                    ...describe(view),
+                    ...tagNames(view),
+                  ],
+                  decimalToCents(view.amount),
+                ),
+                search,
+              ))),
       ),
   ];
   const groups: Array<{ key: string; label: string; rows: Row[] }> = [];
@@ -726,14 +751,16 @@ export function ActivityScreen(
             ? undefined
             : month
               ? `${fmtMonth(month)}, ${plural(inMonth.length, "entry", "entries")}`
-              : `All months, ${plural(data.length, "entry", "entries")}`
+              : `All months, ${plural(data.length, "entry", "entries")}${finding ? " searched" : ""}`
         }
       >
         <select
           className="input ar-month"
           aria-label="Months shown"
           value={month}
-          onChange={(e) => setAllMonths(!e.target.value)}
+          onChange={(e) =>
+            finding ? setSearchMonth(Boolean(e.target.value)) : setAllMonths(!e.target.value)
+          }
         >
           <option value={shown}>{fmtMonth(shown)}</option>
           <option value="">All months</option>
@@ -832,7 +859,7 @@ export function ActivityScreen(
       />
       {entries.kind === "loading" ? (
         <LoadingCard label="Loading activity" />
-      ) : !loaded ? null : inMonth.length === 0 && !pendingRow ? (
+      ) : !loaded ? null : data.length === 0 && !pendingRow ? (
         <Empty title={`Nothing is recorded in ${month ? monthName(month) : "any month"} yet`}>
           Record spending in the line above, or use Record activity for income, fixed costs and
           saving. Investing and giving are recorded in Investments and Giving.
@@ -871,21 +898,67 @@ export function ActivityScreen(
                 ))}
               </select>
             )}
-            <input
-              className="input"
-              type="search"
-              placeholder="Find an entry"
-              aria-label="Find an entry"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <output className="note">{plural(rows.length, "entry", "entries")}</output>
+            <div className="ar-search">
+              <input
+                ref={searchBox}
+                className="input"
+                type="search"
+                placeholder="Search payee, note, amount…"
+                aria-label="Search activity"
+                aria-keyshortcuts="/"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  if (!searching(e.target.value)) setSearchMonth(false);
+                }}
+                onKeyDown={(e) => {
+                  // Esc clears the search, then gives the keys back to the list; Enter keeps it.
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (search) {
+                      setSearch("");
+                      setSearchMonth(false);
+                    } else e.currentTarget.blur();
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (rows[0]) focusCell(rows[0].id, 0);
+                    else e.currentTarget.blur();
+                  }
+                }}
+              />
+              {!search && <kbd className="kbd">/</kbd>}
+            </div>
+            <output className="note">
+              {plural(rows.length, "entry", "entries")}
+              {finding && !month ? " in all months" : ""}
+            </output>
           </div>
-          {rows.length === 0 && (
-            <p className="note ar-under">
-              No entries match. Clear the filter or the search to see all {inMonth.length}.
-            </p>
-          )}
+          {rows.length === 0 &&
+            (finding ? (
+              <p className="note ar-under">
+                Nothing {month ? `in ${monthName(month)} ` : ""}matches “{search.trim()}”
+                {category || tagFilter ? " with this filter" : ""}.{" "}
+                <button
+                  type="button"
+                  className="disclose"
+                  onClick={() => {
+                    setSearch("");
+                    setSearchMonth(false);
+                  }}
+                >
+                  Clear search
+                </button>
+              </p>
+            ) : inMonth.length === 0 ? (
+              <Empty title={`Nothing is recorded in ${monthName(shown)} yet`}>
+                Record spending in the line above, or search to find entries in other months.
+              </Empty>
+            ) : (
+              <p className="note ar-under">
+                No entries match. Clear the filter to see all {inMonth.length}.
+              </p>
+            ))}
           {groups.map((group) => (
             <div key={group.key}>
               <div className="dayh">
@@ -1252,6 +1325,10 @@ export function ActivityScreen(
                 ["Enter / i", "Open the entry; on an amount, edit it in place"],
                 ["Enter / Escape", "Keep a valid amount in the unsaved entry"],
                 ["a", "Record activity"],
+                [
+                  "/",
+                  "Search every month by payee, note, line, subcategory, tag or amount; every word must match. Enter moves to the first match; Esc clears the search.",
+                ],
                 ["dd", "Delete the selected entry, with confirmation"],
                 ["Ctrl / ⌘ + S", "Save the entry being edited"],
                 ["Escape", "Close the dialog; unsaved changes stay"],
