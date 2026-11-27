@@ -1,6 +1,7 @@
 """Production UI smoke journey against isolated PostgreSQL and local signed OIDC."""
 
 import asyncio
+import json
 import os
 import socket
 import subprocess
@@ -18,6 +19,24 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from accanto.models.monthly import entities, users
 
 ROOT = Path(__file__).resolve().parents[2]
+PUSH_KEY = "yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw"
+# Chromium cannot reach a real push service here: permission and the
+# subscription are stubbed in the page; the server, routes and sender are real.
+PUSH_STUB = """(() => {
+  const sub = {endpoint: 'https://web.push.apple.com/synthetic-e2e', keys: {
+    p256dh: 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcx'
+      + 'aOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4',
+    auth: 'BTBZMqHH6r4Tts7J_aSIgg'}};
+  let on = false;
+  Object.defineProperty(Notification, 'permission',
+    {configurable: true, get: () => window.__e2ePermission ?? 'default'});
+  Notification.requestPermission = async () => (window.__e2ePermission = 'granted');
+  const handle = {toJSON: () => sub,
+    unsubscribe: async () => { on = false; return true; }};
+  PushManager.prototype.getSubscription = async () => (on ? handle : null);
+  PushManager.prototype.subscribe = async () => { on = true; return handle; };
+  return true;
+})()"""
 
 
 def free_port():
@@ -82,6 +101,10 @@ def test_signed_in_workspace(tmp_path):
         "OIDC_ALLOWED_EMAILS": '["synthetic@example.test"]',
         "ACCANTO_TEST_OIDC_ISSUER": issuer,
         "ACCANTO_TEST_BROWSER_ORIGIN": origin,
+        # Notifications (TDD 20): RFC 8291's published test key, and payloads
+        # recorded to a file instead of a push service.
+        "VAPID_PRIVATE_KEY": PUSH_KEY,
+        "PUSH_RECORD_FILE": str(tmp_path / "pushes.jsonl"),
     }
     config = tmp_path / "browser.json"
     config.write_text("{}")
@@ -947,6 +970,38 @@ def test_signed_in_workspace(tmp_path):
         until(
             "!document.querySelector('#main').textContent.includes('Synthetic routine')"
         )
+        # Notifications (TDD 20): turn on, send a test, read the recorded payload.
+        until("navigator.serviceWorker.controller !== undefined")
+        browser("eval", PUSH_STUB)
+        go("Settings")
+        button("Turn on")
+        browser("wait", "--text", "Notifications are on for this device.")
+        assert (
+            value("document.querySelector('#notify-transactions_waiting').checked")
+            == "false"
+        )
+        button("Send a test")
+        browser("wait", "--text", "Test sent.")
+        pushes = [
+            json.loads(line)
+            for line in (tmp_path / "pushes.jsonl").read_text().splitlines()
+        ]
+        assert [p["payload"]["notification"] for p in pushes] == [
+            {
+                "title": "Accanto",
+                "body": "Notifications are on for this device.",
+                "navigate": origin + "/#/settings",
+                "tag": "test",
+                "lang": "en",
+            }
+        ]
+        button("Turn off")
+        browser("wait", "--text", "Notifications are off for this device.")
+        until(
+            "Array.from(document.querySelectorAll('button'))"
+            ".some(b => b.textContent.trim() === 'Turn on')"
+        )
+        go("Home")
         browser("set", "viewport", "320", "760")
         assert fits()
         # Below 760 px the sidebar is hidden; More holds Sign out.

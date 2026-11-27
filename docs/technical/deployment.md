@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6x044`.
+   supported revision is `6y045`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -210,6 +210,15 @@ can use the new table and its identity sequence:
 `GRANT USAGE, SELECT ON SEQUENCE entity_member_id_seq TO accanto_app;`
 (or rerun the whole recipe). `6w043` code ignores the table, so an application
 rollback only removes members' access. The downgrade drops every membership.
+`6y045` adds Notifications ([TDD 20](../tdds/20-notifications.md)): new tables
+`push_device`, `notification_preference` and `notification_send`. Additive, no
+backfill; `6x044` code never reads them. Reapply the runtime grants so
+`accanto_app` can use the new tables and the `push_device` identity sequence:
+`GRANT SELECT, INSERT, UPDATE, DELETE ON push_device, notification_preference, notification_send TO accanto_app;`
+`GRANT USAGE, SELECT ON SEQUENCE push_device_id_seq TO accanto_app;`
+(or rerun the whole recipe). Without the `VAPID_PRIVATE_KEY` secret nothing is
+sent and Settings hides Notifications. The downgrade drops the tables; Devices
+then turn on again.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

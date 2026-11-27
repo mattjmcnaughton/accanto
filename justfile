@@ -93,6 +93,10 @@ test-logfire-live:
 fake-ynab seed="7" port="8105":
     uv run python -m tests.fakes.ynab_server --seed {{seed}} --port {{port}}
 
+# Print a new VAPID private key for Notifications (TDD 20); store it as a secret, never commit it
+vapid-keys:
+    @uv run python -c "from accanto.services.push import new_private_key as k, public_key_of as p; key = k(); print('VAPID_PRIVATE_KEY=' + key); print('public key: ' + p(key))"
+
 # Fast pre-push check (backend + frontend)
 gate: gate-be gate-fe
 

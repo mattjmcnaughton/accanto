@@ -24,6 +24,7 @@ const props = () => ({
   dirty: vi.fn(),
   save: vi.fn(),
   credentials: vi.fn().mockResolvedValue(session),
+  userId: "owner",
   saved: vi.fn(),
 });
 afterEach(() => {

@@ -26,3 +26,9 @@ if (rootElement) {
     </StrictMode>,
   );
 }
+// Notifications only (TDD 20); registered after the first render, never blocking it.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}

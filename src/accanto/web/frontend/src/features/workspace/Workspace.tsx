@@ -2,6 +2,7 @@ import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type BrowserSession, readSession } from "../../lib/api";
 import { addMonths, daysInMonth, fmtMonth } from "../../lib/format";
+import { disable as disablePush, refresh as refreshPush } from "../../lib/push";
 import { observeScreen } from "../../lib/screenTiming";
 import type { WriteSpec } from "../../lib/monthly";
 import {
@@ -150,6 +151,11 @@ export function Workspace({
   useEffect(() => {
     if (session.screen_timing) return observeScreen(screen, session.csrf_token);
   }, [screen, session.screen_timing, session.csrf_token]);
+  // iOS can drop a push subscription silently: register this browser's Device again on start.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Once per signed-in session.
+  useEffect(() => {
+    void refreshPush(session).catch(() => {});
+  }, [session.csrf_token]);
   const [month, setMonth] = useState(targetMonth);
   // A one-shot request for Activity's entry dialog, from Add activity or the N key.
   const [add, setAdd] = useState(0);
@@ -253,6 +259,8 @@ export function Workspace({
     }
   }
   async function signOut() {
+    // This browser stops getting notifications for this account; best effort, never blocking.
+    await disablePush(session);
     await logout(session, () => {
       pending.current.clear();
       dirty.current = false;
@@ -807,6 +815,7 @@ export function Workspace({
                   <Settings
                     {...props}
                     credentials={credentials}
+                    userId={session.user.id}
                     saved={() => void refreshMetadata()}
                     openInbox={() => go("inbox")}
                   />

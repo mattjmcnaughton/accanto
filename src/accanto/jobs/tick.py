@@ -70,9 +70,17 @@ async def scheduled_entries() -> dict[str, int]:
     return await stage_due(db.async_session)
 
 
+async def notifications() -> dict[str, int]:
+    """Send the day's enabled Notifications once, after scheduled entries (TDD 20)."""
+    from accanto.services.notifications import send_due
+
+    return await send_due(db.async_session)
+
+
 STEPS: list[TickStep] = [
     ("conversation_retention", conversation_retention),
     ("scheduled_entries", scheduled_entries),
+    ("notifications", notifications),
 ]
 
 

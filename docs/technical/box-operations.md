@@ -38,6 +38,11 @@ Runtime configuration lives on the deployment, never in Git:
   the private `accanto` Logfire project) and environment variable
   `LOGFIRE_ENVIRONMENT=production`. Without the token nothing is exported; see
   [telemetry.md](telemetry.md).
+- Optional, for Notifications ([TDD 20](../tdds/20-notifications.md)): secret
+  `VAPID_PRIVATE_KEY`, printed by `just vapid-keys`. Both services read it: `web`
+  serves its public key and `jobs` signs pushes with it. Unset hides
+  Notifications and sends nothing. Replacing it invalidates every Device's
+  subscription; each must turn Notifications on again.
 - Set by Amp: `PORT` and `AMP_DEPLOYMENT_URL`, which becomes `BROWSER_ORIGIN`.
 
 List what is stored, without values, with `manage_amp` (topics `secrets` and
