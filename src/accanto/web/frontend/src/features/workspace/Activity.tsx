@@ -123,7 +123,13 @@ export const LoadingCard = ({ label }: { label: string }) => (
  * added tells the shell it was taken, so a later visit does not reopen the dialog.
  */
 export function ActivityScreen(
-  p: ScreenProps & { month?: string; add?: number; added?: () => void },
+  p: ScreenProps & {
+    month?: string;
+    add?: number;
+    added?: () => void;
+    /** Another screen opens one entry: only its dialog shows, and `closed` runs when it closes. */
+    detail?: { id: string; closed: () => void };
+  },
 ) {
   const [reload, setReload] = useState(0);
   const deps = [p.entity.id, p.refresh, reload];
@@ -631,7 +637,8 @@ export function ActivityScreen(
       ? "Delete this linked refund? Its history will be retained."
       : "Delete this mistaken entry? It will stop contributing to totals; its history is retained.";
     if (!window.confirm(message)) return;
-    setOpen(false);
+    // An opened entry keeps its dialog until the delete is confirmed: there is no row behind it.
+    if (!p.detail) setOpen(false);
     p.save(
       entry.refund_of
         ? monthly.deleteRefund(p.entity.id, entry.uuid, {
@@ -691,6 +698,13 @@ export function ActivityScreen(
   }
   /** Escape or the backdrop leaves the dialog; unsaved changes stay on their row. */
   function closeDialog() {
+    if (p.detail) {
+      // No row holds an opened entry's unsaved changes, so leaving discards them after asking.
+      if (p.busy) return;
+      if (draft && changed && draft !== untouched.current && !p.guard()) return;
+      done();
+      return;
+    }
     if (!draft || (!p.busy && (!changed || draft === untouched.current))) done();
     else setOpen(false);
     const id = selection.id || rows[0]?.id;
@@ -717,6 +731,20 @@ export function ActivityScreen(
       help: () => setHelp(true),
     });
   }
+  // An opened entry starts once the entries load; one that is gone, or busy, closes at once.
+  const detailStarted = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The entry opens once, when entries load.
+  useEffect(() => {
+    if (!p.detail || detailStarted.current || !loaded) return;
+    detailStarted.current = true;
+    const entry = data.find((row) => row.uuid === p.detail?.id);
+    if (entry && claim({ id: entry.uuid, view: entry })) setOpen(true);
+    else p.detail.closed();
+  }, [loaded]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Closing is the record going away.
+  useEffect(() => {
+    if (p.detail && detailStarted.current && !info && !draft) p.detail.closed();
+  }, [info, draft]);
   if (p.concealed) return null;
   const record = draft && draft.kind !== "known" ? pendingRow?.view : null;
   const dialogTitle = info
@@ -730,23 +758,243 @@ export function ActivityScreen(
         : draft?.entry
           ? "Edit activity"
           : "Record activity";
+  function saveKey(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      if (p.busy) return;
+      const next = commit();
+      // Only a changed record is saved; leaving or saving an untouched row sends nothing.
+      if (next && (changed || next !== draft)) {
+        setDraft(next);
+        if (open) setSubmitRequest((x) => x + 1);
+        else submit(next);
+      }
+    }
+  }
+  const entryDialog = open && (info || draft) && (
+    <Dialog title={dialogTitle} onClose={closeDialog} className="ar">
+      {info && (
+        <>
+          <div className="dlg-b">
+            <dl className="ar-facts">
+              <dt>What</dt>
+              <dd>{title(info)}</dd>
+              <dt>Date</dt>
+              <dd>{fmtDate(info.financial_date)}</dd>
+              <dt>Amount</dt>
+              <dd>{formatMoney(info.amount)}</dd>
+              <dt>Paid from</dt>
+              <dd>{info.funding_goal_id ? goalLabel(info.funding_goal_id) : "Current income"}</dd>
+              {info.note && (
+                <>
+                  <dt>Note</dt>
+                  <dd>{info.note}</dd>
+                </>
+              )}
+            </dl>
+            <TagPicker
+              tags={tagList}
+              value={infoTags ?? info.tag_ids ?? []}
+              disabled={p.busy}
+              onChange={setInfoTags}
+            />
+            <p className="note">
+              Change its tags here. Correct anything else in{" "}
+              {info.category === "investing" ? "Investments" : "Giving"}.
+            </p>
+          </div>
+          <div className="dlg-f">
+            {info.remaining_refundable != null && Number(info.remaining_refundable) > 0 && (
+              <button
+                type="button"
+                className="btn"
+                disabled={p.busy}
+                onClick={() => openRefund(info)}
+              >
+                Record a refund
+              </button>
+            )}
+            <span className="spacer" />
+            {infoTags && (
+              <button
+                type="button"
+                className="btn pri"
+                disabled={p.busy}
+                onClick={() =>
+                  p.save(
+                    tagApi.setEntryTags(p.entity.id, [
+                      {
+                        entry_id: info.uuid,
+                        expected_revision: info.revision,
+                        tag_ids: infoTags,
+                      },
+                    ]),
+                    (result) => {
+                      setInfoTags(null);
+                      setInfo(result.entries[0] ?? info);
+                    },
+                  )
+                }
+              >
+                Save tags
+              </button>
+            )}
+            <button type="button" className="btn" onClick={closeDialog}>
+              Close
+            </button>
+          </div>
+        </>
+      )}
+      {draft && (
+        <form
+          ref={form}
+          id="activity-record"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const next = commit();
+            if (next) submit(next);
+          }}
+        >
+          <fieldset disabled={p.busy} className="ar-fs">
+            <div className="dlg-b">
+              {draft.kind === "activity" && (
+                <ActivityFields
+                  draft={draft}
+                  change={change}
+                  fixedCosts={fixedCosts}
+                  loans={loans.kind === "ready" ? loans.data : []}
+                  sources={sources}
+                  savingGoals={savingGoals}
+                  tags={tagList}
+                  subcategories={subcategoryList}
+                />
+              )}
+              {draft.kind === "refund" && (
+                <>
+                  <p className="note">
+                    Original {categoryNames[draft.target.category].toLowerCase()} payment of{" "}
+                    {formatMoney(draft.target.amount)} on {fmtDate(draft.target.financial_date)}.
+                    Remaining refundable: {formatMoney(draft.target.remaining_refundable ?? "0.00")}
+                    . A refund carries the purchase's tags.
+                  </p>
+                  <div className="two">
+                    <Field label="Refund date">
+                      <input
+                        type="date"
+                        required
+                        min={draft.target.financial_date}
+                        value={draft.form.date}
+                        onChange={(e) =>
+                          change({
+                            ...draft,
+                            form: { ...draft.form, date: e.target.value },
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="Refund amount (USD)">
+                      <input
+                        required
+                        inputMode="decimal"
+                        pattern={AMOUNT}
+                        placeholder="0.00"
+                        value={draft.form.amount}
+                        onChange={(e) =>
+                          change({
+                            ...draft,
+                            form: { ...draft.form, amount: e.target.value },
+                          })
+                        }
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Note (optional)">
+                    <input
+                      maxLength={2000}
+                      value={draft.form.note ?? ""}
+                      onChange={(e) =>
+                        change({
+                          ...draft,
+                          form: { ...draft.form, note: e.target.value },
+                        })
+                      }
+                    />
+                  </Field>
+                </>
+              )}
+              {draft.kind === "known" && (
+                <KnownFields
+                  draft={draft}
+                  change={change}
+                  fingerprint={fingerprint}
+                  sources={sources}
+                  savingGoals={savingGoals}
+                />
+              )}
+              {draft.kind === "activity" && draft.entry?.remaining_refundable != null && (
+                <p className="note">
+                  Remaining refundable: {formatMoney(draft.entry.remaining_refundable)}
+                </p>
+              )}
+            </div>
+            <div className="dlg-f">
+              {draft.kind !== "known" && draft.entry && (
+                <button
+                  type="button"
+                  className="btn quiet danger"
+                  onClick={() => record && remove({ id: record.uuid, view: record })}
+                >
+                  Delete
+                </button>
+              )}
+              {draft.kind === "activity" &&
+                draft.entry &&
+                !changed &&
+                draft.entry.remaining_refundable != null &&
+                Number(draft.entry.remaining_refundable) > 0 && (
+                  <button
+                    type="button"
+                    className="btn quiet"
+                    onClick={() => openRefund(draft.entry as Activity)}
+                  >
+                    Record a refund
+                  </button>
+                )}
+              <span className="spacer" />
+              <button type="button" className="btn" onClick={done}>
+                {changed ? "Discard changes" : "Cancel"}
+              </button>
+              <button className="btn pri" type="submit">
+                {draft.kind === "known"
+                  ? "Save adjustment"
+                  : draft.kind === "refund"
+                    ? "Save refund"
+                    : draft.entry
+                      ? "Save changes"
+                      : "Record"}
+              </button>
+            </div>
+          </fieldset>
+        </form>
+      )}
+    </Dialog>
+  );
+  if (p.detail)
+    return (
+      // The opened entry's keys stay with it, not the screen that opened it.
+      <div
+        className="ar"
+        onKeyDown={(e) => {
+          saveKey(e);
+          e.stopPropagation();
+        }}
+      >
+        <LoadProblem states={[entries]} retry={() => setReload((x) => x + 1)} />
+        {entryDialog}
+      </div>
+    );
   return (
-    <div
-      className="screen ar activity-screen"
-      onKeyDown={(e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-          e.preventDefault();
-          if (p.busy) return;
-          const next = commit();
-          // Only a changed record is saved; leaving or saving an untouched row sends nothing.
-          if (next && (changed || next !== draft)) {
-            setDraft(next);
-            if (open) setSubmitRequest((x) => x + 1);
-            else submit(next);
-          }
-        }
-      }}
-    >
+    <div className="screen ar activity-screen" onKeyDown={saveKey}>
       <Head
         title="Activity"
         sub={
@@ -1106,217 +1354,7 @@ export function ActivityScreen(
           onClose={() => setManaging(false)}
         />
       )}
-      {open && (info || draft) && (
-        <Dialog title={dialogTitle} onClose={closeDialog} className="ar">
-          {info && (
-            <>
-              <div className="dlg-b">
-                <dl className="ar-facts">
-                  <dt>What</dt>
-                  <dd>{title(info)}</dd>
-                  <dt>Date</dt>
-                  <dd>{fmtDate(info.financial_date)}</dd>
-                  <dt>Amount</dt>
-                  <dd>{formatMoney(info.amount)}</dd>
-                  <dt>Paid from</dt>
-                  <dd>
-                    {info.funding_goal_id ? goalLabel(info.funding_goal_id) : "Current income"}
-                  </dd>
-                  {info.note && (
-                    <>
-                      <dt>Note</dt>
-                      <dd>{info.note}</dd>
-                    </>
-                  )}
-                </dl>
-                <TagPicker
-                  tags={tagList}
-                  value={infoTags ?? info.tag_ids ?? []}
-                  disabled={p.busy}
-                  onChange={setInfoTags}
-                />
-                <p className="note">
-                  Change its tags here. Correct anything else in{" "}
-                  {info.category === "investing" ? "Investments" : "Giving"}.
-                </p>
-              </div>
-              <div className="dlg-f">
-                {info.remaining_refundable != null && Number(info.remaining_refundable) > 0 && (
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={p.busy}
-                    onClick={() => openRefund(info)}
-                  >
-                    Record a refund
-                  </button>
-                )}
-                <span className="spacer" />
-                {infoTags && (
-                  <button
-                    type="button"
-                    className="btn pri"
-                    disabled={p.busy}
-                    onClick={() =>
-                      p.save(
-                        tagApi.setEntryTags(p.entity.id, [
-                          {
-                            entry_id: info.uuid,
-                            expected_revision: info.revision,
-                            tag_ids: infoTags,
-                          },
-                        ]),
-                        (result) => {
-                          setInfoTags(null);
-                          setInfo(result.entries[0] ?? info);
-                        },
-                      )
-                    }
-                  >
-                    Save tags
-                  </button>
-                )}
-                <button type="button" className="btn" onClick={closeDialog}>
-                  Close
-                </button>
-              </div>
-            </>
-          )}
-          {draft && (
-            <form
-              ref={form}
-              id="activity-record"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const next = commit();
-                if (next) submit(next);
-              }}
-            >
-              <fieldset disabled={p.busy} className="ar-fs">
-                <div className="dlg-b">
-                  {draft.kind === "activity" && (
-                    <ActivityFields
-                      draft={draft}
-                      change={change}
-                      fixedCosts={fixedCosts}
-                      loans={loans.kind === "ready" ? loans.data : []}
-                      sources={sources}
-                      savingGoals={savingGoals}
-                      tags={tagList}
-                      subcategories={subcategoryList}
-                    />
-                  )}
-                  {draft.kind === "refund" && (
-                    <>
-                      <p className="note">
-                        Original {categoryNames[draft.target.category].toLowerCase()} payment of{" "}
-                        {formatMoney(draft.target.amount)} on {fmtDate(draft.target.financial_date)}
-                        . Remaining refundable:{" "}
-                        {formatMoney(draft.target.remaining_refundable ?? "0.00")}. A refund carries
-                        the purchase's tags.
-                      </p>
-                      <div className="two">
-                        <Field label="Refund date">
-                          <input
-                            type="date"
-                            required
-                            min={draft.target.financial_date}
-                            value={draft.form.date}
-                            onChange={(e) =>
-                              change({
-                                ...draft,
-                                form: { ...draft.form, date: e.target.value },
-                              })
-                            }
-                          />
-                        </Field>
-                        <Field label="Refund amount (USD)">
-                          <input
-                            required
-                            inputMode="decimal"
-                            pattern={AMOUNT}
-                            placeholder="0.00"
-                            value={draft.form.amount}
-                            onChange={(e) =>
-                              change({
-                                ...draft,
-                                form: { ...draft.form, amount: e.target.value },
-                              })
-                            }
-                          />
-                        </Field>
-                      </div>
-                      <Field label="Note (optional)">
-                        <input
-                          maxLength={2000}
-                          value={draft.form.note ?? ""}
-                          onChange={(e) =>
-                            change({
-                              ...draft,
-                              form: { ...draft.form, note: e.target.value },
-                            })
-                          }
-                        />
-                      </Field>
-                    </>
-                  )}
-                  {draft.kind === "known" && (
-                    <KnownFields
-                      draft={draft}
-                      change={change}
-                      fingerprint={fingerprint}
-                      sources={sources}
-                      savingGoals={savingGoals}
-                    />
-                  )}
-                  {draft.kind === "activity" && draft.entry?.remaining_refundable != null && (
-                    <p className="note">
-                      Remaining refundable: {formatMoney(draft.entry.remaining_refundable)}
-                    </p>
-                  )}
-                </div>
-                <div className="dlg-f">
-                  {draft.kind !== "known" && draft.entry && (
-                    <button
-                      type="button"
-                      className="btn quiet danger"
-                      onClick={() => record && remove({ id: record.uuid, view: record })}
-                    >
-                      Delete
-                    </button>
-                  )}
-                  {draft.kind === "activity" &&
-                    draft.entry &&
-                    !changed &&
-                    draft.entry.remaining_refundable != null &&
-                    Number(draft.entry.remaining_refundable) > 0 && (
-                      <button
-                        type="button"
-                        className="btn quiet"
-                        onClick={() => openRefund(draft.entry as Activity)}
-                      >
-                        Record a refund
-                      </button>
-                    )}
-                  <span className="spacer" />
-                  <button type="button" className="btn" onClick={done}>
-                    {changed ? "Discard changes" : "Cancel"}
-                  </button>
-                  <button className="btn pri" type="submit">
-                    {draft.kind === "known"
-                      ? "Save adjustment"
-                      : draft.kind === "refund"
-                        ? "Save refund"
-                        : draft.entry
-                          ? "Save changes"
-                          : "Record"}
-                  </button>
-                </div>
-              </fieldset>
-            </form>
-          )}
-        </Dialog>
-      )}
+      {entryDialog}
       {help && (
         <Dialog title="Keyboard shortcuts" onClose={() => setHelp(false)} className="ar">
           <div className="dlg-b">

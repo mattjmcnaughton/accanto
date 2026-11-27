@@ -422,11 +422,24 @@ function Ask({
   );
 }
 
-function Lines({ section }: { section: ReviewSection }) {
+function Lines({ section, open }: { section: ReviewSection; open?: (uuid: string) => void }) {
   const entryRows = (parent: string, entries: Entry[]) =>
     entries.map((entry) => (
       <tr key={`${parent}/${entry.uuid}`} className="ar-entry-row">
-        <th scope="row">{entryName(entry)}</th>
+        <th scope="row">
+          {open ? (
+            <button
+              type="button"
+              className="ar-entry-open"
+              aria-haspopup="dialog"
+              onClick={() => open(entry.uuid)}
+            >
+              {entryName(entry)}
+            </button>
+          ) : (
+            entryName(entry)
+          )}
+        </th>
         <td className="num">{formatMoney(entry.amount)}</td>
         <td className="num c-plan" />
         <td />
@@ -588,12 +601,15 @@ export function ReviewDetails({
   current = false,
   busy = false,
   resolve,
+  open: openEntry,
   onHelp,
 }: {
   review: ReviewView;
   current?: boolean;
   busy?: boolean;
   resolve?: (resolution: Resolution) => void;
+  /** Opens an entry listed under a section to view or edit it. */
+  open?: (uuid: string) => void;
   onHelp?: () => void;
 }) {
   const { actual, summary, expected } = review;
@@ -684,14 +700,15 @@ export function ReviewDetails({
               {s.unknown.map((line) => (
                 <Ask key={line.key} section={s} line={line} busy={busy} resolve={resolve} />
               ))}
-              {expanded && <Lines section={s} />}
+              {expanded && <Lines section={s} open={openEntry} />}
             </section>
           );
         })}
       </div>
       <p id="review-keys" className="note ar-keys">
         <kbd className="kbd">j</kbd> <kbd className="kbd">k</kbd> move between sections,{" "}
-        <kbd className="kbd">Enter</kbd> shows or hides lines, <kbd className="kbd">?</kbd> all keys
+        <kbd className="kbd">Enter</kbd> shows or hides lines; Tab to an entry and{" "}
+        <kbd className="kbd">Enter</kbd> opens it, <kbd className="kbd">?</kbd> all keys
       </p>
       {!review.destination_comparisons && (
         <p className="note">Destination comparison for this older version: Unknown</p>

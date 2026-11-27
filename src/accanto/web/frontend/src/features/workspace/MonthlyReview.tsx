@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { fmtMonth, fmtShort, monthName, plural } from "../../lib/format";
 import { type PlanGroup, type PlanRevision, monthly } from "../../lib/monthly";
+import { confirmInAppNavigation } from "../../lib/recoverableWrite";
 import { Dialog, Empty, Head } from "../../ui";
-import { LoadProblem, LoadingCard, defaultDate } from "./Activity";
+import { ActivityScreen, LoadProblem, LoadingCard, defaultDate } from "./Activity";
 import { type Resolution, ReviewDetails, complete, reviewSections } from "./ReviewDetails";
-import { newestFirst } from "./planWorksheetModel";
 import type { Screen } from "./Workspace";
+import { newestFirst } from "./planWorksheetModel";
 import { type ScreenProps, previousMonth, useLoad } from "./shared";
 import "./activity-review.css";
 
@@ -24,11 +25,17 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
   const month = p.month ?? p.entity.today.slice(0, 7);
   const priorMonth = previousMonth(month);
   const [reload, setReload] = useState(0);
-  const state = useLoad(
+  const read = useLoad(
     () => monthly.review(p.entity.id, `${month}-01`),
     [p.entity.id, month, p.refresh, reload],
     { enabled: !p.concealed, share: `review:${month}-01` },
   );
+  // After a save the Review keeps what it shows until the refreshed read lands, so open
+  // sections, focus and scroll stay where they were and only the totals change.
+  const last = useRef<{ entity: string; state: typeof read } | null>(null);
+  if (read.kind === "ready") last.current = { entity: p.entity.id, state: read };
+  const refreshing = read.kind === "loading" && last.current?.entity === p.entity.id;
+  const state = refreshing && last.current ? last.current.state : read;
   const previous = useLoad(
     () => monthly.review(p.entity.id, priorMonth),
     [p.entity.id, priorMonth, p.refresh, reload],
@@ -43,6 +50,9 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
   const [draft, setDraft] = useState({ note: "", reviewed: false });
   const [edited, setEdited] = useState(false);
   const [help, setHelp] = useState(false);
+  /** The entry opened from a section's lines, in Activity's own dialog. */
+  const [entry, setEntry] = useState<string | null>(null);
+  const entryDirty = useRef(false);
   const editedRef = useRef(false);
   editedRef.current = edited;
   // Follow the previous month's Plan to its latest saved version.
@@ -328,10 +338,26 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
           <ReviewDetails
             review={state.data}
             current={month === p.entity.today.slice(0, 7)}
-            busy={p.busy}
+            busy={p.busy || refreshing}
             resolve={resolve}
+            open={(uuid) => !p.busy && setEntry(uuid)}
             onHelp={() => setHelp(true)}
           />
+          {entry && (
+            <ActivityScreen
+              key={entry}
+              {...p}
+              month={month}
+              detail={{ id: entry, closed: () => setEntry(null) }}
+              // The entry's changes and the Review note are separate: opening or leaving the
+              // entry never asks about the note, and saving the entry keeps the note unsaved.
+              guard={() => !p.busy && confirmInAppNavigation(() => entryDirty.current)}
+              dirty={(value) => {
+                entryDirty.current = value;
+                p.dirty(value || editedRef.current);
+              }}
+            />
+          )}
           <form
             className="card pad stack"
             aria-label="Close the month"
@@ -402,6 +428,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
                 ["j k / arrows", "Move between sections"],
                 ["gg / G", "First or last section"],
                 ["Enter / i / Space", "Show or hide a section's lines"],
+                ["Tab, then Enter", "Open an entry in a section's lines to view or edit it"],
                 ["Tab", "Move to a section's questions, the note and actions"],
                 ["Ctrl / ⌘ + S", "Save the Review (or start it)"],
               ].map(([key, label]) => (
