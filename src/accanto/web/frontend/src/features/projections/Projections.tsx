@@ -209,7 +209,7 @@ export function Projections(
     <section aria-labelledby="projections-title" className="screen proj">
       <Head
         title={<span id="projections-title">Projections</span>}
-        tip="Illustrative: from each investment's expected return and contribution, with loans paid down at their terms. Ignores taxes, fees and market risk."
+        tip="Illustrative: from each investment's expected return and contribution, with debts paid down at their terms. Ignores taxes, fees and market risk."
       >
         {/* biome-ignore lint/a11y/useSemanticElements: The kit\'s segmented control is a button group. */}
         <div className="seg-control" role="group" aria-label="Dollars">
@@ -383,16 +383,16 @@ export function Projections(
           {data.loans.length > 0 && (
             <div className="card pad stack">
               <div className="head-title">
-                <h2 className="h2">By loan</h2>
-                <Tip label="How loans are projected">
-                  A fixed-rate loan whose payment covers its interest pays down from its latest
-                  amount owed; other loans stay flat. Payments are not taken from contributions.
+                <h2 className="h2">By debt</h2>
+                <Tip label="How debts are projected">
+                  A fixed-rate debt whose payment covers its interest pays down from its latest
+                  amount owed; other debts stay flat. Payments are not taken from contributions.
                 </Tip>
               </div>
               <table className="proj-table">
                 <thead>
                   <tr>
-                    <th>Loan</th>
+                    <th>Debt</th>
                     <th>Owed now</th>
                     <th>Terms</th>
                     <th>Paid off</th>

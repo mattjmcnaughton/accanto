@@ -816,9 +816,9 @@ it("does not prompt about retained Plan edits when acting on another screen", as
   fireEvent.keyDown(spendingCell(), { key: "i" });
   fireEvent.change(spendingInput(), { target: { value: "4000.00" } });
   fireEvent.keyDown(spendingInput(), { key: "Enter" });
-  fireEvent.click(nav().getByRole("link", { name: "Loans" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Add loan" }));
-  expect(await screen.findByRole("dialog", { name: "Add loan" })).toBeDefined();
+  fireEvent.click(nav().getByRole("link", { name: "Debts" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add debt" }));
+  expect(await screen.findByRole("dialog", { name: "Add debt" })).toBeDefined();
   expect(confirm).not.toHaveBeenCalled();
   // The retained Plan edit still returns when coming back to it.
   fireEvent.click(nav().getByRole("link", { name: "Plans" }));

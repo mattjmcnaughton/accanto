@@ -40,7 +40,7 @@ export const LINK_SCREENS = [
   ["savings", "Savings"],
   ["investments", "Investments"],
   ["giving", "Giving"],
-  ["loans", "Loans"],
+  ["loans", "Debts"],
   ["settings", "Settings"],
 ] as const;
 export type LinkScreen = (typeof LINK_SCREENS)[number][0];

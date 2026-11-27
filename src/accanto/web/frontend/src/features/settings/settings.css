@@ -78,8 +78,13 @@
   line-height: 1.5;
 }
 @media (max-width: 760px) {
-  .set-screen .set-member-email {
-    width: auto;
-    flex: 1 1 220px;
+  /* Two fields and a button do not fit one phone row: stack them. */
+  .set-screen fieldset.setting .set-member-add {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .set-screen .set-member-add .input {
+    width: 100%;
+    flex: 1 1 100%;
   }
 }

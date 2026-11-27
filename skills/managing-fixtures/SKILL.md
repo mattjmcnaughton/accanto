@@ -91,7 +91,7 @@ may be reset within that verification task.
   a completed goal, an archived account, contributions, and a reassignment.
 - Investments/giving: active and inactive destinations, contribution targets,
   contributions, an investment opening, and observations distinct from activity.
-- Loans: two openings, a linked fixed-cost payment, and dated observations; the
+- Debts: two openings, a linked fixed-cost payment, and dated observations; the
   education loan has a fixed 4.50% rate and $180.00 monthly payment, the vehicle
   loan has no terms.
 - Three Reviews: oldest annotated as reviewed; middle month has an unknown income

@@ -347,7 +347,7 @@ export function ActivityScreen(
     savingGoals.find(({ goal }) => goal.uuid === id)?.label ?? "Historical saving goal";
   const loanName = (id: string) =>
     (loans.kind === "ready" ? loans.data.find((loan) => loan.uuid === id)?.name : null) ??
-    "Historical loan";
+    "Historical debt";
   const destinationLabel = (entry: Activity) => {
     const state = entry.category === "investing" ? investments : recipients;
     const fallback =
@@ -388,7 +388,7 @@ export function ActivityScreen(
       categoryNames[entry.category],
       entry.category === "spending" ? (entry.spending_subcategory_name ?? "") : "",
       entry.category === "fixed_cost" && entry.debt_account_id
-        ? `Loan: ${loanName(entry.debt_account_id)}`
+        ? `Debt: ${loanName(entry.debt_account_id)}`
         : "",
       entry.category !== "income" &&
       entry.category !== "saving" &&
@@ -1705,7 +1705,7 @@ function ActivityFields({
               }}
             />
           </Field>
-          <Field label="Loan account (optional)">
+          <Field label="Debt account (optional)">
             <select
               name="loan-account"
               value={form.debt_account_id || ""}

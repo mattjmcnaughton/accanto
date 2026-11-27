@@ -77,7 +77,7 @@ export function payoffLine(payoff: PayoffSummary): string {
     case "scheduled":
       return `Paid off ${fmtMonth(payoff.payoff_date as string)}, ${formatMoney(payoff.total_interest)} interest left`;
     case "interest_not_covered":
-      return `The ${formatMoney(payoff.monthly_payment)} payment does not cover ${formatMoney(payoff.monthly_interest)} monthly interest, so this loan never pays down.`;
+      return `The ${formatMoney(payoff.monthly_payment)} payment does not cover ${formatMoney(payoff.monthly_interest)} monthly interest, so this debt never pays down.`;
     case "beyond_limit":
       return "Not repaid within 100 years at this payment.";
     case "paid_off":
@@ -100,7 +100,7 @@ function problem(form: Form): string {
     if (!form.value.name.trim()) return "Enter a name.";
     const terms = termsProblem(form.value.rate, form.value.payment);
     if (terms) return terms;
-  } else if (!form.value.account_id) return "Choose a loan.";
+  } else if (!form.value.account_id) return "Choose a debt.";
   if (!form.value.date) return "Enter a date.";
   return validMoney(form.value.amount)
     ? ""
@@ -146,7 +146,7 @@ export function Balances(p: ScreenProps) {
   function editObservation(row: Observation | null, account?: string) {
     if (row?.is_opening) {
       setNotice(
-        "An opening amount owed cannot be corrected; move its date from the loan's Details.",
+        "An opening amount owed cannot be corrected; move its date from the debt's Details.",
       );
       return;
     }
@@ -196,7 +196,7 @@ export function Balances(p: ScreenProps) {
     setConfirmation({
       title: `Archive ${loan.name}?`,
       message: "Its payments and observations are kept. You can reopen it later.",
-      action: "Archive loan",
+      action: "Archive debt",
       run: () => p.save(spec, editor.saved),
     });
   }
@@ -279,7 +279,7 @@ export function Balances(p: ScreenProps) {
   ];
   const observationColumns: Column<Observation>[] = [
     { header: "Date", cell: (row) => <Day iso={row.financial_date} /> },
-    { header: "Loan", cell: (row) => nameOf(row.account_id) },
+    { header: "Debt", cell: (row) => nameOf(row.account_id) },
     { header: "Amount owed", numeric: true, cell: (row) => formatMoney(row.amount) },
     { header: "Kind", wide: true, cell: (row) => (row.is_opening ? "Opening" : "Observation") },
     {
@@ -304,7 +304,7 @@ export function Balances(p: ScreenProps) {
   const add = (
     <button type="button" className="btn pri" disabled={p.busy} onClick={() => openLoan(null)}>
       <Icon name="plus" />
-      Add loan
+      Add debt
     </button>
   );
   const keepOnEscape = (event: KeyboardEvent) => {
@@ -335,7 +335,7 @@ export function Balances(p: ScreenProps) {
       }}
     >
       <Head
-        title={<span id="balances-title">Loans</span>}
+        title={<span id="balances-title">Debts</span>}
         tip="The amount owed is a dated check-in you record from your lender. Recording a payment never changes it."
       >
         <ViewToggle view={view} choose={setView} />
@@ -352,10 +352,10 @@ export function Balances(p: ScreenProps) {
       <LoadFailure state={loans} retry={again} />
       <LoadFailure state={payments} retry={again} />
       <LoadFailure state={observed} retry={again} />
-      {loans.kind === "loading" && <Loading what="loans" />}
+      {loans.kind === "loading" && <Loading what="debts" />}
       {loans.kind === "empty" && (
-        <Empty title="No loans yet" action={add}>
-          Add a loan with what you owe today.
+        <Empty title="No debts yet" action={add}>
+          Add a debt with what you owe today.
         </Empty>
       )}
       {view === "cards" && accounts.length > 0 && (
@@ -425,14 +425,14 @@ export function Balances(p: ScreenProps) {
           {(loans.kind === "ready" || loans.kind === "empty") && (
             <div className="rec-registry">
               <div className="rec-bar">
-                <h2 className="h2">All loans</h2>
+                <h2 className="h2">All debts</h2>
               </div>
               <RecordGrid
-                label="Loans"
+                label="Debts"
                 rows={accounts}
                 rowId={(row) => row.uuid}
                 columns={loanColumns}
-                empty="No loans yet. Press a to add one."
+                empty="No debts yet. Press a to add one."
                 edit={openLoan}
                 add={() => openLoan(null)}
                 help={showHelp}
@@ -478,7 +478,7 @@ export function Balances(p: ScreenProps) {
             form.type === "loan"
               ? form.record
                 ? form.record.name
-                : "Add loan"
+                : "Add debt"
               : form.record
                 ? "Correct amount owed"
                 : "Record amount owed"
@@ -519,7 +519,7 @@ export function Balances(p: ScreenProps) {
                   <PayoffDetails entity={p.entity.id} loan={loan} refresh={p.refresh} />
                   <h3>Payment history</h3>
                   {loanPayments.length === 0 ? (
-                    <p className="note">No payments recorded for this loan.</p>
+                    <p className="note">No payments recorded for this debt.</p>
                   ) : (
                     <div className="rec-scroll">
                       <table className="rec-grid" aria-label={`Payments for ${loan.name}`}>
@@ -549,7 +549,7 @@ export function Balances(p: ScreenProps) {
                   <p className="note">Record payments in Activity.</p>
                   {!loan.active && loan.draft_fixed_cost_lines.length > 0 && (
                     <p className="warn">
-                      Review draft fixed-cost allocations for this archived loan.
+                      Review draft fixed-cost allocations for this archived debt.
                     </p>
                   )}
                   {loan.active && (
@@ -566,7 +566,7 @@ export function Balances(p: ScreenProps) {
                     aria-describedby={loan.active ? "archive-rule" : undefined}
                     onClick={() => toggleArchive(loan)}
                   >
-                    {loan.active ? "Archive loan" : "Reopen loan"}
+                    {loan.active ? "Archive debt" : "Reopen debt"}
                   </button>
                   <button type="button" className="btn pri" onClick={() => editor.close("")}>
                     Close
@@ -626,14 +626,14 @@ export function Balances(p: ScreenProps) {
                       </>
                     ) : (
                       <>
-                        <Field label="Loan">
+                        <Field label="Debt">
                           <select
                             value={form.value.account_id ?? ""}
                             onChange={(event) =>
                               set<ObservationInput>({ account_id: event.target.value || null })
                             }
                           >
-                            <option value="">Choose loan</option>
+                            <option value="">Choose debt</option>
                             {accounts.map((account) => (
                               <option key={account.uuid} value={account.uuid}>
                                 {account.name}
@@ -694,7 +694,7 @@ export function Balances(p: ScreenProps) {
                       </button>
                     )}
                     <button type="button" className="btn pri" onClick={save}>
-                      {form.type === "loan" ? "Save loan" : "Save observation"}
+                      {form.type === "loan" ? "Save debt" : "Save observation"}
                     </button>
                   </div>
                 </fieldset>
@@ -746,7 +746,7 @@ function LoanTermsForm({
       <Field label="Opening date">
         <input type="date" value={opened} onChange={(event) => setOpened(event.target.value)} />
       </Field>
-      <p className="note">When the loan began; no later than its next record.</p>
+      <p className="note">When the debt began; no later than its next record.</p>
       <div className="two">
         <Field label="Fixed interest rate (% a year)">
           <input
@@ -770,7 +770,7 @@ function LoanTermsForm({
       )}
       <div className="actions">
         <button type="submit" className="btn sm" disabled={busy || !changed}>
-          Save loan
+          Save debt
         </button>
       </div>
     </form>

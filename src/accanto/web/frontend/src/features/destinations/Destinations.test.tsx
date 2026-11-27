@@ -463,7 +463,7 @@ it("keeps the Escape fallback inside this screen, past hidden grids and another 
   mock({ "/debts": [] });
   const loans = render(<Balances {...props()} />);
   await show("Table");
-  (await screen.findByRole("grid", { name: "Loans" })).querySelector<HTMLElement>("td")?.focus();
+  (await screen.findByRole("grid", { name: "Debts" })).querySelector<HTMLElement>("td")?.focus();
   loans.unmount();
   mock();
   render(

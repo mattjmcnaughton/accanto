@@ -554,7 +554,7 @@ function NetWorthCard({
           <p className="big">{formatMoney(today.net_worth)}</p>
           <p className="note">
             Savings {formatMoney(today.savings)} + investments {formatMoney(today.investments)} −
-            loans {formatMoney(today.loans)}
+            debts {formatMoney(today.loans)}
           </p>
         </>
       )}
@@ -563,7 +563,7 @@ function NetWorthCard({
           <div className="glance-proj-head">
             <span
               className="cap projected"
-              title={`A Projection, not a balance: investments grow at their expected return and contribution, fixed-rate loans are paid down, savings stay as today.${defaulted ? ` ${plural(defaulted, "investment")} ${defaulted === 1 ? "uses" : "use"} the default ${default_return_percent}% return.` : ""}`}
+              title={`A Projection, not a balance: investments grow at their expected return and contribution, fixed-rate debts are paid down, savings stay as today.${defaulted ? ` ${plural(defaulted, "investment")} ${defaulted === 1 ? "uses" : "use"} the default ${default_return_percent}% return.` : ""}`}
             >
               Projected
             </span>

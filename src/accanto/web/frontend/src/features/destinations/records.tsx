@@ -9,7 +9,7 @@ import type { ScreenProps } from "../workspace/shared";
 import { useGridKeys } from "../workspace/useGridKeys";
 import "./records.css";
 
-/** Feature-local pieces shared by the Investments/Giving and Loans screens. */
+/** Feature-local pieces shared by the Investments/Giving and Debts screens. */
 
 export const dash = <span className="muted">—</span>;
 export const validMoney = (value: string, signed = false) =>
