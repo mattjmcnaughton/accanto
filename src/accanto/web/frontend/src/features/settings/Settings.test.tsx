@@ -3,6 +3,9 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, expect, it, vi } from "vitest";
 import { activityPage } from "../../stories/mocks/activity";
 import { Settings } from "./Settings";
+
+// These stubs answer every read with the Entity; Spending alerts have their own coverage.
+vi.mock("./SpendingAlerts", () => ({ SpendingAlertsSettings: () => null }));
 const navLink = (name: string | RegExp) =>
   within(screen.getByRole("navigation", { name: "Workspace" })).getByRole("link", { name });
 // Settings responses carry the projection assumptions; the session ignores them.

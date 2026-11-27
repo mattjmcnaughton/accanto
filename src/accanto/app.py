@@ -30,6 +30,7 @@ from accanto.routers import (
     savings,
     schedules,
     sources,
+    spending_alerts,
     spending_subcategories,
     tags,
 )
@@ -186,6 +187,7 @@ def create_app() -> FastAPI:
     app.include_router(destinations.router)
     app.include_router(tags.router)
     app.include_router(spending_subcategories.router)
+    app.include_router(spending_alerts.router)
     app.include_router(balances.router)
     app.include_router(api_keys.router)
     app.include_router(notifications.router)

@@ -53,6 +53,7 @@ from accanto.dtos.savings import (
     MovementInput,
 )
 from accanto.dtos.schedules import ScheduleInput, SkipInput
+from accanto.dtos.spending_alerts import SpendingAlertEdit, SpendingAlertInput
 
 # Preserve decimal strings and unknown amounts; never coerce money to floats.
 Amount = Annotated[str, Field(pattern=r"^-?\d+(?:\.\d+)?$")]
@@ -1841,5 +1842,61 @@ def project_schedule(row) -> ScheduleInfo:
                 item_ids=[item["id"] for item in o["items"]],
             )
             for o in row["recent"]
+        ],
+    )
+
+
+# --- Spending alerts (TDD 23): thresholds on a Plan amount, not financial records ---
+
+
+class SpendingAlertInfo(Output):
+    id: UUID
+    category: Literal["spending", "fixed_cost"]
+    spending_subcategory_id: UUID | None
+    fixed_cost_id: UUID | None
+    name: Untrusted
+    thresholds: list[int]
+    revision: int
+    basis: Literal["planned", "estimate"]
+    amount: Money | None = Field(description="The Plan amount read; null if none.")
+    recorded: Money | None = Field(description="Null: nothing recorded this month.")
+    percent: int | None = Field(description="Recorded of amount, rounded down.")
+    reached: int | None = Field(description="Highest threshold reached this month.")
+    waiting: Literal["no_plan_version", "no_estimate", "not_planned"] | None
+
+
+class SpendingAlertList(Output):
+    month: str
+    version_name: Untrusted | None
+    version_number: int | None
+    spending_alerts: list[SpendingAlertInfo]
+
+
+class SaveSpendingAlert(Input):
+    id: UUID | None = Field(
+        default=None,
+        description="Omit to create an alert; set to change its thresholds.",
+    )
+    values: SpendingAlertEdit | SpendingAlertInput
+
+
+class DeleteSpendingAlert(DeleteRecord):
+    pass
+
+
+def project_spending_alerts(result) -> SpendingAlertList:
+    version = result["version"]
+    return SpendingAlertList(
+        month=result["month"],
+        version_name=version["name"] if version else None,
+        version_number=version["number"] if version else None,
+        spending_alerts=[
+            SpendingAlertInfo(
+                id=a["uuid"],
+                **{
+                    key: a[key] for key in SpendingAlertInfo.model_fields if key != "id"
+                },
+            )
+            for a in result["spending_alerts"]
         ],
     )

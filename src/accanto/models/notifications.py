@@ -50,6 +50,7 @@ preferences = Table(
     Column("routines_due", Boolean, nullable=False, server_default="true"),
     Column("scheduled_entries", Boolean, nullable=False, server_default="true"),
     Column("transactions_waiting", Boolean, nullable=False, server_default="false"),
+    Column("spending_alerts", Boolean, nullable=False, server_default="true"),
     CheckConstraint("hour BETWEEN 0 AND 23"),
 )
 

@@ -9,6 +9,8 @@ export interface Preferences {
   routines_due: boolean;
   scheduled_entries: boolean;
   transactions_waiting: boolean;
+  /** Spending alerts (TDD 23): each threshold once a month, from the hour on. */
+  spending_alerts: boolean;
 }
 
 export interface PushPlatform {

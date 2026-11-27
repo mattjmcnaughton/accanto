@@ -1,7 +1,8 @@
 """Notifications (TDD 20): what is sent, when, and to which push services.
 
 Pure rules, independent of HTTP, persistence and transport. A Notification's
-text carries counts and Routine names only: never an amount, payee, memo,
+text carries counts, Routine names, and Spending alert target names with their
+thresholds (TDD 23) only: never an amount, payee, memo,
 note, account or Entity name (Constitution §6 applies to the lock screen too).
 """
 
@@ -11,7 +12,13 @@ from datetime import datetime
 from typing import Literal
 from urllib.parse import urlsplit
 
-Kind = Literal["routines_due", "scheduled_entries", "transactions_waiting", "test"]
+Kind = Literal[
+    "routines_due",
+    "scheduled_entries",
+    "transactions_waiting",
+    "spending_alerts",
+    "test",
+]
 # The kinds the hourly tick sends, in the order it sends them.
 KINDS: tuple[Kind, ...] = ("routines_due", "scheduled_entries", "transactions_waiting")
 DEFAULT_HOUR = 9
@@ -20,6 +27,7 @@ DEFAULTS = {
     "routines_due": True,
     "scheduled_entries": True,
     "transactions_waiting": False,
+    "spending_alerts": True,
 }
 
 PROVIDER_HOSTS = (

@@ -167,3 +167,72 @@ it("lists due and overdue routines in Needs you, even before the Entity has a Pl
       .map((b) => b.textContent),
   ).toEqual(["Synthetic check-in is due todayOpen", "Synthetic review is 3 days overdueOpen"]);
 });
+
+it("shows each reached spending alert once, with amounts, and lets it be dismissed", () => {
+  const base = {
+    category: "spending" as const,
+    spending_subcategory_id: null,
+    fixed_cost_id: null,
+    revision: 1,
+    waiting: null,
+    dismissed: false,
+  };
+  const dismissAlert = vi.fn();
+  render(
+    <Home
+      {...props(review(group("1000.00", "400.00", "-600.00"), "-600.00"))}
+      dismissAlert={dismissAlert}
+      alerts={{
+        kind: "ready",
+        data: {
+          month: "2026-11",
+          version: { uuid: "v", name: "Synthetic Plan", number: 2 },
+          spending_alerts: [
+            // $187.50 of $150.00 is 125%: $37.50 over, named by its highest threshold.
+            {
+              ...base,
+              uuid: "eat",
+              name: "Eating out",
+              thresholds: [70, 100, 125],
+              basis: "estimate",
+              amount: "150.00",
+              recorded: "187.50",
+              percent: 125,
+              reached: 125,
+            },
+            {
+              ...base,
+              uuid: "below",
+              name: "Books",
+              thresholds: [70],
+              basis: "estimate",
+              amount: "50.00",
+              recorded: "34.99",
+              percent: 69,
+              reached: null,
+            },
+            {
+              ...base,
+              uuid: "gone",
+              name: "Rent",
+              thresholds: [100],
+              basis: "planned",
+              amount: "900.00",
+              recorded: "900.00",
+              percent: 100,
+              reached: 100,
+              dismissed: true,
+            },
+          ],
+        },
+      }}
+    />,
+  );
+  const needs = screen.getByRole("list", { name: "Needs you" });
+  const items = within(needs).getAllByRole("listitem");
+  expect(items).toHaveLength(1);
+  expect(items[0].textContent).toContain("Eating out passed 125% of its estimate");
+  expect(items[0].textContent).toContain("$187.50 of $150.00 recorded (125%), $37.50 over");
+  fireEvent.click(within(items[0]).getByRole("button", { name: /Dismiss/ }));
+  expect(dismissAlert).toHaveBeenCalledWith("eat");
+});

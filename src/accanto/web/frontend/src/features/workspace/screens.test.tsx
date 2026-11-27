@@ -62,6 +62,7 @@ it.each([
       "reviews/2026-11-01",
       "routines",
       "savings-accounts",
+      "spending-alerts",
     ],
   ],
   ["plans", ["plans"]],

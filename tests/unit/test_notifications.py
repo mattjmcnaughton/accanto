@@ -214,4 +214,5 @@ def test_defaults_are_quiet():
         "routines_due": True,
         "scheduled_entries": True,
         "transactions_waiting": False,
+        "spending_alerts": True,
     }
