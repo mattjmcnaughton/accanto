@@ -59,17 +59,15 @@ export const hrefFor = (screen: Screen, month?: string, entity?: string) => {
   return `${screen === "home" ? "#/" : `#/${screen}`}${query ? `?${query}` : ""}`;
 };
 
-// Destinations grouped by job instead of nine numbered tabs.
+// Destinations grouped by job: the month's loop, planning, balances, then what runs on its own.
 const NAV: { group: string; items: [Screen, string][] }[] = [
   {
     group: "This month",
     items: [
       ["home", "Home"],
-      ["activity", "Activity"],
       ["inbox", "Transactions inbox"],
+      ["activity", "Activity"],
       ["review", "Review"],
-      ["routines", "Routines"],
-      ["schedules", "Schedules"],
     ],
   },
   {
@@ -84,8 +82,15 @@ const NAV: { group: string; items: [Screen, string][] }[] = [
     items: [
       ["savings", "Savings"],
       ["investments", "Investments"],
-      ["giving", "Giving"],
       ["loans", "Loans"],
+      ["giving", "Giving"],
+    ],
+  },
+  {
+    group: "Recurring",
+    items: [
+      ["routines", "Routines"],
+      ["schedules", "Schedules"],
     ],
   },
 ];
