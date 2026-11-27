@@ -1,7 +1,5 @@
 import type { ReactNode } from "react";
 import type { LoadState } from "../../lib/api";
-import type { Loan } from "../../lib/balances";
-import type { Destination } from "../../lib/destinations";
 import {
   daysInMonth,
   decimalToCents,
@@ -14,7 +12,6 @@ import {
 import type { ComparisonGroup, PlanRevision, ReviewResult } from "../../lib/monthly";
 import type { Dollars, Projection } from "../../lib/projections";
 import type { Routine } from "../../lib/routines";
-import type { SavingsAccount } from "../../lib/savings";
 import { Band, type BandPart, Empty, tint } from "../../ui";
 import { RoutinesCard } from "../routines/RoutinesCard";
 import { share } from "./PlanBreakdown";
@@ -34,7 +31,7 @@ export type PlanAttention = {
 type Item = {
   key: string;
   title: string;
-  detail: string;
+  detail?: string;
   action?: string;
   run?: () => void;
   quiet?: boolean;
@@ -51,10 +48,16 @@ type Allocation = "fixed" | "spending" | "saving" | "investing" | "giving";
 const cents = (value: string | null | undefined) =>
   value === null || value === undefined ? null : decimalToCents(value);
 
-/** Words for a category's recorded-against-planned state, from the API's own difference. */
-function status(key: Category, group: ComparisonGroup) {
+/**
+ * Words for a category's recorded-against-planned state, from the API's own difference. Lines
+ * with no entry are still to come while the month runs, and a warning once it has ended.
+ */
+function status(key: Category, group: ComparisonGroup, ended: boolean) {
   const missing = group.items.filter((item) => item.recorded === null).length;
-  if (missing) return { tone: "warn", text: `${plural(missing, "line")} with no entry` };
+  if (missing)
+    return ended
+      ? { tone: "warn", text: `${plural(missing, "line")} with no entry` }
+      : { tone: "muted", text: `${missing} still to come` };
   const difference = cents(group.difference);
   if (group.recorded === null || difference === null)
     return { tone: "", text: "Nothing recorded yet" };
@@ -82,9 +85,6 @@ export function Home({
   recent,
   review,
   split,
-  accounts,
-  investments,
-  loans,
   worth,
   dollars = "today",
   setDollars = () => {},
@@ -107,9 +107,6 @@ export function Home({
   review: LoadState<ReviewResult>;
   /** The version the month's Review links, or without one the latest saved version. */
   split?: PlanRevision;
-  accounts: LoadState<SavingsAccount[]>;
-  investments: LoadState<Destination[]>;
-  loans: LoadState<Loan[]>;
   worth: LoadState<Projection>;
   /** Today's or future dollars for the projected milestones, shared with Projections. */
   dollars?: Dollars;
@@ -138,9 +135,11 @@ export function Home({
   // An empty mocked or legacy body is treated as no Review rather than as zeros.
   const result = review.kind === "ready" && review.data?.review ? review.data : null;
   const comparison = result?.comparison;
+  // While the month runs, a planned line with no entry is still to come, as in Review.
+  const ended = month < today.slice(0, 7);
 
   const items: Item[] = [];
-  if (comparison) {
+  if (comparison && ended) {
     const unknown = (["income", "fixed_cost", "saving", "investing", "giving"] as const).flatMap(
       (key) => comparison[key].items.filter((item) => item.recorded === null),
     );
@@ -148,7 +147,6 @@ export function Home({
       items.push({
         key: "unknown",
         title: `${unknown.length} planned lines have no ${name} entry`,
-        detail: "Resolve each in Review: record what happened, or $0.00 if nothing did.",
         action: toReview && "Resolve in Review",
         run: toReview,
       });
@@ -157,7 +155,7 @@ export function Home({
         items.push({
           key: `u-${line.id}-${line.name}`,
           title: `${line.name} has no ${name} entry`,
-          detail: `Planned ${formatMoney(line.planned)}. Record what happened in Review, or $0.00 if nothing did.`,
+          detail: `Planned ${formatMoney(line.planned)}`,
           action: toReview && "Resolve in Review",
           run: toReview,
         });
@@ -170,19 +168,17 @@ export function Home({
         ? `Plan "${plan.name}" is ${money(-(plan.unassigned ?? 0))} overallocated`
         : `Plan "${plan.name}" has unsaved changes`,
       detail: over
-        ? `Monthly funding ${money(plan.funding ?? 0)} − allocations ${money(plan.allocated ?? 0)}. You can still save a version; the overage stays visible.${plan.dirty ? " Unsaved changes in this tab." : ""}`
-        : "Unsaved changes in this tab. Save the draft to keep them.",
+        ? `Funding ${money(plan.funding ?? 0)} − allocations ${money(plan.allocated ?? 0)}${plan.dirty ? ", unsaved changes" : ""}`
+        : undefined,
       action: plan.dirty ? "Open draft" : "Open Plan",
       run: () => open(plan.id),
     });
   }
-  if (result && !result.review.reviewed_at)
+  // A running month cannot be reviewed yet; only a Review without a comparison needs a visit.
+  if (result && !result.review.reviewed_at && (ended || !comparison))
     items.push({
       key: "review",
       title: `${name} is not reviewed yet`,
-      detail: comparison
-        ? "Mark it reviewed in Review once the month is complete."
-        : "Open Review to compare the month against its Plan version.",
       action: toReview && `Review ${name}`,
       run: toReview,
       quiet: true,
@@ -190,6 +186,38 @@ export function Home({
 
   return (
     <div className="screen home">
+      {items.length > 0 && (
+        <section aria-labelledby="home-needs">
+          <h2 className="h2" id="home-needs">
+            Needs you <span>{plural(items.length, "item")}</span>
+          </h2>
+          <ul className="card home-list" aria-label="Needs you">
+            {items.map((item) => {
+              const body = (
+                <>
+                  <span className={`pip${item.quiet ? " quiet" : ""}`} />
+                  <span className="t">
+                    {item.title}
+                    {item.detail && <small>{item.detail}</small>}
+                  </span>
+                  {item.action && <span className="go">{item.action}</span>}
+                </>
+              );
+              return (
+                <li key={item.key}>
+                  {item.run ? (
+                    <button type="button" className="row" onClick={item.run} data-row>
+                      {body}
+                    </button>
+                  ) : (
+                    <div className="row">{body}</div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
       {review.kind === "loading" ? (
         <div className="card pad sk-card" aria-busy="true" aria-label="Loading this month">
           <div className="sk" style={{ width: "55%", height: 28 }} />
@@ -225,8 +253,8 @@ export function Home({
           }
         >
           {hasVersion
-            ? `Start ${name}'s Review and choose a saved Plan version to compare this month against. Home then shows what is left to spend and where the money is going.`
-            : "Save a Plan version first. A Review compares a month against one saved version."}
+            ? "Compare the month against a saved Plan version."
+            : "Save a Plan version first."}
         </Empty>
       ) : (
         <div className="card pad">
@@ -251,42 +279,10 @@ export function Home({
               Recorded so far against {result.version.name}, version {result.version.number}
             </span>
           </h2>
-          <MonthBreakdown comparison={comparison} name={name} />
+          <MonthBreakdown comparison={comparison} name={name} ended={ended} />
         </section>
       )}
       {routineCard}
-      {items.length > 0 && (
-        <section aria-labelledby="home-needs">
-          <h2 className="h2" id="home-needs">
-            Needs you <span>{plural(items.length, "item")}</span>
-          </h2>
-          <ul className="card home-list" aria-label="Needs you">
-            {items.map((item) => {
-              const body = (
-                <>
-                  <span className={`pip${item.quiet ? " quiet" : ""}`} />
-                  <span className="t">
-                    {item.title}
-                    <small>{item.detail}</small>
-                  </span>
-                  {item.action && <span className="go">{item.action}</span>}
-                </>
-              );
-              return (
-                <li key={item.key}>
-                  {item.run ? (
-                    <button type="button" className="row" onClick={item.run} data-row>
-                      {body}
-                    </button>
-                  ) : (
-                    <div className="row">{body}</div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
       {recent.length > 0 && (
         <section aria-labelledby="home-plans">
           <h2 className="h2" id="home-plans">
@@ -309,7 +305,6 @@ export function Home({
           </ul>
         </section>
       )}
-      <Standing accounts={accounts} investments={investments} loans={loans} retry={retry} />
     </div>
   );
 }
@@ -318,9 +313,12 @@ export function Home({
 export function MonthBreakdown({
   comparison,
   name,
+  ended,
 }: {
   comparison: NonNullable<ReviewResult["comparison"]>;
   name: string;
+  /** The month is over: a line with no entry is a warning, not a line still to come. */
+  ended: boolean;
 }) {
   return (
     <div className="card pad">
@@ -363,7 +361,7 @@ export function MonthBreakdown({
         <tbody>
           {OUT.map(({ key, kind, name: title }) => {
             const group = comparison[key];
-            const st = status(key, group);
+            const st = status(key, group, ended);
             return (
               <tr key={key} style={tint(kind)}>
                 <td>
@@ -378,11 +376,13 @@ export function MonthBreakdown({
           })}
         </tbody>
       </table>
-      <p className="note home-legend">
+      <p
+        className="note home-legend"
+        title="Solid is recorded, pale is planned, hatched is a planned line with no entry."
+      >
         Income: {formatMoney(comparison.income.recorded)} of{" "}
-        {formatMoney(comparison.income.planned)} received.{" "}
-        {status("income", comparison.income).text}. Solid is recorded, pale is planned, and hatching
-        is a planned line with no entry.
+        {formatMoney(comparison.income.planned)} received ·{" "}
+        {status("income", comparison.income, ended).text}
       </p>
     </div>
   );
@@ -456,7 +456,6 @@ function FixedLine({ fixed, difference }: { fixed: ComparisonGroup; difference: 
   const planned = cents(fixed.planned) ?? 0;
   const recorded = cents(fixed.recorded) ?? 0;
   const over = cents(difference);
-  const missing = fixed.items.filter((item) => item.recorded === null).length;
   return (
     <div className="hero-fixed" style={tint("fixed")}>
       <p>
@@ -468,7 +467,6 @@ function FixedLine({ fixed, difference }: { fixed: ComparisonGroup; difference: 
         </b>{" "}
         <span className="muted">
           {money(recorded)} of {formatMoney(fixed.planned)} paid
-          {missing ? `, ${plural(missing, "line")} not recorded yet` : ""}
         </span>
       </p>
       <div className="meter" role="presentation">
@@ -525,10 +523,7 @@ function PlanSplit({
           </li>
         ))}
       </ul>
-      <p className="note">
-        Of {formatMoney(funding)} monthly funding
-        {linked ? "" : `. ${month} has no Review yet, so this is the latest saved version.`}
-      </p>
+      <p className="note">Of {formatMoney(funding)} monthly funding</p>
     </div>
   );
 }
@@ -569,10 +564,7 @@ function NetWorthCard({
       {today.net_worth === null ? (
         <>
           <p className="big">Unknown</p>
-          <p className="note">
-            {missing.map((m) => m.name).join(", ")} {missing.length === 1 ? "has" : "have"} no
-            balance observation yet. Record one to see net worth and its projection.
-          </p>
+          <p className="note">Not observed: {missing.map((m) => m.name).join(", ")}</p>
         </>
       ) : (
         <>
@@ -586,7 +578,12 @@ function NetWorthCard({
       {today.net_worth !== null && (
         <>
           <div className="glance-proj-head">
-            <span className="cap projected">Projected</span>
+            <span
+              className="cap projected"
+              title={`A Projection, not a balance: investments grow at their expected return and contribution, fixed-rate loans are paid down, savings stay as today.${defaulted ? ` ${plural(defaulted, "investment")} ${defaulted === 1 ? "uses" : "use"} the default ${default_return_percent}% return.` : ""}`}
+            >
+              Projected
+            </span>
             {/* biome-ignore lint/a11y/useSemanticElements: The kit's segmented control is a button group. */}
             <div className="seg-control sm" role="group" aria-label="Dollars">
               {(["today", "future"] as const).map((d) => (
@@ -615,119 +612,13 @@ function NetWorthCard({
             ))}
           </ul>
           <p className="note">
-            A Projection, not a balance: each investment grows at its expected return with its
-            expected contribution; loans with a fixed rate and monthly payment are paid down, and
-            savings and other loans stay as they are today.
             {dollars === "today"
-              ? ` In today's dollars at ${worth.data.inflation_percent}% inflation.`
-              : " In future dollars, before inflation."}
-            {defaulted
-              ? ` ${plural(defaulted, "investment")} ${defaulted === 1 ? "uses" : "use"} the default ${default_return_percent}% return.`
-              : ""}
+              ? `Today's dollars, ${worth.data.inflation_percent}% inflation`
+              : "Future dollars"}
           </p>
         </>
       )}
     </div>
-  );
-}
-
-/** Savings, investments and loans stay separate measures, each as the API reports it. */
-function Standing({
-  accounts,
-  investments,
-  loans,
-  retry,
-}: {
-  accounts: LoadState<SavingsAccount[]>;
-  investments: LoadState<Destination[]>;
-  loans: LoadState<Loan[]>;
-  retry: () => void;
-}) {
-  const cards = [
-    {
-      key: "save",
-      label: "Savings, tracked from your entries",
-      state: accounts,
-      rows:
-        accounts.kind === "ready"
-          ? accounts.data
-              .filter((a) => a.active)
-              .map((a) => ({
-                id: a.uuid,
-                name: a.name,
-                value: formatMoney(a.balance),
-                when: `${plural(a.goals.filter((g) => g.active && !g.completed).length, "goal")}`,
-              }))
-          : [],
-    },
-    {
-      key: "invest",
-      label: "Investments, latest observations",
-      state: investments,
-      rows:
-        investments.kind === "ready"
-          ? investments.data
-              .filter((d) => d.active)
-              .map((d) => ({
-                id: d.uuid,
-                name: d.name,
-                value: d.latest ? formatMoney(d.latest.amount) : "Not observed",
-                when: d.latest ? `Observed ${fmtShort(d.latest.date)}` : "",
-              }))
-          : [],
-    },
-    {
-      key: "fixed",
-      label: "Loans owed, latest observations",
-      state: loans,
-      rows:
-        loans.kind === "ready"
-          ? loans.data
-              .filter((l) => l.active)
-              .map((l) => ({
-                id: l.uuid,
-                name: l.name,
-                value: l.latest ? formatMoney(l.latest.amount) : "Not observed",
-                when: l.latest ? `Observed ${fmtShort(l.latest.financial_date)}` : "",
-              }))
-          : [],
-    },
-  ].filter(
-    (card) => card.state.kind !== "empty" && !(card.state.kind === "ready" && !card.rows.length),
-  );
-  if (!cards.length) return null;
-  return (
-    <section aria-labelledby="home-stand">
-      <h2 className="h2" id="home-stand">
-        Where things stand <span>The accounts behind net worth</span>
-      </h2>
-      <div className="grid3">
-        {cards.map((card) => (
-          <div key={card.key} className="card pad stand-card" style={tint(card.key)}>
-            <span className="cap">
-              <span className="dot" /> {card.label}
-            </span>
-            {card.state.kind === "loading" ? (
-              <div className="sk" style={{ height: 40, marginTop: 10 }} />
-            ) : card.state.kind === "ready" ? (
-              <ul className="stand-rows">
-                {card.rows.map((row) => (
-                  <li key={row.id}>
-                    <span className="t">
-                      {row.name}
-                      {row.when && <small>{row.when}</small>}
-                    </span>
-                    <b>{row.value}</b>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <LoadMessage state={card.state} retry={retry} />
-            )}
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
