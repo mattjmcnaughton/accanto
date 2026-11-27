@@ -122,7 +122,9 @@ export function Balances(p: ScreenProps) {
     });
   function editObservation(row: Observation | null, account?: string) {
     if (row?.is_opening) {
-      setNotice("An opening amount owed is set when the loan is added and cannot be corrected.");
+      setNotice(
+        "An opening amount owed cannot be corrected; move its date from the loan's Details.",
+      );
       return;
     }
     editor.start(`observation:${row?.uuid ?? "new"}`, {
@@ -694,12 +696,14 @@ function LoanTermsForm({
 }: {
   loan: Loan;
   busy: boolean;
-  save: (value: LoanTerms) => void;
+  save: (value: LoanTerms & { opening_date?: string }) => void;
 }) {
+  const [opened, setOpened] = useState(loan.opening.date);
   const [rate, setRate] = useState(loan.interest_rate_percent ?? "");
   const [payment, setPayment] = useState(loan.monthly_payment ?? "");
   const [error, setError] = useState("");
   const changed =
+    opened !== loan.opening.date ||
     rate.trim() !== (loan.interest_rate_percent ?? "") ||
     payment.trim() !== (loan.monthly_payment ?? "");
   return (
@@ -709,12 +713,23 @@ function LoanTermsForm({
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        const problem = termsProblem(rate, payment);
+        const problem = opened ? termsProblem(rate, payment) : "Enter an opening date.";
         setError(problem);
-        if (!problem) save(terms(rate, payment));
+        if (!problem)
+          save({
+            ...terms(rate, payment),
+            ...(opened !== loan.opening.date ? { opening_date: opened } : {}),
+          });
       }}
     >
       <h3>Loan terms</h3>
+      <Field label="Opening date">
+        <input type="date" value={opened} onChange={(event) => setOpened(event.target.value)} />
+      </Field>
+      <p className="note">
+        Move it to when the loan began, such as a mortgage taken out years ago. The opening amount
+        stays; it cannot move past a later amount owed or payment.
+      </p>
       <div className="two">
         <Field label="Fixed interest rate (% a year)">
           <input
@@ -738,7 +753,7 @@ function LoanTermsForm({
       )}
       <div className="actions">
         <button type="submit" className="btn sm" disabled={busy || !changed}>
-          Save terms
+          Save loan
         </button>
       </div>
     </form>

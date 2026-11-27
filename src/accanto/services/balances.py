@@ -3,13 +3,14 @@
 from datetime import UTC, date, datetime
 from uuid import UUID
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import func, insert, select, update
 
 from accanto.db import read_snapshot
 from accanto.domains.balances import (
     ObservedBalance,
     latest_observation,
     observation_date_allowed,
+    opening_move_allowed,
     require_archive_allowed,
 )
 from accanto.domains.projections import payoff_schedule, payoff_summary
@@ -195,6 +196,10 @@ async def write_debt(session, entity, operation, payload, target, audit):
         return await debt_snapshot(session, row)
     row = await scoped(session, b.debts, entity["id"], target)
     check_revision(row, payload["expected_revision"])
+    if payload.get("opening_date"):
+        await move_opening(
+            session, row, date.fromisoformat(payload["opening_date"]), audit
+        )
     if row["active"] and not payload["active"]:
         observations = await observations_for(session, "debt", entity["id"], row["id"])
         latest = latest_observation(
@@ -228,6 +233,62 @@ async def write_debt(session, entity, operation, payload, target, audit):
     )
     await audit(b.debts, row["uuid"], dict(row), dict(updated))
     return await debt_snapshot(session, updated)
+
+
+async def move_opening(session, debt, new_date, audit):
+    """Move a loan's opening date; refuse when current activity would predate it."""
+    obs = b.observations.c
+    opening = (
+        (
+            await session.execute(
+                select(b.observations).where(
+                    obs.debt_account_id == debt["id"], obs.is_opening
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    if new_date == opening["financial_date"]:
+        return
+    earliest = await session.scalar(
+        select(func.min(obs.financial_date)).where(
+            obs.debt_account_id == debt["id"],
+            obs.is_opening.is_(False),
+            obs.deleted_at.is_(None),
+        )
+    )
+    payment = await session.scalar(
+        select(func.min(m.entries.c.financial_date))
+        .select_from(
+            m.entries.join(
+                b.entry_debts, b.entry_debts.c.actual_entry_id == m.entries.c.id
+            )
+        )
+        .where(
+            b.entry_debts.c.debt_account_id == debt["id"],
+            m.entries.c.deleted_at.is_(None),
+        )
+    )
+    try:
+        opening_move_allowed(
+            new_date, min((day for day in (earliest, payment) if day), default=None)
+        )
+    except ValueError as error:
+        raise RejectionError("activity_before_opening", str(error), 422) from None
+    moved = (
+        (
+            await session.execute(
+                update(b.observations)
+                .where(obs.id == opening["id"])
+                .values(financial_date=new_date, revision=opening["revision"] + 1)
+                .returning(b.observations)
+            )
+        )
+        .mappings()
+        .one()
+    )
+    await audit(b.observations, opening["uuid"], dict(opening), dict(moved))
 
 
 async def write_observation(session, entity, operation, payload, target, audit):

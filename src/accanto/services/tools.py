@@ -1565,7 +1565,9 @@ CATALOG: tuple[CatalogTool, ...] = (
     _write(
         "save_debt",
         "Add or edit a loan, including its fixed annual interest rate and "
-        "monthly payment; an edit that omits them keeps them.",
+        "monthly payment; an edit that omits them keeps them. An edit may move "
+        "opening_date when no current payment or observation would then "
+        "predate it.",
         t.SaveDebt,
         build_debt,
     ),

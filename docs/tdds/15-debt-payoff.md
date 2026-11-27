@@ -1,4 +1,4 @@
-# 15 — Debt payoff: fixed-rate loan terms, payoff schedules and amortizing projections
+# 15 — Debt payoff: fixed-rate loan terms, payoff schedules, movable openings and amortizing projections
 
 Status: Implemented
 Updated: 2026-11-27
@@ -30,6 +30,7 @@ which keep using the latest observations; credit cards.
 | An edit that omits a term keeps it | api.md Loan accounts | `edit_debt` | `EditDebt.unchanged`, as for investment assumptions | Integration: a rename keeps the payment; explicit null clears only the payment |
 | Schedule starts from the latest observation | CONTEXT.md Payoff schedule | read only | `payoff_schedule` (pure) | Unit: $10,000 at 6% paying $193.33 is 60 months, first month $50.00 interest and $143.33 principal, matching any loan table |
 | A payment that does not exceed the interest is flagged | CONTEXT.md Payoff schedule | read only | `debt_status` returns `interest_not_covered`; no rows | Unit: $10,000 at 12% paying $100.00 is flagged and paying $100.01 is scheduled; integration: no rows |
+| A loan's opening date moves; its amount does not | api.md Loan accounts; parity with investments (6m033) | `edit_debt` with `opening_date` | `opening_move_allowed` (pure); service check; `protect_debt_opening` trigger | Unit: move to the earliest activity allowed, a day later refused; integration: back to 2023 keeps the amount, past a later observation 422 `activity_before_opening`; trigger refuses amount changes |
 | Projections amortize loans with terms | CONTEXT.md Projection | read only | `project_entity` uses the same monthly rows | Unit: the year-one balance matches the closed form within $0.05 and the loan is repaid by year five; a loan without terms stays flat |
 
 A schedule never writes anything. Changing terms is an audited, idempotent
@@ -43,6 +44,13 @@ Migration `6o035`, additive, chains after `6n034`:
 | --- | --- | --- |
 | `debt_account.interest_rate_percent` | numeric(5,2), null | 0 to 40 |
 | `debt_account.monthly_payment` | numeric(14,2), null | 0.01 to 999,999,999.99 |
+
+Migration `6s039` (after `6r038`) replaces `protect_debt_opening` as `6m033` did
+for investments:
+an opening may change only its `financial_date`, and a later date is refused when
+a current observation or payment for the loan would then predate it. The owner
+asked for this so a loan begun years ago, such as a mortgage, can carry its real
+start date; the schedule still starts at the latest observation.
 
 - **Domain** (`domains/projections.py`): `payoff_schedule(balance, as_of, rate,
   payment)` returns status, totals and monthly rows. Interest is balance × rate ÷
@@ -69,7 +77,8 @@ Migration `6o035`, additive, chains after `6n034`:
 - **Agent catalog and MCP**: `list_debts` reports terms and a payoff summary
   (status, monthly interest, months, payoff date, interest remaining); `save_debt`
   takes the terms through the shared DTOs. No new tool is needed.
-- **UI**: Loans shows terms and a payoff line on each card, Rate, Monthly
+- **UI**: the details dialog's Loan terms form also moves the opening date
+  (Save loan). Loans shows terms and a payoff line on each card, Rate, Monthly
   payment and Payoff columns, and an "interest not covered" flag. Its details
   dialog edits the terms and shows the payoff summary, a balance chart and the
   monthly table. Projections gains a By loan table and shows loans owed at each
@@ -117,7 +126,9 @@ saving terms against the revision. Storybook has `Screens/Loans` with a
 
 ## Delivery and compatibility
 
-Additive migration. Existing loans have null terms, stay `no_terms`, and project
+`6o035` is additive. `6s039` relaxes the opening trigger (date only); its
+downgrade restores the immutable trigger and leaves moved dates as they are.
+Existing loans have null terms, stay `no_terms`, and project
 flat as before. Clients that omit terms on edit keep them. `project_entity`'s
 `loans` argument changed from a total to a list; its only caller is
 `read_projection`. No grants change (no new tables).

@@ -9,6 +9,7 @@ from accanto.domains.balances import (
     ObservedBalance,
     latest_observation,
     observation_date_allowed,
+    opening_move_allowed,
     require_archive_allowed,
 )
 
@@ -23,3 +24,10 @@ def test_same_day_ordinary_observation_precedes_archival() -> None:
     with pytest.raises(ValueError):
         observation_date_allowed(opening.financial_date, date(2026, 9, 30))
     observation_date_allowed(opening.financial_date, opening.financial_date)
+
+
+def test_a_debt_opening_moves_no_later_than_its_earliest_activity() -> None:
+    opening_move_allowed(date(2023, 11, 1), None)
+    opening_move_allowed(date(2026, 3, 10), date(2026, 3, 10))
+    with pytest.raises(ValueError):
+        opening_move_allowed(date(2026, 3, 11), date(2026, 3, 10))

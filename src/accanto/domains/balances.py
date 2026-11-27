@@ -29,3 +29,12 @@ def require_archive_allowed(latest: ObservedBalance | None) -> None:
 def observation_date_allowed(opening_date: date | None, activity_date: date) -> None:
     if opening_date is not None and activity_date < opening_date:
         raise ValueError("Observation cannot predate its account opening.")
+
+
+def opening_move_allowed(new_date: date, earliest_activity: date | None) -> None:
+    """A debt opening may move to any date on or before its earliest activity."""
+    if earliest_activity is not None and earliest_activity < new_date:
+        raise ValueError(
+            "Payments or observations for this loan predate the new opening date; "
+            "correct or delete them first."
+        )

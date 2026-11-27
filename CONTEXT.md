@@ -644,6 +644,11 @@ For example, a car loan opens at $10,000 owed. Recording a $300 payment creates
 one $300 outflow. The user may separately record a later statement showing
 $9,750 owed; Accanto does not assume that the payment reduced debt to $9,700.
 
+The opening date may move, as an investment's can, for example to when a
+mortgage began years ago; the opening amount cannot change, and the opening
+cannot move after a later observation or payment. To track an older loan, add it
+with its original amount and date, then record today's amount owed.
+
 A loan may carry Loan terms: a fixed annual interest rate and a monthly payment.
 With both, Accanto shows its Payoff schedule from the latest observation and pays
 it down in Projections. For example, $10,000 owed at 6% with a $193.33 payment
