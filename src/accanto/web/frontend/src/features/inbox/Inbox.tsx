@@ -1757,11 +1757,13 @@ export function Inbox(
           </span>
         </output>
       )}
-      <div className="ix-strip">
-        <b>Review {fmtMonth(month)}</b>
-        {waitingLabel(monthWaiting)}
-        <span>as this month's Review shows it</span>
-      </div>
+      {monthWaiting > 0 && (
+        <div className="ix-strip">
+          <b>Review {fmtMonth(month)}</b>
+          {waitingLabel(monthWaiting)}
+          <span>as this month's Review shows it</span>
+        </div>
+      )}
       <LoadProblem states={failed} retry={() => setReload((x) => x + 1)} />
       {items.kind === "loading" && !syncing ? (
         <LoadingCard label="Loading the inbox" />

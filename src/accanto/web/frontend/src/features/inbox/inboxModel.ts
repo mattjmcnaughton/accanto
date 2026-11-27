@@ -265,9 +265,7 @@ export function rows(items: StagedTransaction[], view: View): Row[] {
   return out;
 }
 export const waitingLabel = (n: number) =>
-  n === 0
-    ? "No transactions waiting in the inbox"
-    : `${n} transaction${n === 1 ? "" : "s"} waiting in the inbox`;
+  `${n} transaction${n === 1 ? "" : "s"} waiting in the inbox`;
 
 /** Purchases this inflow could refund: same payee first, then the nearest earlier date. */
 export function refundCandidates(it: StagedTransaction, purchases: Activity[]): Option[] {

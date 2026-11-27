@@ -913,11 +913,16 @@ it("shows inbox zero with this visit's clears, recorded amounts only, until an u
   // The item recorded before this visit is not counted; the ignored one is in no total.
   expect(card.textContent).toContain("2 cleared this session · 1 recorded, $12.00 · 1 ignored");
   expect(card.textContent).toContain("Example Plan last synced Nov 20, 3:05 PM");
+  // The Review strip shows only while something waits; the card says the rest.
+  expect(document.querySelector(".ix-strip")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Open November 2026 Review" }));
   expect(openReview).toHaveBeenCalledWith("2026-11");
   fireEvent.keyDown(document.body, { key: "z" });
   await screen.findByText("Sample Hardware", { selector: ".ix-d-t" });
   expect(zeroCard()).toBeNull();
+  expect(document.querySelector(".ix-strip")?.textContent).toContain(
+    "1 transaction waiting in the inbox",
+  );
 });
 
 it("ends a flow pass on inbox zero only when nothing is left for later", async () => {

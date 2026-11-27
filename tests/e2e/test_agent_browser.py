@@ -165,6 +165,7 @@ def test_agent_journey(tmp_path):
         return int(
             value(
                 "(() => { const strip = document.querySelector('.ix-strip');"
+                " if (!strip) return 0;"
                 " const label = strip.textContent.replace("
                 "strip.querySelector('b').textContent, '');"
                 " return (label.match(/(\\d+) transactions? waiting/) ?? [0, 0])[1];"
