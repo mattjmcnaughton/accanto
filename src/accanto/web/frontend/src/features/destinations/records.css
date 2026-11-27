@@ -282,3 +282,54 @@
     font-size: 12.5px;
   }
 }
+
+/* Investments summary: total observed value and its two splits */
+.inv-summary {
+  display: grid;
+  grid-template-columns: minmax(180px, auto) 1fr 1fr;
+  gap: 16px 28px;
+  align-items: start;
+}
+.inv-total {
+  font-size: 28px;
+}
+.inv-split {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.inv-pointed {
+  color: var(--ink);
+  font-weight: 600;
+  margin-left: 8px;
+}
+.inv-split .seg {
+  cursor: default;
+}
+.inv-split .seg:hover {
+  filter: brightness(1.12);
+}
+.inv-split .band {
+  height: 14px;
+  border-radius: 7px;
+}
+.inv-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 13px;
+}
+.inv-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .inv-summary {
+    grid-template-columns: 1fr;
+  }
+}

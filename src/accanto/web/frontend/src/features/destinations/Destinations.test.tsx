@@ -219,6 +219,43 @@ it("shows and edits an investment's tax treatment and liquidity", async () => {
   );
 });
 
+it("totals observed values and splits them by liquidity and tax treatment", async () => {
+  mock({
+    "/investments": [
+      {
+        ...destination,
+        latest: { date: "2026-03-01", amount: "30000.00" },
+        tax_treatment: "tax_advantaged",
+        liquidity: "liquid",
+      },
+      {
+        ...destination,
+        uuid: "house",
+        name: "Example house",
+        latest: { date: "2026-03-01", amount: "10000.00" },
+        tax_treatment: "taxable",
+        liquidity: "illiquid",
+      },
+      { ...destination, uuid: "new", name: "Example new fund", latest: null },
+    ],
+  });
+  render(<Destinations {...props()} />);
+  const summary = (await screen.findByText("Total observed value")).closest(
+    "section",
+  ) as HTMLElement;
+  expect(within(summary).getByText("$40,000.00")).toBeDefined();
+  expect(within(summary).getByText(/Leaves out 1 investment with no value yet/)).toBeDefined();
+  const share = (name: string) => {
+    const titled = within(summary).getAllByTitle(new RegExp(`^${name}:`));
+    expect(titled).toHaveLength(2); // the band segment and its legend entry
+    return titled[0].getAttribute("title");
+  };
+  expect(share("Liquid")).toBe("Liquid: $30,000.00 (75%)");
+  expect(share("Illiquid")).toBe("Illiquid: $10,000.00 (25%)");
+  expect(share("Taxable")).toBe("Taxable: $10,000.00 (25%)");
+  expect(share("Tax-advantaged")).toBe("Tax-advantaged: $30,000.00 (75%)");
+});
+
 it("records an investment contribution from one saving goal", async () => {
   mock({
     "/savings-accounts": [
