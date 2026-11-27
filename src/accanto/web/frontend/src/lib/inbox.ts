@@ -209,9 +209,15 @@ export const inbox = {
 };
 
 /** Send one inbox command. The caller supplies the current session for its CSRF token. */
-export function send<T>(session: BrowserSession, spec: InboxWrite, key: string): Promise<T> {
+export function send<T>(
+  session: BrowserSession,
+  spec: InboxWrite,
+  key: string,
+  keepalive = false,
+): Promise<T> {
   return fetchJson<T>(spec.path, {
     method: spec.method,
+    keepalive,
     headers: {
       "Content-Type": "application/json",
       "Idempotency-Key": key,

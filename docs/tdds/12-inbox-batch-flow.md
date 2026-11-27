@@ -14,7 +14,8 @@ inbox history. This change adds:
 - a **proposal run**: the built-in agent proposes for every waiting item in the
   background, 25 items a step, as a job run (TDD 11);
 - **flow mode** in the Inbox: one waiting item at a time, `Enter` accept, `l`
-  Later, `s` Ignore, `e` edit, `z` undo, `Esc` leave; one request per key;
+  Later, `s` Ignore, `e` edit, `z` undo, `Esc` leave; reviewed items advance
+  immediately and record or ignore together in the background;
 - the label **Ignored** for status `skipped`, which already was the lasting way to
   ignore an outside transaction.
 
@@ -71,10 +72,19 @@ in-flight step finishes its writes but cannot settle (TDD 11 fencing).
 - `tests/integration/test_inbox_proposals.py` (real PostgreSQL, stub model).
 - `tests/integration/test_trace_privacy.py` runs a proposal run in the real
   server and checks its log and export for canaries.
-- `Inbox.test.tsx`: a flow pass sends one request per key, never re-reads the
-  list, and undo uses the revision the last write returned.
+- `Inbox.test.tsx`: decisions advance without waiting, consecutive records use
+  one batch, Undo cancels an unsent ignore, and a rejected item returns with
+  its reason. An uncertain response retries the same payload and key.
 - `tests/e2e/test_agent_browser.py`: the run and a flow pass in the browser.
 - Storybook: Screens / Transactions inbox, AgentProposing through Ignored.
+
+Flow distinguishes unconfirmed commands from saved entries. Leaving flow, hiding
+the page or closing it starts a best-effort flush. Only the existing tab holds
+the commands and retry identities (TDD 01). Before advancing, the browser marks
+this Entity and flow instance as unconfirmed; the marker contains no item ID,
+payee, amount, classification, payload or credential. A later visit warns if
+confirmation never arrived. Closing offline can require repeating a decision;
+the marker is a warning to reconcile, not a durable financial write queue.
 
 ## Open decisions
 
