@@ -58,17 +58,24 @@ const mock = (routes: Record<string, unknown> = {}) =>
     return json([]);
   });
 const grid = (name: string) => screen.findByRole("grid", { name });
+const show = async (view: "Cards" | "Table") =>
+  fireEvent.click(
+    within(await screen.findByRole("group", { name: "View" })).getByRole("button", { name: view }),
+  );
 const cell = (table: HTMLElement, text: string) =>
   within(table).getByText(text).closest("td") as HTMLElement;
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  // This jsdom may have no localStorage; the view choice then lasts for one render.
+  window.localStorage?.clear();
 });
 
 it("keeps contribution progress apart from the observed value and corrects by revision", async () => {
   mock();
   const p = props();
   render(<Destinations {...p} />);
+  await show("Table");
   const investments = await grid("Investments");
   const fund = within(investments).getByText("Example fund").closest("tr") as HTMLElement;
   expect(within(fund).getByText("$1,000.00")).toBeDefined();
@@ -92,6 +99,7 @@ it("keeps a valid edit on Escape without saving and holds an invalid edit open",
   mock();
   const p = props();
   render(<Destinations {...p} />);
+  await show("Table");
   fireEvent.keyDown(cell(await grid("Investment contributions"), "Feb 1, 2026"), { key: "i" });
   const amount = screen.getByLabelText("Amount (USD)");
   fireEvent.change(amount, { target: { value: "12.345" } });
@@ -116,6 +124,7 @@ it("deletes a later observation after confirmation but never an opening value", 
   mock();
   const p = props();
   render(<Destinations {...p} />);
+  await show("Table");
   const table = await grid("Investment value observations");
   const opening = cell(table, "Jan 1, 2026");
   fireEvent.keyDown(opening, { key: "d" });
@@ -145,6 +154,7 @@ it("permits a destination without a target or opening", async () => {
   mock({ "/investments": [], "/investment-activity": [], "/investment-observations": [] });
   const p = props();
   render(<Destinations {...p} />);
+  await show("Table");
   const investments = await grid("Investments");
   fireEvent.keyDown(within(investments).getByText(/No investments yet/), { key: "a" });
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Example fund" } });
@@ -170,6 +180,7 @@ it("moves an investment's opening date only when it changed", async () => {
   mock();
   const p = props();
   render(<Destinations {...p} />);
+  await show("Table");
   const investments = await grid("Investments");
   fireEvent.click(within(investments).getByRole("button", { name: "Edit Example fund" }));
   const opening = screen.getByLabelText("Opening date");
@@ -197,6 +208,7 @@ it("shows and edits an investment's tax treatment and liquidity", async () => {
   });
   const p = props();
   render(<Destinations {...p} />);
+  await show("Table");
   const investments = await grid("Investments");
   const fund = within(investments).getByText("Example fund").closest("tr") as HTMLElement;
   expect(within(fund).getByText("Tax-advantaged")).toBeDefined();
@@ -270,6 +282,7 @@ it("records an investment contribution from one saving goal", async () => {
   });
   const p = props();
   render(<Destinations {...p} />);
+  await show("Table");
   fireEvent.click(await screen.findByRole("button", { name: "Record contribution" }));
   fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "100.00" } });
   fireEvent.change(screen.getByLabelText("Funding origin"), { target: { value: "savings" } });
@@ -328,6 +341,7 @@ it("shows net donations and leaves linked refunds to Activity", async () => {
   });
   const p = props();
   render(<Destinations {...p} kind="giving" />);
+  await show("Table");
   expect(screen.getByRole("heading", { level: 1, name: "Giving" })).toBeDefined();
   expect(screen.queryByRole("grid", { name: "Investments" })).toBeNull();
   const recipients = await grid("Giving recipients");
@@ -352,6 +366,7 @@ it("shows net donations and leaves linked refunds to Activity", async () => {
 it("names each dialog by its own title", async () => {
   mock();
   render(<Destinations {...props()} />);
+  await show("Table");
   const later = cell(await grid("Investment value observations"), "Mar 1, 2026");
   fireEvent.keyDown(later, { key: "d" });
   fireEvent.keyDown(later, { key: "d" });
@@ -365,6 +380,7 @@ it("keeps attempted values while a write is pending", async () => {
   mock();
   const p = props();
   const { rerender } = render(<Destinations {...p} />);
+  await show("Table");
   const contributions = await grid("Investment contributions");
   fireEvent.keyDown(cell(contributions, "Feb 1, 2026"), { key: "Enter" });
   fireEvent.change(screen.getByLabelText("Amount (USD)"), { target: { value: "975.00" } });
@@ -394,6 +410,7 @@ it("keeps keyboard focus in the grid after a confirmed delete reloads the list",
     confirmed(undefined as never);
   });
   render(<Destinations {...p} />);
+  await show("Table");
   const table = await grid("Investment value observations");
   const doomed = cell(table, "Mar 1, 2026");
   doomed.focus();
@@ -420,6 +437,7 @@ it("returns Escape focus to the grid when the opening click did not focus its tr
   mock();
   const p = props();
   render(<Destinations {...p} />);
+  await show("Table");
   await grid("Investment value observations");
   // fireEvent.click, like WebKit, does not focus the clicked button.
   fireEvent.click(screen.getByRole("button", { name: "Correct observation on Mar 1, 2026" }));
@@ -444,6 +462,7 @@ it("returns Escape focus to the grid when the opening click did not focus its tr
 it("keeps the Escape fallback inside this screen, past hidden grids and another screen's cell", async () => {
   mock({ "/debts": [] });
   const loans = render(<Balances {...props()} />);
+  await show("Table");
   (await screen.findByRole("grid", { name: "Loans" })).querySelector<HTMLElement>("td")?.focus();
   loans.unmount();
   mock();
@@ -463,6 +482,7 @@ it("keeps the Escape fallback inside this screen, past hidden grids and another 
       <Destinations {...props()} />
     </>,
   );
+  await show("Table");
   await grid("Investment value observations");
   fireEvent.click(screen.getByRole("button", { name: "Correct observation on Mar 1, 2026" }));
   const amount = screen.getByLabelText("Observed value (USD)");

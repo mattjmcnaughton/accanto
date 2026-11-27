@@ -334,6 +334,45 @@ export const Head = ({
   </div>
 );
 
+export type RecordView = "cards" | "table";
+/** A screen's Cards or Table choice, remembered by this browser; cards by default. */
+export function useRecordView(screen: string) {
+  const key = `accanto.view.${screen}`;
+  const [view, setView] = useState<RecordView>(() => {
+    try {
+      return localStorage.getItem(key) === "table" ? "table" : "cards";
+    } catch {
+      return "cards";
+    }
+  });
+  const choose = (next: RecordView) => {
+    setView(next);
+    try {
+      localStorage.setItem(key, next);
+    } catch {
+      // Private browsing may refuse storage; the choice then lasts for this view only.
+    }
+  };
+  return [view, choose] as const;
+}
+/** Shows a screen's records as cards or as a table, never both. */
+export const ViewToggle = ({
+  view,
+  choose,
+}: {
+  view: RecordView;
+  choose: (view: RecordView) => void;
+}) => (
+  // biome-ignore lint/a11y/useSemanticElements: The kit's segmented control is a button group.
+  <div className="seg-control" role="group" aria-label="View">
+    {(["cards", "table"] as const).map((v) => (
+      <button key={v} type="button" aria-pressed={view === v} onClick={() => choose(v)}>
+        {v === "cards" ? "Cards" : "Table"}
+      </button>
+    ))}
+  </div>
+);
+
 /** Arrow keys and Enter move between amounts, as in a spreadsheet column. */
 function gridKeys(e: KeyboardEvent<HTMLInputElement>) {
   if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Enter") return;
