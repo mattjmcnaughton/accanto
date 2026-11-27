@@ -49,8 +49,9 @@ reconciliation. Session recovery opens a separate sign-in window and verifies th
 same User through `/api/auth/session` before retrying with fresh CSRF. This memory
 is cleared on explicit logout and does not survive closing or reloading the tab.
 The workspace shell has a sidebar grouped by job (This month: Home, Activity,
-Review; Planning: Plans; Balances: Savings, Investments, Giving,
-Loans; then Settings) and, below 760 px, five tabs with More for the rest. Every
+Transactions inbox, Review, Routines, Schedules; Planning: Plans, Projections;
+Balances: Savings, Investments, Giving, Loans; then Settings) and, below 760 px,
+the tabs Home, Inbox, Assistant, Activity and More, which lists the rest. Every
 screen has its own hash address, such as `#/giving`. Home, Activity and Review share
 the month chosen in the top bar, kept in the address as `?m=YYYY-MM` when it is not
 the Entity's current month. With several Entities the address also carries
@@ -61,8 +62,7 @@ any screen. Keys: Ctrl/⌘ K opens the Ask bar, which jumps to a screen, runs a 
 to the assistant; N adds activity, [ and ] change the month, J and K move through rows,
 and ? lists the shortcuts. Edit forms open in dialogs; a failed save's recovery
 notice appears inside the open dialog. The theme choice lasts until reload.
-Estimates save per-payment assumptions and show server-calculated monthly line and
-combined results; manually copy a result into a Plan. Save a draft before saving an
+Save a draft before saving an
 immutable version. Activity is independent of Reviews; starting a Review visibly
 preselects the immediately previous month's comparison or requires an explicit
 choice. The delivered activity categories include income, fixed costs, guilt-free spending,

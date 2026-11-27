@@ -63,10 +63,12 @@ financial commands are subsequent increments. Real
 provider configuration and hosted compatibility verification remain manual.
 The UI must use the same application behavior as direct API access.
 
-Advanced income matching, dedicated restoration UI, annual Plans/Reviews,
-credit-card settlement, split funding, tax estimation, FIRE projections and AI
-features remain deferred. Read-only import into the Transactions inbox, starting
-with YNAB, is in scope. Other bank ingestion, write-back to sources, and payment
+Since then the workspace has added the Transactions inbox (read-only YNAB import
+and scheduled entries, with search, notes, batch recording and flow mode),
+Routines, Projections with a FIRE date in today's or future dollars, loan payoff
+schedules, and the built-in assistant and MCP access. Income Estimates were
+removed. Advanced income matching, dedicated restoration UI, annual Plans/Reviews,
+credit-card settlement, split funding and tax estimation remain deferred. Other bank ingestion, write-back to sources, and payment
 execution remain deferred. Earlier household-loop and
 information-architecture experiments are superseded; the daily-workspace prototype
 is the single current interaction reference. No additional workflow interview is
