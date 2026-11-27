@@ -139,3 +139,12 @@ export const NoPlannedFixedCosts: Story = {
 export const Empty: Story = stateStory("empty");
 export const Loading: Story = stateStory("loading");
 export const Failed: Story = stateStory("failed");
+/** Mockup: the entry to the FIRE number interview, below the projection. */
+export const FireInterviewEntry: Story = {
+  args: { interview: fn().mockName("interview") },
+};
+/** Mockup: the same entry on a phone. */
+export const FireInterviewEntryPhone: Story = {
+  args: { interview: fn().mockName("interview") },
+  globals: { viewport: { value: "phone", isRotated: false } },
+};

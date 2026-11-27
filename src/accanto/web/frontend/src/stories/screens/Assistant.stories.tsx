@@ -220,3 +220,149 @@ export const StreamingLongReply: Story = {
     ],
   },
 };
+
+/*
+ * Mockup of the FIRE number interview (synthetic). The assistant pre-fills fixed costs from the
+ * latest saved Plan version, asks four questions one per reply, explains the FIRE number, and on
+ * approval drafts one Pending change: the FIRE assumptions plus each Fixed cost that does not
+ * rise with inflation (`fixed_cost.rises_with_inflation`, TDD 17); the card names them.
+ */
+const at = (s: number) => `2026-11-27T15:${String(10 + s).padStart(2, "0")}:00Z`;
+const fireChange = {
+  id: "pc-fire",
+  tool: "save_fire_assumptions",
+  summary:
+    "Update FIRE assumptions: spending 61320.00, withdrawal 4.00%; 1 fixed cost does not rise with inflation",
+  status: "pending",
+  created_by_interface: "agent",
+  input: {
+    annual_spending: "61320.00",
+    withdrawal_percent: "4.00",
+    fixed_costs_not_rising_with_inflation: ["5b0e7f1c-2d4a-4c8e-9f31-6a7d2e4b8c10"],
+    expected_revision: 4,
+  },
+  labels: { "5b0e7f1c-2d4a-4c8e-9f31-6a7d2e4b8c10": "Mortgage" },
+  created_at: at(9),
+  revision: 1,
+};
+const fireMessages = [
+  [
+    "owner",
+    "Interview me for my FIRE number: ask one question at a time, starting from my Plan's fixed costs, then propose FIRE assumptions to save.",
+  ],
+  [
+    "agent",
+    [
+      "Your latest saved Plan version, **November 2026**, has these fixed costs:",
+      "",
+      "- Mortgage: $1,850.00 a month",
+      "- Childcare: $1,100.00 a month",
+      "- Utilities: $240.00 a month",
+      "- Car insurance: $1,440.00 a year, $120.00 a month",
+      "",
+      "Total **$3,310.00 a month**.",
+      "",
+      "**1 of 4. Are these still your fixed costs today?**",
+      "",
+      "Why: they are the base of your retirement spending.",
+      "",
+      "- Yes, all correct",
+      "- One amount is different",
+      "- Something is missing",
+      "",
+      "Answer in your own words, or say skip.",
+    ].join("\n"),
+  ],
+  ["owner", "Yes, all correct."],
+  [
+    "agent",
+    [
+      "**2 of 4. Which of these will change by the time you retire?**",
+      "",
+      "Why: spending in retirement is rarely today's spending. A cost that ends lowers the number; a new one raises it.",
+      "",
+      "- Childcare ends",
+      "- A new cost such as health insurance",
+      "- Nothing changes",
+      "",
+      "Answer in your own words, or say skip.",
+    ].join("\n"),
+  ],
+  ["owner", "Childcare ends. Add about $400 a month for health insurance."],
+  [
+    "agent",
+    [
+      "Noted: without Childcare and with $400.00 for health insurance, fixed costs in retirement are **$2,610.00 a month**.",
+      "",
+      "**3 of 4. Which of these will not grow with inflation?**",
+      "",
+      "Why: a fixed-rate mortgage payment stays the same while prices rise, so it costs less in today's dollars each year.",
+      "",
+      "- Mortgage (fixed rate)",
+      "- None of them",
+      "- Another one",
+      "",
+      "Answer in your own words, or say skip.",
+    ].join("\n"),
+  ],
+  ["owner", "The mortgage is fixed rate."],
+  [
+    "agent",
+    [
+      "**4 of 4. How much do you want to spend each month beyond fixed costs?**",
+      "",
+      "Why: this is guilt-free spending in retirement. Your Plan sets $1,900.00 a month today.",
+      "",
+      "- $1,900.00, the same as today",
+      "- $2,500.00",
+      "- Another amount",
+    ].join("\n"),
+  ],
+  ["owner", "$2,500 a month."],
+  [
+    "agent",
+    [
+      "Here is your FIRE number for Synthetic fixture workspace.",
+      "",
+      "- Fixed costs: $2,610.00 × 12 = $31,320.00 a year",
+      "- Discretionary: $2,500.00 × 12 = $30,000.00 a year",
+      "- **Annual spending: $61,320.00**",
+      "",
+      "**FIRE number: $61,320.00 ÷ 4.00% = $1,533,000.00**, in today's dollars, at your saved withdrawal rate.",
+      "",
+      "- **Grows with inflation:** Utilities, Car insurance, health insurance and discretionary spending, $39,120.00 a year.",
+      "- **Does not:** Mortgage, $22,200.00 a year. At your 3.00% inflation, Projections lets it shrink in today's dollars, so your target falls a little each year.",
+      "",
+      "Shall I save it? I will save the annual spending and withdrawal rate, and mark Mortgage as not rising with inflation. Say yes, or tell me what to change.",
+    ].join("\n"),
+  ],
+  ["owner", "Yes, save it."],
+  [
+    "agent",
+    "I drafted it as a pending change for Synthetic fixture workspace. Nothing changes until you apply it; Projections then shows the new target.",
+  ],
+].map(([role, content], i) => ({
+  id: `f${i}`,
+  role,
+  content,
+  image_count: 0,
+  pending_change_ids: i === 11 ? [fireChange.id] : [],
+  created_at: at(i),
+}));
+const fireMsw = [
+  http.get(`${agentRoot}/conversations/c1`, () => HttpResponse.json(fireMessages)),
+  http.get(`${agentRoot}/pending-changes`, () => HttpResponse.json([fireChange])),
+  ...meta.parameters.msw,
+];
+
+/** Mockup: the whole FIRE number interview in Ask first, ending in one pending change. */
+export const FireInterview: Story = {
+  args: { screen: "projections" },
+  parameters: { msw: fireMsw },
+};
+/** Mockup: the same interview on a phone. */
+export const FireInterviewPhone: Story = {
+  args: { screen: "projections" },
+  parameters: { msw: fireMsw },
+  globals: { viewport: { value: "phone", isRotated: false } },
+};

@@ -4,25 +4,29 @@ Saves the fake YNAB token in Settings, connects a plan from the inbox (which syn
 runs the background proposal run, asks the assistant to categorize, records
 from the inbox, works through a flow pass (accept, later, ignore, undo), applies a
 receipt draft from an attached synthetic image, then runs the AGENT.md interview
-and applies the AGENT.md it drafts. Everything is synthetic and loopback-only;
-the stub model never reaches a network. Set ACCANTO_E2E_RECORDING to a .webm
-path to record the browser.
+and applies the AGENT.md it drafts, and the FIRE number interview from
+Projections, applying the FIRE assumptions it drafts. Everything is synthetic
+and loopback-only; the stub model never reaches a network. Set
+ACCANTO_E2E_RECORDING to a .webm path to record the browser.
 """
 
 import asyncio
+import json
 import os
 import subprocess
 import sys
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import httpx
 from cryptography.fernet import Fernet
 from PIL import Image
 from sqlalchemy import insert
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from accanto.models.monthly import entities, users
+from accanto.services.api_keys import issue_key
 from tests.e2e.test_browser import ROOT, free_port, wait_ready
 from tests.fakes.ynab_server import FAKE_TOKEN
 
@@ -53,13 +57,19 @@ def test_agent_journey(tmp_path):
                     .values(issuer=issuer, subject=subject)
                     .returning(users.c.id)
                 )
-                await connection.execute(
-                    insert(entities).values(owner_id=user, name=ENTITY, time_zone="UTC")
+                entity = await connection.scalar(
+                    insert(entities)
+                    .values(owner_id=user, name=ENTITY, time_zone="UTC")
+                    .returning(entities.c.uuid)
                 )
+                # Seeds the saved Plan the FIRE number interview starts from.
+                async with AsyncSession(bind=connection) as session:
+                    key = await issue_key(session, user, "Synthetic e2e key")
+                return entity, key["key"]
         finally:
             await engine.dispose()
 
-    asyncio.run(seed())
+    entity, api_key = asyncio.run(seed())
     receipt = tmp_path / "synthetic-receipt.png"
     Image.new("RGB", (120, 200), (250, 250, 245)).save(receipt)
     env: dict[str, str] = {
@@ -437,6 +447,69 @@ def test_agent_journey(tmp_path):
         assert "## Approvals" in agent_md
         # The answer sent with Shift+Enter kept its line break (JSON-escaped here).
         assert "purchase,\\nlike Laptop." in agent_md
+
+        # FIRE number interview from Projections: the assistant starts from the
+        # saved Plan version's fixed costs, 1850.00 + 240.00 + 1440.00 / 12 =
+        # 2210.00 a month, and with 1790.00 discretionary drafts (2210.00 +
+        # 1790.00) x 12 = 48000.00 a year; at 4% the FIRE number is 1200000.00.
+        def keyed(path, body=None):
+            response = httpx.request(
+                "GET" if body is None else "POST",
+                f"{origin}/api/entities/{entity}{path}",
+                content=None if body is None else json.dumps(body),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Idempotency-Key": str(uuid4()),
+                    "Content-Type": "application/json",
+                },
+            )
+            assert response.status_code == 200, response.text
+            return response.json()
+
+        plan = keyed(
+            "/plans",
+            {
+                "name": "Synthetic FIRE Plan",
+                "incomes": [{"name": "Synthetic pay", "amount": "6000.00"}],
+                "spending": "900.00",
+                "fixed_costs": [
+                    {"name": name, "amount": amount, "frequency": frequency}
+                    for name, amount, frequency in (
+                        ("Synthetic mortgage", "1850.00", "monthly"),
+                        ("Synthetic utilities", "240.00", "monthly"),
+                        ("Synthetic insurance", "1440.00", "annual"),
+                    )
+                ],
+            },
+        )
+        keyed(f"/plans/{plan['plan_id']}/versions", {"expected_revision": 1})
+        button("New conversation", ".agent")
+        go("Projections")
+        button("Interview me for my FIRE number")
+        until("!document.querySelector('.agent-log[aria-busy=true]')")
+        idle()
+        assert "1 of 4" in last_reply() and "2210.00 a month" in last_reply()
+        ask("Yes, all correct.")
+        ask("Nothing changes.")
+        ask("Synthetic mortgage is fixed rate.")
+        assert "4 of 4" in last_reply()
+        ask("$1,790 a month.")
+        assert "1200000.00" in last_reply() and "Shall I save it?" in last_reply()
+        assert not value(
+            "document.querySelector('.agent-msg .agent-card') ? 'card' : ''"
+        )
+        ask("Yes, save it")
+        until("!!document.querySelector('.agent-msg .agent-card')")
+        card = text(".agent-msg .agent-card")
+        assert "Update FIRE assumptions: spending 48000.00" in card
+        assert "1 fixed cost does not rise with inflation" in card
+        assert "Synthetic mortgage" in card
+        browser("find", "role", "button", "click", "--name", "Pending changes 1")
+        button("Apply", ".agent")
+        until("/No pending changes/.test(document.querySelector('.agent').textContent)")
+        # With no investments Projections shows no target or form; the saved
+        # spending, which the target is derived from, is read over the API.
+        assert keyed("/fire-assumptions")["annual_spending"] == "48000.00"
 
         def choose_mode(mode, label):
             go("Settings")
