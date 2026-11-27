@@ -296,6 +296,9 @@ class PlanLine(Output):
     frequency: str | None = None
     # Fixed costs only: the Fixed cost's current flag (TDD 17), not a snapshot.
     rises_with_inflation: bool | None = None
+    monthly_amount: Money | None = Field(
+        default=None, description="A fixed cost's amount each month in the Plan."
+    )
 
 
 class PlanRevision(Output):
@@ -610,6 +613,7 @@ def project_plan(plan) -> PlanView:
                 amount=row["amount"],
                 frequency=row.get("frequency"),
                 rises_with_inflation=row.get("rises_with_inflation"),
+                monthly_amount=row.get("monthly_amount"),
             )
             for row in rows
         ]

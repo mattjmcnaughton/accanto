@@ -21,6 +21,14 @@ Behaviors, keyed on the owner's message (case-insensitive):
                 INTERVIEW questions one per reply, show the proposed text
                 (the current text plus the answers), and on "yes" call
                 propose_agent_instructions.
+- "fire number" a FIRE number interview over several turns: read list_plans,
+                get_plan for the latest saved version and get_settings, ask
+                FIRE_QUESTIONS one per reply (the first lists the version's
+                fixed costs), then calculate annual spending from those fixed
+                costs and the dollar amount in the fourth answer, project the
+                FIRE target, explain it, and on "yes" call
+                save_fire_assumptions, holding level the fixed costs the
+                third answer names. Checked before the AGENT.md interview.
 - "net worth"   a long multi-tool turn like a real FIRE question: get_context,
                 get_position, list_plans, list_debts, two calculate calls
                 and a growth projection at 8% to a 4% rule target, one tool
@@ -208,10 +216,144 @@ def interview_draft(current: str, answers: Sequence[str]) -> str:
     return "\n\n".join([current.strip(), *sections] if current.strip() else sections)
 
 
+FIRE_QUESTIONS = (
+    "Are these still your fixed costs today?",
+    "Which of these will end, change or be added by the time you retire?",
+    "Which of these will not rise with inflation?",
+    "How much do you want to spend each month beyond fixed costs?",
+)
+
+
+def _starts(messages, wanted: bool) -> list[int]:
+    """Indexes of owner messages that start an interview: the FIRE number one
+    when wanted is True, else the AGENT.md one."""
+    return [
+        i
+        for i, text in enumerate(_owner_prompts(messages))
+        if "interview me" in text.lower() and ("fire number" in text.lower()) is wanted
+    ]
+
+
+def _latest_version(plans: dict) -> tuple[str, dict] | None:
+    """The Plan and saved version with the highest version number, if any."""
+    saved = [
+        (revision["number"], plan["plan_id"], revision)
+        for plan in plans.get("plans", [])
+        for revision in plan["revisions"]
+        if revision["saved"]
+    ]
+    if not saved:
+        return None
+    _, plan_id, revision = max(saved, key=lambda row: row[0])
+    return plan_id, revision
+
+
+def _fire_interview(messages, returns, called):
+    """None when this conversation is not a FIRE number interview; else the
+    next step. Reads are repeated each turn, so every answer uses fresh data."""
+    starts = _starts(messages, True)
+    if not starts:
+        return None
+    if _starts(messages, False) and max(_starts(messages, False)) > starts[-1]:
+        return None
+    answers = _owner_prompts(messages)[starts[-1] + 1 :]
+    result = {p.tool_name: _content(p) for p in returns}
+    if "list_plans" not in called:
+        return _call(("list_plans", {}))
+    latest = _latest_version(result["list_plans"])
+    if latest is None:
+        return (
+            "You have no saved Plan version yet, so I have no fixed costs to "
+            "start from. Save a Plan version, or list your fixed costs here."
+        )
+    plan_id, summary = latest
+    if "get_plan" not in called:
+        return _call(("get_plan", {"plan_id": plan_id}))
+    if "get_settings" not in called:
+        return _call(("get_settings", {}))
+    settings = result["get_settings"]
+    version = next(
+        r
+        for r in result["get_plan"]["revisions"]
+        if r["revision_id"] == summary["revision_id"]
+    )
+    costs = version["fixed_costs"]
+    total = version["fixed_cost_total"]
+    if len(answers) < len(FIRE_QUESTIONS):
+        step = len(answers)
+        lead = ""
+        if step == 0:
+            lines = [
+                f"- {_text(c['name'])}: {c['amount']} {c['frequency']}, "
+                f"{c['monthly_amount']} a month"
+                for c in costs
+            ]
+            lead = (
+                f"Your latest saved Plan version, **{_text(version['name'])}**, "
+                "has these fixed costs:\n\n"
+                + "\n".join(lines)
+                + f"\n\nTotal **{total} a month**.\n\n"
+            )
+        return (
+            f"{lead}**{step + 1} of {len(FIRE_QUESTIONS)}. "
+            f"{FIRE_QUESTIONS[step]}**\n\nAnswer in your own words, or say skip."
+        )
+    found = re.search(r"\d[\d,]*(?:\.\d{1,2})?", answers[3])
+    discretionary = found.group(0).replace(",", "") if found else "0"
+    if "calculate" not in called:
+        return _call(("calculate", {"expression": f"({total} + {discretionary}) * 12"}))
+    spending = result["calculate"]["cents"]
+    rate = settings["fire_withdrawal_percent"]
+    if "project" not in called:
+        fire = {
+            "operation": "fire_target",
+            "annual_spending": spending,
+            "withdrawal_rate_percent": rate,
+        }
+        return _call(("project", {"projection": fire}))
+    target = result["project"]["figures"]["fire_target"]
+    # The full list held level: the costs the third answer names.
+    steady = [c for c in costs if _text(c["name"]).lower() in answers[2].lower()]
+    names = ", ".join(_text(c["name"]) for c in steady) or "none"
+    proposal = (
+        f"Annual spending is ({total} + {discretionary}) x 12 = **{spending}**.\n\n"
+        f"**FIRE number: {spending} / {rate}% = {target}**, in today's dollars.\n\n"
+        f"- Does not rise with inflation: {names}\n"
+        f"- Everything else rises with inflation, at "
+        f"{settings['inflation_percent']}% a year.\n\n"
+        "Shall I save it?"
+    )
+    if len(answers) == len(FIRE_QUESTIONS):
+        return proposal
+    if not answers[-1].lower().startswith(("yes", "save", "approve")):
+        return "Tell me what to change, or say yes to save it."
+    if "save_fire_assumptions" not in called:
+        return _call(
+            (
+                "save_fire_assumptions",
+                {
+                    "annual_spending": spending,
+                    "withdrawal_percent": rate,
+                    "fixed_costs_not_rising_with_inflation": [c["id"] for c in steady],
+                    "expected_revision": settings["revision"],
+                },
+            )
+        )
+    saved = result["save_fire_assumptions"]
+    if saved.get("status") == "pending":
+        return (
+            f"I drafted your FIRE number, {target}, as a pending change. "
+            "Nothing changes until you apply it."
+        )
+    if saved.get("status") == "recorded":
+        return f"I saved your FIRE assumptions; Projections now shows {target}."
+    return f"I could not save it: {saved.get('message', 'unknown error')}"
+
+
 def _interview(messages, returns, called):
     """None when this conversation is not an interview; else the next step."""
     prompts = _owner_prompts(messages)
-    starts = [i for i, text in enumerate(prompts) if "interview me" in text.lower()]
+    starts = _starts(messages, False)
     if not starts:
         return None
     answers = prompts[starts[-1] + 1 :]
@@ -263,9 +405,10 @@ def _next_step(messages: Sequence[ModelMessage], info: AgentInfo):
     returns = _returns(messages)
     called = {part.tool_name for part in returns}
     injected = any(INJECTION_MARKER in json.dumps(_content(p)) for p in returns)
-    interview = _interview(messages, returns, called)
-    if interview is not None:
-        return interview
+    for script in (_fire_interview, _interview):
+        step = script(messages, returns, called)
+        if step is not None:
+            return step
 
     if injected and "delete_activity" not in called:
         if "list_activity" not in called:

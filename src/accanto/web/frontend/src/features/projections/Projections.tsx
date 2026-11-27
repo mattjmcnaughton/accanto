@@ -9,10 +9,10 @@ import {
   savedDollars,
 } from "../../lib/projections";
 import { Empty, Field, Head } from "../../ui";
-import { Chart } from "./Chart";
-import { FixedInDollars } from "./FixedInDollars";
 import { LoadFailure, Loading, MoneyField, dash, validMoney } from "../destinations/records";
 import { type ScreenProps, useLoad } from "../workspace/shared";
+import { Chart } from "./Chart";
+import { FixedInDollars } from "./FixedInDollars";
 import "./projections.css";
 
 const HORIZONS = [10, 20, 30] as const;
@@ -128,7 +128,13 @@ function FireForm({
   );
 }
 
-export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
+/** Starts the FIRE number interview in the assistant; its instructions say how it runs. */
+export const FIRE_INTERVIEW_PROMPT =
+  "Interview me for my FIRE number: ask one question at a time, starting from my Plan's fixed costs, then propose FIRE assumptions to save.";
+
+export function Projections(
+  p: ScreenProps & { openInvestments?: () => void; interview?: () => void },
+) {
   const [years, setYears] = useState<(typeof HORIZONS)[number]>(20);
   const [dollars, setDollars] = useState<Dollars>(savedDollars);
   const choose = (value: Dollars) => {
@@ -144,6 +150,21 @@ export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
   );
   const assumptions = useLoad(() => projections.assumptions(p.entity.id), deps);
   if (p.concealed) return null;
+  const interview = p.interview && (
+    <div className="card pad proj-interview">
+      <div>
+        <b>Work out your FIRE number</b>
+        <p className="note">
+          The assistant starts from your Plan&apos;s fixed costs and asks four short questions: are
+          they right, what will change, which won&apos;t grow with inflation, and what you want to
+          spend each month. Then it explains the number and proposes saving it.
+        </p>
+      </div>
+      <button type="button" className="btn sm" disabled={p.busy} onClick={p.interview}>
+        Interview me for my FIRE number
+      </button>
+    </div>
+  );
 
   const data = state.kind === "ready" ? state.data : null;
   const fire = data?.fire ?? null;
@@ -188,6 +209,7 @@ export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
           contribution.
         </Empty>
       )}
+      {state.kind === "empty" && interview}
       {data && (
         <>
           <div className="card pad stack">
@@ -252,6 +274,7 @@ export function Projections(p: ScreenProps & { openInvestments?: () => void }) {
                 }
               />
             )}
+            {interview}
           </div>
           <div className="grid3 proj-figs">
             {data.milestones.map((m) => (
