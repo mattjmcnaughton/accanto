@@ -843,7 +843,7 @@ export function PlanWorksheet({
             </button>
           </div>
         )}
-        <div className={sidebar ? "plan-layout with-sidebar" : "plan-layout"}>
+        <div className="plan-layout">
           <section className="card plan-grid-card" aria-label="Plan worksheet">
             {/* biome-ignore lint/a11y/useSemanticElements: This is an interactive spreadsheet grid with roving cell focus. */}
             <table
@@ -1133,233 +1133,235 @@ export function PlanWorksheet({
               </button>
             </div>
           </section>
-          {selectedLine && (
-            <aside
-              className="card pad plan-details"
-              aria-label="Row details"
-              style={tint(kinds[selectedLine.group])}
-              onKeyDown={(e) => {
-                if (e.key === "Escape" && !(e.target instanceof HTMLSelectElement)) {
-                  e.stopPropagation();
-                  closeDetails();
-                }
-              }}
-            >
-              <div className="detail-heading">
-                <span className="cap">
-                  <span className="dot" /> {titles[selectedLine.group]}
-                </span>
-                <button
-                  type="button"
-                  id="close-details"
-                  className="icon-btn"
-                  aria-label="Close row details"
-                  onClick={closeDetails}
-                >
-                  <Icon name="x" />
-                </button>
-              </div>
-              <h2 className="h2">{selectedLine.name}</h2>
-              {needsRevision(selectedLine) && (
-                <p className="banner">Inactive or unavailable reference. Review this line.</p>
-              )}
-              <fieldset disabled={readOnly || busy} className="detail-fields">
-                <div className="field">
-                  <label htmlFor="detail-name">
-                    {catalog[selectedLine.group] ? "Destination" : "Name"}
-                  </label>
-                  {catalog[selectedLine.group] ? (
-                    <Combobox
-                      id="detail-name"
-                      placeholder="Choose or type a new name"
-                      options={[
-                        ...(selectedLine.reference
-                          ? [{ id: selectedLine.reference, name: selectedLine.name }]
-                          : []),
-                        ...(catalog[selectedLine.group] ?? [])
-                          .filter(
-                            (n) =>
-                              n.active &&
-                              !lines.some(
-                                (l) => l.group === selectedLine.group && l.reference === n.id,
-                              ),
-                          )
-                          .map((n) => ({ id: n.id, name: n.name })),
-                      ]}
-                      value={selectedLine.reference ?? ""}
-                      onChange={(id) =>
-                        change(selectedLine.id, {
-                          reference: id,
-                          name: catalog[selectedLine.group]?.find((choice) => choice.id === id)
-                            ?.name,
-                        })
-                      }
-                      create={
-                        onCreate && creatable(selectedLine.group)
-                          ? {
-                              noun: NOUNS[creatable(selectedLine.group) as CreatableKind],
-                              // Goal names repeat across accounts; the catalog reads "Account · Goal".
-                              taken:
-                                selectedLine.group === "saving"
-                                  ? []
-                                  : (catalog[selectedLine.group] ?? []).map((n) => n.name),
-                              onCreate: (name) => {
-                                const line = selectedLine.id;
-                                if (selectedLine.group === "saving") return setNewGoal(name);
-                                const kind = creatable(selectedLine.group) as
-                                  | "investment"
-                                  | "giving_recipient";
-                                onCreate({ kind, name }, (id) =>
-                                  change(line, { reference: id, name: cleanName(name) }),
-                                );
-                              },
-                            }
-                          : undefined
-                      }
-                    />
-                  ) : (
-                    <input
-                      id="detail-name"
-                      value={selectedLine.name}
-                      readOnly={selectedLine.group === "spending"}
-                      aria-invalid={!selectedLine.name.trim()}
-                      onChange={(e) => change(selectedLine.id, { name: e.target.value })}
-                    />
-                  )}
-                  {!selectedLine.name.trim() && (
-                    <p className="err">
-                      {catalog[selectedLine.group]
-                        ? "Choose a destination, or type a new name to create one."
-                        : "Enter a name."}
-                    </p>
-                  )}
-                  {newGoal !== null && selectedLine.group === "saving" && onCreate && (
-                    <NewGoal
-                      name={newGoal}
-                      accounts={accounts}
-                      busy={busy}
-                      onCancel={() => setNewGoal(null)}
-                      onCreate={(request) => {
-                        const line = selectedLine.id;
-                        const account = request.kind === "saving_goal" ? request.account : null;
-                        setNewGoal(null);
-                        onCreate(request, (id) =>
-                          change(line, {
-                            reference: id,
-                            name: `${account?.name} · ${cleanName(request.name)}`,
-                          }),
-                        );
-                      }}
-                    />
-                  )}
-                </div>
-                <div className="field">
-                  <label htmlFor="detail-amount">
-                    {selectedLine.group === "fixed" ? "Entered amount" : "Monthly amount"}
-                  </label>
-                  <input
-                    id="detail-amount"
-                    inputMode="decimal"
-                    aria-invalid={cents(selectedLine.amount) === null}
-                    value={selectedLine.amount}
-                    onChange={(e) => change(selectedLine.id, { amount: e.target.value })}
-                  />
-                  {cents(selectedLine.amount) === null && (
-                    <p className="err" role="alert">
-                      Enter a nonnegative USD amount, up to two decimals.
-                    </p>
-                  )}
-                </div>
-                {selectedLine.group === "fixed" && (
-                  <>
-                    <div className="field">
-                      <label htmlFor="detail-frequency">Frequency</label>
-                      <select
-                        id="detail-frequency"
-                        value={selectedLine.frequency}
-                        onChange={(e) =>
-                          change(selectedLine.id, {
-                            frequency: e.target.value as Line["frequency"],
-                          })
-                        }
-                      >
-                        {Object.keys(FREQUENCIES).map((name) => (
-                          <option key={name}>{name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="field">
-                      <label htmlFor="detail-loan">Linked loan</label>
-                      <select
-                        id="detail-loan"
-                        value={selectedLine.link || ""}
-                        onChange={(e) =>
-                          change(selectedLine.id, { link: e.target.value || undefined })
-                        }
-                      >
-                        <option value="">None</option>
-                        {selectedLine.link &&
-                          (readOnly || !loans.some((loan) => loan.id === selectedLine.link)) && (
-                            <option value={selectedLine.link}>
-                              {snapshot?.fixed_costs.find(
-                                (line) => line.fixed_cost_id === selectedLine.reference,
-                              )?.debt_account_name ?? "Unavailable loan"}
-                            </option>
-                          )}
-                        {loans
-                          .filter(
-                            (loan) => !readOnly && (loan.active || loan.id === selectedLine.link),
-                          )
-                          .map((loan) => (
-                            <option key={loan.id} value={loan.id}>
-                              {loan.name}
-                              {loan.active ? "" : " (inactive)"}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                    <div className="detail-result">
-                      <span className="muted">Monthly amount</span>
-                      <b>{money(monthly(selectedLine))}</b>
-                    </div>
-                  </>
-                )}
-              </fieldset>
-              <div className="actions">
-                {!readOnly && selectedLine.group !== "spending" && (
+          <div className="plan-rail">
+            {selectedLine && (
+              <aside
+                className="card pad plan-details"
+                aria-label="Row details"
+                style={tint(kinds[selectedLine.group])}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && !(e.target instanceof HTMLSelectElement)) {
+                    e.stopPropagation();
+                    closeDetails();
+                  }
+                }}
+              >
+                <div className="detail-heading">
+                  <span className="cap">
+                    <span className="dot" /> {titles[selectedLine.group]}
+                  </span>
                   <button
                     type="button"
-                    className="btn sm danger"
-                    id="remove-line"
-                    onClick={() => remove()}
+                    id="close-details"
+                    className="icon-btn"
+                    aria-label="Close row details"
+                    onClick={closeDetails}
                   >
-                    <Icon name="trash" />
-                    Remove line
+                    <Icon name="x" />
                   </button>
+                </div>
+                <h2 className="h2">{selectedLine.name}</h2>
+                {needsRevision(selectedLine) && (
+                  <p className="banner">Inactive or unavailable reference. Review this line.</p>
                 )}
-                <span className="note">
-                  {readOnly ? "Read-only snapshot" : "Editing draft"}.{" "}
-                  <span className="kbd">Esc</span> closes.
-                </span>
-              </div>
-            </aside>
-          )}
+                <fieldset disabled={readOnly || busy} className="detail-fields">
+                  <div className="field">
+                    <label htmlFor="detail-name">
+                      {catalog[selectedLine.group] ? "Destination" : "Name"}
+                    </label>
+                    {catalog[selectedLine.group] ? (
+                      <Combobox
+                        id="detail-name"
+                        placeholder="Choose or type a new name"
+                        options={[
+                          ...(selectedLine.reference
+                            ? [{ id: selectedLine.reference, name: selectedLine.name }]
+                            : []),
+                          ...(catalog[selectedLine.group] ?? [])
+                            .filter(
+                              (n) =>
+                                n.active &&
+                                !lines.some(
+                                  (l) => l.group === selectedLine.group && l.reference === n.id,
+                                ),
+                            )
+                            .map((n) => ({ id: n.id, name: n.name })),
+                        ]}
+                        value={selectedLine.reference ?? ""}
+                        onChange={(id) =>
+                          change(selectedLine.id, {
+                            reference: id,
+                            name: catalog[selectedLine.group]?.find((choice) => choice.id === id)
+                              ?.name,
+                          })
+                        }
+                        create={
+                          onCreate && creatable(selectedLine.group)
+                            ? {
+                                noun: NOUNS[creatable(selectedLine.group) as CreatableKind],
+                                // Goal names repeat across accounts; the catalog reads "Account · Goal".
+                                taken:
+                                  selectedLine.group === "saving"
+                                    ? []
+                                    : (catalog[selectedLine.group] ?? []).map((n) => n.name),
+                                onCreate: (name) => {
+                                  const line = selectedLine.id;
+                                  if (selectedLine.group === "saving") return setNewGoal(name);
+                                  const kind = creatable(selectedLine.group) as
+                                    | "investment"
+                                    | "giving_recipient";
+                                  onCreate({ kind, name }, (id) =>
+                                    change(line, { reference: id, name: cleanName(name) }),
+                                  );
+                                },
+                              }
+                            : undefined
+                        }
+                      />
+                    ) : (
+                      <input
+                        id="detail-name"
+                        value={selectedLine.name}
+                        readOnly={selectedLine.group === "spending"}
+                        aria-invalid={!selectedLine.name.trim()}
+                        onChange={(e) => change(selectedLine.id, { name: e.target.value })}
+                      />
+                    )}
+                    {!selectedLine.name.trim() && (
+                      <p className="err">
+                        {catalog[selectedLine.group]
+                          ? "Choose a destination, or type a new name to create one."
+                          : "Enter a name."}
+                      </p>
+                    )}
+                    {newGoal !== null && selectedLine.group === "saving" && onCreate && (
+                      <NewGoal
+                        name={newGoal}
+                        accounts={accounts}
+                        busy={busy}
+                        onCancel={() => setNewGoal(null)}
+                        onCreate={(request) => {
+                          const line = selectedLine.id;
+                          const account = request.kind === "saving_goal" ? request.account : null;
+                          setNewGoal(null);
+                          onCreate(request, (id) =>
+                            change(line, {
+                              reference: id,
+                              name: `${account?.name} · ${cleanName(request.name)}`,
+                            }),
+                          );
+                        }}
+                      />
+                    )}
+                  </div>
+                  <div className="field">
+                    <label htmlFor="detail-amount">
+                      {selectedLine.group === "fixed" ? "Entered amount" : "Monthly amount"}
+                    </label>
+                    <input
+                      id="detail-amount"
+                      inputMode="decimal"
+                      aria-invalid={cents(selectedLine.amount) === null}
+                      value={selectedLine.amount}
+                      onChange={(e) => change(selectedLine.id, { amount: e.target.value })}
+                    />
+                    {cents(selectedLine.amount) === null && (
+                      <p className="err" role="alert">
+                        Enter a nonnegative USD amount, up to two decimals.
+                      </p>
+                    )}
+                  </div>
+                  {selectedLine.group === "fixed" && (
+                    <>
+                      <div className="field">
+                        <label htmlFor="detail-frequency">Frequency</label>
+                        <select
+                          id="detail-frequency"
+                          value={selectedLine.frequency}
+                          onChange={(e) =>
+                            change(selectedLine.id, {
+                              frequency: e.target.value as Line["frequency"],
+                            })
+                          }
+                        >
+                          {Object.keys(FREQUENCIES).map((name) => (
+                            <option key={name}>{name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label htmlFor="detail-loan">Linked loan</label>
+                        <select
+                          id="detail-loan"
+                          value={selectedLine.link || ""}
+                          onChange={(e) =>
+                            change(selectedLine.id, { link: e.target.value || undefined })
+                          }
+                        >
+                          <option value="">None</option>
+                          {selectedLine.link &&
+                            (readOnly || !loans.some((loan) => loan.id === selectedLine.link)) && (
+                              <option value={selectedLine.link}>
+                                {snapshot?.fixed_costs.find(
+                                  (line) => line.fixed_cost_id === selectedLine.reference,
+                                )?.debt_account_name ?? "Unavailable loan"}
+                              </option>
+                            )}
+                          {loans
+                            .filter(
+                              (loan) => !readOnly && (loan.active || loan.id === selectedLine.link),
+                            )
+                            .map((loan) => (
+                              <option key={loan.id} value={loan.id}>
+                                {loan.name}
+                                {loan.active ? "" : " (inactive)"}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                      <div className="detail-result">
+                        <span className="muted">Monthly amount</span>
+                        <b>{money(monthly(selectedLine))}</b>
+                      </div>
+                    </>
+                  )}
+                </fieldset>
+                <div className="actions">
+                  {!readOnly && selectedLine.group !== "spending" && (
+                    <button
+                      type="button"
+                      className="btn sm danger"
+                      id="remove-line"
+                      onClick={() => remove()}
+                    >
+                      <Icon name="trash" />
+                      Remove line
+                    </button>
+                  )}
+                  <span className="note">
+                    {readOnly ? "Read-only snapshot" : "Editing draft"}.{" "}
+                    <span className="kbd">Esc</span> closes.
+                  </span>
+                </div>
+              </aside>
+            )}
+            <PlanBreakdown
+              funding={stats.funding}
+              allocated={stats.allocated}
+              state={snapshot ? "Saved version" : dirty || edit ? "Unsaved preview" : "Saved draft"}
+              rows={[
+                ...allocations.map((group) => ({
+                  name: titles[group],
+                  amount: groupTotal(group),
+                  kind: kinds[group],
+                })),
+                { name: "Unassigned", amount: stats.unassigned },
+              ]}
+              metrics={stored?.planned_metrics}
+            />
+          </div>
         </div>
       </fieldset>
-      <PlanBreakdown
-        funding={stats.funding}
-        allocated={stats.allocated}
-        state={snapshot ? "Saved version" : dirty || edit ? "Unsaved preview" : "Saved draft"}
-        rows={[
-          ...allocations.map((group) => ({
-            name: titles[group],
-            amount: groupTotal(group),
-            kind: kinds[group],
-          })),
-          { name: "Unassigned", amount: stats.unassigned },
-        ]}
-        metrics={stored?.planned_metrics}
-      />
       {modal === "help" && (
         <Dialog title="Keyboard shortcuts" onClose={() => setModal(null)}>
           <div className="dlg-b">
