@@ -824,6 +824,11 @@ export function Inbox(
           }
         : f;
     if (id && pendingIds.has(id) && !writes.cancel(id)) {
+      // A sent write cannot be cancelled; undo it once its result patches the item.
+      if (writes.pending.some((i) => i.it.id === id && i.state === "sending")) {
+        setUndoAfterSave(id);
+        return setToast({ text: "Undoing once the save is confirmed." });
+      }
       return setToast({ text: "This write was sent. Undo after its result is confirmed." });
     }
     if (last?.length === 1 && (last[0].action === "later" || (id && pendingIds.has(id)))) {
@@ -833,6 +838,15 @@ export function Inbox(
     }
     if (await undoLast()) setFlow(front);
   }
+  /** z pressed while that item's write was in flight: undo once it settles. */
+  const [undoAfterSave, setUndoAfterSave] = useState<string | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Run once the awaited write leaves the queue.
+  useEffect(() => {
+    if (!undoAfterSave || pendingIds.has(undoAfterSave)) return;
+    setUndoAfterSave(null);
+    // A rejected write already left the undo stack, and a later action replaces this undo.
+    if (flow && undo.current[undo.current.length - 1]?.[0]?.id === undoAfterSave) void flowUndo();
+  }, [undoAfterSave, writes.pending]);
   /** Keys while flow is on; false lets an edit key reach the normal handler. */
   function flowKey(key: string): boolean {
     if (!flow) return false;

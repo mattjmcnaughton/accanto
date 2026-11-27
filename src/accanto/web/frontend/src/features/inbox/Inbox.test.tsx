@@ -671,6 +671,57 @@ it("flushes on leaving flow and retries an unconfirmed ignore with its original 
   expect(screen.getByRole("button", { name: "Ignored 1" })).toBeDefined();
 });
 
+it("z in flow while the ignore is being sent undoes it once the save is confirmed", async () => {
+  const i = item({});
+  const posts: { path: string; body: unknown }[] = [];
+  let answer: (() => void) | undefined;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (init?.method === "POST") {
+      posts.push({ path: url, body: JSON.parse(String(init.body)) });
+      if (url.endsWith("/inbox/skip")) {
+        await new Promise<void>((r) => {
+          answer = r;
+        });
+        return new Response(
+          JSON.stringify({
+            results: [{ item_id: i.id, ok: true, item: { ...i, status: "skipped", revision: 4 } }],
+          }),
+        );
+      }
+      return new Response(JSON.stringify({ item: { ...i, revision: 5 } }));
+    }
+    return new Response(JSON.stringify(url.endsWith("/inbox") ? [i] : []));
+  });
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+    />,
+  );
+  await screen.findByText(i.payee, { selector: ".ix-d-t" });
+  const press = (key: string) => fireEvent.keyDown(document.body, { key });
+  press("F");
+  await screen.findByRole("article", { name: new RegExp(`^${i.payee}`) });
+  press("s");
+  await waitFor(() => expect(answer).toBeDefined(), { timeout: 2000 });
+  press("z");
+  answer?.();
+  await screen.findByRole("article", { name: new RegExp(`^${i.payee}`) });
+  await waitFor(() => expect(posts).toHaveLength(2));
+  // The undo carries the revision the confirmed ignore returned, not the stale one.
+  expect(posts[1]).toEqual({
+    path: "/api/entities/e/inbox/i1/unskip",
+    body: { expected_revision: 4 },
+  });
+});
+
 it("batch resolves a shift-click range with one choice and keeps only failures selected", async () => {
   const proposal = { category: "spending", rationale: "Synthetic" } as unknown as Proposal;
   const a = item({ id: "a", payee: "Example Software Co" });
