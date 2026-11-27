@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { LoadState } from "../../lib/api";
 import {
+  daysBetween,
   daysInMonth,
   decimalToCents,
   fmtShort,
@@ -13,7 +14,6 @@ import type { ComparisonGroup, PlanRevision, ReviewResult } from "../../lib/mont
 import type { Dollars, Projection } from "../../lib/projections";
 import type { Routine } from "../../lib/routines";
 import { Band, type BandPart, Empty, tint } from "../../ui";
-import { RoutinesCard } from "../routines/RoutinesCard";
 import { share } from "./PlanBreakdown";
 import type { Screen } from "./Workspace";
 import { storedCents, storedGroups } from "./planWorksheetModel";
@@ -120,16 +120,25 @@ export function Home({
   openRoutine?: (routine: string, on: string) => void;
   retry: () => void;
 }) {
-  // A routine is due whether or not the Entity has a Plan yet.
-  const routineCard = routines && (
-    <RoutinesCard
-      state={routines}
-      today={today}
-      open={(id, on) => openRoutine?.(id, on)}
-      all={() => go?.("routines")}
-    />
-  );
-  if (!plans) return <Welcome newPlan={newPlan}>{routineCard}</Welcome>;
+  // A routine is due whether or not the Entity has a Plan yet, and comes first: it has a date.
+  const items: Item[] = [];
+  for (const r of routines?.kind === "ready" ? routines.data : []) {
+    const c = r.current;
+    if (!r.active || !c || (c.state !== "due" && c.state !== "overdue")) continue;
+    const late = daysBetween(c.scheduled_on, today);
+    items.push({
+      key: `r-${r.uuid}`,
+      title: `${r.name} is ${c.state === "due" ? "due today" : `${plural(late, "day")} overdue`}`,
+      action: "Open",
+      run: () => openRoutine?.(r.uuid, c.scheduled_on),
+    });
+  }
+  if (!plans)
+    return (
+      <Welcome newPlan={newPlan}>
+        <NeedsYou items={items} />
+      </Welcome>
+    );
   const toReview = go && (() => go("review"));
   const name = monthName(month);
   // An empty mocked or legacy body is treated as no Review rather than as zeros.
@@ -138,7 +147,6 @@ export function Home({
   // While the month runs, a planned line with no entry is still to come, as in Review.
   const ended = month < today.slice(0, 7);
 
-  const items: Item[] = [];
   if (comparison && ended) {
     const unknown = (["income", "fixed_cost", "saving", "investing", "giving"] as const).flatMap(
       (key) => comparison[key].items.filter((item) => item.recorded === null),
@@ -186,38 +194,7 @@ export function Home({
 
   return (
     <div className="screen home">
-      {items.length > 0 && (
-        <section aria-labelledby="home-needs">
-          <h2 className="h2" id="home-needs">
-            Needs you <span>{plural(items.length, "item")}</span>
-          </h2>
-          <ul className="card home-list" aria-label="Needs you">
-            {items.map((item) => {
-              const body = (
-                <>
-                  <span className={`pip${item.quiet ? " quiet" : ""}`} />
-                  <span className="t">
-                    {item.title}
-                    {item.detail && <small>{item.detail}</small>}
-                  </span>
-                  {item.action && <span className="go">{item.action}</span>}
-                </>
-              );
-              return (
-                <li key={item.key}>
-                  {item.run ? (
-                    <button type="button" className="row" onClick={item.run} data-row>
-                      {body}
-                    </button>
-                  ) : (
-                    <div className="row">{body}</div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
+      <NeedsYou items={items} />
       {review.kind === "loading" ? (
         <div className="card pad sk-card" aria-busy="true" aria-label="Loading this month">
           <div className="sk" style={{ width: "55%", height: 28 }} />
@@ -282,7 +259,6 @@ export function Home({
           <MonthBreakdown comparison={comparison} name={name} ended={ended} />
         </section>
       )}
-      {routineCard}
       {recent.length > 0 && (
         <section aria-labelledby="home-plans">
           <h2 className="h2" id="home-plans">
@@ -619,6 +595,43 @@ function NetWorthCard({
         </>
       )}
     </div>
+  );
+}
+
+/** What needs the person, one line each; nothing at all when nothing does. */
+function NeedsYou({ items }: { items: Item[] }) {
+  if (!items.length) return null;
+  return (
+    <section aria-labelledby="home-needs">
+      <h2 className="h2" id="home-needs">
+        Needs you <span>{plural(items.length, "item")}</span>
+      </h2>
+      <ul className="card home-list" aria-label="Needs you">
+        {items.map((item) => {
+          const body = (
+            <>
+              <span className={`pip${item.quiet ? " quiet" : ""}`} />
+              <span className="t">
+                {item.title}
+                {item.detail && <small>{item.detail}</small>}
+              </span>
+              {item.action && <span className="go">{item.action}</span>}
+            </>
+          );
+          return (
+            <li key={item.key}>
+              {item.run ? (
+                <button type="button" className="row" onClick={item.run} data-row>
+                  {body}
+                </button>
+              ) : (
+                <div className="row">{body}</div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

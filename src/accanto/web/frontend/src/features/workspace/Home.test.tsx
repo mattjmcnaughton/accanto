@@ -106,7 +106,7 @@ it("takes what is left from the API's difference and never shows a missing figur
     }),
   ).toBeDefined();
 });
-it("shows a due routine before the Entity has a Plan", () => {
+it("lists due and overdue routines in Needs you, even before the Entity has a Plan", () => {
   const routine = {
     uuid: "r1",
     name: "Synthetic check-in",
@@ -131,11 +131,39 @@ it("shows a due routine before the Entity has a Plan", () => {
     <Home
       {...props(review(group("1.00", "1.00", "0.00"), "0.00"))}
       plans={0}
-      routines={{ kind: "ready", data: [routine] }}
+      routines={{
+        kind: "ready",
+        data: [
+          routine,
+          {
+            ...routine,
+            uuid: "r2",
+            name: "Synthetic review",
+            current: { scheduled_on: "2026-11-07", state: "overdue", done: 1, total: 2 },
+          },
+          {
+            ...routine,
+            uuid: "r3",
+            name: "Synthetic done",
+            current: { scheduled_on: "2026-11-10", state: "done", done: 1, total: 1 },
+          },
+          { ...routine, uuid: "r4", name: "Synthetic archived", active: false },
+        ],
+      }}
       openRoutine={openRoutine}
     />,
   );
   expect(screen.getByRole("button", { name: "Create your first Plan" })).toBeDefined();
-  fireEvent.click(within(screen.getByRole("list", { name: "Routines" })).getByRole("button"));
+  fireEvent.click(
+    within(screen.getByRole("list", { name: "Needs you" })).getByRole("button", {
+      name: "Synthetic check-in is due today Open",
+    }),
+  );
   expect(openRoutine).toHaveBeenCalledWith("r1", "2026-11-10");
+  const needs = screen.getByRole("list", { name: "Needs you" });
+  expect(
+    within(needs)
+      .getAllByRole("button")
+      .map((b) => b.textContent),
+  ).toEqual(["Synthetic check-in is due todayOpen", "Synthetic review is 3 days overdueOpen"]);
 });

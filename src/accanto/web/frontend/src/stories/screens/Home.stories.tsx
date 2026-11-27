@@ -28,11 +28,11 @@ export const NetWorthUnknown: Story = {
 /** A past month chosen in the top bar: its figures, without today's pace marker. */
 export const AnotherMonth: Story = { args: { month: "2026-09" } };
 export const LoadedPhone: Story = { globals: { viewport: { value: "phone", isRotated: false } } };
-/** Routines: one overdue, the rest with their next date. Continue opens the occurrence. */
+/** Due and overdue routines lead Needs you, one line each; a line opens the occurrence. */
 export const RoutineDueToday: Story = {
   parameters: { msw: [...routinesApi({ dueToday: true }).handlers, ...mockApi()] },
 };
-/** Nothing due: the section collapses to the next routine. */
+/** Nothing due: no routine appears on Home. */
 export const RoutinesCaughtUp: Story = {
   parameters: { msw: [...routinesApi({ allDone: true }).handlers, ...mockApi()] },
 };
