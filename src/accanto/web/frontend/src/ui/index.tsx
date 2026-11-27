@@ -201,6 +201,8 @@ export function Dialog({
 }: { title: string; onClose: () => void; children: ReactNode; className?: string }) {
   const ref = useRef<HTMLDialogElement>(null);
   const slot = useRef<HTMLDivElement>(null);
+  // Read on the first render, before an autofocused field inside takes focus.
+  const opener = useRef(document.activeElement);
   useEffect(() => {
     const dialog = ref.current;
     const own = slot.current;
@@ -217,6 +219,12 @@ export function Dialog({
       slotsChanged();
       if (typeof dialog.close === "function") dialog.close();
       else dialog.removeAttribute("open");
+      // The dialog is already out of the page here, so the browser cannot return focus itself.
+      // Without this, keys after Esc start from the page instead of where they left off.
+      const lost = !document.activeElement || document.activeElement === document.body;
+      const back = opener.current;
+      if (lost && back instanceof HTMLElement && back.isConnected)
+        back.focus({ preventScroll: true });
     };
   }, []);
   return (
