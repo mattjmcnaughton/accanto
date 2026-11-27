@@ -96,6 +96,108 @@ it.each([
   expect(reads.sort()).toEqual(expected);
 });
 
+it("splits Home by the latest saved version of the Review's Plan, without another read", async () => {
+  const totals = (fixed: string, spending: string, saving: string, investing: string) => ({
+    funding_total: "5000.00",
+    fixed_cost_total: fixed,
+    spending,
+    saving_total: saving,
+    investing_total: investing,
+    giving_total: "500.00",
+  });
+  const baseline = (uuid: string, number: number, extra: Partial<PlanRevision>) => ({
+    ...version,
+    uuid,
+    number,
+    saved_at: `2026-0${number + 6}-01`,
+    ...extra,
+  });
+  const v2 = baseline("b2", 2, totals("1000.00", "2500.00", "500.00", "500.00"));
+  const groups = [
+    {
+      // Edited most recently, so it leads the list, but the Review links Baseline.
+      plan_id: "other",
+      revisions: [
+        { ...version, uuid: "o1", name: "Other", ...totals("4500.00", "0.00", "0.00", "0.00") },
+        {
+          ...version,
+          uuid: "o-draft",
+          name: "Other",
+          saved: false,
+          number: 2,
+          updated_at: "2026-11-09",
+        },
+      ],
+    },
+    {
+      plan_id: "baseline",
+      revisions: [
+        baseline("b1", 1, totals("2500.00", "1000.00", "500.00", "500.00")),
+        baseline("b3", 3, totals("1500.00", "1000.00", "1000.00", "1000.00")),
+        v2,
+        { ...version, uuid: "b-draft", saved: false, number: 4, updated_at: "2026-11-01" },
+      ],
+    },
+  ];
+  const group = (planned: string) => ({
+    planned,
+    recorded: null,
+    incomplete: true,
+    difference: null,
+    items: [],
+    unplanned: [],
+    adjustments: [],
+  });
+  const review = {
+    review: { uuid: "r", month: "2026-11-01", revision: 1, note: "", reviewed_at: "2026-11-05" },
+    version: v2,
+    comparison: {
+      income: group("5000.00"),
+      fixed_cost: group("1000.00"),
+      spending: group("2500.00"),
+      saving: group("500.00"),
+      investing: group("500.00"),
+      giving: group("500.00"),
+    },
+    spending_difference: null,
+  };
+  let linked = true;
+  const reads: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const resource = String(path).replace(`/api/entities/${entity.id}/`, "");
+    reads.push(resource);
+    if (resource.startsWith("reviews/"))
+      return linked ? json(review) : json({ detail: { code: "review_not_found" } }, 404);
+    return json(resource === "plans" ? groups : []);
+  });
+  await act(async () => {
+    render(<Workspace initial={session} signedOut={vi.fn()} screen="home" />);
+  });
+  const card = () => screen.getByText("Plan split").closest(".glance-card") as HTMLElement;
+  expect(within(card()).getByText("Baseline, latest version 3")).toBeDefined();
+  const row = (name: string) => within(card()).getByText(name).closest("li")?.textContent;
+  expect(row("Fixed costs")).toBe("Fixed costs$1,500.0030.0%");
+  expect(row("Guilt-free spending")).toBe("Guilt-free spending$1,000.0020.0%");
+  expect(row("Giving")).toBe("Giving$500.0010.0%");
+  expect(card().textContent).toContain("This month's Review compares with Baseline, version 2.");
+  // The month's figures still compare against the Review's own version.
+  expect(
+    screen.getByRole("heading", {
+      name: "$2,500.00 is planned for guilt-free spending this month",
+    }),
+  ).toBeDefined();
+  expect(reads.filter((read) => read === "plans" || read.startsWith("reviews/"))).toHaveLength(2);
+
+  // Without a Review, the split follows the most recently edited Plan with a saved version.
+  cleanup();
+  linked = false;
+  await act(async () => {
+    render(<Workspace initial={session} signedOut={vi.fn()} screen="home" />);
+  });
+  expect(within(card()).getByText("Other, latest version 1")).toBeDefined();
+  expect(card().textContent).not.toContain("compares with");
+});
+
 it("refreshes only visible Activity after a write and restores the unsaved Plan", async () => {
   const reads: string[] = [];
   let saved = false;
