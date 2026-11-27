@@ -158,6 +158,8 @@ it("permits a destination without a target or opening", async () => {
         expected_return_percent: null,
         expected_contribution: null,
         expected_contribution_frequency: "monthly",
+        tax_treatment: "taxable",
+        liquidity: "liquid",
       },
     }),
     expect.any(Function),
@@ -184,6 +186,34 @@ it("moves an investment's opening date only when it changed", async () => {
       method: "PUT",
       path: "/api/entities/entity/investments/investment-1",
       body: expect.objectContaining({ opening_date: "2025-12-01", expected_revision: 1 }),
+    }),
+    expect.any(Function),
+  );
+});
+
+it("shows and edits an investment's tax treatment and liquidity", async () => {
+  mock({
+    "/investments": [{ ...destination, tax_treatment: "tax_advantaged", liquidity: "liquid" }],
+  });
+  const p = props();
+  render(<Destinations {...p} />);
+  const investments = await grid("Investments");
+  const fund = within(investments).getByText("Example fund").closest("tr") as HTMLElement;
+  expect(within(fund).getByText("Tax-advantaged")).toBeDefined();
+  expect(within(fund).getByText("Liquid")).toBeDefined();
+
+  fireEvent.click(within(investments).getByRole("button", { name: "Edit Example fund" }));
+  const liquidity = screen.getByRole("group", { name: "Liquidity" });
+  expect(within(liquidity).getByRole("button", { name: "Liquid" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  fireEvent.click(within(liquidity).getByRole("button", { name: "Illiquid" }));
+  fireEvent.keyDown(screen.getByLabelText("Name"), { key: "s", ctrlKey: true });
+  expect(p.save).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      method: "PUT",
+      body: expect.objectContaining({ tax_treatment: "tax_advantaged", liquidity: "illiquid" }),
     }),
     expect.any(Function),
   );

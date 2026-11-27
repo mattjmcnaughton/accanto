@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6t040`.
+   supported revision is `6u041`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -183,6 +183,11 @@ with the migration. Reapply the runtime grants so `accanto_app` can use the new
 tables and their identity sequences. The `jobs` service stages due dates in the
 inbox from the first tick after the deploy, never dates before a schedule was
 created. The downgrade deletes scheduled inbox items.
+`6u041` adds each investment's `tax_treatment` (`taxable` or `tax_advantaged`,
+default `taxable`) and `liquidity` (`liquid` or `illiquid`, default `liquid`).
+Additive with defaults, so every existing investment reads taxable and liquid
+until the owner edits it; `6t040` code never reads or writes them. The downgrade
+drops both. No new tables or sequences, so no grant changes.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

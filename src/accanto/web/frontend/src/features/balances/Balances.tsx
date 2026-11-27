@@ -342,7 +342,7 @@ export function Balances(p: ScreenProps) {
               <TrackedCard
                 key={account.uuid}
                 name={account.name}
-                chip={account.active ? undefined : "Archived"}
+                chips={account.active ? [] : ["Archived"]}
                 actions={
                   <>
                     {account.active && (

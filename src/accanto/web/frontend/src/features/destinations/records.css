@@ -17,8 +17,11 @@
 .rec-card-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
+}
+.rec-card-head b {
+  margin-right: auto;
 }
 .rec-card-actions {
   margin-top: 0;
@@ -231,6 +234,14 @@
 }
 .rec-assume .two {
   align-items: start;
+}
+.rec-traits {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.rec-traits .seg-control {
+  justify-self: start;
 }
 
 /* Loan terms and payoff schedule (TDD 15) */

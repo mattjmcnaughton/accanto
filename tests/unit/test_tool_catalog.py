@@ -258,12 +258,18 @@ def test_save_destination_moves_an_investment_opening_date():
                 "active": True,
                 "expected_revision": 2,
                 "opening_date": "2026-02-01",
+                "liquidity": "illiquid",
             },
         }
     )
     command, summary = build_destination(args)
     assert (command.operation, command.target) == ("edit_investment", target)
     assert command.payload["opening_date"] == "2026-02-01"
+    # An omitted trait stays null so the service keeps its current value.
+    assert (command.payload["tax_treatment"], command.payload["liquidity"]) == (
+        None,
+        "illiquid",
+    )
     assert summary.endswith("(opening date 2026-02-01)")
     row = {
         "uuid": str(target),
@@ -274,6 +280,10 @@ def test_save_destination_moves_an_investment_opening_date():
         "revision": 3,
         "opening": {"date": "2026-02-01", "amount": "100.00"},
         "latest": None,
+        "tax_treatment": "tax_advantaged",
+        "liquidity": "illiquid",
     }
     listed = t.project_destinations("investment", [row]).model_dump(mode="json")
     assert listed["destinations"][0]["opening_date"] == "2026-02-01"
+    assert listed["destinations"][0]["tax_treatment"] == "tax_advantaged"
+    assert listed["destinations"][0]["liquidity"] == "illiquid"

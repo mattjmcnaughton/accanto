@@ -170,6 +170,7 @@ async def populate(command, day):
             "name": "Fixture long-term fund",
             "target": "12000.00",
             "opening": {"date": opening, "amount": "28000.00"},
+            "tax_treatment": "tax_advantaged",
         },
     )
     await command(

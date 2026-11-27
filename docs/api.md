@@ -694,6 +694,13 @@ nonnegative) and `expected_contribution_frequency` (`monthly`, the default, or
 `annual`). An edit that omits one leaves it unchanged; null clears it. Giving
 recipients refuse them (422).
 
+Investments also carry two traits on create, edit and list: `tax_treatment`
+(`taxable`, a brokerage account, the default; or `tax_advantaged`, such as a
+401(k), IRA or HSA) and `liquidity` (`liquid`, such as a stock fund, the default;
+or `illiquid`, such as a house). An edit that omits or nulls one keeps it.
+Giving recipients refuse them (`422 invalid_traits`). Neither changes
+contributions, observations, net worth or projections yet.
+
 `GET /projections?years=N` (1–100, default 20) projects from the Entity's today:
 each investment starts at its latest observed value and compounds monthly at the
 effective rate (1 + R)^(1/12) − 1, with its contribution (annual ÷ 12, none for
