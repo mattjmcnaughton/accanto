@@ -396,6 +396,76 @@ it("searches every field as you type, inside the views and filters, and X select
   expect(input.value).toBe("");
 });
 
+it("searches a recorded item by its entry's subcategory and tags, and a proposal by its tags", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    if (url.endsWith("/inbox"))
+      return new Response(
+        JSON.stringify([
+          item({ status: "recorded", actual_entry_id: "entry-1" }),
+          item({
+            id: "i2",
+            source_ref: "tx-2",
+            payee: "Sample Market",
+            proposal: { category: "spending", tag_ids: ["tag-kids"] } as unknown as Proposal,
+          }),
+        ]),
+      );
+    if (url.endsWith("/activity"))
+      return new Response(
+        JSON.stringify([
+          {
+            uuid: "entry-1",
+            financial_date: "2026-11-09",
+            category: "spending",
+            amount: "12.00",
+            note: "Example Coffee Cart",
+            spending_subcategory_id: "sub-eat",
+            spending_subcategory_name: "Eating out",
+            tag_ids: ["tag-trip"],
+          },
+        ]),
+      );
+    if (url.endsWith("/tags"))
+      return new Response(
+        JSON.stringify([
+          { uuid: "tag-trip", name: "Italy trip", active: true, revision: 1, entries: 1 },
+          { uuid: "tag-kids", name: "Kids", active: true, revision: 1, entries: 0 },
+        ]),
+      );
+    return new Response("[]");
+  });
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+    />,
+  );
+  await screen.findByText("Sample Market", { selector: ".ix-d-t" });
+  const input = screen.getByRole("searchbox", { name: "Search the inbox" });
+  const count = (view: string) =>
+    screen.getByRole("button", { name: new RegExp(`^${view}`) }).textContent;
+  const search = (value: string) => fireEvent.change(input, { target: { value } });
+  // The recorded entry's subcategory and tag, which the row does not show.
+  await waitFor(() => {
+    search("eating out");
+    expect(count("Recorded")).toBe("Recorded 1");
+  });
+  expect(count("Waiting")).toBe("Waiting 0");
+  search("italy");
+  expect(count("Recorded")).toBe("Recorded 1");
+  // A proposal's tag.
+  search("kids");
+  expect(count("Waiting")).toBe("Waiting 1");
+  expect(count("Recorded")).toBe("Recorded 0");
+});
+
 it("advances before sending, cancels a queued ignore, and returns only the rejected record", async () => {
   const proposal = (category: Proposal["category"], rationale: string) =>
     ({ category, rationale, skip: false, tag_ids: [] }) as unknown as Proposal;

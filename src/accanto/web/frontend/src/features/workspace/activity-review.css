@@ -105,6 +105,23 @@
   min-height: 32px;
   padding: 4px 10px;
 }
+.ar .ar-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 200px;
+  max-width: 300px;
+}
+.ar .filters .ar-search .input {
+  flex: 1 1 auto;
+  max-width: none;
+  padding-right: 30px;
+}
+.ar .ar-search .kbd {
+  position: absolute;
+  right: 8px;
+  pointer-events: none;
+}
 .ar .dayh {
   display: flex;
   justify-content: space-between;
@@ -405,5 +422,13 @@
   }
   .ar .ar-row .t small {
     white-space: normal;
+  }
+  .ar .ar-search {
+    flex-basis: 100%;
+    max-width: none;
+    order: -1;
+  }
+  .ar .ar-search .kbd {
+    display: none;
   }
 }

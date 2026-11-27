@@ -381,6 +381,21 @@ def test_agent_journey(tmp_path):
             ".split('Synthetic receipt (stub draft)').length === 3"
         )
         assert "$23.45" in text("#main")
+        # Activity search: / focuses it, every word must match (a number is the
+        # exact amount), and it reaches all months. Esc clears it.
+        entries = "document.querySelectorAll('#main [role=row]').length"
+        shown = int(value(entries))
+        browser("press", "/")
+        until(
+            "document.activeElement?.getAttribute('aria-label') === 'Search activity'"
+        )
+        browser("keyboard", "type", "receipt 23.45")
+        until(f"{entries} === 2")
+        assert "2 entries in all months" in text("#main")
+        browser("keyboard", "type", "1")
+        until(f"{entries} === 0")
+        browser("press", "Escape")
+        until(f"{entries} === {shown}")
 
         # AGENT.md interview: one question per reply, the proposed text, and a
         # Pending change only after the owner says yes. The stub keeps the

@@ -129,10 +129,19 @@ keys above and returns to the flow, `z` undoes, `Esc` leaves.
 Search: `/` focuses the search box, which filters as you type by payee, memo,
 source category, amount (a number matches that exact amount, signed only when
 typed with a sign) and the shown proposal or record, including the agent's
-rationale or question. Every word must match. It narrows the current view, its
+rationale or question, a recorded entry's line or subcategory, and the tags
+proposed or recorded. Every word must match. It narrows the current view, its
 counts and the proposals filter, and `X` selects only matching rows. `Enter`
 returns the keys to the list; `Esc` clears the search. Every staged item is
 already loaded for the screen, so search filters in the browser with no request.
+
+Activity search follows the same rules (`lib/search.ts`) over each entry's note
+(which holds the YNAB payee and memo), category, line, subcategory, funding
+origin, refund link, tags, date and exact amount. A search reaches every month,
+because the Activity read already returns the Entity's whole history in one
+set-based query (§9); choosing the shown month in Months shown narrows it, and
+it combines with the category and tag filters. `/` focuses it, `Enter` moves to
+the first match, and `Esc` clears it and returns to the shown month.
 
 ## Staged-transaction shape (the adapter boundary)
 

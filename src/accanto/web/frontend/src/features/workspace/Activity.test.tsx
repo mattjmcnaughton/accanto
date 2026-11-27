@@ -426,3 +426,121 @@ it("shows tags, filters by one, and saves a contribution's tags label-only", asy
     expect.any(Function),
   );
 });
+
+it("searches every month by payee, line, subcategory, tag and exact amount, with the filters", async () => {
+  const base = {
+    source_id: null,
+    fixed_cost_id: null,
+    fixed_cost_name: null,
+    debt_account_id: null,
+    saving_goal_id: null,
+    funding_goal_id: null,
+    funding_origin: "income",
+    revision: 1,
+    is_adjustment: false,
+    tag_ids: [] as string[],
+  };
+  const entries = [
+    {
+      ...base,
+      uuid: "bakery-oct",
+      financial_date: "2026-10-03",
+      category: "spending",
+      amount: "12.00",
+      note: "Example Bakery · Oat loaf",
+      spending_subcategory_id: "sub-eat",
+      spending_subcategory_name: "Eating out",
+      tag_ids: ["tag-trip"],
+    },
+    {
+      ...base,
+      uuid: "refund-oct",
+      financial_date: "2026-10-05",
+      category: "spending",
+      amount: "-12.00",
+      note: "Café Ünder return",
+      refund_of: "bakery-oct",
+    },
+    {
+      ...base,
+      uuid: "rent-sep",
+      financial_date: "2026-09-01",
+      category: "fixed_cost",
+      amount: "1234.50",
+      fixed_cost_id: "fc-rent",
+      fixed_cost_name: "Synthetic rent",
+      note: "Sample Property Co",
+    },
+    {
+      ...base,
+      uuid: "bakery-sep",
+      financial_date: "2026-09-14",
+      category: "spending",
+      amount: "8.25",
+      note: "Example Bakery",
+    },
+  ];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    if (url.endsWith("/activity")) return json(entries);
+    if (url.endsWith("/tags"))
+      return json([
+        { uuid: "tag-trip", name: "Italy trip", active: true, revision: 1, entries: 1 },
+      ]);
+    return json([]);
+  });
+  // November has no entries yet; search still reaches the earlier months.
+  render(<ActivityScreen {...props()} month="2026-11" />);
+  expect(await screen.findByText("Nothing is recorded in November yet")).toBeDefined();
+  const input = screen.getByRole("searchbox", { name: "Search activity" }) as HTMLInputElement;
+  fireEvent.keyDown(document.body, { key: "/" });
+  expect(document.activeElement).toBe(input);
+  const titles = () =>
+    screen.queryAllByRole("gridcell").flatMap((cell) => {
+      const title = cell.querySelector(".ar-title");
+      return title ? [title.firstChild?.textContent] : [];
+    });
+  const search = (value: string) => fireEvent.change(input, { target: { value } });
+
+  search("bakery"); // the payee kept in the note, across months, newest first
+  expect(titles()).toEqual([
+    "Refund: Example Bakery · Oat loaf",
+    "Example Bakery · Oat loaf",
+    "Example Bakery",
+  ]);
+  expect(screen.getByText("3 entries in all months")).toBeDefined();
+  search("eating"); // subcategory
+  expect(titles()).toEqual(["Example Bakery · Oat loaf"]);
+  search("italy"); // tag
+  expect(titles()).toEqual(["Example Bakery · Oat loaf"]);
+  search("$1,234.5"); // exact amount as typed
+  expect(titles()).toEqual(["Synthetic rent"]);
+  search("rent property"); // the fixed cost's line and its note; every word, any order
+  expect(titles()).toEqual(["Synthetic rent"]);
+  search("12"); // unsigned: the purchase and its refund
+  expect(titles()).toEqual(["Refund: Example Bakery · Oat loaf", "Example Bakery · Oat loaf"]);
+  search("-12"); // signed: only the refund
+  expect(titles()).toEqual(["Refund: Example Bakery · Oat loaf"]);
+  search("cafe under"); // its own note, without accents
+  expect(titles()).toEqual(["Refund: Example Bakery · Oat loaf"]);
+  search("8.25"); // an amount matches exactly, not a prefix
+  expect(titles()).toEqual(["Example Bakery"]);
+  search("8.2");
+  expect(titles()).toEqual([]);
+
+  // The category filter and the month narrow the search.
+  search("bakery");
+  fireEvent.click(screen.getByRole("button", { name: "Fixed costs" }));
+  expect(screen.getByText(/Nothing matches “bakery” with this filter/)).toBeDefined();
+  fireEvent.click(screen.getByRole("button", { name: "All" }));
+  const months = screen.getByRole("combobox", { name: "Months shown" }) as HTMLSelectElement;
+  expect(months.value).toBe("");
+  fireEvent.change(months, { target: { value: "2026-11" } });
+  expect(screen.getByText(/Nothing in November matches “bakery”/)).toBeDefined();
+
+  // Esc clears the search and returns to the shown month.
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(input.value).toBe("");
+  expect(months.value).toBe("2026-11");
+  expect(screen.getByText("Nothing is recorded in November yet")).toBeDefined();
+});
