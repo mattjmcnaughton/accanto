@@ -111,7 +111,7 @@ export function ConnectSource({
         <p className="note">
           {"error" in provider
             ? `Could not check transaction settings. ${provider.error.message}`
-            : "Add your YNAB personal access token in Settings → Transactions. Then come back here to choose a plan and its accounts."}
+            : "Add your YNAB personal access token in Settings → Transactions."}
         </p>
         {openSettings && (
           <button type="button" className="btn pri sm" onClick={openSettings}>
@@ -145,8 +145,7 @@ export function ConnectSource({
           >
             <fieldset disabled={Boolean(busy)} className="ix-accounts">
               <legend className="note">
-                Nothing is imported from accounts you leave unchecked. {chosen.size} of{" "}
-                {open.length} chosen.
+                Import from {chosen.size} of {open.length} accounts
               </legend>
               <div className="ix-accounts-tools">
                 <button
@@ -216,9 +215,6 @@ export function ConnectSource({
       }}
     >
       <b>Connect a YNAB plan</b>
-      <p className="note">
-        Uses the YNAB token saved in Settings. Accanto only reads transactions.
-      </p>
       {progress}
       {plans && (
         <fieldset disabled={Boolean(busy)} className="ix-connect-fields">

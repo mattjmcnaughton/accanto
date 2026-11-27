@@ -370,3 +370,33 @@
   padding: 0;
   margin: 0;
 }
+/* Today's vs future dollars, collapsed by default. */
+.proj-explainer summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+}
+.proj-explainer dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 16px;
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  max-width: 80ch;
+}
+.proj-explainer dt {
+  font-weight: 600;
+}
+.proj-explainer dd {
+  margin: 0;
+  color: var(--ink2);
+}
+@media (max-width: 760px) {
+  .proj-explainer dl {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .proj-explainer dd {
+    margin-bottom: 8px;
+  }
+}

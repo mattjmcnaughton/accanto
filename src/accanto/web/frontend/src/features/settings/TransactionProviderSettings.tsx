@@ -7,6 +7,7 @@ import {
   browserCall,
   inbox,
 } from "../../lib/inbox";
+import { Tip } from "../../ui";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 
 /**
@@ -86,10 +87,7 @@ export function TransactionProviderSettings(
             <div className="setting">
               <div>
                 <label htmlFor="provider-kind">Transaction provider</label>
-                <small id="provider-kind-help">
-                  Where the Transactions inbox imports from. Nothing becomes an actual entry until
-                  you record it.
-                </small>
+                <small id="provider-kind-help">Feeds the Transactions inbox.</small>
               </div>
               <select
                 id="provider-kind"
@@ -114,10 +112,12 @@ export function TransactionProviderSettings(
                   <label htmlFor="provider-token">{name} personal access token</label>
                   <small id="provider-token-help">
                     {current.configured && current.kind === chosen
-                      ? "A token is saved. Paste a new one to replace it. "
-                      : "Create one in YNAB under Account Settings → Developer Settings. "}
-                    Accanto checks it with {name}, stores it encrypted, only reads transactions, and
-                    never shows it again or gives it to an assistant.
+                      ? "Saved. Paste a new one to replace it."
+                      : "Create one in YNAB under Account Settings → Developer Settings."}
+                    <Tip label="How the token is kept">
+                      Checked with {name}, stored encrypted and used only to read transactions. It
+                      is never shown again or given to an assistant.
+                    </Tip>
                   </small>
                 </div>
                 <input

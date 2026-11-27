@@ -42,11 +42,6 @@ export function SubcategoriesDialog({
   return (
     <Dialog title="Spending subcategories" onClose={onClose} className="tags-dlg">
       <div className="dlg-b">
-        <p className="note">
-          Each guilt-free spending entry can name one subcategory, such as Eating out or Books, or
-          stay Unassigned. The Review groups spending by subcategory. Renaming relabels past
-          entries; archiving keeps it on its entries.
-        </p>
         <form
           className="tag-new"
           onSubmit={(e) => {

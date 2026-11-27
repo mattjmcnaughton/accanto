@@ -6,6 +6,7 @@ import {
   type AgentSettings as Settings,
   agent,
 } from "../../lib/agentStream";
+import { Tip } from "../../ui";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 import { Markdown } from "./Markdown";
 
@@ -69,12 +70,14 @@ export function AgentSettings(p: ScreenProps) {
               <div>
                 <label htmlFor="agent-enabled">Use the assistant for this Entity</label>
                 <small id="agent-disclosure">
-                  Model: {current.provider}. Each message sends the model your message, any images
-                  you attach, and what the assistant's tools read from this Entity, including notes,
-                  payees and names. API keys, source tokens, audit history and other Entities are
-                  never sent. Conversations are kept for {current.retention_days} days after the
-                  last message or until you clear them; images are never stored. Up to{" "}
-                  {current.daily_message_cap} messages a day.
+                  {current.provider}, up to {current.daily_message_cap} messages a day.
+                  <Tip label="What the model receives">
+                    Each message sends your message, any images you attach, and what the
+                    assistant&apos;s tools read from this Entity, including notes, payees and names.
+                    API keys, source tokens, audit history and other Entities are never sent.
+                    Conversations are kept for {current.retention_days} days after the last message
+                    or until you clear them; images are never stored.
+                  </Tip>
                 </small>
               </div>
               <input
@@ -89,8 +92,11 @@ export function AgentSettings(p: ScreenProps) {
               <div>
                 <legend>Agent mode</legend>
                 <small>
-                  Applies to the assistant and to MCP clients using your API keys. Applying or
-                  dismissing a pending change yourself works in every mode.
+                  Assistant and MCP clients
+                  <Tip label="About agent mode">
+                    Applies to the assistant and to MCP clients using your API keys. Deleting a
+                    savings movement or a balance observation always waits for you.
+                  </Tip>
                 </small>
               </div>
               <div>
@@ -110,19 +116,19 @@ export function AgentSettings(p: ScreenProps) {
                     </span>
                   </label>
                 ))}
-                <small>
-                  Deleting a savings movement or a balance observation always waits for you.
-                </small>
               </div>
             </fieldset>
             <div className="setting">
               <div>
                 <label htmlFor="agent-md">AGENT.md</label>
                 <small id="agent-md-help">
-                  Standing instructions for the assistant, such as “Sample Warehouse Club is
-                  groceries unless over $300”. They cannot change what it may do, the mode, or the
-                  Entity. To write them by answering questions, choose Interview me for AGENT.md in
-                  a new assistant conversation. MCP clients can read them.
+                  Standing instructions for the assistant.
+                  <Tip label="About AGENT.md">
+                    Such as “Sample Warehouse Club is groceries unless over $300”. They cannot
+                    change what it may do, the mode, or the Entity. MCP clients can read them. To
+                    write them by answering questions, choose Interview me for AGENT.md in a new
+                    assistant conversation.
+                  </Tip>
                 </small>
               </div>
               <div className="agent-md-edit">

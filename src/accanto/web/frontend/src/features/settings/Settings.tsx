@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { type BrowserSession, loadResource } from "../../lib/api";
-import { Head } from "../../ui";
+import { Head, Tip } from "../../ui";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 import "./settings.css";
 import { AgentSettings } from "../agent/AgentSettings";
@@ -91,16 +91,12 @@ export function Settings(p: SettingsProps) {
               <div className="setting">
                 <div>
                   <label htmlFor="entity-name">Entity name</label>
-                  <small id="entity-name-help">
-                    The finances tracked here are kept separate from any other workspace.
-                  </small>
                 </div>
                 <input
                   id="entity-name"
                   className="input"
                   required
                   maxLength={120}
-                  aria-describedby="entity-name-help"
                   value={current.name}
                   onChange={(event) => {
                     setForm({ ...current, name: event.target.value });
@@ -111,11 +107,7 @@ export function Settings(p: SettingsProps) {
               <div className="setting">
                 <div>
                   <label htmlFor="entity-time-zone">Time zone</label>
-                  <small id="time-zone-help">
-                    An IANA zone, such as America/Los_Angeles or UTC. It decides what “today” means
-                    for new entries. Changing it never moves existing entries between dates or
-                    months.
-                  </small>
+                  <small id="time-zone-help">IANA name, such as UTC.</small>
                 </div>
                 <input
                   id="entity-time-zone"
@@ -142,9 +134,10 @@ export function Settings(p: SettingsProps) {
                 <div>
                   <label htmlFor="entity-default-return">Default expected return (% a year)</label>
                   <small id="default-return-help">
-                    Used by Projections for any investment without its own expected return. 6 is a
-                    cautious figure for a diversified stock and bond portfolio. Projections do not
-                    yet account for inflation.
+                    For investments without their own.
+                    <Tip label="About the default return">
+                      6 is a cautious figure for a diversified stock and bond portfolio.
+                    </Tip>
                   </small>
                 </div>
                 <input
@@ -164,9 +157,9 @@ export function Settings(p: SettingsProps) {
               <div className="setting">
                 <div aria-hidden="true">
                   <small>
-                    Changes apply when you save. <kbd className="kbd">Ctrl</kbd>
+                    <kbd className="kbd">Ctrl</kbd>
                     {" + "}
-                    <kbd className="kbd">S</kbd> saves too.
+                    <kbd className="kbd">S</kbd> saves
                   </small>
                 </div>
                 <div className="set-actions">

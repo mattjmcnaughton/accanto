@@ -91,8 +91,8 @@ const COPY = {
     title: "Investments",
     one: "investment",
     many: "investments",
-    sub: "Contributions are money you added. A value is a dated check-in you record from your statement; Accanto never calculates it from contributions.",
-    empty: "Add an investment to track what you contribute and what it is worth when you check.",
+    tip: "A value is a dated check-in you record from your statement; it is never calculated from contributions.",
+    empty: "Track what you contribute and what it is worth.",
     registry: "Investments",
     entries: "Investment contributions",
     entryHeading: "Contributions",
@@ -104,8 +104,8 @@ const COPY = {
     title: "Giving",
     one: "recipient",
     many: "recipients",
-    sub: "Progress counts the donations you recorded, net of refunds. It says nothing about how a donation is treated for tax.",
-    empty: "Add a person or organization you give to, then record donations against it.",
+    tip: "Progress counts recorded donations, net of refunds. It says nothing about tax treatment.",
+    empty: "Add a person or organization you give to.",
     registry: "Giving recipients",
     entries: "Donations",
     entryHeading: "Donations",
@@ -755,7 +755,7 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
     >
       <Head
         title={<span id={COPY[screenKind].id}>{COPY[screenKind].title}</span>}
-        sub={COPY[screenKind].sub}
+        tip={COPY[screenKind].tip}
       >
         {ready(rows[screenKind]).length > 0 && addButton(screenKind)}
       </Head>
@@ -973,10 +973,7 @@ function DestinationFields({
       {kind === "investment" && (
         <fieldset className="rec-assume">
           <legend>Projection assumptions</legend>
-          <p className="note">
-            Optional, and used only by Projections. They never change contributions, values or
-            Plans.
-          </p>
+          <p className="note">Optional; used only by Projections.</p>
           <div className="two">
             <Field label="Expected return (% a year)" hint="Blank uses the default in Settings">
               <input
@@ -1022,8 +1019,7 @@ function DestinationFields({
             />
           </Field>
           <p className="note">
-            Opening observed value {formatMoney(record.opening.amount)}, excluded from contribution
-            progress. The date can move no later than the first contribution or observation.
+            Opening value {formatMoney(record.opening.amount)}, not counted as a contribution.
           </p>
         </>
       )}

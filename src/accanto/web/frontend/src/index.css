@@ -347,6 +347,10 @@ fieldset.dlg-b {
   }
 }
 @media (max-width: 760px) {
+  /* Scrolling a control into view (focus, keyboard, find) keeps it clear of the fixed tabs. */
+  html {
+    scroll-padding-bottom: 72px;
+  }
   .app {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -93,7 +93,7 @@ export function ApiKeys({
   return (
     <section aria-labelledby="api-keys-heading">
       <h2 className="h2" id="api-keys-heading">
-        API keys <span>For your own scripts. A key is shown once, when you create it.</span>
+        API keys <span>Shown once, when created</span>
       </h2>
       {"error" in state && (
         <div className="banner bad" role="alert">
@@ -250,12 +250,7 @@ export function ApiKeys({
           </div>
         )}
         <div className="setting">
-          <div>
-            <small>
-              Missing a key you just made, or key actions failing? Reload the list, or sign in
-              again.
-            </small>
-          </div>
+          <div />
           <div className="set-actions">
             <button
               type="button"

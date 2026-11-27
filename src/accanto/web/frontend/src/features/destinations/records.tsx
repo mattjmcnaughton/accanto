@@ -255,9 +255,6 @@ export function Shortcuts({ open, close }: { open: boolean; close: () => void })
     open && (
       <Dialog title="Keyboard shortcuts" onClose={close}>
         <div className="dlg-b">
-          <p className="note">
-            Vim-style keys apply while a table has focus. Each record saves on its own.
-          </p>
           <dl className="rec-keylist">
             {SHORTCUTS.map(([key, label]) => (
               <div key={key}>

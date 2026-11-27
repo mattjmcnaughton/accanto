@@ -1050,9 +1050,7 @@ export function Inbox(
             name: tag.name,
             note: on(tag.uuid) ? "added, choose to remove" : undefined,
           })),
-        foot: ids
-          ? "Choose a tag to add it to every selected item, or to remove it when all carry it."
-          : "An entry can carry several tags. Choose one to add or remove it.",
+        foot: ids ? "Adds to every selected item; removes when all carry it." : undefined,
         none: "No tags yet. Type a name to create one.",
       });
     } else if (kind === "refund") {
@@ -1065,7 +1063,7 @@ export function Inbox(
         title: `Which purchase does ${signed(it)} from ${it.payee} refund?`,
         placeholder: "Type to filter purchases",
         options,
-        foot: "Ranked by same payee, then nearest earlier date. Only purchases with enough left to refund are listed. Nothing links until you choose.",
+        foot: "Same payee first, then nearest earlier date.",
         none: `No earlier purchase can take this ${signed(it)} refund.`,
       });
     } else {
@@ -1078,7 +1076,7 @@ export function Inbox(
           { id: "keep", name: "Keep the actual entry", note: "it stays in totals" },
           { id: "delete", name: "Delete the actual entry", note: "normal deletion checks apply" },
         ],
-        foot: "Undecided policy (F7): nothing changes until you choose.",
+        foot: "Nothing changes until you choose.",
       });
     }
   }
@@ -1726,8 +1724,7 @@ export function Inbox(
           <span className="ix-bar" aria-hidden="true" />
           <span>
             <span className="ix-spin" aria-hidden="true" /> <b>Agent proposing</b> ·{" "}
-            {proposals.proposed} of {proposals.waiting} waiting items have a proposal. It runs on
-            the server, so you can close this tab. Nothing is recorded.
+            {proposals.proposed} of {proposals.waiting} proposed. Safe to close this tab.
           </span>
           <button type="button" className="btn sm" disabled={busy} onClick={() => void stopRun()}>
             Stop
@@ -1745,15 +1742,13 @@ export function Inbox(
             Proposals ready: {proposals.proposed - proposals.needs_you} proposed,{" "}
             {proposals.needs_you} need you
           </b>
-          <span>Unsure items carry the agent's question instead of a guess.</span>
         </div>
       ) : null}
       {syncing && (
         <output className="ix-syncing">
           <span className="ix-bar" aria-hidden="true" />
           <span>
-            <span className="ix-spin" aria-hidden="true" /> Syncing {syncing} — reading new, changed
-            and deleted transactions from YNAB. Nothing is recorded.
+            <span className="ix-spin" aria-hidden="true" /> Syncing {syncing} from YNAB
           </span>
         </output>
       )}
@@ -1773,9 +1768,7 @@ export function Inbox(
         <div className="ix-empty">
           <b>Ready to sync {source.name}</b>
           <p className="note">
-            {source.accounts.length} account{source.accounts.length === 1 ? "" : "s"} chosen. Sync
-            to bring their transactions into this inbox; none becomes an actual entry until you
-            record it.
+            {source.accounts.length} account{source.accounts.length === 1 ? "" : "s"} chosen
           </p>
           <button type="button" className="btn pri sm" disabled={busy} onClick={() => void sync()}>
             Sync {source.name} now
@@ -1783,9 +1776,6 @@ export function Inbox(
         </div>
       ) : (sources.kind === "empty" && !all.length) || (source && !source.accounts.length) ? (
         <div className="ix-empty">
-          <p className="note">
-            Imported transactions wait here; none becomes an actual entry until you record it.
-          </p>
           <ConnectSource
             key={source?.id ?? "new"}
             entityId={p.entity.id}
@@ -1811,10 +1801,6 @@ export function Inbox(
               <p>
                 {flowDone.recorded} recorded · {flowDone.ignored} ignored · {flow.later.length} left
                 for later
-              </p>
-              <p className="note">
-                Recorded items are actual entries now and count in their Reviews. Items left for
-                later are still waiting; nothing was saved for them.
               </p>
               <div className="ix-do">
                 {flow.later.length > 0 && (
@@ -1975,8 +1961,7 @@ export function Inbox(
                     <>
                       <p>
                         {held.length} still waiting{" "}
-                        {query.trim() ? "outside this search" : "without a proposal"}, so this is
-                        not inbox zero yet.
+                        {query.trim() ? "outside this search" : "without a proposal"}.
                       </p>
                       <p>
                         <button
@@ -2217,10 +2202,7 @@ export function Inbox(
             }}
           >
             <b>New fixed cost “{fixedForm.name}”</b>
-            <p className="note">
-              It joins {fixedForm.planName}'s draft as a new line. Saved versions, and the Reviews
-              compared with them, stay as they are until you save a new version.
-            </p>
+            <p className="note">Joins {fixedForm.planName}&apos;s draft.</p>
             <div className="two">
               <label className="field">
                 <span>Planned amount (USD)</span>
@@ -2545,9 +2527,7 @@ function Detail({
         </div>
       )}
       {it.changed_after_staging && it.status !== "conflict" && (
-        <div className="ix-msg">
-          Updated in YNAB after it was staged. These are the latest facts.
-        </div>
+        <div className="ix-msg">Updated in YNAB since it was staged.</div>
       )}
       {it.status === "conflict" && (
         <div className="ix-msg bad">
@@ -2594,8 +2574,7 @@ function Detail({
           <div className="ix-msg">
             {inflow && !isReadyToAssign(it) ? (
               <>
-                An inflow in a spending category is usually a refund. <Key k="r" /> links the
-                purchase it refunds. Nothing links automatically.
+                Likely a refund: <Key k="r" /> links its purchase.
               </>
             ) : it.kind === "transfer_tracking" ? (
               <>
@@ -2645,7 +2624,7 @@ function Detail({
           "Refund of",
           purchase ? `${purchaseLabel(purchase)}, ${formatMoney(purchase.amount)}` : null,
           purchase
-            ? `${formatMoney(purchase.remaining_refundable ?? null)} refundable. Keeps the purchase's category and funding origin.`
+            ? `${formatMoney(purchase.remaining_refundable ?? null)} refundable`
             : "Shows ranked purchase candidates.",
         )}
       {category &&
@@ -2671,7 +2650,7 @@ function Detail({
                     )
                     .join(", ")
                 : null,
-              c.tag_ids?.length ? undefined : "Optional. Several are allowed.",
+              c.tag_ids?.length ? undefined : "Optional",
             ))}
       <div className="ix-do">
         {waiting ? (
@@ -2916,13 +2895,10 @@ function BatchDetail({
           "t",
           "Tags",
           tagged.length ? tagged.map((tag) => tag.name).join(", ") : null,
-          "Optional. A tag chosen here is added to every selected item.",
+          "Optional; added to every selected item",
         )}
       <NoteBox its={its} edit={note} press={press} />
-      <div className="ix-msg">
-        Each item records on its own, from its proposal or these choices. Any that cannot stay
-        selected, with the reason on its row.
-      </div>
+      <div className="ix-msg">Any that cannot record stay selected, with the reason.</div>
       <div className="ix-do">
         <button
           type="button"

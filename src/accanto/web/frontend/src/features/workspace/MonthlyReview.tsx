@@ -192,10 +192,8 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
           }
           sub={
             state.kind === "ready"
-              ? `${done} of 6 sections are complete${!unknown ? "" : ended ? `, with ${plural(unknown, "unknown amount")}` : `, with ${plural(unknown, "line")} still to come`}.`
-              : state.kind === "empty"
-                ? "Choose the saved Plan version to compare this month against. Starting a Review creates no activity, and you can change the version later."
-                : undefined
+              ? `${done} of 6 sections complete${!unknown ? "" : ended ? `, ${plural(unknown, "unknown amount")}` : `, ${plural(unknown, "line")} still to come`}`
+              : undefined
           }
         >
           {status && (
@@ -236,13 +234,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
       </div>
       {newerVersion && state.kind === "ready" && (
         <output className="ar-banner">
-          <span>
-            A newer version is saved: {versionLabel(newerVersion)}. This Review still compares with
-            v{state.data.version.number}
-            {state.data.review.reviewed_at
-              ? ` because ${name} was marked reviewed against it.`
-              : "."}
-          </span>
+          <span>Newer version saved: {versionLabel(newerVersion)}.</span>
           <button
             type="button"
             className="btn sm"
@@ -256,8 +248,8 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
       {state.kind === "ready" && Boolean(state.data.inbox_waiting) && (
         <output className="ar-banner">
           <span>
-            {plural(state.data.inbox_waiting ?? 0, "transaction")} waiting in the inbox. Staged
-            transactions are not in these totals until they are recorded.
+            {plural(state.data.inbox_waiting ?? 0, "transaction")} waiting in the inbox, not in
+            these totals.
           </span>
           {p.go && (
             <button type="button" className="btn sm" onClick={() => p.go?.("inbox")}>
@@ -287,8 +279,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
               )
             }
           >
-            A Review compares what you recorded in {name} against one saved version of a Plan. Open
-            a Plan in Plans and choose Save version, then come back.
+            Save a Plan version first.
           </Empty>
         ) : (
           <form
@@ -322,9 +313,8 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
               </label>
               <small id="review-start-hint" className="note">
                 {previous.kind === "ready"
-                  ? `Preselected from ${previousName}'s Review, at its Plan's latest saved version.`
-                  : `${previousName} has no Review, so nothing is preselected.`}{" "}
-                Activity already recorded in {name} is included.
+                  ? `Preselected from ${previousName}'s Review.`
+                  : `${previousName} has no Review.`}
               </small>
               <div>
                 <button type="submit" className="btn pri" disabled={!choice}>
@@ -383,8 +373,8 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
               </label>
               {state.data.checkpoint_changed && state.data.review.reviewed_at && (
                 <p className="ar-banner">
-                  Activity changed after you marked {name} reviewed. Look over the sections, then
-                  update the checkpoint to accept the changes.
+                  Activity changed after you marked {name} reviewed. Update the checkpoint to accept
+                  it.
                 </p>
               )}
               <div className="actions ar-close">
@@ -396,7 +386,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
                   {reviewed
                     ? "Reviewed. Clear the mark"
                     : unknown
-                      ? `Mark reviewed with ${plural(unknown, "unknown")}`
+                      ? `Mark reviewed with ${ended ? plural(unknown, "unknown") : `${unknown} still to come`}`
                       : `Mark ${name} reviewed`}
                 </button>
                 {edited && (
@@ -414,9 +404,6 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
                   </button>
                 )}
                 {edited && <span className="chip warn">Unsaved Review changes</span>}
-                <span className="note">
-                  A reviewed month stays editable, and unknown amounts stay unknown.
-                </span>
               </div>
             </fieldset>
           </form>
