@@ -20,6 +20,31 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const SignedIn: Story = {};
+/**
+ * Phones name the Entity in full across the top bar; tapping it lists the User's Entities,
+ * marking the current one and those shared with them.
+ */
+export const PhoneEntitySwitch: Story = {
+  args: {
+    initial: {
+      ...data.session,
+      entities: [
+        ...data.session.entities,
+        {
+          id: "7c1e2f3a-4b5d-4e6f-8a9b-0c1d2e3f4a5b",
+          name: "Synthetic shared household budget",
+          time_zone: "UTC",
+          today: "2026-11-10",
+          role: "member",
+        },
+      ],
+    },
+  },
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: /^Entity: / }));
+  },
+};
 /** Add activity opens the entry dialog from any screen. */
 export const AddActivity: Story = {
   play: async ({ canvasElement }) => {

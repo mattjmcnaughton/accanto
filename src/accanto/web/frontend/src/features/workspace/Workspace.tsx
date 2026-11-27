@@ -25,7 +25,7 @@ import { Savings } from "../savings/Savings";
 import { Settings } from "../settings/Settings";
 import { ActivityScreen } from "./Activity";
 import { type Action, AskBar } from "./AskBar";
-import { CreateEntityDialog, EntitySwitcher, createEntity } from "./Entities";
+import { CreateEntityDialog, EntityMenu, EntitySwitcher, createEntity } from "./Entities";
 import { MonthlyReview } from "./MonthlyReview";
 import { Plans } from "./Plans";
 import { WorkspaceLastReads, WorkspaceReads, keysBelongElsewhere, useTheme } from "./shared";
@@ -622,6 +622,15 @@ export function Workspace({
       </aside>
       <div className="main">
         <header className="top">
+          {entity && !concealed && switchEntity && (
+            <EntityMenu
+              entities={session.entities}
+              current={entity}
+              disabled={props.busy}
+              choose={(id) => void switchTo(id)}
+              create={() => setCreating(true)}
+            />
+          )}
           {entity && !concealed && switchEntity && (
             <EntitySwitcher
               className="top-entity"

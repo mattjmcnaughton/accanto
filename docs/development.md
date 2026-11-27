@@ -57,7 +57,8 @@ screen has its own hash address, such as `#/giving`. Home, Activity and Review s
 the month chosen in the top bar, kept in the address as `?m=YYYY-MM` when it is not
 the Entity's current month. With several Entities the address also carries
 `?e=<Entity UUID>`; the top bar's Entity menu (and Ctrl/⌘ K) switches Entities or
-creates one, and the last-used Entity ID is kept in browser storage. Add activity in the top bar opens the entry dialog from
+creates one; on phones the top bar names the current Entity in full and tapping it
+lists the User's Entities. The last-used Entity ID is kept in browser storage. Add activity in the top bar opens the entry dialog from
 any screen. Keys: Ctrl/⌘ K opens the Ask bar, which jumps to a screen, runs a / command
 (`/inbox`, `/left`, `/month`, `/pending`, `/add`) without the model, or sends other text
 to the assistant; N adds activity, [ and ] change the month, J and K move through rows,
