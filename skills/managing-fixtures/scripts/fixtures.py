@@ -201,6 +201,8 @@ async def populate(command, day):
         {
             "name": "Fixture education loan",
             "opening": {"date": opening, "amount": "8600.00"},
+            "interest_rate_percent": "4.50",
+            "monthly_payment": "180.00",
         },
     )
     await command(

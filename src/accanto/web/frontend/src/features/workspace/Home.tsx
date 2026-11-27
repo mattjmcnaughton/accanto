@@ -578,8 +578,8 @@ function NetWorthCard({ worth, retry }: { worth: LoadState<Projection>; retry: (
           </ul>
           <p className="note">
             A Projection, not a balance: each investment grows at its expected return with its
-            expected contribution; savings and loans stay as they are today. Inflation is not
-            included.
+            expected contribution; loans with a fixed rate and monthly payment are paid down, and
+            savings and other loans stay as they are today. Inflation is not included.
             {defaulted
               ? ` ${plural(defaulted, "investment")} ${defaulted === 1 ? "uses" : "use"} the default ${default_return_percent}% return.`
               : ""}

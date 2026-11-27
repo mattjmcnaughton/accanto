@@ -11,6 +11,7 @@ import { http, HttpResponse, delay } from "msw";
 import { fn } from "storybook/test";
 import type { ScreenProps } from "../../features/workspace/shared";
 import * as data from "./fixtures";
+import { payoffSchedules } from "./loans";
 import * as projection from "./projections";
 import { routineList } from "./routines";
 
@@ -59,6 +60,11 @@ const resources = {
   },
   givingActivity: { path: `${entity}/giving-activity`, loaded: data.givingActivity, empty: [] },
   loans: { path: `${entity}/debts`, loaded: data.loans, empty: [] },
+  payoffSchedules: {
+    path: `${entity}/debts/:debt/payoff-schedule`,
+    loaded: payoffSchedules,
+    empty: {},
+  },
   debtObservations: {
     path: `${entity}/debt-observations`,
     loaded: data.debtObservations,
@@ -114,6 +120,9 @@ function reader(resource: Resource, choice: State | unknown) {
       return HttpResponse.json(
         (body as Record<string, object>)[new URL(request.url).searchParams.get("years") ?? "20"],
       );
+    // Payoff schedules are keyed by loan.
+    if (resource === "payoffSchedules")
+      return HttpResponse.json((body as Record<string, object>)[String(params.debt)] ?? {});
     if (resource !== "reviews") return HttpResponse.json(body as object);
     const review = (body as Record<string, unknown>)[String(params.month)];
     return review ? HttpResponse.json(review) : missingReview();

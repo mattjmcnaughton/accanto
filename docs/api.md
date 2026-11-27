@@ -95,7 +95,8 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | DELETE | `/savings-accounts/movements/{movement_id}` | Soft delete with `{kind, expected_revision}`; replay later history |
 | GET/POST | `/investments`, `/giving-recipients` | List/create named destinations with optional positive cumulative target; investments may have an optional dated opening observation and [projection assumptions](#projections) |
 | PUT | `/investments/{destination_id}`, `/giving-recipients/{destination_id}` | Name, target, active state and `expected_revision`; investments also take optional `opening_date` and projection assumptions, and an omitted assumption is left unchanged |
-| GET | `/projections?years=N` | A Projection of investments and net worth, 1–100 years ([Projections](#projections)) |
+| GET | `/projections?years=N` | A Projection of investments, loans and net worth, 1–100 years ([Projections](#projections)) |
+| GET | `/debts/{debt_id}/payoff-schedule` | A loan's month-by-month payoff from its latest amount owed at its fixed rate and monthly payment ([Loan accounts](#loan-accounts-and-dated-balance-observations)) |
 | GET/PUT | `/fire-assumptions` | Annual spending and withdrawal rate for the FIRE target ([Projections](#projections)) |
 | GET/POST | `/investment-activity`, `/giving-activity` | Current history or create contribution/adjustment with optional `investment_id` or `giving_recipient_id` |
 | PUT/DELETE | `/investment-activity/{entry_id}`, `/giving-activity/{entry_id}` | Correct entry or soft delete with `expected_revision` |
@@ -631,14 +632,25 @@ recipients refuse them (422).
 `GET /projections?years=N` (1–100, default 20) projects from the Entity's today:
 each investment starts at its latest observed value and compounds monthly at the
 effective rate (1 + R)^(1/12) − 1, with its contribution (annual ÷ 12, none for
-an inactive investment) added at each month's end. Savings remaining saved and
-loans' latest observations stay at today's amounts. It returns `as_of`,
-`default_return_percent`, `today {investments, savings, loans, net_worth}`,
-`timeline` (one row per year from 0), `milestones` (always 5, 10 and 20 years),
-each row `{years, date, investments, net_worth, contributed}`; `investments` per
-investment with `status` (`projected` or `no_value`), `return_percent`,
-`return_source` (`investment` or `default`), `monthly_contribution` and
-milestone `amount`s; and `fire`. An active investment without an observed value
+an inactive investment) added at each month's end. Savings remaining saved stay
+at today's amount. Each loan starts at its latest observation; one with a fixed
+`interest_rate_percent` and a `monthly_payment` that exceeds its monthly interest
+is paid down month by month as its payoff schedule is ([TDD 15](tdds/15-debt-payoff.md)),
+and any other loan stays at that amount. Like investments, a loan starts at its
+latest observation as of the Entity's today, so its projected payoff can fall
+later than its payoff schedule's, which starts at the observation's date. Loan
+payments are not subtracted from
+investment contributions, and a repaid loan's payment is not invested. It returns
+`as_of`, `default_return_percent`, `today {investments, savings, loans,
+net_worth}`, `timeline` (one row per year from 0), `milestones` (always 5, 10 and
+20 years), each row `{years, date, investments, loans, net_worth, contributed}`;
+`investments` per investment with `status` (`projected` or `no_value`),
+`return_percent`, `return_source` (`investment` or `default`),
+`monthly_contribution` and milestone `amount`s; `loans` per loan with `debt_id`,
+`name`, `active`, `status` (`amortizing`, `no_terms`, `interest_not_covered` or
+`paid_off`), `latest {date, amount}`, `interest_rate_percent`, `monthly_payment`,
+`payoff_date` (null unless repaid within the projection's span) and milestone
+`amount`s; and `fire`. An active investment without an observed value
 makes every total and the FIRE date null (unknown, never zero). Amounts round
 half-even to cents at reporting.
 
@@ -699,15 +711,31 @@ using current rules. Copies do not infer cross-Plan receipt matching.
 ## Loan accounts and dated balance observations
 
 `GET/POST /api/entities/{entity_id}/debts` list and create named loan accounts.
-Creation requires `name` and a protected `opening: {date, amount}`. `PUT
+Creation requires `name` and a protected `opening: {date, amount}`, and accepts
+optional fixed-rate terms: `interest_rate_percent` (annual percent, 0 to 40, two
+decimals) and `monthly_payment` (USD, above zero). `PUT
 /api/entities/{entity_id}/debts/{debt_id}` accepts `name`, `active`, and
-`expected_revision` to rename, archive or reopen. Archival requires the latest
+`expected_revision` to rename, archive or reopen, and the same terms; an edit
+that omits a term leaves it unchanged, and null clears it. Only fixed rates are
+supported. Terms are assumptions, never activity or observations. Archival requires the latest
 recorded amount owed to be zero; a payment alone does not establish zero. An
 archived loan rejects new payments and new associations; an existing payment
 retaining that loan identity can still be corrected with its current revision.
 Its history remains visible. `draft_fixed_cost_lines`
 identifies draft Plan lines linked to an archived loan for explicit revision;
 saved versions remain intact.
+
+Each loan result also has its `interest_rate_percent`, `monthly_payment` and
+`payoff`: `{status, as_of, balance, interest_rate_percent, monthly_payment,
+monthly_interest, months, payoff_date, total_interest, total_paid}` from the
+latest observation. `GET .../debts/{debt_id}/payoff-schedule` returns the same
+fields with `rows`, one per month `{month, date, payment, interest, principal,
+balance}`. The first payment is a month after the observation's date; interest is
+the balance × rate ÷ 12, rounded half-even to cents each month, and the last
+payment clears the balance exactly. `status` is `scheduled`, or why there are no
+rows (and null totals): `no_terms` (rate or payment missing), `paid_off`,
+`interest_not_covered` (the payment does not exceed the first month's interest,
+so the balance never falls) or `beyond_limit` (not repaid within 100 years).
 
 `GET/POST /api/entities/{entity_id}/debt-observations` and
 `GET/POST /api/entities/{entity_id}/investment-observations` list and create

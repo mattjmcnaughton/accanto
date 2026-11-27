@@ -432,12 +432,35 @@ class Observation(Output):
     revision: int
 
 
+class Payoff(Output):
+    """From the latest observation at the fixed rate and monthly payment (TDD 15)."""
+
+    status: Literal[
+        "scheduled", "paid_off", "no_terms", "interest_not_covered", "beyond_limit"
+    ] = Field(
+        description="scheduled, or why there is no schedule: no_terms (rate or "
+        "payment missing), interest_not_covered (the payment does not exceed the "
+        "monthly interest), beyond_limit (not repaid within 100 years), paid_off."
+    )
+    monthly_interest: Money | None
+    months: int | None
+    payoff_date: date | None
+    total_interest: Money | None = Field(
+        description="Interest remaining until payoff; an illustrative figure."
+    )
+
+
 class Debt(Output):
     id: UUID
     name: Untrusted
     active: bool
     revision: int
     latest: Observation | None
+    interest_rate_percent: Amount | None = Field(
+        default=None, description="Fixed annual interest rate, if known."
+    )
+    monthly_payment: Money | None = None
+    payoff: Payoff | None = None
 
 
 class DebtList(Output):
@@ -721,6 +744,11 @@ def project_debts(debts, observations) -> DebtList:
                 active=d["active"],
                 revision=d["revision"],
                 latest=project_observation(d["latest"]) if d.get("latest") else None,
+                interest_rate_percent=d.get("interest_rate_percent"),
+                monthly_payment=d.get("monthly_payment"),
+                payoff=Payoff(**{k: d["payoff"][k] for k in Payoff.model_fields})
+                if d.get("payoff")
+                else None,
             )
             for d in debts
         ],

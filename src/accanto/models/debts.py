@@ -25,6 +25,9 @@ debts = table(
     Column("name", String(120), nullable=False),
     Column("active", Boolean, nullable=False, server_default="true"),
     Column("revision", Integer, nullable=False, server_default="1"),
+    # Fixed-rate loan terms (TDD 15); null when unknown.
+    Column("interest_rate_percent", Numeric(5, 2)),
+    Column("monthly_payment", Numeric(14, 2)),
     UniqueConstraint("id", "entity_id"),
     CheckConstraint("revision >= 1"),
 )

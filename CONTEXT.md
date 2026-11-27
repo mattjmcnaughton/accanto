@@ -54,6 +54,8 @@ committing").
 | Projection assumption | An explicit input to a Projection, never activity, a Plan amount or an observation: an investment's expected annual return and expected contribution (monthly or annual), the Entity's default expected return for investments without one, and the FIRE inputs (annual spending, withdrawal rate). Changing one changes no recorded figure. |
 | Debt account | An Entity's named liability, such as a car loan, with a dated opening amount owed and subsequent dated observations of the amount owed. It is a peer of savings and investment accounts, not a saving goal or investment destination. Payments and observed amounts owed are separate. |
 | Debt payment | A dated outflow associated with a Debt account and funded from income or savings. Record the outflow once. It does not automatically reduce the observed amount owed: the payment may include interest or fees. |
+| Loan terms | A Debt account's optional fixed annual interest rate and level monthly payment. They are assumptions for a Payoff schedule and Projections, never a payment, an observation or a Plan amount, and changing them changes no recorded figure. Only fixed rates are supported. |
+| Payoff schedule | An illustrative month-by-month pay-down of a Debt account from its latest balance observation at its Loan terms: each month's interest and principal, the balance after, the payoff date and the total interest remaining. When the payment does not exceed a month's interest the debt never pays down: Accanto flags it and shows no schedule. It never changes the observed amount owed. |
 | Debt balance observation | The amount owed on a named Debt account as of a particular date. Recording or correcting it does not create a payment, income, or spending. The latest observation is a dated reported amount, not an automatically calculated live balance. |
 | Giving recipient | A named charity or recipient with active/inactive status, donation history, and an optional cumulative contribution target. Refunds reduce net donations. Recording giving does not establish tax deductibility. |
 | Review checkpoint | A personal annotation marking a month reviewed or closed, set or cleared whenever the person chooses. It requires no completeness check or acknowledgment step and does not lock activity, finalize accounting, or turn unknown actuals into zero. Later changes may be indicated for information without clearing the annotation or preventing edits. “Closed” and “reviewed” describe the same annotation, not separate enforcement states. |
@@ -89,7 +91,7 @@ committing").
 | Adjustment entry | A labeled, dated actual entry for the difference between a known total and the currently recorded total. It may be positive, negative, or zero; it changes the rollup without changing existing entries. It can be edited or deleted. Later entries add to the total rather than being masked. Every saving-category adjustment must explicitly identify a saving goal, including an account’s Unallocated goal; it affects both saving actuals and that goal’s remaining saved. It is distinct from balance reconciliation. |
 | Review income match | An explicit association belonging to one Review that compares receipts assigned to an Income source in another Plan with a source in the selected saved Plan version. It changes comparison grouping, not receipt assignments, dates, amounts, or other Reviews. Names never establish a match automatically. |
 | Review | An Entity's editable record of what actually happened in one Period: net income per Income source, spending, giving, contributions, and notes. Its actuals are always rollups of dated entries, including adjustments. It targets one saved Plan version and covers one calendar month. The target may be changed explicitly. A Plan version may be targeted by many Reviews. |
-| Projection | An illustrative future result calculated from explicit assumptions, distinct from recorded balances and activity. The Entity's projection starts from each investment's latest observation, grows it at its expected return with its expected contribution, holds savings and loans at today's amounts, and is in nominal dollars: inflation is not modelled yet. An active investment without an observation makes its totals unknown. |
+| Projection | An illustrative future result calculated from explicit assumptions, distinct from recorded balances and activity. The Entity's projection starts from each investment's latest observation, grows it at its expected return with its expected contribution, pays loans down along their Payoff schedules (a loan without Loan terms, or whose payment does not cover its interest, stays at its latest amount), holds savings at today's amount, and is in nominal dollars: inflation is not modelled yet. An active investment without an observation makes its totals unknown. |
 | FIRE target | Estimated assets needed to support selected spending at the chosen withdrawal rate. The FIRE date is the first month projected investments, not cash savings, reach it. |
 | Net position | Remaining saved across savings accounts plus the latest investment balance observations less the latest debt balance observations. Each part keeps its own date. It is unknown when an active investment or debt has no observation. It is derived for an answer, not a stored balance, and cash savings stay a separate line from investments. |
 | Transaction source | An outside system connected to an Entity that supplies transactions, such as a YNAB plan. Accanto reads from it; it is not an authority over Accanto's records. |
@@ -629,8 +631,15 @@ For example, a car loan opens at $10,000 owed. Recording a $300 payment creates
 one $300 outflow. The user may separately record a later statement showing
 $9,750 owed; Accanto does not assume that the payment reduced debt to $9,700.
 
-Principal/interest splits, automatic debt-balance calculations, and repayment
-projections are deferred. Loan payments belong to fixed costs and link to the relevant Debt account. Credit-card debt and settlements are outside current scope. If introduced later,
+A loan may carry Loan terms: a fixed annual interest rate and a monthly payment.
+With both, Accanto shows its Payoff schedule from the latest observation and pays
+it down in Projections. For example, $10,000 owed at 6% with a $193.33 payment
+pays off in 60 months, with $50.00 of the first payment going to interest.
+$10,000 at 12% with a $100.00 payment never pays down: the payment only covers
+the interest, so Accanto flags it instead of showing a schedule. The schedule is
+illustrative: it never changes the observed amount owed, and recorded payments
+are not matched to it. Variable rates, splitting recorded payments into principal
+and interest, and automatic debt-balance calculations are deferred. Loan payments belong to fixed costs and link to the relevant Debt account. Credit-card debt and settlements are outside current scope. If introduced later,
 their design must avoid counting a purchase and its settlement as spending twice.
 The prototype supports loan openings, payment history and separate observations.
 

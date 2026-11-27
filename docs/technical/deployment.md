@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6n034`.
+   supported revision is `6o035`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -153,6 +153,10 @@ recreates the tables empty. No grant changes.
 `entity.default_return_percent` (default `6.00`), `fire_annual_spending` and
 `fire_withdrawal_percent` (default `4.00`). Additive with defaults; `6m033` code
 never reads them. No grant changes.
+`6o035` adds fixed-rate loan terms ([TDD 15](../tdds/15-debt-payoff.md)):
+nullable `debt_account.interest_rate_percent` and `monthly_payment`. Additive,
+no backfill; `6n034` code never reads or writes them, so its inserts and edits
+leave them null or unchanged. No grant changes.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

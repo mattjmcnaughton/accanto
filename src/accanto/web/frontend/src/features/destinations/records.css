@@ -232,3 +232,42 @@
 .rec-assume .two {
   align-items: start;
 }
+
+/* Loan terms and payoff schedule (TDD 15) */
+.loan-payoff {
+  display: grid;
+  gap: 2px;
+}
+.loan-payoff p {
+  margin: 0;
+}
+.loan-terms,
+.loan-schedule {
+  display: grid;
+  gap: 8px;
+}
+.loan-terms .actions {
+  justify-content: flex-end;
+}
+.loan-rows {
+  max-height: 280px;
+  overflow-y: auto;
+}
+.loan-rows thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+.loan-month {
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .loan-rows .rec-grid th,
+  .loan-rows .rec-grid td {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .loan-rows .rec-grid {
+    font-size: 12.5px;
+  }
+}
