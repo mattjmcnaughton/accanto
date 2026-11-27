@@ -1,6 +1,6 @@
 """Projections (TDD 14): net worth and FIRE from explicit assumptions."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -19,9 +19,13 @@ async def get_projection(
     session: Session,
     token: Token,
     years: Annotated[int, Query(ge=1, le=100)] = 20,
+    dollars: Literal["today", "future"] = "today",
 ):
-    """A Projection from today, not recorded activity or an observed balance."""
-    return await read_projection(session, token, entity_id, years)
+    """A Projection from today, not recorded activity or an observed balance.
+
+    dollars: today's (divided by inflation to each date) or future (nominal).
+    """
+    return await read_projection(session, token, entity_id, years, dollars)
 
 
 @router.get("/fire-assumptions")

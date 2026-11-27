@@ -176,14 +176,27 @@ async def scenario():
             {
                 "annual_spending": "800.00",
                 "withdrawal_percent": "4",
+                "inflation_percent": "0",
                 "expected_revision": fire["revision"],
             },
         )
         assert fire == {
             "annual_spending": "800.00",
             "withdrawal_percent": "4.00",
+            "inflation_percent": "0.00",
             "revision": fire["revision"],
         }
+        assert (
+            await command(
+                "PUT",
+                "/fire-assumptions",
+                {
+                    "withdrawal_percent": "4",
+                    "inflation_percent": "15.01",
+                    "expected_revision": fire["revision"],
+                },
+            )
+        ).status_code == 422
 
         # At 0% the fund adds $100 a month: 10,000 + 100 × 60 after five years.
         projection = (await client.get(path + "/projections?years=10")).json()
@@ -200,6 +213,96 @@ async def scenario():
         assert projection["fire"]["target"] == "20000.00"
         assert projection["fire"]["months_to_target"] == 100
         assert projection["investments"][0]["return_source"] == "default"
+        assert projection["dollars"] == "today"
+        assert projection["planned_fixed_costs"] is None
+
+        # TDD 17: the active month's planned fixed costs from the latest saved
+        # version, and the full list of costs held level, set with FIRE.
+        plan = await accepted(
+            "POST",
+            "/plans",
+            {
+                "name": "Synthetic month",
+                "incomes": [{"name": "Example income", "amount": "4000.00"}],
+                "fixed_costs": [
+                    {
+                        "name": "Fixed mortgage",
+                        "amount": "20.00",
+                        "frequency": "monthly",
+                    },
+                    {"name": "Groceries", "amount": "120.00", "frequency": "annual"},
+                ],
+                "spending": "100.00",
+            },
+        )
+        await accepted(
+            "POST", f"/plans/{plan['plan_id']}/versions", {"expected_revision": 1}
+        )
+        costs = {c["name"]: c["fixed_cost_id"] for c in plan["draft"]["fixed_costs"]}
+        planned = (await client.get(path + "/projections?years=10")).json()[
+            "planned_fixed_costs"
+        ]
+        assert planned["plan_name"] == "Synthetic month"
+        assert planned["version_number"] == 1
+        assert (planned["monthly_total"], planned["annual_total"]) == (
+            "30.00",
+            "360.00",
+        )
+        assert planned["steady_annual"] == "0.00"
+        assert all(line["rises_with_inflation"] for line in planned["lines"])
+        foreign = str(uuid4())
+        assert (
+            await command(
+                "PUT",
+                "/fire-assumptions",
+                {
+                    "annual_spending": "800.00",
+                    "withdrawal_percent": "4",
+                    "fixed_costs_not_rising_with_inflation": [foreign],
+                    "expected_revision": fire["revision"],
+                },
+            )
+        ).status_code == 404
+        fire = await accepted(
+            "PUT",
+            "/fire-assumptions",
+            {
+                "annual_spending": "800.00",
+                "withdrawal_percent": "4",
+                "inflation_percent": "3",
+                "fixed_costs_not_rising_with_inflation": [costs["Fixed mortgage"]],
+                "expected_revision": fire["revision"],
+            },
+        )
+        assert fire["inflation_percent"] == "3.00"
+        real = (await client.get(path + "/projections?years=10")).json()
+        nominal = (
+            await client.get(path + "/projections?years=10&dollars=future")
+        ).json()
+        assert real["planned_fixed_costs"]["steady_annual"] == "240.00"
+        assert real["fire"]["steady_spending"] == "240.00"
+        assert real["fire"]["target_today"] == "20000.00"
+        # Target 240/4% level + 560/4% inflating: later than the flat 100 months.
+        months = real["fire"]["months_to_target"]
+        assert months == nominal["fire"]["months_to_target"] and months > 100
+        # $10,000 grows nothing at 0%; deflated at 3% over five years.
+        assert nominal["milestones"][0]["investments"] == "16000.00"
+        assert real["milestones"][0]["investments"] < "16000.00"
+        assert (await client.get(path + "/projections?dollars=past")).status_code == 422
+        # The held-level flag is read by agents' plan detail too; an omitted list
+        # keeps it.
+        fire = await accepted(
+            "PUT",
+            "/fire-assumptions",
+            {
+                "annual_spending": "800.00",
+                "withdrawal_percent": "4",
+                "inflation_percent": "0",
+                "expected_revision": fire["revision"],
+            },
+        )
+        kept = (await client.get(path + "/projections?years=10")).json()
+        assert kept["planned_fixed_costs"]["steady_annual"] == "240.00"
 
         # An active investment without an observed value makes totals unknown.
         await accepted("POST", "/investments", {"name": "Unobserved fund"})
@@ -370,5 +473,12 @@ async def scenario():
             .select_from(m.audit)
             .where(m.audit.c.record_uuid == entity)
         )
-        assert audited == 2
+        assert audited == 4
+        flags = await session.scalar(
+            select(func.count())
+            .select_from(m.audit)
+            .where(m.audit.c.record_uuid == costs["Fixed mortgage"])
+        )
+        # Created with the Plan, then held level once; the omitted list wrote nothing.
+        assert flags == 2
     await engine.dispose()

@@ -1,10 +1,16 @@
 """Entity creation and settings input; no persistence types."""
 
+from uuid import UUID
+
 from pydantic import Field, field_validator
 
 from accanto.domains.entity import valid_time_zone
 from accanto.domains.monthly import money
-from accanto.domains.projections import expected_return, withdrawal_rate
+from accanto.domains.projections import (
+    expected_return,
+    inflation_rate,
+    withdrawal_rate,
+)
 from accanto.dtos.monthly import Input, Name
 
 
@@ -48,6 +54,35 @@ class FireAssumptionsInput(Input):
     annual_spending: str | None = None
     withdrawal_percent: str = "4.00"
     expected_revision: int = Field(ge=1)
+    # TDD 17. Omit either to leave it unchanged.
+    inflation_percent: str | None = Field(
+        default=None, description="Average annual inflation, a percent from 0 to 15."
+    )
+    fixed_costs_not_rising_with_inflation: list[UUID] | None = Field(
+        default=None,
+        max_length=500,
+        description="The full list of Fixed cost ids that will not rise with "
+        "inflation; every other Fixed cost rises with it.",
+    )
+
+    @field_validator("inflation_percent")
+    @classmethod
+    def valid_inflation(cls, value: str | None) -> str | None:
+        return None if value is None else str(inflation_rate(value))
+
+    @field_validator("fixed_costs_not_rising_with_inflation")
+    @classmethod
+    def distinct_costs(cls, value: list[UUID] | None) -> list[UUID] | None:
+        return None if value is None else list(dict.fromkeys(value))
+
+    def model_dump(self, **kwargs):
+        # Omitted stays out of the command payload, so a request without them
+        # keeps the retry digest it had before the fields existed.
+        data = super().model_dump(**kwargs)
+        for key in ("inflation_percent", "fixed_costs_not_rising_with_inflation"):
+            if data.get(key) is None:
+                data.pop(key, None)
+        return data
 
     @field_validator("annual_spending")
     @classmethod

@@ -61,6 +61,8 @@ entities = table(
     Column(
         "fire_withdrawal_percent", Numeric(4, 2), nullable=False, server_default="4.00"
     ),
+    # Average annual inflation for today's dollars and the FIRE target (TDD 17).
+    Column("inflation_percent", Numeric(4, 2), nullable=False, server_default="3.00"),
 )
 keys = table(
     "api_key",
@@ -107,6 +109,8 @@ fixed_costs = table(
     "fixed_cost",
     Column("entity_id", ForeignKey("entity.id"), nullable=False),
     Column("name", String(120), nullable=False),
+    # False for a cost fixed in dollars, held level in the FIRE target (TDD 17).
+    Column("rises_with_inflation", Boolean, nullable=False, server_default="true"),
     UniqueConstraint("id", "entity_id"),
 )
 revisions = table(

@@ -264,10 +264,12 @@ def prepay_or_invest(
 
 
 # Entity projections (TDD 14): net worth and FIRE from each investment's
-# expected return and contribution. Nominal dollars only; inflation is not
-# modelled yet (issue #44).
+# expected return and contribution. Inflation (TDD 17): future dollars are
+# nominal; today's dollars divide an amount m months out by inflation_factor.
 
 MILESTONES = (5, 10, 20)
+INFLATION_RANGE = (Decimal("0"), Decimal("15"))
+DOLLARS = ("today", "future")
 RETURN_RANGE = (Decimal("-10"), Decimal("30"))
 WITHDRAWAL_RANGE = (Decimal("0"), Decimal("10"))
 DEBT_RATE_RANGE = (Decimal("0"), Decimal("40"))
@@ -292,6 +294,50 @@ def expected_return(value: str) -> Decimal:
 
 def withdrawal_rate(value: str) -> Decimal:
     return percent(value, *WITHDRAWAL_RANGE, low_open=True)
+
+
+def inflation_rate(value: str) -> Decimal:
+    """Average annual inflation, a percent from 0 to 15 (TDD 17)."""
+    return percent(value, *INFLATION_RANGE)
+
+
+def inflation_factor(inflation_percent: Decimal, months: int) -> Decimal:
+    """(1 + I)^(months / 12): what a dollar of today costs months from now.
+
+    Prices compound at the same effective monthly rate as growth does.
+    """
+    with localcontext() as context:
+        context.prec = PRECISION
+        return (1 + Decimal(inflation_percent) / 100) ** (Decimal(months) / 12)
+
+
+def steady_part(annual_spending: Decimal, steady_spending: Decimal) -> Decimal:
+    """The level part of annual spending: costs fixed in dollars, at most all of it."""
+    return min(max(steady_spending, ZERO), annual_spending)
+
+
+def fire_target_at(
+    annual_spending: Decimal,
+    steady_spending: Decimal,
+    withdrawal_percent: Decimal,
+    inflation_percent: Decimal,
+    months: int,
+) -> Decimal:
+    """The FIRE target months from now, in that date's (nominal) dollars.
+
+    annual_spending is in today's dollars. The steady part (the year's planned
+    fixed costs that do not rise with inflation, such as a fixed-rate mortgage
+    payment) stays level; the rest rises with inflation. The target is that
+    spending ÷ the withdrawal rate, rounded up as fire_target is. At zero
+    inflation or zero months it equals fire_target(annual_spending, ...).
+    """
+    steady = steady_part(annual_spending, steady_spending)
+    with localcontext() as context:
+        context.prec = PRECISION
+        spending = (annual_spending - steady) * inflation_factor(
+            inflation_percent, months
+        ) + steady
+    return fire_target(spending, withdrawal_percent)
 
 
 def debt_rate(value: str) -> Decimal:
@@ -414,6 +460,9 @@ def project_entity(
     default_return: Decimal,
     annual_spending: Decimal | None = None,
     withdrawal_percent: Decimal = Decimal("4.00"),
+    inflation_percent: Decimal = ZERO,
+    steady_spending: Decimal = ZERO,
+    dollars: str = "future",
 ) -> dict:
     """Projected investments and net worth by year, milestones and FIRE.
 
@@ -431,14 +480,43 @@ def project_entity(
     that pays them, and a repaid loan's payment is not invested. An active
     investment without an observed value makes every total unknown (None):
     unknown is never projected from zero.
+
+    Inflation (TDD 17): the projection runs in nominal dollars. With dollars
+    "today", every reported amount m months out is divided by
+    inflation_factor(inflation_percent, m); contributions so reported are each
+    deflated at their own month. Contributions stay level in nominal dollars.
+    The FIRE target rises with inflation except steady_spending (fire_target_at),
+    and the FIRE date, the first month nominal investments reach the nominal
+    target, is the same in either dollars.
     """
     if not 1 <= years <= 100:
         raise ValueError("Projections cover 1 to 100 years.")
+    if dollars not in DOLLARS:
+        raise ValueError("Dollars are today or future.")
     span = max(years, *MILESTONES) * 12
     fire = annual_spending is not None
     if fire:
-        target = fire_target(annual_spending, withdrawal_percent)
         span = MAX_MONTHS
+    today_dollars = dollars == "today"
+    factors = [
+        inflation_factor(inflation_percent, m) if today_dollars else Decimal(1)
+        for m in range(span + 1)
+    ]
+
+    def show(value: Decimal, month: int) -> Decimal:
+        """An amount month months out, in the requested dollars, at full precision."""
+        if not today_dollars:
+            return value
+        with localcontext() as context:
+            context.prec = PRECISION
+            return value / factors[month]
+
+    with localcontext() as context:
+        context.prec = PRECISION
+        # Sum of 1 / factor over months 1..m: a level monthly amount, deflated.
+        deflated_months = [Decimal(0)]
+        for m in range(1, span + 1):
+            deflated_months.append(deflated_months[-1] + 1 / factors[m])
     lines, series = [], []
     for inv in investments:
         own = inv["expected_return_percent"]
@@ -477,7 +555,7 @@ def project_entity(
                         "years": y,
                         "amount": None
                         if balances is None
-                        else str(cents(balances[y * 12])),
+                        else str(cents(show(balances[y * 12], y * 12))),
                     }
                     for y in MILESTONES
                 ],
@@ -522,7 +600,8 @@ def project_entity(
                 if paid_in is None
                 else _add_months(today, paid_in).isoformat(),
                 "milestones": [
-                    {"years": y, "amount": str(owed[y * 12])} for y in MILESTONES
+                    {"years": y, "amount": str(cents(show(owed[y * 12], y * 12)))}
+                    for y in MILESTONES
                 ],
             }
         )
@@ -532,22 +611,50 @@ def project_entity(
             context.prec = PRECISION
             return sum((b[month] for b, _ in series), Decimal(0))
 
+    monthly_total = sum((m for _, m in series), ZERO)
+    steady = ZERO if not fire else steady_part(annual_spending, steady_spending)
+
+    def target_at(month: int) -> Decimal:
+        assert annual_spending is not None
+        return fire_target_at(
+            annual_spending, steady, withdrawal_percent, inflation_percent, month
+        )
+
+    def shown_target(month: int) -> Decimal:
+        """The target month months out in the requested dollars, rounded up."""
+        if not today_dollars:
+            return target_at(month)
+        assert annual_spending is not None
+        with localcontext() as context:
+            context.prec = PRECISION
+            spending = annual_spending - steady + steady / factors[month]
+        return fire_target(spending, withdrawal_percent)
+
     def row(y: int) -> dict:
         month = y * 12
         total = invested(month)
+        owed = owed_by_month[month]
+        with localcontext() as context:
+            context.prec = PRECISION
+            contributed = monthly_total * (
+                deflated_months[month] if today_dollars else month
+            )
         return {
             "years": y,
             "date": _add_months(today, month).isoformat(),
-            "investments": str(cents(total)) if known else None,
-            "loans": str(owed_by_month[month]),
-            "net_worth": str(cents(total + savings - owed_by_month[month]))
+            "investments": str(cents(show(total, month))) if known else None,
+            "loans": str(cents(show(owed, month))),
+            "net_worth": str(cents(show(total + savings - owed, month)))
             if known
             else None,
-            "contributed": str(cents(sum((m * month for _, m in series), ZERO))),
+            "contributed": str(cents(contributed)),
+            "fire_target": str(shown_target(month)) if fire else None,
         }
 
     result = {
         "as_of": today.isoformat(),
+        "dollars": dollars,
+        "inflation_percent": str(Decimal(inflation_percent).quantize(CENT)),
         "default_return_percent": str(default_return.quantize(CENT)),
         "today": {
             "investments": str(cents(invested(0))) if known else None,
@@ -565,14 +672,16 @@ def project_entity(
     }
     if fire:
         reached = (
-            next((m for m in range(span + 1) if invested(m) >= target), None)
+            next((m for m in range(span + 1) if invested(m) >= target_at(m)), None)
             if known
             else None
         )
         result["fire"] = {
             "annual_spending": str(annual_spending),
+            "steady_spending": str(steady),
             "withdrawal_percent": str(withdrawal_percent),
-            "target": str(target),
+            "target_today": str(fire_target(annual_spending, withdrawal_percent)),
+            "target": None if reached is None else str(shown_target(reached)),
             "months_to_target": reached,
             "reached_on": None
             if reached is None

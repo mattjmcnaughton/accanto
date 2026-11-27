@@ -147,6 +147,7 @@ async def scenario():
                 "default_return_percent": "6.00",
                 "fire_annual_spending": None,
                 "fire_withdrawal_percent": "4.00",
+                "inflation_percent": "3.00",
                 "revision": 1,
             }
 
@@ -227,6 +228,7 @@ async def scenario():
             assert rest == {
                 "annual_spending": "48000.00",
                 "withdrawal_percent": "3.50",
+                "inflation_percent": "3.00",
                 "revision": 3,
             }
             kept = await call(

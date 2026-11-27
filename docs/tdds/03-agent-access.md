@@ -559,7 +559,7 @@ outcome; only who may call them widens.
 | --- | --- | --- | --- |
 | Entity name, time zone | Settings, Workspace | Safe | REST `PUT /settings`; `save_entity_settings` |
 | Default expected return | Settings, Workspace | Safe | Same |
-| FIRE annual spending and withdrawal percent | Projections | Safe | REST `PUT /fire-assumptions`; `save_fire_assumptions` |
+| FIRE annual spending, withdrawal percent, inflation and Fixed costs held level ([TDD 17](17-inflation.md)) | Projections | Safe | REST `PUT /fire-assumptions`; `save_fire_assumptions` |
 | Today | Derived from the time zone | Read only | `get_settings`, `get_context` |
 | AGENT.md | Settings, Assistant | Agent-proposed only (TDD 10) | Read; `propose_agent_instructions` always pends |
 | Agent mode | Settings, Assistant | Sensitive: an agent never raises its own permissions | Refused |

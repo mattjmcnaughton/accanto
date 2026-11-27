@@ -38,7 +38,7 @@ function FireForm({
     annual_spending: string | null;
     withdrawal_percent: string;
     inflation_percent: string;
-    fixed_costs_not_rising_with_inflation: string[];
+    fixed_costs_not_rising_with_inflation?: string[];
   }) => void;
 }) {
   const steadyNow = (planned?.lines ?? [])
@@ -71,7 +71,8 @@ function FireForm({
           annual_spending: spending.trim() || null,
           withdrawal_percent: rate.trim(),
           inflation_percent: inflation.trim(),
-          fixed_costs_not_rising_with_inflation: steady,
+          // Without a saved Plan version there is no list to replace: keep every flag.
+          ...(planned ? { fixed_costs_not_rising_with_inflation: steady } : {}),
         });
       }}
     >
