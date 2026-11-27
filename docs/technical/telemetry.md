@@ -43,7 +43,7 @@ trace context and baggage sent by clients.
 | `monthly.entry_snapshots` | batch entry details in `read_activity` and `read_review` | `entry_count` |
 | `destinations.entry_snapshots` | `read_contributions` | `entry_count` |
 | `inbox.item_views` | `read_inbox` | `item_count` |
-| `inbox.sync_counts` (log) | end of a YNAB sync | `source_id` and the six sync counts |
+| `inbox.sync_counts` (log) | end of a YNAB sync | `source_id` and the seven sync counts |
 
 Rules for adding one:
 

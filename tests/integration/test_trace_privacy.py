@@ -583,6 +583,7 @@ def check(found, documents, keys, private):
         "conflicts",
         "unchanged",
         "ignored",
+        "uncleared",
     }
     statements = [a["db.statement"] for a in attributes if "db.statement" in a]
     assert len(statements) > 20 and any("$1" in s for s in statements)
