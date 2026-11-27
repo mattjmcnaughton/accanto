@@ -10,7 +10,7 @@ import { routines } from "../../lib/routines";
 import { savings } from "../../lib/savings";
 import { spendingSubcategories } from "../../lib/spendingSubcategories";
 import { parseTimestamp } from "../../lib/timestamp";
-import { Band, Dialog, Empty, Icon, Skeleton, Tip } from "../../ui";
+import { Band, Dialog, Empty, Icon, Skeleton, Tip, Wait } from "../../ui";
 import { SubcategoriesDialog } from "../tags/Subcategories";
 import { Home } from "./Home";
 import { CopyPlan } from "./PlanScenarios";
@@ -368,7 +368,7 @@ export function Plans(
       }}
     >
       {!home ? null : state.kind === "loading" ? (
-        <Skeleton />
+        <Skeleton heading={false} />
       ) : !ready ? (
         <div className="screen">
           <div className="card pad">
@@ -519,14 +519,24 @@ export function Plans(
             </form>
           )}
           {state.kind === "loading" && (
-            <div className="stack" aria-busy="true" aria-label="Loading Plans">
-              {[1, 2].map((n) => (
-                <div key={n} className="card pad sk-card">
-                  <div className="sk" style={{ width: "40%", height: 18 }} />
-                  <div className="sk" style={{ height: 10 }} />
-                </div>
-              ))}
-            </div>
+            <Wait>
+              {/* Shaped like the search row and Plan cards it stands in for. */}
+              <div className="plans-controls" aria-busy="true" aria-label="Loading Plans">
+                <div className="sk" style={{ flex: "1 1 220px", maxWidth: 340, height: 36 }} />
+              </div>
+              <div className="stack">
+                {[1, 2, 3].map((n) => (
+                  <div key={n} className="card plan-card">
+                    <div className="plan-card-main">
+                      <div className="sk" style={{ width: "45%", height: 23 }} />
+                      <div className="sk" style={{ width: "75%", height: 15, marginTop: 6 }} />
+                    </div>
+                    <div className="sk" style={{ width: 92, height: 27 }} />
+                    <div className="sk plan-card-band" style={{ height: 10 }} />
+                  </div>
+                ))}
+              </div>
+            </Wait>
           )}
           {!ready && state.kind !== "loading" && (
             <div className="card pad">
@@ -683,7 +693,11 @@ export function Plans(
                 { name: "Loan accounts", state: loans },
                 { name: "Spending subcategories", state: subcategories },
               ].map((item) =>
-                item.state.kind === "ready" || item.state.kind === "empty" ? null : (
+                // While loading, the worksheet marks these references unknown; only a failure
+                // needs a notice above it, so loading ones take no space.
+                item.state.kind === "loading" ||
+                item.state.kind === "ready" ||
+                item.state.kind === "empty" ? null : (
                   <div key={item.name} className="plan-alert plan-catalog">
                     <p className="cap">{item.name}</p>
                     <LoadMessage state={item.state} retry={() => setReload((n) => n + 1)} />

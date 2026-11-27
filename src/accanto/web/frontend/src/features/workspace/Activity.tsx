@@ -32,7 +32,7 @@ import {
   spendingSubcategories as subcategoryApi,
 } from "../../lib/spendingSubcategories";
 import { type Tag, tags as tagApi } from "../../lib/tags";
-import { Combobox, Dialog, Empty, Field, Head, Tip, tint } from "../../ui";
+import { Combobox, Dialog, Empty, Field, Head, Tip, tint, Wait } from "../../ui";
 import { NewFixedCost, NewGoal } from "../create/CreateForms";
 import { type CreateRequest, createSpec, createdId, planDrafts } from "../create/create";
 import { SubcategoriesDialog } from "../tags/Subcategories";
@@ -116,11 +116,13 @@ export function LoadProblem({
   );
 }
 export const LoadingCard = ({ label }: { label: string }) => (
-  <div className="card pad sk-card" aria-busy="true" aria-label={label}>
-    {[60, 84, 72, 78].map((width) => (
-      <div key={width} className="sk" style={{ width: `${width}%`, height: 14 }} />
-    ))}
-  </div>
+  <Wait>
+    <div className="card pad sk-card" aria-busy="true" aria-label={label}>
+      {[60, 84, 72, 78].map((width) => (
+        <div key={width} className="sk" style={{ width: `${width}%`, height: 14 }} />
+      ))}
+    </div>
+  </Wait>
 );
 
 /**
@@ -530,6 +532,8 @@ export function ActivityScreen(
     );
   }, [knownEntries]);
   const loaded = firstPage !== null;
+  // Writes and an opened entry wait for the current read, not the last list kept meanwhile.
+  const fresh = entries.kind === "ready";
   const total = firstPage?.total ?? 0;
   const matching = firstPage?.matching ?? 0;
 
@@ -713,7 +717,7 @@ export function ActivityScreen(
     setOpen(true);
   }
   function openKnown() {
-    if (!loaded || p.busy || !p.guard()) return;
+    if (!fresh || p.busy || !p.guard()) return;
     const knownMonth = `${captureDate.slice(0, 7)}-01`;
     start(
       {
@@ -788,7 +792,7 @@ export function ActivityScreen(
           : monthly.createRefund(p.entity.id, next.target.uuid, next.form),
         done,
       );
-    else if (loaded && knownEntries.kind === "ready")
+    else if (fresh && knownEntries.kind === "ready")
       p.save(monthly.recordKnownTotal(p.entity.id, next.form), done);
   }
   /** One line records guilt-free spending: an amount, then what it was. */
@@ -799,7 +803,7 @@ export function ActivityScreen(
       setQuickError('Start with an amount, then what it was. For example: "42.50 groceries".');
       return;
     }
-    if (p.busy || !loaded) return;
+    if (p.busy || !fresh) return;
     if (draft && changed && !p.guard()) return;
     done();
     setQuickError("");
@@ -862,12 +866,12 @@ export function ActivityScreen(
   const detailStarted = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: The entry opens once, when entries load.
   useEffect(() => {
-    if (!p.detail || detailStarted.current || !loaded) return;
+    if (!p.detail || detailStarted.current || !fresh) return;
     detailStarted.current = true;
     const entry = data.find((row) => row.uuid === p.detail?.id);
     if (entry && claim({ id: entry.uuid, view: entry })) setOpen(true);
     else p.detail.closed();
-  }, [loaded]);
+  }, [fresh]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Closing is the record going away.
   useEffect(() => {
     if (p.detail && detailStarted.current && !info && !draft) p.detail.closed();
@@ -1158,7 +1162,7 @@ export function ActivityScreen(
           <option value={shown}>{fmtMonth(shown)}</option>
           <option value="">All months</option>
         </select>
-        <button type="button" className="btn" disabled={p.busy || !loaded} onClick={openKnown}>
+        <button type="button" className="btn" disabled={p.busy || !fresh} onClick={openKnown}>
           Enter known total
         </button>
         <button
@@ -1205,7 +1209,7 @@ export function ActivityScreen(
           <span className="chip">
             Guilt-free, {captureDate === today ? "today" : fmtShort(captureDate)}
           </span>
-          <button type="submit" className="btn pri" disabled={p.busy || !loaded}>
+          <button type="submit" className="btn pri" disabled={p.busy || !fresh}>
             Record
           </button>
         </form>

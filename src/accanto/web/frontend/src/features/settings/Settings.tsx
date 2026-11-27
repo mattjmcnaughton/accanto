@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { type BrowserSession, loadResource } from "../../lib/api";
-import { Head, Tip } from "../../ui";
+import { Head, Tip, Wait } from "../../ui";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 import "./settings.css";
 import { AgentSettings } from "../agent/AgentSettings";
@@ -33,6 +33,7 @@ export function Settings(p: SettingsProps) {
   const state = useLoad(
     () => loadResource<EntitySettings>(path, () => false),
     [path, p.refresh, attempt],
+    { share: "entity-settings" },
   );
   const current = form || (state.kind === "ready" ? state.data : null);
   if (p.concealed) return null;
@@ -40,10 +41,12 @@ export function Settings(p: SettingsProps) {
     <section className="screen set-screen" aria-label="Settings">
       <Head title="Settings" />
       {state.kind === "loading" && !current && (
-        <output className="card pad sk-card" aria-label="Loading settings">
-          <div className="sk set-sk" />
-          <div className="sk set-sk" />
-        </output>
+        <Wait>
+          <output className="card pad sk-card" aria-label="Loading settings">
+            <div className="sk set-sk" />
+            <div className="sk set-sk" />
+          </output>
+        </Wait>
       )}
       {"error" in state && (
         <div className="banner bad" role="alert">

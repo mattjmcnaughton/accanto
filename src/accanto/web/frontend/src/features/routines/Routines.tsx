@@ -21,7 +21,7 @@ import {
   ordinalDay,
   routines,
 } from "../../lib/routines";
-import { Empty, Field, Head, Icon } from "../../ui";
+import { Empty, Field, Head, Icon, Wait } from "../../ui";
 import { hrefFor } from "../workspace/Workspace";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 import "./routines.css";
@@ -42,7 +42,9 @@ export function Routines(
   const [view, setView] = useState<View>(
     p.start ? { kind: "run", id: p.start.routine, on: p.start.on } : { kind: "list" },
   );
-  const state = useLoad(() => routines.list(p.entity.id), [p.entity.id, p.refresh, reload]);
+  const state = useLoad(() => routines.list(p.entity.id), [p.entity.id, p.refresh, reload], {
+    share: "routines",
+  });
   if (p.concealed) return null;
   const records = state.kind === "ready" ? state.data : [];
   const back = () => {
@@ -91,11 +93,13 @@ export function Routines(
         </button>
       </Head>
       {state.kind === "loading" && (
-        <output className="card pad sk-card" aria-label="Loading routines">
-          <div className="sk" style={{ width: "40%", height: 20 }} />
-          <div className="sk" style={{ height: 34 }} />
-          <div className="sk" style={{ height: 34 }} />
-        </output>
+        <Wait>
+          <output className="card pad sk-card" aria-label="Loading routines">
+            <div className="sk" style={{ width: "40%", height: 20 }} />
+            <div className="sk" style={{ height: 34 }} />
+            <div className="sk" style={{ height: 34 }} />
+          </output>
+        </Wait>
       )}
       {"error" in state && (
         <div className="banner bad" role="alert">
@@ -557,10 +561,12 @@ function stateWithout(occ: Occurrence, today: IsoDate): Occurrence["state"] {
 function LoadOccurrence({ state, retry }: { state: LoadState<Occurrence>; retry: () => void }) {
   if (state.kind === "loading")
     return (
-      <output className="rt-steps" aria-label="Loading steps">
-        <div className="sk" style={{ height: 30, margin: "12px 16px" }} />
-        <div className="sk" style={{ height: 30, margin: "12px 16px" }} />
-      </output>
+      <Wait>
+        <output className="rt-steps" aria-label="Loading steps">
+          <div className="sk" style={{ height: 30, margin: "12px 16px" }} />
+          <div className="sk" style={{ height: 30, margin: "12px 16px" }} />
+        </output>
+      </Wait>
     );
   return (
     <div className="banner bad" role="alert">

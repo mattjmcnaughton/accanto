@@ -6,6 +6,7 @@ import {
   browserCall,
   inbox,
 } from "../../lib/inbox";
+import { Wait } from "../../ui";
 import { useLoad } from "../workspace/shared";
 
 interface Plan {
@@ -103,7 +104,12 @@ export function ConnectSource({
     </output>
   );
 
-  if (provider.kind === "loading") return <output className="note">Loading…</output>;
+  if (provider.kind === "loading")
+    return (
+      <Wait>
+        <output className="note">Loading…</output>
+      </Wait>
+    );
   if (!ready) {
     return (
       <div className="ix-connect card pad">

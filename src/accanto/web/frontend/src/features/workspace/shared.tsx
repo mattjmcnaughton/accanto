@@ -8,6 +8,7 @@ import {
 } from "react";
 import { type BrowserSession, type LoadState, loading } from "../../lib/api";
 import type { PlanGroup, WriteSpec } from "../../lib/monthly";
+import { Wait } from "../../ui";
 
 export type Entity = BrowserSession["entities"][number];
 export interface ScreenProps {
@@ -86,6 +87,11 @@ export const keysBelongElsewhere = (target: EventTarget | null) =>
 
 /** Share pending reads only. A later visit still checks authorization and gets fresh data. */
 export const WorkspaceReads = createContext<Map<string, Promise<LoadState<unknown>>> | null>(null);
+/**
+ * The last data each shared read returned in this workspace scope (Entity, session and User).
+ * A later visit shows it while its own read refetches, instead of a placeholder that collapses.
+ */
+export const WorkspaceLastReads = createContext<Map<string, LoadState<unknown>> | null>(null);
 
 /** Disposed reads cannot populate a new screen, User or month. */
 export function useLoad<T>(
@@ -95,6 +101,8 @@ export function useLoad<T>(
 ) {
   const reads = useContext(WorkspaceReads);
   const pool = share ? reads : null;
+  const lastReads = useContext(WorkspaceLastReads);
+  const last = share ? lastReads : null;
   // biome-ignore lint/correctness/useExhaustiveDependencies: Callers provide the request identity and explicit reload generation.
   const identity = useMemo(() => ({}), [enabled, pool, share, ...dependencies]);
   const [settled, setSettled] = useState<{ identity: object; result: LoadState<T> }>();
@@ -110,16 +118,29 @@ export function useLoad<T>(
       void request.then(release, release);
     }
     void request.then((result) => {
-      if (!disposed) setSettled({ identity, result });
+      if (disposed) return;
+      if (last && share) {
+        if (result.kind === "ready" || result.kind === "empty")
+          last.set(share, { ...result, stale: true });
+        else last.delete(share);
+      }
+      setSettled({ identity, result });
     });
     return () => {
       disposed = true;
     };
   }, [identity]);
-  return enabled && settled?.identity === identity ? settled.result : loading;
+  if (!enabled) return loading;
+  if (settled?.identity === identity) return settled.result;
+  return ((share && last?.get(share)) as LoadState<T> | undefined) ?? loading;
 }
 export function LoadMessage({ state, retry }: { state: LoadState<unknown>; retry: () => void }) {
-  if (state.kind === "loading") return <output className="note">Loading…</output>;
+  if (state.kind === "loading")
+    return (
+      <Wait>
+        <output className="note">Loading…</output>
+      </Wait>
+    );
   if (state.kind === "ready" || state.kind === "empty") return null;
   return (
     <div role="alert" className="banner bad">

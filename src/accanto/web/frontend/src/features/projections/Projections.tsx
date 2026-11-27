@@ -184,8 +184,11 @@ export function Projections(
   const state = useLoad(
     () => projections.read(p.entity.id, years, dollars),
     [...deps, years, dollars],
+    { share: `projections:${years}:${dollars}` },
   );
-  const assumptions = useLoad(() => projections.assumptions(p.entity.id), deps);
+  const assumptions = useLoad(() => projections.assumptions(p.entity.id), deps, {
+    share: "projection-assumptions",
+  });
   if (p.concealed) return null;
   const interview = p.interview && (
     <div className="card pad proj-interview">

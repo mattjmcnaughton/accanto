@@ -32,8 +32,9 @@ export class ApiError extends Error {
 
 export type LoadState<T> =
   | { kind: "loading" }
-  | { kind: "ready"; data: T }
-  | { kind: "empty" }
+  // `stale` marks the last result, shown while its fresh read is pending: decide nothing from it.
+  | { kind: "ready"; data: T; stale?: true }
+  | { kind: "empty"; stale?: true }
   | { kind: ApiErrorKind; error: ApiError };
 
 export const loading: LoadState<never> = { kind: "loading" };

@@ -253,6 +253,31 @@ it("refreshes only visible Activity after a write and restores the unsaved Plan"
   ]);
 });
 
+it("shows a revisited screen's last data while its fresh read is pending", async () => {
+  let hold = false;
+  const plansReads: Array<(response: Response) => void> = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    if (String(path).endsWith("/plans") && hold)
+      return new Promise<Response>((resolve) => plansReads.push(resolve));
+    if (String(path).endsWith("/plans")) return json(plans);
+    if (String(path).includes("/activity/page")) return json(activityPage(String(path), []));
+    if (String(path).includes("/reviews/"))
+      return json({ detail: { code: "review_not_found" } }, 404);
+    return json([]);
+  });
+  render(<Workspace initial={session} signedOut={vi.fn()} />);
+  fireEvent.click(nav().getByRole("link", { name: "Plans" }));
+  expect(await screen.findByRole("button", { name: "Baseline" })).toBeDefined();
+  await act(async () => fireEvent.click(nav().getByRole("link", { name: "Activity" })));
+  hold = true;
+  await act(async () => fireEvent.click(nav().getByRole("link", { name: "Plans" })));
+  // The revisit still asks the server, but keeps the Plans on screen instead of a placeholder.
+  expect(plansReads).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Baseline" })).toBeDefined();
+  await act(async () => plansReads[0](json([])));
+  expect(screen.queryByRole("button", { name: "Baseline" })).toBeNull();
+});
+
 it("shares a pending Home Review only within the same workspace", async () => {
   const finish: Array<(response: Response) => void> = [];
   const reviewPaths: string[] = [];
