@@ -126,6 +126,13 @@ accepts the proposal, `l` or → leaves the item for later (nothing saved), `s`
 ignores it (status `skipped`, shown as Ignored), `e` edits it in place with the
 keys above and returns to the flow, `z` undoes, `Esc` leaves.
 
+Inbox zero: when nothing is waiting or in conflict, the Waiting view (and a flow
+pass that cleared the last item) shows a card with the decisions made since the
+inbox was opened (count; recorded amount, since ignored items are in no total),
+the source's last sync with Sync now, and this month's Review as the next step.
+A search or the proposals filter that hides waiting items says how many it hides
+instead.
+
 Search: `/` focuses the search box, which filters as you type by payee, memo,
 source category, amount (a number matches that exact amount, signed only when
 typed with a sign) and the shown proposal or record, including the agent's

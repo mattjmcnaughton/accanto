@@ -656,6 +656,9 @@
     border-left: 0;
     border-top: 1px solid var(--line);
   }
+  .ix-detail:empty {
+    display: none;
+  }
   .ix-toast {
     bottom: 70px;
   }
@@ -924,4 +927,129 @@
 }
 .ix-row .t small .ix-note-row {
   color: var(--ink2);
+}
+
+/* Inbox zero: nothing waits and nothing conflicts. Motion is a one-time settle; reduced motion
+   turns it off with the rest of the inbox's animations above. */
+.ix-zero {
+  justify-items: start;
+  padding-bottom: 18px;
+  animation: ix-zero-in 0.32s ease-out both;
+}
+.ix-zero p {
+  margin: 0;
+}
+.ix-zero .ix-do {
+  padding: 4px 0 0;
+  border: 0;
+  background: none;
+}
+.ix-zero-mark {
+  width: 36px;
+  height: 36px;
+  fill: none;
+  stroke: var(--good);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ix-zero-mark circle {
+  stroke: color-mix(in srgb, var(--good) 35%, transparent);
+}
+.ix-zero-mark path {
+  stroke-dasharray: 26;
+  animation: ix-zero-check 0.42s 0.18s ease-out both;
+}
+.ix-zero-tally {
+  color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+}
+.ix-zero-sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  color: var(--ink3);
+}
+.ix-zero-ledger {
+  width: 100%;
+  margin: 0;
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+.ix-zero-ledger > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ix-zero-ledger dt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ix-zero-ledger dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+/* Not .ix-flow: on a phone that class hides the strip and footer for flow mode. */
+.ix-zero-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: safe center;
+  justify-items: center;
+  padding: 24px 16px;
+}
+.ix-zero-wrap.quiet {
+  align-content: start;
+  justify-items: stretch;
+  padding: 18px 16px;
+}
+.ix-zero:focus {
+  outline: none;
+}
+.ix-zero.quiet {
+  display: grid;
+  gap: 8px;
+}
+.ix-zero-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.ix-zero.quiet .ix-zero-mark {
+  width: 22px;
+  height: 22px;
+}
+.ix-zero-line b {
+  font-size: 17px;
+}
+.ix-zero-line span {
+  color: var(--ink2);
+}
+@keyframes ix-zero-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes ix-zero-check {
+  from {
+    stroke-dashoffset: 26;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@media (max-width: 600px) {
+  .ix-zero .btn {
+    min-height: 44px;
+  }
+  .ix-zero .kbd {
+    display: none;
+  }
 }
