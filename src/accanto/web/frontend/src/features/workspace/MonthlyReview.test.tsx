@@ -201,13 +201,25 @@ it("keeps attempted Review input across a conflict reload", async () => {
         ? json(current)
         : absent(),
   );
+  // A slow runner: React's scheduler sees every slice over budget, so work left after a
+  // commit runs in a later task, after input that arrives as soon as the note appears.
+  const now = performance.now.bind(performance);
+  let calls = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => now() + 6 * ++calls);
   const p = props();
   const { rerender } = render(<MonthlyReview {...p} />);
   const note = (await screen.findByLabelText("Review note")) as HTMLTextAreaElement;
   fireEvent.change(note, { target: { value: "Unsaved synthetic note" } });
+  expect(note.value).toBe("Unsaved synthetic note");
   current = { ...review, review: { ...review.review, revision: 2, note: "Other writer" } };
   rerender(<MonthlyReview {...p} refresh={1} />);
-  await waitFor(() => expect(note.value).toBe("Unsaved synthetic note"));
+  // The reload remounts the note; check the one on screen, not the detached original.
+  const reloaded = await waitFor(() => {
+    const live = screen.getByLabelText("Review note") as HTMLTextAreaElement;
+    expect(live).not.toBe(note);
+    return live;
+  });
+  expect(reloaded.value).toBe("Unsaved synthetic note");
 });
 it("requires explicit choice without a preceding Review and blocks creation after a failed load", async () => {
   const fetch = vi
