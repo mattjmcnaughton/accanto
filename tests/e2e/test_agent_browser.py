@@ -241,6 +241,8 @@ def test_agent_journey(tmp_path):
         until("!!document.querySelector('.agent textarea')")
 
         # The token is saved once in Settings and is not left in the page.
+        # Settings refreshes its reads after the save; select once the form is back.
+        until("!!document.querySelector('#provider-kind')")
         browser("select", "#provider-kind", "YNAB")
         browser("find", "label", "YNAB personal access token", "fill", FAKE_TOKEN)
         button("Save token")
