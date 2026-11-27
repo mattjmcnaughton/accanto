@@ -377,7 +377,7 @@ it("shows the payoff on each card and flags a payment under the interest", async
   expect(within(row).getByText("Payment under interest")).toBeDefined();
 });
 
-it("shows the schedule in details and saves terms against the loan's revision", async () => {
+it("shows the schedule in details and saves terms and a moved opening date", async () => {
   mock();
   const save = vi.fn();
   render(<Balances {...props} save={save} />);
@@ -393,7 +393,10 @@ it("shows the schedule in details and saves terms against the loan's revision", 
   expect(screen.getByText("Jan 1, 2027, in 3 payments")).toBeDefined();
   const terms = screen.getByRole("form", { name: "Terms for Example loan B" });
   fireEvent.change(within(terms).getByLabelText(/Monthly payment/), { target: { value: "" } });
-  fireEvent.click(within(terms).getByRole("button", { name: "Save terms" }));
+  fireEvent.change(within(terms).getByLabelText("Opening date"), {
+    target: { value: "2023-10-01" },
+  });
+  fireEvent.click(within(terms).getByRole("button", { name: "Save loan" }));
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
       method: "PUT",
@@ -404,6 +407,7 @@ it("shows the schedule in details and saves terms against the loan's revision", 
         expected_revision: 1,
         interest_rate_percent: "12.00",
         monthly_payment: null,
+        opening_date: "2023-10-01",
       },
     }),
     expect.any(Function),

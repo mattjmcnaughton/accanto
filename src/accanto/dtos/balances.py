@@ -65,6 +65,8 @@ class EditDebt(Terms):
     name: str = Field(min_length=1, max_length=120)
     active: bool
     expected_revision: int = Field(ge=1)
+    # Moves the opening observation's date; omit to keep it. Its amount stays.
+    opening_date: date | None = None
     # Set from the request: terms it left out stay as they are, so a client
     # that only renames or archives a loan does not clear them.
     unchanged: SkipJsonSchema[list[str]] = []

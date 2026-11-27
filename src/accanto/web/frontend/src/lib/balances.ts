@@ -86,8 +86,13 @@ export const balances = {
   editLoan: (
     entity: string,
     id: string,
-    /** Omitted terms stay as they are; null clears one. */
-    body: { name: string; active: boolean; expected_revision: number } & Partial<LoanTerms>,
+    /** Omitted terms stay as they are; null clears one. opening_date moves the opening's date. */
+    body: {
+      name: string;
+      active: boolean;
+      expected_revision: number;
+      opening_date?: string;
+    } & Partial<LoanTerms>,
   ): WriteSpec<Loan> => ({
     method: "PUT",
     path: `${root(entity)}/debts/${encodeURIComponent(id)}`,

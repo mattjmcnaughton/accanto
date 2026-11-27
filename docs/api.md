@@ -753,7 +753,12 @@ optional fixed-rate terms: `interest_rate_percent` (annual percent, 0 to 40, two
 decimals) and `monthly_payment` (USD, above zero). `PUT
 /api/entities/{entity_id}/debts/{debt_id}` accepts `name`, `active`, and
 `expected_revision` to rename, archive or reopen, and the same terms; an edit
-that omits a term leaves it unchanged, and null clears it. Only fixed rates are
+that omits a term leaves it unchanged, and null clears it. As for investments, an
+edit may send `opening_date` to move the opening's date (omit it to keep it), for
+example to when a mortgage began years ago. The opening amount stays protected.
+The move bumps the opening's revision and is audited; a later date is refused
+(`422 activity_before_opening`) when a current observation or payment would then
+predate it. Soft-deleted activity does not block a move. Only fixed rates are
 supported. Terms are assumptions, never activity or observations. Archival requires the latest
 recorded amount owed to be zero; a payment alone does not establish zero. An
 archived loan rejects new payments and new associations; an existing payment
@@ -780,7 +785,8 @@ independent dated observations. POST takes `date`, `amount`, and `account_id`.
 Debt observations require a loan account; investment observations may be
 unassigned. PUT on `/{observation_id}` corrects with those fields plus
 `expected_revision`; DELETE takes `expected_revision` and soft deletes. Opening
-observations cannot be corrected or deleted. At most one current ordinary
+observations cannot be corrected or deleted (a debt or investment edit may move
+an opening's date). At most one current ordinary
 observation exists for each account/date. A protected opening and one ordinary
 observation may coexist on that date; the ordinary one is latest on a tie.
 

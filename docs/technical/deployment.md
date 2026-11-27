@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6r038`.
+   supported revision is `6s039`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -171,6 +171,10 @@ entry note as payee and memo. The downgrade drops the notes. No grant changes.
 `6r038` adds inflation ([TDD 17](../tdds/17-inflation.md)): `entity.inflation_percent`
 (default `3.00`) and `fixed_cost.rises_with_inflation` (default true). Additive with
 defaults; `6q037` code never reads them. No grant changes.
+`6s039` lets a debt opening's date move ([TDD 15](../tdds/15-debt-payoff.md)):
+`protect_debt_opening` now refuses only amount changes and moves past later
+observations or payments, as `6m033` did for investments. No schema change;
+`6r038` code never moves an opening, so it behaves as before. No grant changes.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

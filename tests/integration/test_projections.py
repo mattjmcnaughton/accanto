@@ -416,6 +416,48 @@ async def scenario():
                 "expected_revision": cleared["revision"],
             },
         )
+        # The opening date moves like an investment's: back years, keeping its
+        # amount, but not past a later observation.
+        moved = await accepted(
+            "PUT",
+            f"/debts/{car['uuid']}",
+            {
+                "name": "Synthetic auto loan",
+                "active": True,
+                "opening_date": "2023-11-01",
+                "expected_revision": car["revision"],
+            },
+        )
+        assert moved["opening"] == {"date": "2023-11-01", "amount": "10000.00"}
+        assert moved["monthly_payment"] == "193.33"
+        await accepted(
+            "POST",
+            "/debt-observations",
+            {"date": "2026-06-01", "amount": "8000.00", "account_id": car["uuid"]},
+        )
+        blocked = await command(
+            "PUT",
+            f"/debts/{car['uuid']}",
+            {
+                "name": "Synthetic auto loan",
+                "active": True,
+                "opening_date": "2026-07-01",
+                "expected_revision": moved["revision"],
+            },
+        )
+        assert blocked.status_code == 422
+        assert blocked.json()["detail"]["code"] == "activity_before_opening"
+        listed = next(
+            row
+            for row in (await client.get(path + "/debts")).json()
+            if row["uuid"] == car["uuid"]
+        )
+        assert listed["opening"]["date"] == "2023-11-01"
+        # The schedule follows the latest observation, not the opening.
+        assert listed["payoff"]["as_of"] == "2026-06-01"
+        assert listed["payoff"]["balance"] == "8000.00"
+        car = listed
+
         # A payment at or under the interest is flagged, not an endless schedule.
         stuck = await accepted(
             "POST",
@@ -435,7 +477,7 @@ async def scenario():
 
         # Projections: the car loan is repaid within ten years; others stay flat.
         paid_down = (await client.get(path + "/projections?years=10")).json()
-        assert paid_down["today"]["loans"] == "11500.00"
+        assert paid_down["today"]["loans"] == "9500.00"
         assert paid_down["timeline"][10]["loans"] == "1500.00"
         by_name = {line["name"]: line for line in paid_down["loans"]}
         assert by_name["Synthetic auto loan"]["status"] == "amortizing"
