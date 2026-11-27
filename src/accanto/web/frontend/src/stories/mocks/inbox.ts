@@ -304,6 +304,61 @@ export const manyAccounts = Array.from({ length: 28 }, (_, i) => ({
   selected: false,
 }));
 
+/**
+ * The "Payroll 401(k)" schedule's two waiting items for Oct 30, with their planned proposals,
+ * and the paycheck YNAB synced on Oct 28: the deposit and the schedule's income pair (TDD 18).
+ */
+export function scheduledPayday(): StagedTransaction[] {
+  const schedule = {
+    schedule_id: "5c4e0000-0000-4000-8000-000000000001",
+    name: "Payroll 401(k)",
+    scheduled_on: "2026-10-30",
+  };
+  const from = (n: string, amount: string, memo: string, proposal: Completion) => ({
+    ...staged(
+      "2026-10-30",
+      amount,
+      "Payroll 401(k)",
+      null,
+      {},
+      {
+        ...proposal,
+        rationale: "Planned by this schedule.",
+      },
+    ),
+    id: `5ea9ed00-0000-4000-8000-00000000f00${n}`,
+    source_id: null,
+    source_ref: `line-${n}`,
+    account_name: "Payroll 401(k)",
+    memo,
+    schedule,
+    proposed_by: { ...AGENT, interface: "schedule" },
+  });
+  const pay = from("1", "1200.00", "401(k) deferral", {
+    category: "income",
+    assignment: IDS.primaryPay,
+  });
+  const fund = from("2", "-1200.00", "401(k) contribution", {
+    category: "investing",
+    assignment: "848f2d7d-0096-42de-a4e1-c492fba6f588",
+    funding: "income",
+  });
+  const deposit = {
+    ...staged("2026-10-28", "1200.00", "Example Employer Payroll", "Inflow: Ready to Assign"),
+    id: "5ea9ed00-0000-4000-8000-00000000f003",
+    source_ref: "tx-f003",
+  };
+  const pairOf = (it: StagedTransaction) => ({
+    item_id: it.id,
+    status: it.status,
+    from_schedule: Boolean(it.schedule),
+    payee: it.payee,
+    financial_date: it.financial_date,
+    amount: it.amount,
+  });
+  return [{ ...deposit, pair: pairOf(pay) }, { ...pay, pair: pairOf(deposit) }, fund];
+}
+
 /** What the stand-in agent proposes for an item without a proposal. */
 function agentProposal(it: StagedTransaction): Completion & { rationale: string } {
   if (Number(it.amount) > 0)

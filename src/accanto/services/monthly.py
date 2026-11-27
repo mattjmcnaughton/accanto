@@ -1227,6 +1227,24 @@ async def write(
             response = await write_routine(
                 session, entity, operation, payload, target, audit
             )
+        elif operation in {"create_schedule", "edit_schedule"}:
+            from accanto.services.schedules import write_schedule
+
+            response = await write_schedule(
+                session, entity, operation, payload, target, audit
+            )
+        elif operation == "set_schedule_occurrence":
+            from accanto.services.schedules import write_skip
+
+            response = await write_skip(
+                session, entity, operation, payload, target, audit
+            )
+        elif operation == "stage_schedule_date":
+            from accanto.services.schedules import write_stage
+
+            response = await write_stage(
+                session, entity, actor, operation, payload, target, audit
+            )
         elif operation in {"set_routine_step", "set_routine_occurrence"}:
             from accanto.services.routines import write_occurrence
 

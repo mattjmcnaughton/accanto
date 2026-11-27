@@ -1053,3 +1053,14 @@
     display: none;
   }
 }
+
+/* A likely duplicate of a scheduled entry (TDD 16): the match action sits in the notice. */
+.ix-match {
+  display: block;
+}
+.ix-match .ix-do {
+  position: static;
+  margin-top: 8px;
+  padding: 0;
+  background: none;
+}

@@ -330,6 +330,46 @@ async def drive(origin, secrets, suffix):
         )
         assert ticked.status_code == 200 and routine_note in ticked.text
 
+        # Entry schedules (TDD 18): the name and each line's note are typed text;
+        # the real tick below records today's date and logs counts only.
+        schedule_note = f"synthetic-canary-schedule-{suffix}"
+        private.append(schedule_note)
+        await call(
+            "POST",
+            "/schedules",
+            {
+                "name": schedule_note,
+                "cadence": {"frequency": "weekly", "weekdays": [weekday]},
+                "starts_on": today.isoformat(),
+                "lines": [
+                    {
+                        "category": "income",
+                        "amount": "12.34",
+                        "note": schedule_note,
+                        "assignment": "unassigned",
+                    }
+                ],
+            },
+        )
+        scheduled = await client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "list_schedules",
+                    "arguments": {"entity_id": str(entity)},
+                },
+            },
+            headers={
+                **api,
+                "MCP-Protocol-Version": "2025-03-26",
+                "Accept": "application/json, text/event-stream",
+            },
+        )
+        assert scheduled.status_code == 200 and schedule_note in scheduled.text
+
         # YNAB: a rejected token must not surface in errors, logs or spans.
         rejected_token = f"synthetic-wrong-ynab-token-{suffix}"
         wrong = await client.put(
@@ -554,6 +594,9 @@ def run_tick(tmp_path, suffix, private):
     ]
     assert steps[0]["step"] == "conversation_retention"
     assert steps[0]["counts"]["deleted"] >= 1
+    # The canary schedule's date today is staged in the inbox; only counts are logged.
+    assert steps[1]["step"] == "scheduled_entries"
+    assert steps[1]["counts"]["staged"] >= 1
     for value in private:
         assert value not in captured, f"tick log contains {value[:24]}"
 

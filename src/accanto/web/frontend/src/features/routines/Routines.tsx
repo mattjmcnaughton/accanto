@@ -1,4 +1,4 @@
-import { type CSSProperties, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useRef, useState } from "react";
 import type { BrowserSession, IsoDate, LoadState, UUID } from "../../lib/api";
 import { daysBetween, plural } from "../../lib/format";
 import { browserCall } from "../../lib/inbox";
@@ -750,7 +750,6 @@ function Editor(p: ScreenProps & { routine?: Routine; back: () => void; saved: (
     setForm({ ...form, ...next });
     p.dirty(true);
   }
-  const cadence = (next: Partial<Cadence>) => update({ cadence: { ...c, ...next } });
   function updateStep(i: number, next: Partial<StepForm>) {
     update({ steps: form.steps.map((s, j) => (i === j ? { ...s, ...next } : s)) });
   }
@@ -793,7 +792,6 @@ function Editor(p: ScreenProps & { routine?: Routine; back: () => void; saved: (
       },
     );
   }
-  const unit = { weekly: "week", monthly: "month", yearly: "year" }[c.frequency];
 
   return (
     <section className="screen rt-screen" aria-label={r ? `Edit ${r.name}` : "New routine"}>
@@ -819,161 +817,15 @@ function Editor(p: ScreenProps & { routine?: Routine; back: () => void; saved: (
           </Field>
           {showErrors && errors.name && <p className="err">{errors.name}</p>}
 
-          <fieldset className="rt-group">
-            <legend>Repeats</legend>
-            <div className="rt-inline">
-              <fieldset className="seg-control rt-bare">
-                <legend className="sr-only">Frequency</legend>
-                {(["weekly", "monthly", "yearly"] as Frequency[]).map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    aria-pressed={c.frequency === f}
-                    onClick={() => cadence({ frequency: f })}
-                  >
-                    {f[0].toUpperCase() + f.slice(1)}
-                  </button>
-                ))}
-              </fieldset>
-              <label className="rt-every">
-                Every
-                <input
-                  className="input"
-                  type="number"
-                  min={1}
-                  max={52}
-                  aria-label={`Every how many ${unit}s`}
-                  value={c.interval}
-                  onChange={(event) =>
-                    cadence({
-                      interval: Math.max(1, Math.min(52, Number(event.target.value) || 1)),
-                    })
-                  }
-                />
-                {c.interval === 1 ? unit : `${unit}s`}
-              </label>
-            </div>
-            {c.frequency === "weekly" && (
-              <fieldset className="rt-days rt-bare">
-                <legend className="sr-only">On these days</legend>
-                {WEEKDAYS.map(([d, name]) => (
-                  <button
-                    key={d}
-                    type="button"
-                    className="rt-day"
-                    aria-pressed={c.weekdays.includes(d)}
-                    aria-label={name}
-                    onClick={() =>
-                      cadence({
-                        weekdays: c.weekdays.includes(d)
-                          ? c.weekdays.filter((x) => x !== d)
-                          : [...c.weekdays, d],
-                      })
-                    }
-                  >
-                    {name.slice(0, 2)}
-                  </button>
-                ))}
-              </fieldset>
-            )}
-            {showErrors && errors.weekdays && <p className="err">{errors.weekdays}</p>}
-            {c.frequency === "monthly" && (
-              <div className="rt-choice" role="radiogroup" aria-label="Day of the month">
-                <label>
-                  <input
-                    type="radio"
-                    checked={form.monthly === "day"}
-                    onChange={() => update({ monthly: "day" })}
-                  />
-                  On the
-                  <DaySelect
-                    value={c.month_day ?? 1}
-                    disabled={form.monthly !== "day"}
-                    change={(month_day) => cadence({ month_day })}
-                  />
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    checked={form.monthly === "weekday"}
-                    onChange={() =>
-                      update({
-                        monthly: "weekday",
-                        cadence: { ...c, week: c.week ?? 1, weekday: c.weekday ?? "sat" },
-                      })
-                    }
-                  />
-                  On the
-                  <select
-                    className="input"
-                    aria-label="Which week"
-                    disabled={form.monthly !== "weekday"}
-                    value={c.week ?? 1}
-                    onChange={(event) => cadence({ week: Number(event.target.value) })}
-                  >
-                    {[1, 2, 3, 4, -1].map((n) => (
-                      <option key={n} value={n}>
-                        {["last", "first", "second", "third", "fourth"][n === -1 ? 0 : n]}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    className="input"
-                    aria-label="Weekday"
-                    disabled={form.monthly !== "weekday"}
-                    value={c.weekday ?? "sat"}
-                    onChange={(event) => cadence({ weekday: event.target.value as Weekday })}
-                  >
-                    {WEEKDAYS.map(([d, name]) => (
-                      <option key={d} value={d}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            )}
-            {c.frequency === "yearly" && (
-              <div className="rt-inline">
-                On
-                <select
-                  className="input"
-                  aria-label="Month"
-                  value={c.month ?? 1}
-                  onChange={(event) => cadence({ month: Number(event.target.value) })}
-                >
-                  {MONTHS.map((m, i) => (
-                    <option key={m} value={i + 1}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-                <DaySelect
-                  value={c.month_day ?? 1}
-                  change={(month_day) => cadence({ month_day })}
-                />
-              </div>
-            )}
-            <div className="rt-inline">
-              <label className="rt-every">
-                Starting
-                <input
-                  className="input"
-                  type="date"
-                  aria-label="Starting on"
-                  value={form.starts_on}
-                  onChange={(event) => update({ starts_on: event.target.value })}
-                />
-              </label>
-            </div>
-            <p className="note rt-summary">
-              {(c.frequency !== "weekly" || c.weekdays.length > 0) &&
-                `${describeCadence(cadenceOf(form))}, from ${dayLabel(form.starts_on, p.entity.today)}.`}{" "}
-              Dates follow {p.entity.name}'s time zone.
-              {c.frequency !== "weekly" &&
-                " Days run to the 28th so every month has one; choose “last day” for month ends."}
-            </p>
-          </fieldset>
+          <CadenceFields
+            cadence={c}
+            monthly={form.monthly}
+            startsOn={form.starts_on}
+            change={update}
+            error={showErrors ? errors.weekdays : ""}
+            summary={`${describeCadence(cadenceOf(form))}, from ${dayLabel(form.starts_on, p.entity.today)}.`}
+            zone={p.entity.name}
+          />
 
           <fieldset className="rt-group">
             <legend>Steps</legend>
@@ -1119,6 +971,177 @@ function Editor(p: ScreenProps & { routine?: Routine; back: () => void; saved: (
         </fieldset>
       </form>
     </section>
+  );
+}
+
+/** The Repeats fieldset: frequency, interval, days and start date. Schedules reuse it. */
+export function CadenceFields(p: {
+  cadence: Cadence;
+  monthly: "day" | "weekday";
+  startsOn: IsoDate;
+  change: (next: { cadence?: Cadence; monthly?: "day" | "weekday"; starts_on?: IsoDate }) => void;
+  error: string;
+  summary: string;
+  /** The Entity's name, whose time zone dates follow. */
+  zone: string;
+  children?: ReactNode;
+}) {
+  const c = p.cadence;
+  const cadence = (next: Partial<Cadence>) => p.change({ cadence: { ...c, ...next } });
+  const unit = { weekly: "week", monthly: "month", yearly: "year" }[c.frequency];
+  return (
+    <fieldset className="rt-group">
+      <legend>Repeats</legend>
+      <div className="rt-inline">
+        <fieldset className="seg-control rt-bare">
+          <legend className="sr-only">Frequency</legend>
+          {(["weekly", "monthly", "yearly"] as Frequency[]).map((f) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={c.frequency === f}
+              onClick={() => cadence({ frequency: f })}
+            >
+              {f[0].toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </fieldset>
+        <label className="rt-every">
+          Every
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={52}
+            aria-label={`Every how many ${unit}s`}
+            value={c.interval}
+            onChange={(event) =>
+              cadence({
+                interval: Math.max(1, Math.min(52, Number(event.target.value) || 1)),
+              })
+            }
+          />
+          {c.interval === 1 ? unit : `${unit}s`}
+        </label>
+      </div>
+      {c.frequency === "weekly" && (
+        <fieldset className="rt-days rt-bare">
+          <legend className="sr-only">On these days</legend>
+          {WEEKDAYS.map(([d, name]) => (
+            <button
+              key={d}
+              type="button"
+              className="rt-day"
+              aria-pressed={c.weekdays.includes(d)}
+              aria-label={name}
+              onClick={() =>
+                cadence({
+                  weekdays: c.weekdays.includes(d)
+                    ? c.weekdays.filter((x) => x !== d)
+                    : [...c.weekdays, d],
+                })
+              }
+            >
+              {name.slice(0, 2)}
+            </button>
+          ))}
+        </fieldset>
+      )}
+      {p.error && <p className="err">{p.error}</p>}
+      {c.frequency === "monthly" && (
+        <div className="rt-choice" role="radiogroup" aria-label="Day of the month">
+          <label>
+            <input
+              type="radio"
+              checked={p.monthly === "day"}
+              onChange={() => p.change({ monthly: "day" })}
+            />
+            On the
+            <DaySelect
+              value={c.month_day ?? 1}
+              disabled={p.monthly !== "day"}
+              change={(month_day) => cadence({ month_day })}
+            />
+          </label>
+          <label>
+            <input
+              type="radio"
+              checked={p.monthly === "weekday"}
+              onChange={() =>
+                p.change({
+                  monthly: "weekday",
+                  cadence: { ...c, week: c.week ?? 1, weekday: c.weekday ?? "sat" },
+                })
+              }
+            />
+            On the
+            <select
+              className="input"
+              aria-label="Which week"
+              disabled={p.monthly !== "weekday"}
+              value={c.week ?? 1}
+              onChange={(event) => cadence({ week: Number(event.target.value) })}
+            >
+              {[1, 2, 3, 4, -1].map((n) => (
+                <option key={n} value={n}>
+                  {["last", "first", "second", "third", "fourth"][n === -1 ? 0 : n]}
+                </option>
+              ))}
+            </select>
+            <select
+              className="input"
+              aria-label="Weekday"
+              disabled={p.monthly !== "weekday"}
+              value={c.weekday ?? "sat"}
+              onChange={(event) => cadence({ weekday: event.target.value as Weekday })}
+            >
+              {WEEKDAYS.map(([d, name]) => (
+                <option key={d} value={d}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+      {c.frequency === "yearly" && (
+        <div className="rt-inline">
+          On
+          <select
+            className="input"
+            aria-label="Month"
+            value={c.month ?? 1}
+            onChange={(event) => cadence({ month: Number(event.target.value) })}
+          >
+            {MONTHS.map((m, i) => (
+              <option key={m} value={i + 1}>
+                {m}
+              </option>
+            ))}
+          </select>
+          <DaySelect value={c.month_day ?? 1} change={(month_day) => cadence({ month_day })} />
+        </div>
+      )}
+      <div className="rt-inline">
+        <label className="rt-every">
+          Starting
+          <input
+            className="input"
+            type="date"
+            aria-label="Starting on"
+            value={p.startsOn}
+            onChange={(event) => p.change({ starts_on: event.target.value })}
+          />
+        </label>
+      </div>
+      {p.children}
+      <p className="note rt-summary">
+        {(c.frequency !== "weekly" || c.weekdays.length > 0) && p.summary} Dates follow {p.zone}'s
+        time zone.
+        {c.frequency !== "weekly" &&
+          " Days run to the 28th so every month has one; choose “last day” for month ends."}
+      </p>
+    </fieldset>
   );
 }
 

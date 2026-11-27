@@ -47,6 +47,8 @@ from accanto.services.routines import (
     read_routines,
 )
 from accanto.services.savings import read_accounts
+from accanto.services.schedules import occurrence_target as schedule_date
+from accanto.services.schedules import read_schedules
 from accanto.services.spending_subcategories import read_spending_subcategories
 from accanto.services.tags import read_tags
 
@@ -433,6 +435,12 @@ async def list_routines(ctx, entity_id, args: t.RoutinesQuery, key):
 
 
 DUE = ("due", "overdue")
+
+
+async def list_schedules(ctx, entity_id, args, key):
+    async with ctx.sessions() as session:
+        rows = await read_schedules(session, ctx.actor, entity_id)
+    return t.ScheduleList(schedules=[t.project_schedule(r) for r in rows])
 
 
 async def get_routine_occurrence(ctx, entity_id, args: t.OccurrenceRef, key):
@@ -1065,6 +1073,29 @@ def build_routine(args: t.SaveRoutine):
     )
 
 
+def build_schedule(args: t.SaveSchedule):
+    action = "edit" if args.id else "create"
+    verb = "Edit" if args.id else "Create"
+    if args.values.paused:
+        verb = "Pause"
+    return (
+        Command(f"{action}_schedule", _json(args.values), args.id),
+        f"{verb} entry schedule {args.values.name}",
+    )
+
+
+def build_skip_schedule_date(args: t.SkipScheduleDate):
+    verb = "Skip" if args.skipped else "Restore"
+    return (
+        Command(
+            "set_schedule_occurrence",
+            {"skipped": args.skipped},
+            schedule_date(args.schedule_id, args.scheduled_on),
+        ),
+        f"{verb} a scheduled date ({args.scheduled_on.isoformat()})",
+    )
+
+
 def build_entity_settings(args: t.SaveEntitySettings):
     summary = f"Update settings: name {args.name}, time zone {args.time_zone}"
     if args.default_return_percent is not None:
@@ -1270,6 +1301,15 @@ CATALOG: tuple[CatalogTool, ...] = (
         t.OccurrenceRef,
         t.RoutineOccurrence,
         get_routine_occurrence,
+    ),
+    _read(
+        "list_schedules",
+        "Entry schedules: entries Accanto records on a cadence (such as a "
+        "paycheck and its 401(k) contribution), with their next dates, skipped "
+        "dates and recent outcomes, including dates that failed and why.",
+        t.NoInput,
+        t.ScheduleList,
+        list_schedules,
     ),
     _read(
         "list_inbox",
@@ -1583,6 +1623,23 @@ CATALOG: tuple[CatalogTool, ...] = (
         t.DeleteObservation,
         build_delete_observation,
         "delete",
+    ),
+    _write(
+        "save_schedule",
+        "Create or edit an entry schedule: its lines (category, amount, "
+        "assignment, funding, note, tags), cadence, start and optional end; "
+        "pause it (paused true) or end it (ends_on). On each date the hourly "
+        "job stages its entries in the Transactions inbox with the planned "
+        "completion as the proposal; recording them is an inbox record.",
+        t.SaveSchedule,
+        build_schedule,
+    ),
+    _write(
+        "skip_schedule_date",
+        "Skip one of a schedule's next dates (or a failed date) once, or put "
+        "a skipped upcoming date back.",
+        t.SkipScheduleDate,
+        build_skip_schedule_date,
     ),
     _write(
         "save_routine",

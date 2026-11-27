@@ -25,6 +25,7 @@ from accanto.routers import (
     projections,
     routines,
     savings,
+    schedules,
     sources,
     spending_subcategories,
     tags,
@@ -175,6 +176,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(monthly.router)
     app.include_router(routines.router)
+    app.include_router(schedules.router)
     app.include_router(projections.router)
     app.include_router(savings.router)
     app.include_router(destinations.router)

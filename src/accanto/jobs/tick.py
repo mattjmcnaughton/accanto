@@ -63,7 +63,17 @@ async def conversation_retention() -> dict[str, int]:
         return {"deleted": await conversations.purge_expired(session)}
 
 
-STEPS: list[TickStep] = [("conversation_retention", conversation_retention)]
+async def scheduled_entries() -> dict[str, int]:
+    """Stage every due Entry schedule date in the inbox once, as its owner (TDD 18)."""
+    from accanto.services.schedules import stage_due
+
+    return await stage_due(db.async_session)
+
+
+STEPS: list[TickStep] = [
+    ("conversation_retention", conversation_retention),
+    ("scheduled_entries", scheduled_entries),
+]
 
 
 async def main() -> int:

@@ -83,6 +83,11 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | GET | `/routines/{routine_id}/occurrences/{scheduled_on}` | One occurrence's checklist; 404 on a date the cadence does not schedule |
 | PUT | `/routines/{routine_id}/occurrences/{scheduled_on}` | `{skipped, note, expected_revision}` skips or reopens the occurrence (0 before it is stored) |
 | PUT | `/routines/{routine_id}/occurrences/{scheduled_on}/steps/{step_id}` | `{status, note?}`: `done`, `skipped` or `null` to clear |
+| GET | `/schedules` | Entry schedules with cadence, entries, state, next date, the next 3 dates and recent staged, skipped or failed dates ([Entry schedules](#entry-schedules)) |
+| GET | `/schedules/{schedule_id}` | One schedule, same shape |
+| POST | `/schedules` | Name, cadence, `starts_on`, `ends_on?`, `paused?` and 1–10 entries; no previous revision |
+| PUT | `/schedules/{schedule_id}` | Full replacement with `expected_revision`; `paused` pauses or resumes, `ends_on` ends |
+| PUT | `/schedules/{schedule_id}/occurrences/{scheduled_on}` | `{skipped}`: skip one of the next 3 dates or a failed date once, or put a skipped upcoming date back |
 | GET | `/savings-accounts` | Entity's savings accounts and goals |
 | GET | `/savings-accounts/{account_id}` | One savings account with goal identities and opening positions |
 | POST | `/savings-accounts` | Create account, protected Unallocated goal and opening designations atomically |
@@ -343,6 +348,59 @@ occurrence is skipped. Ticks are accepted on any scheduled date up to the first
 one after today; later dates return `422 not_scheduled`. Ticking a skipped
 occurrence returns `409 occurrence_skipped`. Routine commands are audited and
 retried like every write.
+
+## Entry schedules
+
+An Entry schedule puts the same entries in the Transactions inbox on a cadence
+([TDD 18](tdds/18-entry-schedules.md)), such as a 401(k) deferral as income and
+its contribution as investing on the last weekday of each month:
+
+```json
+{
+  "name": "Payroll 401(k)",
+  "cadence": {"frequency": "monthly", "interval": 1, "month_day": -1, "weekend": "before"},
+  "starts_on": "2026-11-01",
+  "lines": [
+    {"category": "income", "amount": "1200.00", "note": "401(k) deferral",
+     "assignment": "<income line id>"},
+    {"category": "investing", "amount": "1200.00", "note": "401(k) contribution",
+     "assignment": "<investment id>", "funding": "income"}
+  ]
+}
+```
+
+Cadences are the [routine cadences](#routines) plus `weekend`: `before` or
+`after` moves a `month_day` (monthly or yearly) that falls on a Saturday or
+Sunday to the weekday before or after, within the month; `month_day: -1` with
+`before` is the last weekday. Each line is an inbox completion (`category`,
+`assignment`, `funding`, `tag_ids`) with a positive `amount` and a `note`.
+
+The hourly tick (`python -m accanto.jobs.tick`, step `scheduled_entries`)
+stages each due date once, oldest first and at most 24 per schedule per tick,
+as waiting inbox items: one per line, with the schedule's name as `payee`, the
+line's note as `memo`, `source_id: null`, `schedule: {schedule_id, name,
+scheduled_on}`, and the line's completion as the `proposal` (interface
+`schedule`) together with its record dry run as `proposal_rejection`. Nothing is
+recorded until an item is recorded through the inbox routes below, singly or in
+a batch. Nothing before the schedule's creation is staged. If a line names a
+record that no longer exists, no line of that date is staged; the date is
+`failed` with its `rejection`, later dates continue, and each tick tries it
+again until it stages or is skipped. A schedule's `state` is `active`, `paused`
+or `ended`; `next_on` is the next date the job stages, `upcoming` the next 3
+dates with `skipped`, and `recent` the latest stored dates with `status`
+(`staged`, `skipped`, `failed`) and their inbox `items` (`id`, `status`).
+Editing changes future dates only. Resuming a paused schedule continues from
+today.
+
+A waiting inbox item has `pair` (`item_id`, `status`, `from_schedule`, `payee`,
+`financial_date`, `amount`) when an item of the other origin (a schedule's or a
+source's), waiting or recorded, has the exact same signed amount within 4 days:
+likely the same money. Keep one and ignore the other with `/skip`; nothing is
+paired, linked or ignored automatically.
+
+Rejections: `schedule_not_found` (404); `invalid_schedule`, `invalid_cadence`,
+`invalid_line`, `not_scheduled`, `not_skipped`, `occurrence_passed` (422);
+`occurrence_staged`, `stale_revision` (409).
 
 ## Plan → activity → Review
 

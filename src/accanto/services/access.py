@@ -22,7 +22,8 @@ class RejectionError(Exception):
 @dataclass(frozen=True)
 class AuthenticatedActor:
     user_id: int
-    credential_kind: Literal["api_key", "session", "oauth"]
+    # "schedule": the Entity owner acting through an Entry schedule (TDD 18).
+    credential_kind: Literal["api_key", "session", "oauth", "schedule"]
     credential_uuid: UUID | None
     credential_digest: str = field(repr=False)
     verify_identity: Callable[[], Awaitable[tuple[str, str]]] | None = field(
@@ -40,11 +41,21 @@ class AuthenticatedActor:
                 "session": "browser",
                 "api_key": "direct_api",
                 "oauth": "mcp",
+                "schedule": "schedule",
             }[self.credential_kind]
         )
 
     def acting_as(self, interface: str) -> "AuthenticatedActor":
         return replace(self, interface_override=interface)
+
+
+def schedule_actor(user_id: int) -> AuthenticatedActor:
+    """The owner acting through one of their Entry schedules (TDD 18).
+
+    Only the hourly tick builds it, for the Entity owner it read under the
+    Entity lock; no request can present it, and it reaches no other Entity.
+    """
+    return AuthenticatedActor(user_id, "schedule", None, "")
 
 
 def invalid_credential():
@@ -97,6 +108,8 @@ async def revalidate_actor(session, actor: str | AuthenticatedActor, *, lock):
     # Raw API keys remain supported for existing direct-API service callers.
     if isinstance(actor, str):
         return await resolve_actor(session, actor, lock=lock)
+    if actor.credential_kind == "schedule":
+        return actor
     if actor.credential_kind == "oauth":
         if actor.verify_identity is None:
             raise invalid_credential()

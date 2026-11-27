@@ -55,7 +55,7 @@ class Command:
 
     operation: str
     payload: dict
-    target: UUID | date | None = None
+    target: UUID | date | str | None = None
     # Inbox record/undo/resolve run through their own write() hook.
     hook: Callable[[], Hook] | None = None
 

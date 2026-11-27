@@ -18,6 +18,7 @@ import { Inbox } from "../inbox/Inbox";
 import { FIRE_INTERVIEW_PROMPT, Projections } from "../projections/Projections";
 import { RecoveryNotice, type RecoveryStatus } from "../recovery/RecoveryNotice";
 import { Routines } from "../routines/Routines";
+import { Schedules } from "../schedules/Schedules";
 import { Savings } from "../savings/Savings";
 import { Settings } from "../settings/Settings";
 import { ActivityScreen } from "./Activity";
@@ -35,6 +36,7 @@ export const SCREENS = [
   "review",
   "plans",
   "routines",
+  "schedules",
   "projections",
   "savings",
   "investments",
@@ -66,6 +68,7 @@ const NAV: { group: string; items: [Screen, string][] }[] = [
       ["inbox", "Transactions inbox"],
       ["review", "Review"],
       ["routines", "Routines"],
+      ["schedules", "Schedules"],
     ],
   },
   {
@@ -93,10 +96,11 @@ const TITLES = Object.fromEntries([
 /**
  * Sidebar order; keys 1 to 9 jump to the first nine. The inbox has no number: it uses 1 to 6
  * itself for categories, and leaving it out keeps every other screen's number unchanged.
+ * Routines and Schedules have none either, for the same reason.
  */
 const ORDER: Screen[] = [
   ...NAV.flatMap((g) => g.items.map(([to]) => to)).filter(
-    (to) => to !== "inbox" && to !== "routines",
+    (to) => to !== "inbox" && to !== "routines" && to !== "schedules",
   ),
   "settings",
 ];
@@ -767,6 +771,7 @@ export function Workspace({
                   open={(to, m) => go(to, false, m ?? month)}
                 />
               )}
+              {screen === "schedules" && <Schedules {...props} />}
               {screen === "projections" && (
                 <Projections
                   {...props}
@@ -793,6 +798,7 @@ export function Workspace({
                       [
                         "inbox",
                         "routines",
+                        "schedules",
                         "projections",
                         "savings",
                         "investments",

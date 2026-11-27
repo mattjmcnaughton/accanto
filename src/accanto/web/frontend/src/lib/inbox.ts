@@ -59,9 +59,25 @@ export interface Rejection {
   code: string;
   message: string;
 }
+/** The Entry schedule that staged an item instead of a source (TDD 18). */
+export interface ScheduleOrigin {
+  schedule_id: UUID;
+  name: string;
+  scheduled_on: IsoDate;
+}
+/** The item of the other origin that is likely the same money (TDD 18). */
+export interface InboxPair {
+  item_id: UUID;
+  status: InboxStatus;
+  from_schedule: boolean;
+  payee: string;
+  financial_date: IsoDate;
+  amount: DecimalString;
+}
 export interface StagedTransaction {
   id: UUID;
-  source_id: UUID;
+  /** Null for an item an Entry schedule staged. */
+  source_id: UUID | null;
   source_ref: string;
   parent_ref: string | null;
   split: { lines: number; total: DecimalString } | null;
@@ -87,6 +103,8 @@ export interface StagedTransaction {
   /** The owner's note: context or a correction for the agent; "" when none. */
   note: string;
   noted_at: string | null;
+  schedule?: ScheduleOrigin | null;
+  pair?: InboxPair | null;
   staged_at: string;
   revision: number;
 }

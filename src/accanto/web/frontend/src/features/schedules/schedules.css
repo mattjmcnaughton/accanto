@@ -1,0 +1,146 @@
+/* Scheduled entries: the list with each schedule's entries and dates, and the editor. */
+.sc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+}
+.sc-row:first-child {
+  border-top: 0;
+}
+.sc-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.sc-main > small {
+  color: var(--ink3);
+  font-size: 13px;
+}
+.sc-main > small.warn {
+  color: var(--warn);
+}
+.sc-lines {
+  list-style: none;
+  margin: 2px 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.sc-lines li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+  max-width: 520px;
+}
+.sc-line-t small {
+  color: var(--ink3);
+}
+fieldset.sc-dates {
+  border: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.sc-dates small {
+  color: var(--ink3);
+  font-size: 13px;
+  margin-right: 2px;
+}
+.sc-date {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.sc-date span {
+  color: var(--ink3);
+}
+.sc-date:hover:not(:disabled) {
+  border-color: var(--ink3);
+}
+.sc-date.is-skipped {
+  background: var(--wash);
+  color: var(--ink3);
+  text-decoration: line-through;
+}
+.sc-date.is-skipped span {
+  text-decoration: none;
+}
+.sc-failed {
+  font-size: 13px;
+}
+.sc-acts {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  align-content: start;
+}
+.sc-total {
+  font-weight: 650;
+  font-size: 15px;
+}
+.sc-btns {
+  display: flex;
+  gap: 6px;
+}
+
+/* Editor */
+.sc-edit-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.sc-edit-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+.sc-edit-line > .dot {
+  margin-top: 13px;
+}
+.sc-edit-fields {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.sc-amount {
+  width: 120px !important;
+  text-align: right;
+}
+.sc-note {
+  flex: 1 1 220px;
+  width: auto;
+}
+
+@media (max-width: 760px) {
+  .sc-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sc-acts {
+    grid-auto-flow: column;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .sc-edit-fields .rt-inline > .input {
+    flex: 1 1 100%;
+  }
+  .sc-amount {
+    width: 100% !important;
+  }
+}

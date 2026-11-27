@@ -149,11 +149,16 @@ out is logged with its error type and the next step still runs. The process
 exits 1 when any step failed (or returned a nonzero `failed` count), so a
 scheduler can alert. It starts no HTTP server and no reconciler.
 
-The one step today is `conversation_retention`, which deletes every expired
+The first step is `conversation_retention`, which deletes every expired
 assistant conversation (`repositories/agent.purge_expired`). TDD 08's 30-day
 retention otherwise runs only when the owner reads their conversations, so
 conversations of an Entity nobody opens again were kept indefinitely. This step
 proves the tick end to end without new behavior.
+
+The second step, `scheduled_entries`, stages due dates of Entry schedules in
+the Transactions inbox ([TDD 18](18-entry-schedules.md)). It is safe to repeat:
+each date is staged under the Entity lock only while it is the schedule's next
+date, and a unique key per schedule and date keeps it to one staging.
 
 A job owner adds a scheduled step by appending to `STEPS`.
 

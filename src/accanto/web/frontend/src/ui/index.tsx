@@ -22,6 +22,7 @@ const PATHS: Record<string, string> = {
     "M4.5 2.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z M2.5 6.5h11M6.5 6.5v7",
   routines:
     "M3 4.5l1.2 1.2L6.5 3.5 M8.5 4.5h5 M3 8.5l1.2 1.2 2.3-2.2 M8.5 8.5h5 M3.5 12.5h2 M8.5 12.5h5",
+  schedules: "M2.5 3.5h11v10h-11z M2.5 6.5h11 M5.5 2v3 M10.5 2v3 M8 8.5v2.5h2",
   projections: "M2.5 13.5h11 M3.5 11 6.5 7.5l2.5 2 4.5-5.5 M10.5 4h3v3",
   savings: "M2.5 6.5 8 3l5.5 3.5 M3.5 6.5v5M6.5 6.5v5M9.5 6.5v5M12.5 6.5v5 M2.5 13h11",
   investments: "M2.5 12.5 6 8.5l2.5 2.5 5-6 M10.5 5h3v3",
