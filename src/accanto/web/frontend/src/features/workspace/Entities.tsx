@@ -100,10 +100,7 @@ export function CreateEntityDialog({
         }}
       >
         <fieldset className="dlg-b" disabled={busy}>
-          <p className="note">
-            A separate set of finances, such as Personal next to Family. It starts empty, and its
-            totals are never combined with another Entity's.
-          </p>
+          <p className="note">Starts empty; never combined with other Entities.</p>
           <Field label="Entity name">
             <input
               className="input"

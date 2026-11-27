@@ -5,6 +5,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
+  useId,
   useRef,
   useState,
   useSyncExternalStore,
@@ -284,14 +285,49 @@ export const Empty = ({
     {action}
   </div>
 );
+/**
+ * A short explanation behind an "i" marker: shown on hover or focus, and toggled by a tap.
+ * For meaning a screen would otherwise lose; a screen that is clear without it needs none.
+ */
+export function Tip({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <span className={`tip${open ? " open" : ""}`}>
+      <button
+        type="button"
+        className="tip-btn"
+        aria-label={label}
+        aria-describedby={id}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
+      >
+        i
+      </button>
+      <span role="tooltip" id={id} className="tip-pop">
+        {children}
+      </span>
+    </span>
+  );
+}
 export const Head = ({
   title,
   sub,
+  tip,
   children,
-}: { title: ReactNode; sub?: ReactNode; children?: ReactNode }) => (
+}: { title: ReactNode; sub?: ReactNode; tip?: ReactNode; children?: ReactNode }) => (
   <div className="head">
     <div>
-      <h1 className="h1">{title}</h1>
+      {tip ? (
+        <div className="head-title">
+          <h1 className="h1">{title}</h1>
+          <Tip label="About this screen">{tip}</Tip>
+        </div>
+      ) : (
+        <h1 className="h1">{title}</h1>
+      )}
       {sub && <p className="sub">{sub}</p>}
     </div>
     {children && <div className="head-actions">{children}</div>}

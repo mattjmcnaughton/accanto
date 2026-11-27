@@ -31,7 +31,7 @@ import {
   spendingSubcategories as subcategoryApi,
 } from "../../lib/spendingSubcategories";
 import { type Tag, tags as tagApi } from "../../lib/tags";
-import { Combobox, Dialog, Empty, Field, Head, tint } from "../../ui";
+import { Combobox, Dialog, Empty, Field, Head, Tip, tint } from "../../ui";
 import { NewFixedCost, NewGoal } from "../create/CreateForms";
 import { type CreateRequest, createSpec, createdId, planDrafts } from "../create/create";
 import { SubcategoriesDialog } from "../tags/Subcategories";
@@ -827,8 +827,7 @@ export function ActivityScreen(
               }}
             />
             <p className="note">
-              Change its tags here. Correct anything else in{" "}
-              {info.category === "investing" ? "Investments" : "Giving"}.
+              Edit the rest in {info.category === "investing" ? "Investments" : "Giving"}.
             </p>
           </div>
           <div className="dlg-f">
@@ -1105,8 +1104,7 @@ export function ActivityScreen(
           </p>
         ) : (
           <p id="activity-quick-help" className="note ar-under">
-            Type an amount and what it was, then press Enter. For another category, date or funding
-            origin,{" "}
+            Amount and what it was, then Enter. Or{" "}
             <button
               type="button"
               className="disclose"
@@ -1144,8 +1142,7 @@ export function ActivityScreen(
         <LoadingCard label="Loading activity" />
       ) : !loaded ? null : data.length === 0 && !pendingRow ? (
         <Empty title={`Nothing is recorded in ${month ? monthName(month) : "any month"} yet`}>
-          Record spending in the line above, or use Record activity for income, fixed costs and
-          saving. Investing and giving are recorded in Investments and Giving.
+          Record spending in the line above.
         </Empty>
       ) : (
         <section aria-label="Entries">
@@ -1235,12 +1232,10 @@ export function ActivityScreen(
               </p>
             ) : inMonth.length === 0 ? (
               <Empty title={`Nothing is recorded in ${monthName(shown)} yet`}>
-                Record spending in the line above, or search to find entries in other months.
+                Record spending above, or search other months.
               </Empty>
             ) : (
-              <p className="note ar-under">
-                No entries match. Clear the filter to see all {inMonth.length}.
-              </p>
+              <p className="note ar-under">No entries match.</p>
             ))}
           {groups.map((group) => (
             <div key={group.key}>
@@ -1646,11 +1641,7 @@ function ActivityFields({
             onChange={(e) => update({ ...form, amount: e.target.value })}
           />
         </Field>
-        <p className="note ar-under">
-          {form.is_adjustment
-            ? "An adjustment may be negative; it changes the recorded total by this amount."
-            : "Zero is a real entry: it records that nothing happened."}
-        </p>
+        {form.is_adjustment && <p className="note ar-under">May be negative.</p>}
       </div>
       {fundable && (
         <Field label="Paid from">
@@ -1729,10 +1720,11 @@ function KnownFields({
   return (
     <>
       <p className="note">
-        When you know a month's total but not every entry, a dated adjustment records the
-        difference. Later entries add to this total. {count}{" "}
-        {count === 1 ? "contributing entry was" : "contributing entries were"} captured for this
-        total.
+        {plural(count, "contributing entry", "contributing entries")} captured.
+        <Tip label="About known totals">
+          A dated adjustment records the difference between the known total and its entries. Later
+          entries add to the total.
+        </Tip>
       </p>
       <div className="two">
         <Field label="Category">

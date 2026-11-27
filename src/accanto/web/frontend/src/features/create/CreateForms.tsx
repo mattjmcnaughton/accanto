@@ -55,9 +55,7 @@ export function NewFixedCost({
   if (!drafts.length)
     return (
       <fieldset className="create-form" aria-label={`New fixed cost ${name}`}>
-        <p className="note">
-          A fixed cost is a line of a Plan. Create a Plan first, then add “{name}” to it.
-        </p>
+        <p className="note">Create a Plan first, then add “{name}” to it.</p>
         <div className="create-form-actions">
           <button type="button" className="btn" onClick={onCancel}>
             Cancel
@@ -68,10 +66,7 @@ export function NewFixedCost({
   return (
     <fieldset className="create-form" aria-label={`New fixed cost ${name}`}>
       <b>New fixed cost “{name}”</b>
-      <p className="note">
-        It joins the Plan's draft as a new line. Saved versions, and the Reviews compared with them,
-        stay as they are until you save a new version.
-      </p>
+      <p className="note">Joins the Plan&apos;s draft.</p>
       {drafts.length > 1 && (
         <label className="field">
           <span>Plan</span>
@@ -170,13 +165,9 @@ export function NewGoal({
               ))}
             </select>
           </label>
-          <p className="note">
-            It starts as an ongoing goal with no target; set one in Savings. Creating it moves no
-            money and changes no Plan.
-          </p>
         </>
       ) : (
-        <p className="note">A goal belongs to a savings account. Open one in Savings first.</p>
+        <p className="note">Open a savings account in Savings first.</p>
       )}
       <div className="create-form-actions">
         {open.length > 0 && (

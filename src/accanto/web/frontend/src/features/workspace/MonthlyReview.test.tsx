@@ -99,9 +99,7 @@ it("offers a one-click switch when a reviewed month compares with an older versi
   );
   const p = props();
   render(<MonthlyReview {...p} />);
-  expect(
-    await screen.findByText(/A newer version is saved: Baseline v2.*marked reviewed against it/),
-  ).toBeDefined();
+  expect(await screen.findByText(/Newer version saved: Baseline v2/)).toBeDefined();
   fireEvent.click(screen.getByRole("button", { name: "Compare with v2" }));
   expect(p.save).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -128,7 +126,7 @@ it("shows no newer-version notice on the latest saved version", async () => {
   render(<MonthlyReview {...props()} />);
   const target = (await screen.findByLabelText("Compared with")) as HTMLSelectElement;
   await waitFor(() => expect(target.options.length).toBe(2));
-  expect(screen.queryByText(/A newer version is saved/)).toBeNull();
+  expect(screen.queryByText(/Newer version saved/)).toBeNull();
 });
 it("saves a changed compared version at once, leaving an unsaved note unsaved", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
@@ -177,7 +175,7 @@ it("edits an incomplete Review with notes and annotation", async () => {
   });
   fireEvent.click(
     screen.getByRole("button", {
-      name: /^Mark reviewed with 2 unknown amounts?$|^Mark reviewed with 2 unknowns$/,
+      name: "Mark reviewed with 2 still to come",
     }),
   );
   expect(p.save).toHaveBeenCalledWith(
@@ -232,7 +230,7 @@ it("requires explicit choice without a preceding Review and blocks creation afte
   const { unmount } = render(<MonthlyReview {...props()} />);
   const choice = (await screen.findByLabelText("Compare with")) as HTMLSelectElement;
   expect(choice.value).toBe("");
-  expect(screen.getByText(/October has no Review, so nothing is preselected/)).toBeDefined();
+  expect(screen.getByText(/October has no Review\./)).toBeDefined();
   expect((screen.getByRole("button", { name: "Start Review" }) as HTMLButtonElement).disabled).toBe(
     true,
   );
@@ -258,9 +256,7 @@ it("shows unknown rather than zero, retaining incomplete recorded income", async
   const income = await screen.findByRole("region", { name: "Net income" });
   expect(income.textContent).toContain("$0.00");
   expect(within(income).getByLabelText("Not complete")).toBeDefined();
-  expect(
-    within(income).getByText("Salary has no entry. Unknown is not treated as $0.00."),
-  ).toBeDefined();
+  expect(within(income).getByText("Salary has no entry.")).toBeDefined();
   fireEvent.click(within(income).getByRole("button", { name: "1 line" }));
   expect(within(screen.getByRole("row", { name: /Salary/ })).getAllByText("Unknown")).toHaveLength(
     2,
@@ -286,7 +282,7 @@ it("folds lines with no entry as still to come until the month ends", async () =
   // Today is 2026-11-10: November is running, so its lines are still to come.
   const running = render(<MonthlyReview {...p} />);
   let income = await screen.findByRole("region", { name: "Net income" });
-  expect(screen.getByText(/sections are complete, with 3 lines still to come\.$/)).toBeDefined();
+  expect(screen.getByText(/sections complete, 3 lines still to come$/)).toBeDefined();
   expect(within(income).getByLabelText("Still to come")).toBeDefined();
   expect(income.textContent).toContain("2 still to come, $4,500.00 planned: Salary, Side work.");
   expect(income.textContent).not.toContain("Unknown is not treated as $0.00");
@@ -305,11 +301,9 @@ it("folds lines with no entry as still to come until the month ends", async () =
   // October has ended: the same lines warn and each asks its question.
   const ended = render(<MonthlyReview {...p} month="2026-10" />);
   income = await screen.findByRole("region", { name: "Net income" });
-  expect(screen.getByText(/sections are complete, with 3 unknown amounts\.$/)).toBeDefined();
+  expect(screen.getByText(/sections complete, 3 unknown amounts$/)).toBeDefined();
   expect(within(income).getByLabelText("Not complete")).toBeDefined();
-  expect(income.textContent).toContain(
-    "2 with no entry, $4,500.00 planned: Salary, Side work. Unknown is not treated as $0.00.",
-  );
+  expect(income.textContent).toContain("2 with no entry, $4,500.00 planned: Salary, Side work.");
   expect(within(income).getByRole("button", { name: "Record $500.00" })).toBeDefined();
   ended.unmount();
   // A month that has not started is not overdue either.

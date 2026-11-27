@@ -969,16 +969,12 @@ it("says waiting items are hidden by the search or the proposals filter instead 
   fireEvent.change(screen.getByRole("searchbox", { name: "Search the inbox" }), {
     target: { value: "Property" },
   });
-  expect(
-    await screen.findByText(/1 still waiting outside this search, so this is not inbox zero yet/),
-  ).toBeDefined();
+  expect(await screen.findByText(/1 still waiting outside this search\./)).toBeDefined();
   expect(zeroCard()).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Show all 1 waiting" }));
   await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
   fireEvent.keyDown(document.body, { key: "p" });
-  expect(
-    await screen.findByText(/1 still waiting without a proposal, so this is not inbox zero yet/),
-  ).toBeDefined();
+  expect(await screen.findByText(/1 still waiting without a proposal\./)).toBeDefined();
   expect(zeroCard()).toBeNull();
 });
 

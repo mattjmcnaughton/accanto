@@ -794,10 +794,7 @@ export function AgentPanel(p: AgentPanelProps) {
       {settings && !settings.enabled && (
         <div className="agent-off card pad">
           <b>The assistant is off for {p.entity.name}</b>
-          <p>
-            Turn it on in Settings, where you can see which model provider it uses, what it sends,
-            and how long conversations are kept.
-          </p>
+          <p>Turn it on in Settings.</p>
           <button type="button" className="btn pri sm" onClick={p.openSettings}>
             Open Settings
           </button>
@@ -869,8 +866,8 @@ export function AgentPanel(p: AgentPanelProps) {
                 (confirming ? (
                   <div className="agent-apply-all card pad">
                     <p>
-                      Apply all {pending.length} changes to <b>{p.entity.name}</b>? They apply
-                      oldest first and stop at the first one that can't be applied.
+                      Apply all {pending.length} changes to <b>{p.entity.name}</b>, oldest first?
+                      Stops at the first that fails.
                     </p>
                     <div className="agent-actions">
                       <button
@@ -959,19 +956,16 @@ export function AgentPanel(p: AgentPanelProps) {
                   <>
                     <p className="note">
                       {settings.mode === "read_only"
-                        ? "Ask about your finances. Read only: I can read but not change anything."
+                        ? "Ask about your finances. Read only."
                         : settings.mode === "ask_first"
-                          ? "Ask about your finances, or ask me to categorize the inbox. Ask first: changes I draft wait for you as cards; nothing is recorded until you apply it."
-                          : "Ask about your finances, or ask me to categorize the inbox. Apply directly: I record changes myself; deletes that cannot be restored still wait for you."}
+                          ? "Ask about your finances or the inbox. Changes wait for you."
+                          : "Ask about your finances or the inbox. Changes apply directly."}
                     </p>
                     {/* Read only refuses the AGENT.md proposal, so the interview is hidden. */}
                     {settings.mode !== "read_only" && (
                       <div className="agent-interview card pad">
                         <b>Teach the assistant your conventions</b>
-                        <small className="note">
-                          I ask one question at a time, then propose AGENT.md for you to approve. An
-                          existing AGENT.md is updated, not replaced.
-                        </small>
+                        <small className="note">Updates AGENT.md after you approve.</small>
                         <button
                           type="button"
                           className="btn sm"

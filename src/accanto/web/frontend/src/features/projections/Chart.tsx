@@ -200,7 +200,7 @@ export function Chart({ data, dollars }: { data: Projection; dollars: Dollars })
             {s.name}
           </span>
         ))}
-        <span className="muted">Year · hover, tap or use arrow keys for values</span>
+        <span className="muted">Year</span>
       </figcaption>
     </figure>
   );

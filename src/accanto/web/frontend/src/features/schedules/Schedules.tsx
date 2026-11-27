@@ -71,7 +71,7 @@ export function Schedules(p: ScreenProps) {
     <section className="screen rt-screen" aria-label="Scheduled entries">
       <Head
         title="Scheduled entries"
-        sub="Entries that come back on a cadence, such as a paycheck and the 401(k) contribution it funds. On each date they wait in the Transactions inbox with their planned category; accepting them there records them."
+        tip="On each date, the entries wait in the Transactions inbox. Accepting them records them."
       >
         <button type="button" className="btn pri" disabled={p.busy} onClick={startNew}>
           <Icon name="plus" />
@@ -102,9 +102,7 @@ export function Schedules(p: ScreenProps) {
             </button>
           }
         >
-          A schedule puts the same entries in the Transactions inbox on every date of its cadence,
-          such as $1,200 income and a $1,200 investing contribution on the last weekday of each
-          month, ready to accept. Pause it, skip a date or end it at any time.
+          The same entries in the inbox on a cadence, such as a monthly paycheck.
         </Empty>
       )}
       {current.length > 0 && (
@@ -119,14 +117,6 @@ export function Schedules(p: ScreenProps) {
             {ended.map(row)}
           </ul>
         </details>
-      )}
-      {records.length > 0 && (
-        <p className="note">
-          Each date's entries arrive in the Transactions inbox about an hour after it starts in{" "}
-          {p.entity.name}'s time zone, once, even if Accanto was offline. Nothing counts until you
-          accept them. If YNAB brings in the same money, the inbox flags the pair so you keep one
-          and ignore the other.
-        </p>
       )}
     </section>
   );
@@ -204,8 +194,8 @@ function ScheduleRow({
         {failed.map((o) => (
           <div className="banner bad sc-failed" role="alert" key={o.scheduled_on}>
             <span>
-              Not in the inbox for {dayLabel(o.scheduled_on, today)}: {o.rejection?.message} Accanto
-              tries again every hour until you fix it or skip the date.
+              Not in the inbox for {dayLabel(o.scheduled_on, today)}: {o.rejection?.message}{" "}
+              Retrying hourly.
             </span>
             <button
               type="button"
@@ -503,10 +493,6 @@ function Editor(p: ScreenProps & { schedule?: Schedule; back: () => void; saved:
 
           <fieldset className="rt-group">
             <legend>Entries</legend>
-            <p className="note">
-              On each date these wait in the Transactions inbox with what you choose here as their
-              proposal. Accept them there, one by one, in a batch or in flow.
-            </p>
             <ol className="sc-edit-lines">
               {form.lines.map((l, i) => {
                 const error = showErrors ? lineError(l) : "";
@@ -625,7 +611,6 @@ function Editor(p: ScreenProps & { schedule?: Schedule; back: () => void; saved:
             }
             error={showErrors ? errors.weekdays : ""}
             summary={`${describeSchedule(cadenceOf(form))}, from ${dayLabel(form.starts_on, p.entity.today)}.`}
-            zone={p.entity.name}
           >
             {rollable && (
               <div className="rt-inline">
@@ -669,9 +654,7 @@ function Editor(p: ScreenProps & { schedule?: Schedule; back: () => void; saved:
             </div>
             {showErrors && errors.ends && <p className="err">{errors.ends}</p>}
             <p className="note">
-              {s
-                ? "Changes apply from the next date; items already in the inbox stay as they are."
-                : "Nothing arrives for dates before today: the first date is today or later."}
+              {s ? "Applies from the next date." : "Nothing arrives for past dates."}
             </p>
           </CadenceFields>
 
@@ -683,7 +666,7 @@ function Editor(p: ScreenProps & { schedule?: Schedule; back: () => void; saved:
                   checked={form.paused}
                   onChange={(event) => update({ paused: event.target.checked })}
                 />
-                Paused: nothing arrives until resumed. Dates while paused do not arrive later.
+                Paused (dates while paused never arrive)
               </label>
             )}
             <span className="spacer" />

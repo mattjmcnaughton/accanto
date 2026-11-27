@@ -347,7 +347,6 @@ function Unrecorded(props: AskProps) {
             {lines.length} {ended ? "with no entry" : "still to come"}
           </b>
           {total !== null && `, ${money(total)} planned`}: {lines.map((l) => l.name).join(", ")}.
-          {ended && " Unknown is not treated as $0.00."}
         </span>
         <button
           type="button"
@@ -390,7 +389,7 @@ function Ask({
         {grouped
           ? `${line.name}${line.planned == null ? "" : `, ${formatMoney(line.planned)} planned`}.`
           : ended
-            ? `${line.name} has no entry. Unknown is not treated as $0.00.`
+            ? `${line.name} has no entry.`
             : `${line.name} has no entry yet.`}
         {!answerable &&
           (section.category === "investing" || section.category === "giving") &&

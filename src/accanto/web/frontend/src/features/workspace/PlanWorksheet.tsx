@@ -59,7 +59,7 @@ const amountCol = (col: number) => col === 1 || col === 3;
 /** Section captions shown above the first group of each half of the worksheet. */
 const sections: Partial<Record<Group, [string, string?]>> = {
   income: ["Where the money comes from"],
-  fixed: ["Where it goes", "Totals and the band follow as you type"],
+  fixed: ["Where it goes"],
 };
 
 export function PlanWorksheet({
@@ -663,19 +663,18 @@ export function PlanWorksheet({
           {snapshot ? (
             <p className="banner">
               <span>
-                You are viewing {savedLabel(snapshot, timeZone).replace("Version", "version")}.
-                Saved versions cannot be changed.
-                {dirty || edit ? " Your unsaved draft is retained." : ""}
+                Viewing {savedLabel(snapshot, timeZone).replace("Version", "version")}, read-only.
+                {dirty || edit ? " Your unsaved draft is kept." : ""}
               </span>
             </p>
           ) : (
             <p className="note" id="save-state">
               <span className={dirty || edit ? "warn" : ""}>{savedState}.</span>{" "}
               {dirty || edit
-                ? "Save the draft (Ctrl+S) to keep these changes."
+                ? "Ctrl+S saves the draft."
                 : versions.length
-                  ? `${versions.length === 1 ? "One saved version" : `${versions.length} saved versions`}; a saved version never changes.`
-                  : "No saved versions yet. Save a version to compare a month against it."}
+                  ? `${versions.length === 1 ? "One saved version" : `${versions.length} saved versions`}.`
+                  : "No saved versions yet."}
             </p>
           )}
           <div className="tot">
@@ -706,14 +705,9 @@ export function PlanWorksheet({
                 }
               />
             </div>
-          ) : (
-            <p className="note">The allocation band returns once every amount is valid.</p>
-          )}
+          ) : null}
           {overallocated && (
-            <p className="err">
-              Allocations exceed funding by {money(-(stats.unassigned ?? 0))}. You can still save
-              this version; the overage stays visible.
-            </p>
+            <p className="err">Allocations exceed funding by {money(-(stats.unassigned ?? 0))}.</p>
           )}
         </div>
         {(notice || error) && (
@@ -1022,10 +1016,7 @@ export function PlanWorksheet({
               </div>
               <h2 className="h2">{selectedLine.name}</h2>
               {needsRevision(selectedLine) && (
-                <p className="banner">
-                  This reference is inactive or unavailable. Review this draft allocation
-                  explicitly.
-                </p>
+                <p className="banner">Inactive or unavailable reference. Review this line.</p>
               )}
               <fieldset disabled={readOnly || busy} className="detail-fields">
                 <div className="field">
@@ -1227,9 +1218,6 @@ export function PlanWorksheet({
       {modal === "help" && (
         <Dialog title="Keyboard shortcuts" onClose={() => setModal(null)}>
           <div className="dlg-b">
-            <p className="ink2">
-              These keys work while the worksheet has focus. Saved versions are read-only.
-            </p>
             <dl className="shortcut-list">
               {[
                 ["h j k l / arrows", "Move between cells"],
@@ -1256,9 +1244,6 @@ export function PlanWorksheet({
                 </div>
               ))}
             </dl>
-            <p className="note">
-              Invalid input stays visible. Save version is always an explicit action.
-            </p>
           </div>
         </Dialog>
       )}

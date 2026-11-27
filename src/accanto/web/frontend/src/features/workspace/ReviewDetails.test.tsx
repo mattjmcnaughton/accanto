@@ -150,9 +150,7 @@ it("keeps missing identities unknown and exposes unplanned contributors and alre
   expect(income.getByText("$25.00", { exact: false })).toBeDefined();
   expect(income.getByLabelText("Not complete")).toBeDefined();
   expect(income.getByText("0 of 1 line have an entry.")).toBeDefined();
-  expect(
-    income.getByText("Synthetic source has no entry. Unknown is not treated as $0.00."),
-  ).toBeDefined();
+  expect(income.getByText("Synthetic source has no entry.")).toBeDefined();
   // An explicit zero is known and complete.
   const fixed = within(section("Fixed costs"));
   expect(fixed.getByLabelText("Complete")).toBeDefined();
@@ -207,9 +205,7 @@ it("renders older contracts from missing-source ids and month entries without in
       }}
     />,
   );
-  expect(
-    screen.getByText("Synthetic source has no entry. Unknown is not treated as $0.00."),
-  ).toBeDefined();
+  expect(screen.getByText("Synthetic source has no entry.")).toBeDefined();
   fireEvent.click(within(section("Net income")).getByRole("button", { name: "1 line" }));
   expect(within(row("Synthetic source")).getAllByText("Unknown").length).toBeGreaterThan(0);
   // Older versions have no saving expectation: the section is unknown, never a computed zero.

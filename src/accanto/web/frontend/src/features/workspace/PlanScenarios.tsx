@@ -45,11 +45,6 @@ export function CopyPlan({
     >
       <fieldset disabled={screen.busy || plans.length === 0}>
         <div className="dlg-b">
-          <p className="ink2">
-            Choose the stored draft or saved version to copy. The copy has independent Income
-            sources and shared Fixed cost and destination references. Existing Reviews, receipts,
-            and payments stay unchanged. Copying does not move or reserve savings.
-          </p>
           <Field label="Copy from">
             <select
               required
@@ -80,10 +75,6 @@ export function CopyPlan({
               }}
             />
           </Field>
-          <p className="note">
-            New copy results use current calculation rules. Saved scenarios retain their original
-            results.
-          </p>
           {changed && (
             <div role="alert" className="banner">
               <span>The selected source changed. Review its current contents before copying.</span>

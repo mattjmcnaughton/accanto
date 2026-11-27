@@ -61,7 +61,7 @@ export function payoffLine(payoff: PayoffSummary): string {
     case "paid_off":
       return "Paid off.";
     default:
-      return "Add the interest rate and monthly payment to see a payoff schedule.";
+      return "Add a rate and payment for a payoff date.";
   }
 }
 const termsLine = (loan: LoanTerms) =>
@@ -313,7 +313,7 @@ export function Balances(p: ScreenProps) {
     >
       <Head
         title={<span id="balances-title">Loans</span>}
-        sub="The amount owed is a dated check-in you record from your lender. Recording a payment never changes it. Investment values are recorded in Investments."
+        tip="The amount owed is a dated check-in you record from your lender. Recording a payment never changes it."
       >
         {accounts.length > 0 && add}
       </Head>
@@ -331,7 +331,7 @@ export function Balances(p: ScreenProps) {
       {loans.kind === "loading" && <Loading what="loans" />}
       {loans.kind === "empty" && (
         <Empty title="No loans yet" action={add}>
-          Add a loan with what you owe today, then check in whenever your lender shows a new figure.
+          Add a loan with what you owe today.
         </Empty>
       )}
       {accounts.length > 0 && (
@@ -388,8 +388,7 @@ export function Balances(p: ScreenProps) {
                 </div>
                 {payments.kind === "ready" || payments.kind === "empty" ? (
                   <span className="cap">
-                    {count ? `${plural(count, "payment")} recorded.` : "No payments recorded."}{" "}
-                    Payments do not change the amount owed.
+                    {count ? `${plural(count, "payment")} recorded` : "No payments recorded"}
                   </span>
                 ) : null}
               </TrackedCard>
@@ -520,7 +519,7 @@ export function Balances(p: ScreenProps) {
                       </table>
                     </div>
                   )}
-                  <p className="note">Payments are recorded in Activity as fixed costs.</p>
+                  <p className="note">Record payments in Activity.</p>
                   {!loan.active && loan.draft_fixed_cost_lines.length > 0 && (
                     <p className="warn">
                       Review draft fixed-cost allocations for this archived loan.
@@ -528,7 +527,7 @@ export function Balances(p: ScreenProps) {
                   )}
                   {loan.active && (
                     <p id="archive-rule" className="note">
-                      Archive requires a latest observed amount owed of $0.00.
+                      Archiving needs $0.00 owed.
                     </p>
                   )}
                 </div>
@@ -596,10 +595,7 @@ export function Balances(p: ScreenProps) {
                             onChange={(payment) => set<LoanForm>({ payment })}
                           />
                         </div>
-                        <p className="note">
-                          With both, Accanto shows a payoff schedule and pays the loan down in
-                          Projections. Only fixed rates are supported.
-                        </p>
+                        <p className="note">Fixed rates only.</p>
                       </>
                     ) : (
                       <>
@@ -634,10 +630,7 @@ export function Balances(p: ScreenProps) {
                             onChange={(amount) => set<ObservationInput>({ amount })}
                           />
                         </div>
-                        <p className="note">
-                          Copy the figure your lender shows. Payments you recorded are kept
-                          separately.
-                        </p>
+                        <p className="note">Copy the figure your lender shows.</p>
                       </>
                     )}
                     {draft.error && (
@@ -726,10 +719,7 @@ function LoanTermsForm({
       <Field label="Opening date">
         <input type="date" value={opened} onChange={(event) => setOpened(event.target.value)} />
       </Field>
-      <p className="note">
-        Move it to when the loan began, such as a mortgage taken out years ago. The opening amount
-        stays; it cannot move past a later amount owed or payment.
-      </p>
+      <p className="note">When the loan began; no later than its next record.</p>
       <div className="two">
         <Field label="Fixed interest rate (% a year)">
           <input
@@ -781,8 +771,7 @@ function PayoffDetails({ entity, loan, refresh }: { entity: string; loan: Loan; 
     <section className="loan-schedule" aria-label={`Payoff schedule for ${loan.name}`}>
       <h3>Payoff schedule</h3>
       <p className="note">
-        From {formatMoney(payoff.balance)} owed on {fmtDate(payoff.as_of)}, at a fixed rate with a
-        level monthly payment. Illustrative: it is not recorded activity.
+        From {formatMoney(payoff.balance)} owed on {fmtDate(payoff.as_of)}.
       </p>
       {payoff.status === "scheduled" ? (
         <dl>

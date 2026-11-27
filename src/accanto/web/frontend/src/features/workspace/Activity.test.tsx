@@ -128,7 +128,7 @@ it("shows named investment and giving destinations in shared Activity", async ()
   expect(await screen.findByText("Example recipient")).toBeDefined();
   expect(screen.getAllByText("Read only")).toHaveLength(2);
   fireEvent.click(screen.getByRole("gridcell", { name: /Example recipient/ }));
-  expect(screen.getByText("Change its tags here. Correct anything else in Giving.")).toBeDefined();
+  expect(screen.getByText("Edit the rest in Giving.")).toBeDefined();
   expect(screen.queryByRole("button", { name: /Save/ })).toBeNull();
 });
 it("shows both the destination and savings origin for funded outflows", async () => {
@@ -229,7 +229,7 @@ it("keeps the viewed contributing-entry fingerprint through a background refresh
   const p = props();
   const view = render(<ActivityScreen {...p} />);
   fireEvent.click(await screen.findByRole("button", { name: "Enter known total" }));
-  expect(screen.getByText(/1 contributing entry was captured for this total\./)).toBeDefined();
+  expect(screen.getByText(/1 contributing entry captured\./)).toBeDefined();
   refreshed = true;
   view.rerender(<ActivityScreen {...p} refresh={1} />);
   await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));

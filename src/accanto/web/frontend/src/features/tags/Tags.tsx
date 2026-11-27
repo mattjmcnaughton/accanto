@@ -121,10 +121,7 @@ export function TagsDialog({
   return (
     <Dialog title="Manage tags" onClose={onClose} className="tags-dlg">
       <div className="dlg-b">
-        <p className="note">
-          Tags label entries in any category, such as a trip or a person. An entry can carry
-          several, so tagged amounts overlap and are not shares of a category total.
-        </p>
+        <p className="note">An entry can carry several tags, so tagged amounts overlap.</p>
         <form
           className="tag-new"
           onSubmit={(e) => {

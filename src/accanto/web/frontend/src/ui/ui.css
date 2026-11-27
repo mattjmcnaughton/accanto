@@ -152,6 +152,13 @@ a {
   justify-content: space-between;
   gap: 12px;
 }
+.head-title {
+  display: flex;
+  align-items: center;
+}
+.head-title > .h2 {
+  margin-bottom: 0;
+}
 .head-actions {
   display: flex;
   flex-wrap: wrap;
@@ -160,6 +167,58 @@ a {
 .note {
   font-size: 13px;
   color: var(--ink3);
+}
+/* A short explanation behind an "i": hover, focus or tap shows it. */
+.tip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+.tip-btn {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink3);
+  font: italic 600 11px / 1 Georgia, serif;
+  cursor: help;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.tip-btn:hover,
+.tip-btn:focus-visible {
+  color: var(--ink);
+  border-color: var(--ink3);
+}
+.tip-pop {
+  display: none;
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: -8px;
+  width: max-content;
+  max-width: min(300px, 80vw);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--pop);
+  color: var(--ink2);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  text-wrap: pretty;
+}
+.tip:hover .tip-pop,
+.tip-btn:focus-visible + .tip-pop,
+.tip.open .tip-pop {
+  display: block;
 }
 
 /* Controls */

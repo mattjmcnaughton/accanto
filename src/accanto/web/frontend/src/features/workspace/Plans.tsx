@@ -10,7 +10,7 @@ import { routines } from "../../lib/routines";
 import { savings } from "../../lib/savings";
 import { spendingSubcategories } from "../../lib/spendingSubcategories";
 import { parseTimestamp } from "../../lib/timestamp";
-import { Band, Dialog, Empty, Icon, Skeleton } from "../../ui";
+import { Band, Dialog, Empty, Icon, Skeleton, Tip } from "../../ui";
 import { SubcategoriesDialog } from "../tags/Subcategories";
 import { Home } from "./Home";
 import { CopyPlan } from "./PlanScenarios";
@@ -406,11 +406,13 @@ export function Plans(
         <div className="screen" id="plans-index">
           <div className="head">
             <div>
-              <h1 className="h1">Plans</h1>
-              <p className="sub">
-                A Plan gives every dollar of a month a job. Save a version when you want to compare
-                a month against it.
-              </p>
+              <div className="head-title">
+                <h1 className="h1">Plans</h1>
+                <Tip label="About Plans">
+                  A Plan gives every dollar of a month a job. Save a version to compare a month
+                  against it.
+                </Tip>
+              </div>
             </div>
             <div className="head-actions">
               <button
@@ -488,9 +490,6 @@ export function Plans(
                       Enter a Plan name.
                     </p>
                   )}
-                  <small>
-                    The Plan starts with one Net income line; add the rest in its worksheet.
-                  </small>
                 </div>
                 <div className="actions">
                   <button type="submit" id="create-plan" className="btn pri">
@@ -602,9 +601,7 @@ export function Plans(
                             </p>
                           ))
                         ) : (
-                          <p className="muted">
-                            No saved versions. Open the Plan and choose Save version.
-                          </p>
+                          <p className="muted">No saved versions.</p>
                         )}
                       </div>
                     )}
@@ -636,8 +633,7 @@ export function Plans(
                     </button>
                   }
                 >
-                  Start with what comes in each month, then assign it to fixed costs, guilt-free
-                  spending, saving, investing and giving.
+                  Give each month&apos;s income a job.
                 </Empty>
               )
             ))}

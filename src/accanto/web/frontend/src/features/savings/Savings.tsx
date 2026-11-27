@@ -1072,10 +1072,7 @@ export function Savings(p: ScreenProps) {
             />
           </Field>
         </div>
-        <Field
-          label="Note (optional)"
-          hint="Moving saved money is not income, spending or new saving."
-        >
+        <Field label="Note (optional)">
           <input
             maxLength={2000}
             value={draft.note}
@@ -1239,10 +1236,10 @@ export function Savings(p: ScreenProps) {
     >
       <Head
         title="Savings"
-        sub={
+        tip={
           active.length
             ? "Every saved dollar sits in a goal or in its account's unallocated money."
-            : "Track what you have set aside, and what each dollar is for."
+            : undefined
         }
       >
         {accounts.length > 0 && (
@@ -1278,8 +1275,7 @@ export function Savings(p: ScreenProps) {
             </button>
           }
         >
-          Add an account with what it holds today, then split it into goals such as an emergency
-          fund or a trip.
+          Add an account, then split it into goals.
         </Empty>
       )}
       {active.map(accountSection)}
@@ -1353,7 +1349,7 @@ export function Savings(p: ScreenProps) {
                   {moveRows.length === 0 && (
                     <tr>
                       <td colSpan={7} className="muted">
-                        No moves yet. Use Move saved money to reassign or transfer savings.
+                        No moves yet.
                       </td>
                     </tr>
                   )}
@@ -1639,9 +1635,7 @@ function NewGoal({ draft, onChange }: { draft: NewGoalEdit; onChange: (draft: Dr
         onKind={(goalKind) => set({ goalKind })}
         onTarget={(target) => set({ target })}
       />
-      <p className="note">
-        A new goal starts at $0.00. Move money into it from Unallocated once it is saved.
-      </p>
+      <p className="note">Starts at $0.00. Fund it from Unallocated.</p>
     </>
   );
 }
@@ -1688,9 +1682,7 @@ function NewAccount({
           />
         </Field>
       </div>
-      <p className="note">
-        An opening amount is not new saving. What no goal holds starts as unallocated money.
-      </p>
+      <p className="note">What no goal holds is unallocated.</p>
       {draft.goals.map((goal, index) => (
         <fieldset key={goal.key}>
           <legend>Opening goal {index + 1}</legend>

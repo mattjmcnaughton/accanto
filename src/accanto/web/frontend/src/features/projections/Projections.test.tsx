@@ -43,6 +43,10 @@ it("reads today's dollars by default and remembers future dollars", async () => 
   const fetch = mock();
   render(<Projections {...props()} />);
   expect(await screen.findByText("$141,639.73")).toBeTruthy();
+  // The dollars explainer starts collapsed; its example uses the Entity's 3% over 20 years.
+  const explainer = screen.getByText(/Explainer: today's vs future dollars/).closest("details");
+  expect(explainer?.open).toBe(false);
+  expect(explainer?.textContent).toContain("$100,000.00 in 20 years ≈ $55,367.58 today");
   fireEvent.click(screen.getByRole("button", { name: "Future dollars" }));
   // The 5-year net worth in nominal dollars, before inflation.
   expect(await screen.findByText("$164,199.27")).toBeTruthy();

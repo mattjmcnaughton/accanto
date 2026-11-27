@@ -84,10 +84,7 @@ export function Routines(
   const startNew = () => p.guard() && setView({ kind: "edit" });
   return (
     <section className="screen rt-screen" aria-label="Routines">
-      <Head
-        title="Routines"
-        sub="Checklists you tick yourself. A step only links to where the work happens; recorded activity never ticks one."
-      >
+      <Head title="Routines" tip="You tick steps yourself. Recording activity never ticks one.">
         <button type="button" className="btn pri" disabled={p.busy} onClick={startNew}>
           <Icon name="plus" />
           New routine
@@ -117,8 +114,7 @@ export function Routines(
             </button>
           }
         >
-          A routine is a checklist on a schedule, such as a Saturday money check: pay the card,
-          process transactions, buy the index fund. Home shows it when it is due.
+          A checklist on a schedule, such as a Saturday money check.
         </Empty>
       )}
       {active.length > 0 && (
@@ -416,9 +412,7 @@ function Run(
         </div>
         {occ?.state === "missed" && (
           <p className="banner">
-            <span>
-              This occurrence was missed. You can still finish it; it is recorded as completed late.
-            </span>
+            <span>Missed. Finishing it now records it as late.</span>
           </p>
         )}
         {occ?.skipped && (
@@ -551,9 +545,6 @@ function Run(
           </div>
         )}
       </div>
-      <p className="note">
-        Ticking a step records nothing financial. Use the links to do the work, then tick it here.
-      </p>
     </section>
   );
 }
@@ -824,14 +815,10 @@ function Editor(p: ScreenProps & { routine?: Routine; back: () => void; saved: (
             change={update}
             error={showErrors ? errors.weekdays : ""}
             summary={`${describeCadence(cadenceOf(form))}, from ${dayLabel(form.starts_on, p.entity.today)}.`}
-            zone={p.entity.name}
           />
 
           <fieldset className="rt-group">
             <legend>Steps</legend>
-            <p className="note">
-              You tick each step yourself. A link only opens a screen or a website to do it.
-            </p>
             <ol className="rt-edit-steps">
               {form.steps.map((s, i) => {
                 const error = showErrors ? stepError(s) : "";
@@ -942,11 +929,6 @@ function Editor(p: ScreenProps & { routine?: Routine; back: () => void; saved: (
               <Icon name="plus" />
               Add step
             </button>
-            {r && (
-              <p className="note">
-                Renaming or removing a step leaves past occurrences as they were ticked.
-              </p>
-            )}
           </fieldset>
 
           <div className="rt-editor-foot">
@@ -957,7 +939,7 @@ function Editor(p: ScreenProps & { routine?: Routine; back: () => void; saved: (
                   checked={!form.active}
                   onChange={(event) => update({ active: !event.target.checked })}
                 />
-                Archive: hide from Home and stop scheduling. History stays.
+                Archive (keeps history)
               </label>
             )}
             <span className="spacer" />
@@ -982,8 +964,6 @@ export function CadenceFields(p: {
   change: (next: { cadence?: Cadence; monthly?: "day" | "weekday"; starts_on?: IsoDate }) => void;
   error: string;
   summary: string;
-  /** The Entity's name, whose time zone dates follow. */
-  zone: string;
   children?: ReactNode;
 }) {
   const c = p.cadence;
@@ -1136,10 +1116,7 @@ export function CadenceFields(p: {
       </div>
       {p.children}
       <p className="note rt-summary">
-        {(c.frequency !== "weekly" || c.weekdays.length > 0) && p.summary} Dates follow {p.zone}'s
-        time zone.
-        {c.frequency !== "weekly" &&
-          " Days run to the 28th so every month has one; choose “last day” for month ends."}
+        {(c.frequency !== "weekly" || c.weekdays.length > 0) && p.summary}
       </p>
     </fieldset>
   );

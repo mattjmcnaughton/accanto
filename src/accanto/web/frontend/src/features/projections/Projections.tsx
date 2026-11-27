@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fmtDate, formatMoney, monthName } from "../../lib/format";
+import { fmtDate, formatMoney, money, monthName } from "../../lib/format";
 import {
   type Dollars,
   type FireAssumptions,
@@ -8,7 +8,7 @@ import {
   saveDollars,
   savedDollars,
 } from "../../lib/projections";
-import { Empty, Field, Head } from "../../ui";
+import { Empty, Field, Head, Tip } from "../../ui";
 import { LoadFailure, Loading, MoneyField, dash, validMoney } from "../destinations/records";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 import { Chart } from "./Chart";
@@ -76,12 +76,13 @@ function FireForm({
         });
       }}
     >
-      <h2 className="h2">FIRE assumptions</h2>
-      <p className="note">
-        The FIRE target is annual spending ÷ the withdrawal rate, compared with projected
-        investments, not cash savings. Spending is in today&apos;s dollars and rises with inflation,
-        except planned fixed costs marked fixed in dollars.
-      </p>
+      <div className="head-title">
+        <h2 className="h2">FIRE assumptions</h2>
+        <Tip label="About the FIRE target">
+          Target = annual spending ÷ withdrawal rate, compared with projected investments, not cash
+          savings.
+        </Tip>
+      </div>
       <div className="proj-fire-fields">
         <Field label="Withdrawal rate (%, often 4)">
           <input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} />
@@ -103,15 +104,13 @@ function FireForm({
       {planned ? (
         <FixedInDollars planned={planned} selected={steady} onChange={setSteady} />
       ) : (
-        <p className="note">
-          Save a Plan version to choose fixed costs that do not rise with inflation.
-        </p>
+        <p className="note">Save a Plan version to hold fixed costs level.</p>
       )}
       {planned && (
         <p className="note proj-planned-ref">
-          For reference: {monthName(planned.month)}&apos;s planned fixed costs are{" "}
+          {monthName(planned.month)}&apos;s planned fixed costs:{" "}
           <b>{formatMoney(planned.annual_total)} a year</b> ({formatMoney(planned.monthly_total)} a
-          month, {planned.plan_name} version {planned.version_number}).
+          month, {planned.plan_name} v{planned.version_number})
         </p>
       )}
       {error && (
@@ -125,6 +124,44 @@ function FireForm({
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * How to read today's and future dollars, collapsed by default. The example uses the Entity's
+ * inflation and the chosen horizon, so it matches the numbers on screen.
+ */
+function Explainer({ inflation, years }: { inflation: string; years: number }) {
+  const rate = Number(inflation);
+  const future = 10_000_000;
+  const today = Math.round(future / (1 + rate / 100) ** years);
+  return (
+    <details className="card pad proj-explainer">
+      <summary>Explainer: today&apos;s vs future dollars</summary>
+      <dl>
+        <dt>Future dollars</dt>
+        <dd>What a balance will actually read on that date.</dd>
+        <dt>Today&apos;s dollars</dt>
+        <dd>
+          The same amount with {rate}% a year inflation taken out, so it buys what that much buys
+          now. {money(future)} in {years} years ≈ {money(today)} today.
+        </dd>
+        <dt>What the toggle changes</dt>
+        <dd>
+          Projected net worth, the chart, the milestones, the &ldquo;In … yr&rdquo; columns and the
+          FIRE target. Today&apos;s figures, latest values, contributions and the FIRE date stay the
+          same.
+        </dd>
+        <dt>Fixed costs held level</dt>
+        <dd>
+          Annual spending is entered in today&apos;s dollars and grows with inflation, except fixed
+          costs marked as not rising, such as a fixed-rate mortgage. Those stay the same dollar
+          amount, so they shrink in today&apos;s dollars and lower the FIRE target.
+        </dd>
+        <dt>Contributions</dt>
+        <dd>Stay at the amount entered, so they shrink in today&apos;s dollars.</dd>
+      </dl>
+    </details>
   );
 }
 
@@ -154,11 +191,7 @@ export function Projections(
     <div className="card pad proj-interview">
       <div>
         <b>Work out your FIRE number</b>
-        <p className="note">
-          The assistant starts from your Plan&apos;s fixed costs and asks four short questions: are
-          they right, what will change, which won&apos;t grow with inflation, and what you want to
-          spend each month. Then it explains the number and proposes saving it.
-        </p>
+        <p className="note">Four short questions with the assistant.</p>
       </div>
       <button type="button" className="btn sm" disabled={p.busy} onClick={p.interview}>
         Interview me for my FIRE number
@@ -173,7 +206,7 @@ export function Projections(
     <section aria-labelledby="projections-title" className="screen proj">
       <Head
         title={<span id="projections-title">Projections</span>}
-        sub="Illustrative figures from each investment's expected return and contribution, with loans paid down at their fixed rate and monthly payment. They are not recorded activity or observed values, and they ignore taxes, fees, and market risk."
+        tip="Illustrative: from each investment's expected return and contribution, with loans paid down at their terms. Ignores taxes, fees and market risk."
       >
         {/* biome-ignore lint/a11y/useSemanticElements: The kit\'s segmented control is a button group. */}
         <div className="seg-control" role="group" aria-label="Dollars">
@@ -205,13 +238,13 @@ export function Projections(
             )
           }
         >
-          Add an investment with an observed value, then set its expected annual return and
-          contribution.
+          Add an investment with an observed value.
         </Empty>
       )}
       {state.kind === "empty" && interview}
       {data && (
         <>
+          <Explainer inflation={data.inflation_percent} years={years} />
           <div className="card pad stack">
             <div className="proj-fire-head">
               <div>
@@ -249,8 +282,7 @@ export function Projections(
             {missing.length > 0 ? (
               <p className="proj-warn" role="note">
                 {missing.map((m) => m.name).join(", ")} {missing.length === 1 ? "has" : "have"} no
-                observed value, so net worth and FIRE are unknown. Record a value in Investments to
-                project them.
+                observed value, so net worth and FIRE are unknown.
               </p>
             ) : (
               <Chart data={data} dollars={dollars} />
@@ -347,15 +379,13 @@ export function Projections(
           </div>
           {data.loans.length > 0 && (
             <div className="card pad stack">
-              <h2 className="h2">By loan</h2>
-              <p className="note">
-                A loan with a fixed rate and a monthly payment that covers its interest is paid down
-                from today, starting at its latest amount owed; other loans stay at that amount. A
-                loan last observed months ago pays off later here than in its Loans schedule, which
-                starts at the observation; record a new amount owed to align them. Payments are not
-                taken from investment contributions, and a repaid loan&apos;s payment is not
-                invested.
-              </p>
+              <div className="head-title">
+                <h2 className="h2">By loan</h2>
+                <Tip label="How loans are projected">
+                  A fixed-rate loan whose payment covers its interest pays down from its latest
+                  amount owed; other loans stay flat. Payments are not taken from contributions.
+                </Tip>
+              </div>
               <table className="proj-table">
                 <thead>
                   <tr>
