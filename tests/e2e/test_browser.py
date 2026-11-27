@@ -829,6 +829,20 @@ def test_signed_in_workspace(tmp_path):
             "get", "text", "section.step[aria-label='Guilt-free spending']"
         )
         assert "Adjustments, already included (1)" in spending and "$40.00" in spending
+        # An entry under a section opens Activity's dialog; saving it refreshes the
+        # Review in place, with the section still open and its total unchanged.
+        browser(
+            "click", "section.step[aria-label='Guilt-free spending'] .ar-entry-open"
+        )
+        until("!!document.querySelector('dialog[open] #activity-record')")
+        browser("find", "label", "What was it?", "fill", "Synthetic review edit")
+        save_activity()
+        until(
+            "document.querySelector(\"section.step[aria-label='Guilt-free spending']\")"
+            "?.textContent.includes('Synthetic review edit')"
+        )
+        expect_cell("#review-step-spending", "Hide lines")
+        expect_section("Guilt-free spending", "$1,275.00")
         browser("reload")
         signed_in()
         go("Review")

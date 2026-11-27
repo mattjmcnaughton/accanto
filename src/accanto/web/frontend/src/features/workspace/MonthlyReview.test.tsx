@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PlanRevision } from "../../lib/monthly";
 import { MonthlyReview } from "./MonthlyReview";
@@ -193,7 +194,7 @@ it("edits an incomplete Review with notes and annotation", async () => {
   );
 });
 it("keeps attempted Review input across a conflict reload", async () => {
-  let current = review;
+  let current: object = review;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
     String(path).endsWith("/plans")
       ? json(plans)
@@ -211,15 +212,18 @@ it("keeps attempted Review input across a conflict reload", async () => {
   const note = (await screen.findByLabelText("Review note")) as HTMLTextAreaElement;
   fireEvent.change(note, { target: { value: "Unsaved synthetic note" } });
   expect(note.value).toBe("Unsaved synthetic note");
-  current = { ...review, review: { ...review.review, revision: 2, note: "Other writer" } };
+  current = {
+    ...review,
+    review: { ...review.review, revision: 2, note: "Other writer" },
+    actual: { ...review.actual, spending_recorded: "12.34" },
+  };
   rerender(<MonthlyReview {...p} refresh={1} />);
-  // The reload remounts the note; check the one on screen, not the detached original.
-  const reloaded = await waitFor(() => {
-    const live = screen.getByLabelText("Review note") as HTMLTextAreaElement;
-    expect(live).not.toBe(note);
-    return live;
-  });
-  expect(reloaded.value).toBe("Unsaved synthetic note");
+  // The reloaded Review has landed once its new spending total shows. The reload may keep or
+  // replace the textarea, so read whichever note is on screen then, not the original element.
+  await screen.findByText("$12.34");
+  expect((screen.getByLabelText("Review note") as HTMLTextAreaElement).value).toBe(
+    "Unsaved synthetic note",
+  );
 });
 it("requires explicit choice without a preceding Review and blocks creation after a failed load", async () => {
   const fetch = vi
@@ -433,4 +437,124 @@ it("lists saved versions newest first when starting and editing a Review", async
     "v2",
     "v1",
   ]);
+});
+const groceries = {
+  uuid: "entry-1",
+  financial_date: "2026-11-03",
+  category: "spending" as const,
+  amount: "42.50",
+  source_id: null,
+  fixed_cost_id: null,
+  fixed_cost_name: null,
+  debt_account_id: null,
+  note: "Synthetic groceries",
+  revision: 3,
+  is_adjustment: false,
+  funding_origin: "income" as const,
+  saving_goal_id: null,
+  funding_goal_id: null,
+  tag_ids: [],
+};
+/** November's Review with one guilt-free entry, whose recorded total follows `spent`. */
+function mockMonth(spent: () => string) {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    const url = String(path);
+    if (url.endsWith("/plans")) return json(plans);
+    if (url.endsWith("/activity")) return json([{ ...groceries, amount: spent() }]);
+    if (url.endsWith("2026-11-01"))
+      return json({
+        ...review,
+        review: { ...review.review, month: "2026-11-01" },
+        entries: [{ ...groceries, amount: spent() }],
+        actual: { ...review.actual, spending_recorded: spent() },
+        spending_difference: "0.00",
+      });
+    if (url.includes("/reviews/")) return absent();
+    return json([]);
+  });
+}
+/** The shell's part: a confirmed write runs its callback, then every screen reads again. */
+function Shell({ p }: { p: ScreenProps }) {
+  const [refresh, setRefresh] = useState(0);
+  return (
+    <MonthlyReview
+      {...p}
+      refresh={refresh}
+      save={(spec, confirmed) => {
+        p.save(spec, confirmed);
+        confirmed(undefined as never);
+        setRefresh((x) => x + 1);
+      }}
+    />
+  );
+}
+it("opens an entry from a section's lines in Activity's dialog and keeps the Review open after saving it", async () => {
+  let spent = "42.50";
+  mockMonth(() => spent);
+  const p = props();
+  vi.mocked(p.save).mockImplementation(() => {
+    spent = "50.00";
+  });
+  render(<Shell p={p} />);
+  const spending = await screen.findByRole("region", { name: "Guilt-free spending" });
+  fireEvent.click(within(spending).getByRole("button", { name: "1 entry" }));
+  fireEvent.click(within(spending).getByRole("button", { name: /Synthetic groceries/ }));
+  const dialog = await screen.findByRole("dialog", { name: "Edit activity" });
+  const amount = within(dialog).getByLabelText("Amount (USD)") as HTMLInputElement;
+  expect(amount.value).toBe("42.50");
+  fireEvent.change(amount, { target: { value: "50.00" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
+  // The same edit Activity sends, checked against the revision the entry was read at.
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "PUT",
+      path: "/api/entities/entity/activity/entry-1",
+      body: expect.objectContaining({ amount: "50.00", expected_revision: 3 }),
+    }),
+    expect.any(Function),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // The refreshed total lands in the section that is still open, without a loading card.
+  await waitFor(() =>
+    expect(spending.querySelector(".amt-col")?.firstChild?.textContent).toBe("$50.00"),
+  );
+  expect(within(spending).getByRole("button", { name: "Hide lines" })).toBeDefined();
+  expect(screen.queryByLabelText("Loading the Review")).toBeNull();
+});
+it("keeps an opened entry's unsaved changes apart from the Review note", async () => {
+  mockMonth(() => "42.50");
+  const p = props();
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  render(<MonthlyReview {...p} />);
+  fireEvent.change(await screen.findByLabelText("Review note"), {
+    target: { value: "Unsaved synthetic note" },
+  });
+  const spending = screen.getByRole("region", { name: "Guilt-free spending" });
+  fireEvent.click(within(spending).getByRole("button", { name: "1 entry" }));
+  const open = () => {
+    fireEvent.click(within(spending).getByRole("button", { name: /Synthetic groceries/ }));
+    return screen.findByRole("dialog", { name: "Edit activity" });
+  };
+  // An unsaved note does not stop an entry opening, and the note stays unsaved.
+  let dialog = await open();
+  expect(confirm).not.toHaveBeenCalled();
+  expect(vi.mocked(p.dirty).mock.lastCall).toEqual([true]);
+  fireEvent.change(within(dialog).getByLabelText("Amount (USD)"), {
+    target: { value: "60.00" },
+  });
+  // Ctrl+S in the dialog saves the entry, not the Review.
+  fireEvent.keyDown(within(dialog).getByLabelText("Amount (USD)"), { key: "s", ctrlKey: true });
+  await waitFor(() => expect(p.save).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(p.save).mock.calls[0][0].path).toBe("/api/entities/entity/activity/entry-1");
+  // Leaving with unsaved entry changes asks first; declining keeps the dialog and its edit.
+  fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect((within(dialog).getByLabelText("Amount (USD)") as HTMLInputElement).value).toBe("60.00");
+  confirm.mockReturnValue(true);
+  fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // Discarding the entry's edit leaves the Review note's unsaved flag in place.
+  expect(vi.mocked(p.dirty).mock.lastCall).toEqual([true]);
+  dialog = await open();
+  expect((within(dialog).getByLabelText("Amount (USD)") as HTMLInputElement).value).toBe("42.50");
 });

@@ -343,6 +343,29 @@
 .ar .lines .ar-entry-row th {
   padding-left: 14px;
 }
+/* An entry under a section opens Activity's dialog; the whole label is the target. */
+.ar .lines .ar-entry-open {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.ar .lines .ar-entry-open:hover {
+  color: var(--ink);
+  text-decoration-style: solid;
+}
+@media (pointer: coarse) {
+  .ar .lines .ar-entry-open {
+    min-height: 44px;
+  }
+}
 .ar .lines .ar-list-head th {
   padding-top: 9px;
   color: var(--ink);
