@@ -18,8 +18,11 @@ docker compose up -d --wait postgres
 uv run alembic upgrade head
 ```
 
-An operator can provision an **already admitted and verified identity** in a
-trusted terminal. This command is not public registration or identity verification.
+Browser users need no operator step: an email in `OIDC_ALLOWED_EMAILS` gets its
+User and its own Entity ("Personal", in the browser's time zone) on its first
+sign-in. For recovery, or to script access before anyone signs in, an operator
+can still provision an **already admitted and verified identity** in a trusted
+terminal. This command is not public registration or identity verification.
 Use the actual issuer/subject of the admitted identity; it creates its first Entity
 and prints a secret API key once. Do not capture that output in logs.
 
@@ -29,9 +32,8 @@ uv run python -m accanto.bootstrap \
   --entity 'My finances' --time-zone America/New_York
 ```
 
-Omit `--entity` and `--time-zone` for someone who will only share another User's
-Entity: they sign in once, and the owner adds them by that email in Settings
-([Entity members](#entity-members)). The output includes the new `user_id`.
+Omitting `--entity` and `--time-zone` creates no Entity; that User still gets
+their own on their next browser sign-in. The output includes the new `user_id`.
 
 Store the returned key securely. Requests use `Authorization: Bearer <key>`;
 only SHA-256 hashes are persisted. Further keys are issued, listed and revoked
@@ -717,10 +719,15 @@ Idempotency-Key and exact payload. Clear financial workspace memory on explicit
 logout; do not persist browser credentials or financial state in localStorage.
 
 Authentication errors use `detail: {code, message}`: 401 for invalid/expired,
-ambiguous credentials or invalid login; 403 for CSRF failure, unadmitted identity,
-or `identity_setup_required`; 503 for unconfigured/unavailable sign-in. API
-responses are `no-store`. An unknown `(issuer, subject)` requires operator setup;
-a matching verified email never merges accounts.
+ambiguous credentials or invalid login; 403 for CSRF failure; 503 for
+unconfigured/unavailable sign-in. API responses are `no-store`.
+`GET /api/auth/login?tz=<IANA zone>` remembers the browser's zone for this
+sign-in. The callback redirects an identity that is not admitted (issuer differs,
+email unverified or not allowlisted) to `/?refused=not_invited` without a session.
+An admitted email with an unknown `(issuer, subject)` gets a new User; any User who
+owns no Entity gets one named "Personal" in that zone (UTC when missing or
+invalid), audited as `create_entity`. Entities shared with them do not count. A
+matching verified email never merges accounts.
 
 ## Create Entity
 

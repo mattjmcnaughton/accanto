@@ -30,8 +30,9 @@ it("keeps distinct UUIDs even when sources have the same name", () => {
 it("shows signed-out state rather than a financial empty workspace", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 401 }));
   render(<ProductionHome />);
-  expect((await screen.findByRole("link", { name: "Sign in" })).getAttribute("href")).toBe(
-    "/api/auth/login",
+  // The browser's time zone rides along for a first sign-in's own Entity.
+  expect((await screen.findByRole("link", { name: "Sign in" })).getAttribute("href")).toMatch(
+    /^\/api\/auth\/login(\?tz=[^&]+)?$/,
   );
 });
 it("clears the workspace before logout completes and ignores late reads", async () => {

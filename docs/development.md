@@ -186,9 +186,10 @@ Register the exact callback `${BROWSER_ORIGIN}/api/auth/callback`; enable the
 `openid email` scopes, authorization code, S256 PKCE and `client_secret_basic`.
 The provider must include verified email and nonce in its signed ID token. Only
 HTTPS endpoints are accepted, with HTTP loopback permitted for local test services.
-Discovery issuer must match configuration exactly. Provision the existing User's
-exact `(issuer, subject)` with the operator bootstrap; matching email never links
-an unknown identity to an existing User or Entity. No public registration exists.
+Discovery issuer must match configuration exactly. The first sign-in of an
+admitted email creates a User for its exact `(issuer, subject)` and its own
+Entity; matching email never links an unknown identity to an existing User or
+Entity. Only `OIDC_ALLOWED_EMAILS` admits anyone; there is no open registration.
 
 Apply migrations before starting the application. Do not roll back session audit
 history to a schema that requires an API key; use a compatible application rollback

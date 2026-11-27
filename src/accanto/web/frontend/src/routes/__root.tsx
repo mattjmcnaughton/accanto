@@ -60,7 +60,12 @@ export function ProductionHome({
   useTheme();
   const [session, setSession] = useState<BrowserSession | null>(null);
   const [state, setState] = useState("loading");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(() =>
+    // The sign-in callback sends a refused person back here with a reason.
+    new URLSearchParams(window.location.search).get("refused") === "not_invited"
+      ? "This email isn't invited yet. Ask the person who runs Accanto to add it, then sign in again."
+      : "",
+  );
   const [attempt, setAttempt] = useState(0);
   // The Entity the workspace is mounted for. A switch remounts it, which clears its tab memory.
   const [current, setCurrent] = useState<string | null>(null);
@@ -153,7 +158,7 @@ export function ProductionHome({
           <p className="sub">Your financial companion for planning a rich life.</p>
           {state === "loading" && <output className="note">Checking sign-in…</output>}
           {state === "signedout" && (
-            <a className="btn pri" href="/api/auth/login">
+            <a className="btn pri" href={signInHref()}>
               Sign in
             </a>
           )}
@@ -175,4 +180,10 @@ export function ProductionHome({
       <footer className="signin-foot">Plan thoughtfully. Live richly.</footer>
     </div>
   );
+}
+
+/** A first sign-in creates the person's own Entity in this browser's time zone. */
+function signInHref() {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return zone ? `/api/auth/login?tz=${encodeURIComponent(zone)}` : "/api/auth/login";
 }

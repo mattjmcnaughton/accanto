@@ -1,8 +1,8 @@
 """Operator-only bootstrap of an already admitted identity; not public registration.
 
 Run in a trusted terminal. The key is printed once and must not be sent to logs.
-Omit --entity for someone who will only share another User's Entity (TDD 19):
-they sign in once, and the Entity's owner adds them by that sign-in email.
+Browser users do not need it: an allowlisted email's first sign-in creates its
+User and its own Entity. Without --entity, that User gets one on next sign-in.
 """
 
 import argparse

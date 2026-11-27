@@ -15,7 +15,8 @@ to the Entity's finances. See the [constitution](../../CONSTITUTION.md) §2
 and [TDD 04](04-multiple-entities.md).
 
 Excluded: invitations sent by email or link, and an accept step; self-service
-sign-up (an operator still allows the email and provisions the User); roles
+sign-up beyond the allowlist (an operator still adds the email; since the
+first-sign-in change, that sign-in creates the User and its own Entity); roles
 narrower than full access; transferring ownership; showing who made a change
 anywhere in the UI (the audit history records it).
 

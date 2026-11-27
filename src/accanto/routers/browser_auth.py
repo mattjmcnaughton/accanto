@@ -15,10 +15,13 @@ from accanto.services.browser_auth import (
     begin_login,
     consume_login,
     csrf_token,
+    sign_in_time_zone,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["browser authentication"])
 LOGIN_COOKIE = "accanto_login"
+# The browser's time zone, for an Entity created at this sign-in. Not a secret.
+ZONE_COOKIE = "accanto_login_zone"
 
 
 def no_store(response):
@@ -52,6 +55,9 @@ async def login(request: Request, session: Session):
         ) from None
     response = no_store(RedirectResponse(url, status_code=302))
     set_cookie(response, LOGIN_COOKIE, binding, 600)
+    set_cookie(
+        response, ZONE_COOKIE, sign_in_time_zone(request.query_params.get("tz")), 600
+    )
     return response
 
 
@@ -79,11 +85,25 @@ async def callback(request: Request, session: Session):
         raise RejectionError(
             "invalid_identity", "Sign-in could not be verified. Start again.", 401
         ) from None
-    issued = await admit_identity(session, claims, request.app.state.auth_settings)
+    try:
+        issued = await admit_identity(
+            session,
+            claims,
+            request.app.state.auth_settings,
+            sign_in_time_zone(request.cookies.get(ZONE_COOKIE)),
+        )
+    except RejectionError as error:
+        # A person, not a script, lands here: show the sign-in page with a reason.
+        if error.code != "identity_not_admitted":
+            raise
+        return no_store(RedirectResponse("/?refused=not_invited", status_code=303))
     response = no_store(RedirectResponse("/", status_code=303))
     set_cookie(response, SESSION_COOKIE, issued["token"], 12 * 60 * 60)
     response.delete_cookie(
         LOGIN_COOKIE, secure=True, httponly=True, samesite="lax", path="/"
+    )
+    response.delete_cookie(
+        ZONE_COOKIE, secure=True, httponly=True, samesite="lax", path="/"
     )
     return response
 
