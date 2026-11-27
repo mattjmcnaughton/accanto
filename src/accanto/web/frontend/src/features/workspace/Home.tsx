@@ -11,7 +11,7 @@ import {
   monthName,
   plural,
 } from "../../lib/format";
-import type { ComparisonGroup, ReviewResult } from "../../lib/monthly";
+import type { ComparisonGroup, PlanRevision, ReviewResult } from "../../lib/monthly";
 import type { Projection } from "../../lib/projections";
 import type { Routine } from "../../lib/routines";
 import type { SavingsAccount } from "../../lib/savings";
@@ -19,6 +19,7 @@ import { Band, type BandPart, Empty, tint } from "../../ui";
 import { RoutinesCard } from "../routines/RoutinesCard";
 import { share } from "./PlanBreakdown";
 import type { Screen } from "./Workspace";
+import { storedCents, storedGroups } from "./planWorksheetModel";
 import { LoadMessage } from "./shared";
 
 /** A Plan Home asks about: overallocated, or edited in this tab and not saved. */
@@ -39,13 +40,14 @@ type Item = {
   quiet?: boolean;
 };
 type Category = keyof NonNullable<ReviewResult["comparison"]>;
-const OUT: { key: Category; kind: string; name: string }[] = [
-  { key: "fixed_cost", kind: "fixed", name: "Fixed costs" },
-  { key: "spending", kind: "free", name: "Guilt-free spending" },
-  { key: "saving", kind: "save", name: "Saving" },
-  { key: "investing", kind: "invest", name: "Investing" },
-  { key: "giving", kind: "give", name: "Giving" },
+const OUT: { key: Category; group: Allocation; kind: string; name: string }[] = [
+  { key: "fixed_cost", group: "fixed", kind: "fixed", name: "Fixed costs" },
+  { key: "spending", group: "spending", kind: "free", name: "Guilt-free spending" },
+  { key: "saving", group: "saving", kind: "save", name: "Saving" },
+  { key: "investing", group: "investing", kind: "invest", name: "Investing" },
+  { key: "giving", group: "giving", kind: "give", name: "Giving" },
 ];
+type Allocation = "fixed" | "spending" | "saving" | "investing" | "giving";
 const cents = (value: string | null | undefined) =>
   value === null || value === undefined ? null : decimalToCents(value);
 
@@ -79,6 +81,7 @@ export function Home({
   attention,
   recent,
   review,
+  split,
   accounts,
   investments,
   loans,
@@ -100,6 +103,8 @@ export function Home({
   /** The most recently updated Plans, to return to a draft quickly. */
   recent: { id: string; name: string; detail: string }[];
   review: LoadState<ReviewResult>;
+  /** The latest saved version of the Plan Home shows, for the Plan split. */
+  split?: PlanRevision;
   accounts: LoadState<SavingsAccount[]>;
   investments: LoadState<Destination[]>;
   loans: LoadState<Loan[]>;
@@ -223,15 +228,9 @@ export function Home({
           <LoadMessage state={review} retry={retry} />
         </div>
       )}
-      {(comparison || worth.kind !== "empty") && (
+      {(split || worth.kind !== "empty") && (
         <div className="grid2 glance">
-          {result && comparison && (
-            <PlanSplit
-              comparison={comparison}
-              version={result.version}
-              funding={result.expected?.funding ?? comparison.income.planned}
-            />
-          )}
+          {split && <PlanSplit version={split} compared={result?.version} />}
           {worth.kind !== "empty" && <NetWorthCard worth={worth} retry={retry} />}
         </div>
       )}
@@ -470,19 +469,16 @@ function FixedLine({ fixed, difference }: { fixed: ComparisonGroup; difference: 
   );
 }
 
-/** The active Plan version's split of monthly funding, as percentages. */
-function PlanSplit({
-  comparison,
-  version,
-  funding,
-}: {
-  comparison: NonNullable<ReviewResult["comparison"]>;
-  version: ReviewResult["version"];
-  funding: string | null;
-}) {
-  const total = cents(funding);
-  const rows = OUT.map(({ key, kind, name }) => {
-    const planned = cents(comparison[key].planned);
+/**
+ * The latest saved Plan version's split of monthly funding, as percentages. It names the
+ * version the month's Review compares with when that is another one.
+ */
+function PlanSplit({ version, compared }: { version: PlanRevision; compared?: PlanRevision }) {
+  const funding = version.funding_total ?? null;
+  const total = storedCents(funding);
+  const amounts = storedGroups(version);
+  const rows = OUT.map(({ key, group, kind, name }) => {
+    const planned = amounts[group];
     return { key, kind, name, planned, share: share(planned, total) };
   });
   return (
@@ -490,7 +486,7 @@ function PlanSplit({
       <span className="cap">
         Plan split{" "}
         <span className="muted">
-          {version.name}, version {version.number}
+          {version.name}, latest version {version.number}
         </span>
       </span>
       <Band
@@ -514,7 +510,12 @@ function PlanSplit({
           </li>
         ))}
       </ul>
-      <p className="note">Of {formatMoney(funding)} monthly funding</p>
+      <p className="note">
+        Of {formatMoney(funding)} monthly funding
+        {compared && compared.uuid !== version.uuid
+          ? `. This month's Review compares with ${compared.name}, version ${compared.number}.`
+          : ""}
+      </p>
     </div>
   );
 }

@@ -194,6 +194,13 @@ export function Plans(
     plan.revisions[0]?.name ??
     "Unavailable Plan";
   const versionsOf = (plan: PlanGroup) => newestFirst(plan.revisions.filter((r) => r.saved));
+  // Home's Plan split shows the latest saved version of the Plan the month's Review links,
+  // or, without a Review, of the most recently edited Plan that has a saved version.
+  const reviewed = review.kind === "ready" ? review.data?.version?.uuid : undefined;
+  const splitPlan =
+    plans.find((plan) => plan.revisions.some((r) => r.uuid === reviewed)) ??
+    plans.find((plan) => versionsOf(plan).length > 0);
+  const splitVersion = splitPlan && versionsOf(splitPlan)[0];
   const focus = (selector: string) =>
     requestAnimationFrame(() => root.current?.querySelector<HTMLElement>(selector)?.focus());
   function open(plan: PlanGroup) {
@@ -366,6 +373,7 @@ export function Plans(
             detail: `${changed(opened[plan.plan_id]) ? "Unsaved changes in this tab" : "Saved draft"}, updated ${updated(plan)}`,
           }))}
           review={review}
+          split={splitVersion}
           accounts={accounts}
           investments={investments}
           loans={loans}
