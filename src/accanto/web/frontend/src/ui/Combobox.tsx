@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useId, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 
 export type ComboOption = { id: string; name: string; note?: string };
 /** A name for a new record, typed in a picker that does not have it yet. */
@@ -69,6 +69,36 @@ export function Combobox({
     ? [...shown, { id: CREATE, name: `Create “${typed}”`, note: `New ${create.noun}` }]
     : shown;
   const current = Math.min(at, rows.length - 1);
+  const box = useRef<HTMLInputElement>(null);
+  const editing = useRef(false);
+  editing.current = query !== null;
+  /** The first keystroke on a shown name starts a new search, wherever the caret is. */
+  function begin(text: string) {
+    setQuery(text);
+    setOpen(true);
+    setAt(0);
+  }
+  // While the box only shows the chosen name, typing replaces that name and deleting clears it.
+  // Selecting the name on focus is not enough: a second click, a tap on a phone, or choosing with
+  // Enter leaves the caret after the name, and the typed text would be appended to it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: begin only sets state.
+  useEffect(() => {
+    const input = box.current;
+    if (!input) return;
+    const listener = (e: InputEvent) => {
+      // Composition (IME) input cannot be cancelled; the select on focus covers it.
+      if (editing.current || e.isComposing || e.inputType === "insertCompositionText") return;
+      if (e.inputType.startsWith("insert") && e.data !== null) {
+        e.preventDefault();
+        begin(e.data);
+      } else if (e.inputType.startsWith("delete")) {
+        e.preventDefault();
+        begin("");
+      }
+    };
+    input.addEventListener("beforeinput", listener);
+    return () => input.removeEventListener("beforeinput", listener);
+  }, []);
   function close() {
     setOpen(false);
     setQuery(null);
@@ -110,6 +140,7 @@ export function Combobox({
   return (
     <span className="combo">
       <input
+        ref={box}
         id={id}
         name={name}
         role="combobox"
@@ -123,7 +154,10 @@ export function Combobox({
         maxLength={120}
         required={required && !value}
         disabled={disabled}
-        placeholder={selected ? undefined : placeholder}
+        // While searching, the chosen name stays visible as the hint.
+        placeholder={
+          query !== null ? (selected?.name ?? placeholder) : selected ? undefined : placeholder
+        }
         value={query ?? selected?.name ?? ""}
         onChange={(e) => {
           setQuery(e.target.value);
@@ -131,7 +165,18 @@ export function Combobox({
           setAt(0);
         }}
         onFocus={(e) => e.currentTarget.select()}
+        onPaste={(e) => {
+          if (query !== null) return;
+          e.preventDefault();
+          begin(e.clipboardData.getData("text"));
+        }}
         onClick={() => setOpen(true)}
+        // A tap starts an empty search: phone keyboards type through composition, which cannot
+        // replace a shown name the way a keystroke does, and a tap may not keep it selected.
+        onPointerDown={(e) => {
+          if ((e.pointerType === "touch" || e.pointerType === "pen") && query === null && !disabled)
+            begin("");
+        }}
         onBlur={close}
         onKeyDown={onKeyDown}
       />
