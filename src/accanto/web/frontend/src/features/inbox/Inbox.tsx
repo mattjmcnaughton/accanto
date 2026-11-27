@@ -2383,7 +2383,7 @@ const HELP: Array<[string, string]> = [
   ["p", "Show only items with a proposal, or all items again."],
   [
     "/",
-    "Search by payee, memo, YNAB category, amount, or the proposal and its question. Every word must match. It narrows every view and the proposals filter, and X selects only matching rows. Enter returns to the list; Esc clears the search.",
+    "Search by payee, memo, YNAB category, amount, the proposal and its question, or what was recorded, including its line or subcategory and tags. Every word must match. It narrows every view and the proposals filter, and X selects only matching rows. Enter returns to the list; Esc clears the search.",
   ],
   [
     "F",
