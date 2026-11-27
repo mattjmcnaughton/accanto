@@ -5537,3 +5537,52 @@ export const spendingSubcategories = [
     entries: 0,
   },
 ];
+
+/** Report bug (TDD 21): invented notes about the app itself. */
+const reportContext = (screen: string, api: unknown[] = []) => ({
+  screen,
+  month: "2026-11",
+  build: "24f7b73",
+  viewport: { width: 1280, height: 800, pixel_ratio: 2 },
+  theme: "light",
+  user_agent: "Synthetic browser",
+  api,
+  errors: [],
+});
+export const bugReports = [
+  {
+    id: "5a1f0c2e-7b3d-4e6a-9c8b-1d2e3f4a5b6c",
+    kind: "bug",
+    note: "Pairing missed the synthetic paycheck: dates five days apart",
+    context: reportContext("inbox", [
+      {
+        method: "POST",
+        path: "/api/entities/:id/inbox/:id/record",
+        status: 409,
+        ms: 61,
+        code: "stale_revision",
+      },
+    ]),
+    status: "open",
+    created_at: "2026-11-26T15:04:00Z",
+    resolved_at: null,
+  },
+  {
+    id: "6b2a1d3f-8c4e-4f7b-8d9c-2e3f4a5b6c7d",
+    kind: "idea",
+    note: "Needs you card should link straight to the over-allocated line",
+    context: reportContext("home"),
+    status: "open",
+    created_at: "2026-11-25T09:12:00Z",
+    resolved_at: null,
+  },
+  {
+    id: "7c3b2e4a-9d5f-4a8c-9e0d-3f4a5b6c7d8e",
+    kind: "fix",
+    note: "Guilt-free is spelled two ways on Plans",
+    context: reportContext("plans"),
+    status: "done",
+    created_at: "2026-11-24T18:30:00Z",
+    resolved_at: "2026-11-25T10:00:00Z",
+  },
+];

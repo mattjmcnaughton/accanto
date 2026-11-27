@@ -132,7 +132,7 @@ async def seed(suffix):
     async with async_sessionmaker(engine)() as db, db.begin():
         user = await db.scalar(
             insert(m.users)
-            .values(issuer="synthetic-trace", subject=suffix)
+            .values(issuer="synthetic-trace", subject=suffix, report_bug_enabled=True)
             .returning(m.users.c.id)
         )
         entity = await db.scalar(
@@ -251,6 +251,30 @@ async def drive(origin, secrets, suffix):
                 json={**timing, "screen": screen, "extra": note},
             )
             assert response.status_code == status
+
+        # Report bug (TDD 19): the note is typed text; the context is codes only.
+        bug_note = f"synthetic-canary-bug-report-{suffix} $765.43 at Example Grocer"
+        private.append(bug_note)
+        filed = await client.post(
+            "/api/bug-reports",
+            headers=browser,
+            json={
+                "kind": "bug",
+                "note": bug_note,
+                "context": {
+                    "screen": "inbox",
+                    "month": None,
+                    "build": "dev",
+                    "viewport": {"width": 1280, "height": 800, "pixel_ratio": 2},
+                    "theme": "light",
+                    "user_agent": "Synthetic",
+                    "api": [],
+                    "errors": [],
+                },
+            },
+        )
+        assert filed.status_code == 200, filed.text
+        assert bug_note in (await client.get("/api/bug-reports", headers=cookie)).text
 
         # Validation errors quote the rejected input.
         rejected = await client.post(

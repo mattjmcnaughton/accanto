@@ -9,7 +9,9 @@ rm -rf "$out" .box-build
 mkdir -p "$out" .box-build
 
 pnpm --dir src/accanto/web/frontend install --frozen-lockfile
-pnpm --dir src/accanto/web/frontend build
+# The deployed commit, shown in Report bug context (TDD 21).
+VITE_BUILD_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo dev)" \
+    pnpm --dir src/accanto/web/frontend build
 
 # python-build-standalone interpreters run from any path.
 uv python install 3.12 --install-dir .box-build/python --no-bin

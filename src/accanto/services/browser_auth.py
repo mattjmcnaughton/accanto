@@ -118,8 +118,15 @@ async def admit_identity(session, claims, config, time_zone="UTC"):
         )
         # Kept so an Entity owner can add this User by email (TDD 19). Only an
         # admitted, verified email is stored, and it never links identities.
+        # Report bug (TDD 21) follows the operator's list at every sign-in,
+        # including the first; it is per User, whatever Entities they reach.
         await session.execute(
-            update(m.users).where(m.users.c.id == user).values(email=claims["email"])
+            update(m.users)
+            .where(m.users.c.id == user)
+            .values(
+                email=claims["email"],
+                report_bug_enabled=claims["email"] in config.report_bug_emails,
+            )
         )
         issued = await issue_session(session, user)
         await ensure_own_entity(session, user, issued["id"], time_zone)
@@ -170,9 +177,13 @@ async def ensure_own_entity(session, user_id, session_uuid, time_zone):
 async def account_metadata(session, actor):
     async with read_snapshot(session):
         current = await revalidate_actor(session, actor, lock=False)
-        user = await session.scalar(
-            select(m.users.c.uuid).where(m.users.c.id == current.user_id)
-        )
+        user = (
+            await session.execute(
+                select(m.users.c.uuid, m.users.c.report_bug_enabled).where(
+                    m.users.c.id == current.user_id
+                )
+            )
+        ).one()
         entities = (
             (
                 await session.execute(
@@ -193,7 +204,8 @@ async def account_metadata(session, actor):
         )
         now = datetime.now(UTC)
         return {
-            "user": {"id": str(user)},
+            "user": {"id": str(user.uuid)},
+            "report_bug": user.report_bug_enabled,
             "entities": [
                 {
                     "id": str(entity["uuid"]),

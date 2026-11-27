@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     oidc_client_id: str = ""
     oidc_client_secret: SecretStr = SecretStr("")
     oidc_allowed_emails: list[str] = []
+    # Users who see Report bug (TDD 21), checked at each sign-in. Opt in only.
+    report_bug_emails: list[str] = []
 
     mcp_resource_url: str = ""
     mcp_issuer: str = ""

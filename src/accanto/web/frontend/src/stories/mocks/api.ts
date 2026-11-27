@@ -31,6 +31,7 @@ const resources = {
   session: { path: "/api/auth/session", loaded: data.session, empty: data.session },
   settings: { path: `${entity}/settings`, loaded: data.settings, empty: data.settings },
   apiKeys: { path: "/api/keys", loaded: data.apiKeys, empty: [] },
+  bugReports: { path: "/api/bug-reports", loaded: data.bugReports, empty: [] },
   agentSettings: {
     path: `${entity}/agent/settings`,
     loaded: data.agentSettings,
@@ -150,6 +151,16 @@ function activityPages(choice: State | unknown) {
 const writes = [
   http.post("/api/keys", () => HttpResponse.json({ key: "acc_synthetic_storybook_key" })),
   http.delete("/api/keys/:id", () => new HttpResponse(null, { status: 204 })),
+  http.post("/api/bug-reports", async () => {
+    await delay(300);
+    return HttpResponse.json({ ...data.bugReports[0], id: "8d4c3f5b-0e6a-4b9d-8f1e-4a5b6c7d8e9f" });
+  }),
+  http.patch("/api/bug-reports/:id", async ({ params, request }) =>
+    HttpResponse.json({
+      ...(data.bugReports.find((r) => r.id === params.id) ?? data.bugReports[0]),
+      ...((await request.json()) as object),
+    }),
+  ),
   http.put(`${entity}/fire-assumptions`, async ({ request }) =>
     HttpResponse.json({ ...((await request.json()) as object), revision: 3 }),
   ),

@@ -892,6 +892,25 @@ reload the metadata list, revoke an unwanted key, then explicitly create another
 Keep a newly displayed secret only in memory; clear it on dismissal, navigation
 and logout. Do not record it in browser storage, logs, screenshots or recordings.
 
+### Report bug
+
+Browser session only, for Users listed in `REPORT_BUG_EMAILS`
+([TDD 21](tdds/21-report-bug.md)); `/api/auth/session` returns `report_bug: true`
+for them. Anyone else gets `404 not_found` on every route, and an API key gets
+`403 browser_session_required`.
+
+`POST /api/bug-reports` takes `{kind, note, context}`: `kind` is `bug` (the
+default), `idea` or `fix`; `note` is 1 to 2000 characters. `context` is
+`{screen, month, build, viewport: {width, height, pixel_ratio}, theme,
+user_agent, api, errors}`, where `api` holds at most 20
+`{method, path, status, ms, code}` with `path` a template such as
+`/api/entities/:id/inbox` and `status` null when no response arrived, and
+`errors` holds at most 10 `{name}` class names. Any other field, or a value
+outside these patterns, is a 422. `GET /api/bug-reports` lists the User's
+latest 200 reports, newest first, as `{id, kind, note, context, status,
+created_at, resolved_at}`. `PATCH /api/bug-reports/{id}` with `{status}` (`open`,
+`done` or `wont_do`) sets the status; `resolved_at` is set for done and won't do.
+
 ### Copy a Plan
 
 `POST /api/entities/{entity_id}/plans/{plan_id}/copies` accepts

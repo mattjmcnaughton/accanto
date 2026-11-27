@@ -1,12 +1,14 @@
 import { RouterProvider, createHashHistory, createRouter } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { startDiagnostics } from "./lib/bugReport";
 import { beginScreen } from "./lib/screenTiming";
 import { routeTree } from "./routeTree.gen";
 import "./ui/tokens.css";
 import "./ui/ui.css";
 import "./index.css";
 
+startDiagnostics();
 const router = createRouter({ routeTree, history: createHashHistory() });
 router.subscribe("onBeforeNavigate", ({ fromLocation, pathChanged }) => {
   if (fromLocation && pathChanged) beginScreen();

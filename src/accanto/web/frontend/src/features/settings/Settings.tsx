@@ -4,6 +4,7 @@ import { Head, Tip, Wait } from "../../ui";
 import { type ScreenProps, useLoad } from "../workspace/shared";
 import "./settings.css";
 import { AgentSettings } from "../agent/AgentSettings";
+import { BugReports } from "../bugReport/BugReports";
 import { ApiKeys } from "./ApiKeys";
 import { EntityMembers } from "./Members";
 import { Notifications } from "./Notifications";
@@ -24,6 +25,8 @@ export interface SettingsProps extends ScreenProps {
   userId: string;
   saved: () => void;
   openInbox?: () => void;
+  /** Report bug (TDD 21) is on for this User. */
+  reportBug?: boolean;
 }
 // Suggestions only; the server remains the time zone validator.
 const zones =
@@ -212,6 +215,7 @@ export function Settings(p: SettingsProps) {
         <TransactionProviderSettings {...p} />
       )}
       <ApiKeys credentials={p.credentials} disabled={p.busy} />
+      {p.reportBug && <BugReports credentials={() => p.credentials()} disabled={p.busy} />}
     </section>
   );
 }

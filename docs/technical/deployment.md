@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6y045`.
+   supported revision is `6z046`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -219,6 +219,14 @@ backfill; `6x044` code never reads them. Reapply the runtime grants so
 (or rerun the whole recipe). Without the `VAPID_PRIVATE_KEY` secret nothing is
 sent and Settings hides Notifications. The downgrade drops the tables; Devices
 then turn on again.
+`6z046` adds Report bug ([TDD 21](../tdds/21-report-bug.md)):
+`app_user.report_bug_enabled` (default false, set at each browser sign-in from
+`REPORT_BUG_EMAILS`) and the `bug_report` table. Additive, no backfill; `6y045`
+code never reads them. Reapply the runtime grants so `accanto_app` can use the
+new table and its identity sequence:
+`GRANT SELECT, INSERT, UPDATE, DELETE ON bug_report TO accanto_app;`
+`GRANT USAGE, SELECT ON SEQUENCE bug_report_id_seq TO accanto_app;`
+(or rerun the whole recipe). The downgrade drops the reports.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

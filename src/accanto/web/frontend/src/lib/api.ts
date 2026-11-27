@@ -1,4 +1,6 @@
 /** Same-origin browser transport. Financial data never enters a URL configured by the client. */
+import { recordCall } from "./bugReport";
+
 export type UUID = string;
 export type DecimalString = string;
 export type IsoDate = string;
@@ -15,6 +17,8 @@ export interface BrowserSession {
   }>;
   csrf_token: string;
   screen_timing?: boolean;
+  /** Report bug (TDD 19): on only for Users the operator listed. */
+  report_bug?: boolean;
 }
 
 export type ApiErrorKind =
@@ -87,6 +91,8 @@ async function apiError(response: Response): Promise<ApiError> {
 export async function fetchJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const url = sameOriginApiPath(path);
   const headers = new Headers(init.headers);
+  const method = init.method ?? "GET";
+  const started = performance.now();
   try {
     const response = await fetch(url, {
       ...init,
@@ -95,11 +101,17 @@ export async function fetchJson<T>(path: string, init: RequestInit = {}): Promis
       cache: "no-store",
       redirect: "error",
     });
-    if (!response.ok) throw await apiError(response);
+    if (!response.ok) {
+      const error = await apiError(response);
+      recordCall(method, url, response.status, performance.now() - started, error.code);
+      throw error;
+    }
+    recordCall(method, url, response.status, performance.now() - started, null);
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   } catch (error) {
     if (error instanceof ApiError) throw error;
+    recordCall(method, url, null, performance.now() - started, "network_unavailable");
     throw new ApiError(
       "unavailable",
       null,
