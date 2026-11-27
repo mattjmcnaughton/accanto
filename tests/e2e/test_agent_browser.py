@@ -277,8 +277,33 @@ def test_agent_journey(tmp_path):
         until("!/No proposal yet/.test(document.querySelector('#main').textContent)")
         assert waiting() == before
 
-        # Proposals record nothing: the waiting count does not move.
-        ask("Please categorize my inbox")
+        # Speech input, with the browser's recognizer stubbed: the question appears
+        # in the box as it is heard and waits for Send. Proposals record nothing:
+        # the waiting count does not move.
+        browser(
+            "eval",
+            "(() => { window.SpeechRecognition = window.webkitSpeechRecognition ="
+            " class { start() { const words = 'Please categorize my inbox'.split(' ');"
+            " words.forEach((_, i) => setTimeout(() => this.onresult?.({results:"
+            " [[{transcript: words.slice(0, i + 1).join(' ')}]]}), 300 * (i + 1)));"
+            " setTimeout(() => this.onend?.(), 300 * words.length + 600); }"
+            " stop() { this.onend?.(); } abort() { this.onend?.(); } }; return 1; })()",
+        )
+        sent = "String(document.querySelectorAll('.agent-msg').length)"
+        messages_before = value(sent)
+        button("Speak your message", ".agent")
+        mic = "document.querySelector('.agent-mic')"
+        until(f"{mic}.getAttribute('aria-pressed') === 'true'")
+        until("document.querySelector('.agent textarea').value === 'Please categorize'")
+        until(f"{mic}.getAttribute('aria-pressed') === 'false'")
+        assert (
+            value("document.querySelector('.agent textarea').value")
+            == "Please categorize my inbox"
+        )
+        assert value(sent) == messages_before
+        button("Send", ".agent")
+        until("!document.querySelector('.agent-log[aria-busy=true]')")
+        idle()
         assert f"I proposed categories for {before} inbox items" in last_reply()
         until("!/No proposal yet/.test(document.querySelector('#main').textContent)")
         assert waiting() == before
