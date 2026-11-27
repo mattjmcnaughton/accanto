@@ -12,6 +12,7 @@ from typing import Literal
 
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 Frequency = Literal["weekly", "monthly", "yearly"]
+Weekend = Literal["before", "after"]
 # The accanto screens a step can open; the monthly ones also take a month offset.
 LINK_SCREENS = (
     "home",
@@ -35,7 +36,11 @@ State = Literal["upcoming", "due", "overdue", "missed", "done", "skipped"]
 class Cadence:
     """weekly: weekdays (0 = Monday). monthly: month_day (1–28, or −1 for the last
     day) or week (1–4, or −1 for the last) with weekday. yearly: month and
-    month_day. Every `interval` weeks, months or years, counted from starts_on."""
+    month_day. Every `interval` weeks, months or years, counted from starts_on.
+
+    weekend (Entry schedules, TDD 18): a month_day that falls on a Saturday or
+    Sunday moves to the weekday before or after it, staying in its month: the
+    last day moved before is the last weekday of the month."""
 
     frequency: Frequency
     interval: int = 1
@@ -44,6 +49,7 @@ class Cadence:
     week: int | None = None
     weekday: int | None = None
     month: int | None = None
+    weekend: Weekend | None = None
 
     def __post_init__(self):
         if not 1 <= self.interval <= 52:
@@ -77,6 +83,10 @@ class Cadence:
             )
         if not valid:
             raise ValueError("Choose a weekly, monthly or yearly cadence.")
+        if self.weekend is not None and (
+            self.weekend not in ("before", "after") or self.month_day is None
+        ):
+            raise ValueError("Only a day of the month can move off a weekend.")
 
 
 def _day(value):
@@ -85,6 +95,16 @@ def _day(value):
 
 def _last_day(year: int, month: int) -> int:
     return calendar.monthrange(year, month)[1]
+
+
+def _weekday_near(day: date, weekend: Weekend | None) -> date:
+    """day, or the nearest weekday in the weekend direction within day's month."""
+    if weekend is None or day.weekday() < 5:
+        return day
+    friday = day - timedelta(days=day.weekday() - 4)
+    monday = day + timedelta(days=7 - day.weekday())
+    first, second = (friday, monday) if weekend == "before" else (monday, friday)
+    return first if first.month == day.month else second
 
 
 def _monday(day: date) -> date:
@@ -112,7 +132,14 @@ def _dates(cadence: Cadence, starts_on: date, period: int) -> list[date]:
         if cadence.month_day is not None:
             last = cadence.month_day == -1
             return [
-                date(year, month, _last_day(year, month) if last else cadence.month_day)
+                _weekday_near(
+                    date(
+                        year,
+                        month,
+                        _last_day(year, month) if last else cadence.month_day,
+                    ),
+                    cadence.weekend,
+                )
             ]
         assert cadence.week is not None and cadence.weekday is not None
         if cadence.week == -1:
@@ -126,7 +153,7 @@ def _dates(cadence: Cadence, starts_on: date, period: int) -> list[date]:
     day = (
         _last_day(year, cadence.month) if cadence.month_day == -1 else cadence.month_day
     )
-    return [date(year, cadence.month, day)]
+    return [_weekday_near(date(year, cadence.month, day), cadence.weekend)]
 
 
 def _scheduled(cadence: Cadence, starts_on: date, period: int) -> list[date]:

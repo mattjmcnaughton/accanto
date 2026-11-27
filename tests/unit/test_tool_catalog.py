@@ -25,6 +25,7 @@ CATALOG_NAMES = [
     "get_position",
     "list_routines",
     "get_routine_occurrence",
+    "list_schedules",
     "list_inbox",
     "get_inbox_item",
     "list_sources",
@@ -68,6 +69,8 @@ CATALOG_NAMES = [
     "save_debt",
     "save_observation",
     "delete_observation",
+    "save_schedule",
+    "skip_schedule_date",
     "save_routine",
 ]
 

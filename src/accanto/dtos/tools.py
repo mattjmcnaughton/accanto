@@ -52,6 +52,7 @@ from accanto.dtos.savings import (
     EditMovement,
     MovementInput,
 )
+from accanto.dtos.schedules import ScheduleInput, SkipInput
 
 # Preserve decimal strings and unknown amounts; never coerce money to floats.
 Amount = Annotated[str, Field(pattern=r"^-?\d+(?:\.\d+)?$")]
@@ -491,9 +492,29 @@ class Proposal(Output):
     rejection: str | None
 
 
+class ScheduleOrigin(Output):
+    """The Entry schedule that staged this item (TDD 18)."""
+
+    schedule_id: UUID
+    name: Untrusted
+    scheduled_on: date
+
+
+class InboxPair(Output):
+    """The item of the other origin that is likely the same money (TDD 18):
+    keep one and ignore the other (skip_inbox_items) so it counts once."""
+
+    item_id: UUID
+    status: str
+    from_schedule: bool
+    payee: Untrusted
+    date: date
+    amount: Money
+
+
 class InboxItem(Output):
     id: UUID
-    source_id: UUID
+    source_id: UUID | None
     date: date
     amount: Money
     payee: Untrusted
@@ -515,6 +536,8 @@ class InboxItem(Output):
         description="The owner's note: context, or why a proposal is wrong. "
         "Recording keeps it on the actual entry's note. Agents cannot set it.",
     )
+    schedule: ScheduleOrigin | None = None
+    pair: InboxPair | None = None
     revision: int
 
 
@@ -805,6 +828,23 @@ def project_item(row) -> InboxItem:
         if proposal
         else None,
         note=row["note"] or None,
+        schedule=ScheduleOrigin(
+            schedule_id=origin["schedule_id"],
+            name=origin["name"],
+            scheduled_on=origin["scheduled_on"],
+        )
+        if (origin := row.get("schedule"))
+        else None,
+        pair=InboxPair(
+            item_id=pair["item_id"],
+            status=pair["status"],
+            from_schedule=pair["from_schedule"],
+            payee=pair["payee"],
+            date=pair["financial_date"],
+            amount=pair["amount"],
+        )
+        if (pair := row.get("pair"))
+        else None,
         revision=row["revision"],
     )
 
@@ -1683,5 +1723,84 @@ def project_occurrence(row) -> RoutineOccurrence:
         },
         steps=[
             OccurrenceStepInfo(**_select(OccurrenceStepInfo, s)) for s in row["steps"]
+        ],
+    )
+
+
+# --- Entry schedules (TDD 18): entries the hourly tick stages in the inbox ---
+
+
+class ScheduleLineInfo(Output):
+    category: str
+    amount: Money
+    note: Untrusted
+    assignment: str | None
+    assignment_name: Untrusted | None
+    funding: str | None
+    funding_name: Untrusted | None
+    tag_ids: list[UUID]
+
+
+class ScheduleOccurrenceInfo(Output):
+    scheduled_on: date
+    status: Literal["staged", "skipped", "failed"]
+    rejection: Untrusted | None
+    item_ids: list[UUID] = Field(
+        description="The date's Transactions inbox items; record or ignore them there."
+    )
+
+
+class ScheduleInfo(Output):
+    id: UUID
+    name: Untrusted
+    cadence: dict
+    starts_on: date
+    ends_on: date | None
+    paused: bool
+    state: Literal["active", "paused", "ended"]
+    next_on: date | None
+    upcoming: list[dict]
+    revision: int
+    lines: list[ScheduleLineInfo]
+    recent: list[ScheduleOccurrenceInfo]
+
+
+class ScheduleList(Output):
+    schedules: list[ScheduleInfo]
+
+
+class SaveSchedule(Input):
+    id: UUID | None = Field(default=None, description="Omit to create a schedule.")
+    values: ScheduleInput
+
+
+class SkipScheduleDate(SkipInput):
+    schedule_id: UUID
+    scheduled_on: date
+
+
+def project_schedule(row) -> ScheduleInfo:
+    return ScheduleInfo(
+        id=row["uuid"],
+        name=row["name"],
+        cadence=row["cadence"],
+        starts_on=row["starts_on"],
+        ends_on=row["ends_on"],
+        paused=row["paused"],
+        state=row["state"],
+        next_on=row["next_on"],
+        upcoming=row["upcoming"],
+        revision=row["revision"],
+        lines=[
+            ScheduleLineInfo(**_select(ScheduleLineInfo, line)) for line in row["lines"]
+        ],
+        recent=[
+            ScheduleOccurrenceInfo(
+                scheduled_on=o["scheduled_on"],
+                status=o["status"],
+                rejection=(o["rejection"] or {}).get("message"),
+                item_ids=[item["id"] for item in o["items"]],
+            )
+            for o in row["recent"]
         ],
     )

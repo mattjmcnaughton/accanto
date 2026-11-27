@@ -8,7 +8,8 @@ Entity lock and marks it in the same transaction.
 """
 
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Protocol
 from uuid import UUID, uuid4
 
@@ -148,11 +149,13 @@ async def item_view(session, row):
             st.staged.c.parent_ref == row["parent_ref"],
         )
         split = splits.get((row["source_id"], row["parent_ref"]))
-    return render_item(row, source_uuid, entry_uuid, proposer, split)
+    pair = (await item_pairs(session, row["entity_id"], [row])).get(row["id"])
+    return render_item(row, source_uuid, entry_uuid, proposer, split, pair)
 
 
-def render_item(row, source_uuid, entry_uuid, proposer, split):
+def render_item(row, source_uuid, entry_uuid, proposer, split, pair=None):
     latest = row["latest"]
+    schedule = latest.get("schedule")
     return json_values(
         {
             "id": row["uuid"],
@@ -187,6 +190,16 @@ def render_item(row, source_uuid, entry_uuid, proposer, split):
             "note": row["note"],
             "noted_at": row["noted_at"],
             "staged_at": row["staged_at"],
+            # Staged by an Entry schedule rather than synced from a source (TDD 18).
+            "schedule": {
+                "schedule_id": schedule["id"],
+                "name": latest["account_name"],
+                "scheduled_on": schedule["scheduled_on"],
+            }
+            if schedule
+            else None,
+            # The other-origin item that is likely the same money (TDD 18).
+            "pair": pair,
             "revision": row["revision"],
         }
     )
@@ -293,8 +306,9 @@ async def read_inbox(
             .all()
         )
         splits = await item_splits(session, entity["id"], rows)
+        pairs = await item_pairs(session, entity["id"], rows)
         with logfire.span("inbox.item_views", item_count=len(rows)):
-            return [joined_item(row, splits) for row in rows]
+            return [joined_item(row, splits, pairs) for row in rows]
 
 
 def item_view_query(query):
@@ -304,7 +318,7 @@ def item_view_query(query):
             m.entries.c.uuid.label("entry_uuid"),
             m.users.c.uuid.label("proposer_uuid"),
         )
-        .join_from(st.staged, st.sources)
+        .outerjoin_from(st.staged, st.sources)
         .outerjoin_from(st.staged, m.entries)
         .outerjoin_from(
             st.staged, m.users, m.users.c.id == st.staged.c.proposed_by_user_id
@@ -333,14 +347,83 @@ async def item_splits(session, entity_id, rows):
     return splits
 
 
-def joined_item(row, splits):
+def joined_item(row, splits, pairs=None):
     return render_item(
         row,
         row["source_uuid"],
         row["entry_uuid"],
         row["proposer_uuid"],
         splits.get((row["source_id"], row["parent_ref"])),
+        (pairs or {}).get(row["id"]),
     )
+
+
+async def item_pairs(session, entity_id, rows) -> dict:
+    """For each waiting row, the item of the other origin (schedule or source)
+    that is likely the same money, waiting or recorded (TDD 18). One query."""
+    from accanto.domains import schedules as rules
+
+    waiting = [row for row in rows if row["status"] == "waiting"]
+    if not waiting:
+        return {}
+    window = timedelta(days=rules.PAIR_DAYS)
+    dates = [row["financial_date"] for row in waiting]
+    found = (
+        (
+            await session.execute(
+                select(
+                    st.staged.c.id,
+                    st.staged.c.uuid,
+                    st.staged.c.status,
+                    st.staged.c.schedule_occurrence_id,
+                    st.staged.c.financial_date,
+                    st.staged.c.latest,
+                ).where(
+                    st.staged.c.entity_id == entity_id,
+                    st.staged.c.status.in_(["waiting", "recorded"]),
+                    st.staged.c.financial_date >= min(dates) - window,
+                    st.staged.c.financial_date <= max(dates) + window,
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
+    others = {str(o["id"]): o for o in found}
+    candidates = [
+        rules.Pairable(
+            str(o["id"]),
+            o["schedule_occurrence_id"] is not None,
+            Decimal(o["latest"]["amount"]),
+            o["financial_date"],
+        )
+        for o in found
+    ]
+    pairs = {}
+    for row in waiting:
+        pair = rules.likely_pair(
+            rules.Pairable(
+                str(row["id"]),
+                row["schedule_occurrence_id"] is not None,
+                Decimal(row["latest"]["amount"]),
+                row["financial_date"],
+            ),
+            candidates,
+        )
+        if pair is None:
+            continue
+        other = others[pair.id]
+        pairs[row["id"]] = json_values(
+            {
+                "item_id": other["uuid"],
+                "status": other["status"],
+                "from_schedule": pair.from_schedule,
+                "payee": other["latest"]["payee"],
+                "financial_date": other["financial_date"],
+                "amount": other["latest"]["amount"],
+            }
+        )
+    return pairs
 
 
 async def read_item(session, token, entity_uuid, item_uuid):
@@ -909,7 +992,9 @@ async def remove_entry(
     )
 
 
-async def dry_run(session, token, entity_uuid, item_uuid, completion: Completion):
+async def dry_run(
+    session, token, entity_uuid, item_uuid, completion: Completion | None
+):
     """The record command's checks for a proposal, rolled back; None when it passes."""
     try:
         await write(

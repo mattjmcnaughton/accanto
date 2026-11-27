@@ -73,7 +73,10 @@ selections = table(
 staged = table(
     "staged_transaction",
     Column("entity_id", BigInteger, nullable=False),
-    Column("source_id", BigInteger, nullable=False),
+    # From a Transaction source, or from an Entry schedule's occurrence (TDD 18),
+    # whose source_ref is the line ("line-1").
+    Column("source_id", BigInteger),
+    Column("schedule_occurrence_id", BigInteger),
     Column("source_ref", String(200), nullable=False),
     Column("parent_ref", String(120)),
     Column("financial_date", Date, nullable=False),
@@ -100,9 +103,18 @@ staged = table(
         ["transaction_source.id", "transaction_source.entity_id"],
     ),
     ForeignKeyConstraint(
+        ["schedule_occurrence_id", "entity_id"],
+        ["entry_schedule_occurrence.id", "entry_schedule_occurrence.entity_id"],
+        name="staged_transaction_schedule_occurrence_fkey",
+    ),
+    ForeignKeyConstraint(
         ["actual_entry_id", "entity_id"], ["actual_entry.id", "actual_entry.entity_id"]
     ),
     UniqueConstraint("source_id", "source_ref"),
+    CheckConstraint(
+        "(source_id IS NULL) <> (schedule_occurrence_id IS NULL)",
+        name="staged_transaction_one_origin",
+    ),
     CheckConstraint(
         "status IN ('waiting', 'skipped', 'recorded', 'conflict', 'removed')"
     ),
@@ -110,6 +122,13 @@ staged = table(
         "(status IN ('recorded', 'conflict')) = (actual_entry_id IS NOT NULL)",
         name="staged_entry_matches_status",
     ),
+)
+Index(
+    "staged_transaction_schedule_line",
+    staged.c.schedule_occurrence_id,
+    staged.c.source_ref,
+    unique=True,
+    postgresql_where=staged.c.schedule_occurrence_id.is_not(None),
 )
 Index(
     "staged_transaction_inbox",

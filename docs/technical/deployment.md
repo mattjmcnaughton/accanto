@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6s039`.
+   supported revision is `6t040`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -175,6 +175,14 @@ defaults; `6q037` code never reads them. No grant changes.
 `protect_debt_opening` now refuses only amount changes and moves past later
 observations or payments, as `6m033` did for investments. No schema change;
 `6r038` code never moves an opening, so it behaves as before. No grant changes.
+`6t040` adds Entry schedules ([TDD 18](../tdds/18-entry-schedules.md)): new
+tables `entry_schedule` and `entry_schedule_occurrence`, a nullable
+`staged_transaction.source_id` and its new `schedule_occurrence_id`. No backfill;
+older code leaves scheduled inbox items out of its lists, so deploy the code
+with the migration. Reapply the runtime grants so `accanto_app` can use the new
+tables and their identity sequences. The `jobs` service stages due dates in the
+inbox from the first tick after the deploy, never dates before a schedule was
+created. The downgrade deletes scheduled inbox items.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility
