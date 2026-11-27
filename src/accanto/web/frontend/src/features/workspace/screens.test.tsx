@@ -335,6 +335,68 @@ it("edits annual fixed-cost inputs, previews a weekly change and keeps the store
     expect.any(Function),
   );
 });
+it("edits a line's amount by clicking it, converting entered amounts and discarding on Escape", async () => {
+  const fixed = {
+    fixed_cost_id: "fixed-a",
+    name: "Synthetic subscription",
+    canonical_name: "Synthetic subscription",
+    amount: "100.00",
+    frequency: "annual" as const,
+    monthly_amount: "8.33",
+  };
+  const draft = {
+    ...version,
+    uuid: "draft",
+    saved: false,
+    fixed_costs: [fixed],
+    fixed_cost_total: "8.33",
+    unassigned: "3191.67",
+  };
+  mockPlans([{ plan_id: "p", revisions: [version, draft] }]);
+  const p = props();
+  render(<Plans {...p} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Baseline" }));
+  const monthlyCell = (name: string) =>
+    screen.getByRole("cell", { name: `${name}, Monthly amount` });
+  // A monthly line edits its monthly amount in place.
+  fireEvent.click(monthlyCell("Salary"));
+  const salary = () => screen.getByLabelText("Monthly amount for Salary");
+  expect((salary() as HTMLInputElement).value).toBe("4000.00");
+  fireEvent.change(salary(), { target: { value: "9999" } });
+  fireEvent.keyDown(salary(), { key: "Escape" });
+  expect(monthlyCell("Salary").textContent).toBe("$4,000.00");
+  fireEvent.click(monthlyCell("Salary"));
+  fireEvent.change(salary(), { target: { value: "4200" } });
+  fireEvent.blur(salary());
+  expect(monthlyCell("Salary").textContent).toBe("$4,200.00");
+  expect(screen.getByText("Unsaved changes.")).toBeDefined();
+  expect((screen.getByRole("button", { name: "Save version" }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Details for Salary" }));
+  expect((screen.getByLabelText("Monthly amount") as HTMLInputElement).value).toBe("4200");
+  // An annual line opens its entered amount; the monthly amount follows as the annual ÷ 12.
+  fireEvent.click(monthlyCell("Synthetic subscription"));
+  const annual = () => screen.getByLabelText("Amount for Synthetic subscription");
+  expect((annual() as HTMLInputElement).value).toBe("100.00");
+  fireEvent.change(annual(), { target: { value: "120" } });
+  expect(monthlyCell("Synthetic subscription").textContent).toBe("$10.00");
+  fireEvent.keyDown(annual(), { key: "Enter" });
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  expect(p.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      body: expect.objectContaining({
+        incomes: [{ source_id: "source", name: "Salary", amount: "4200" }],
+        fixed_costs: [expect.objectContaining({ amount: "120", frequency: "annual" })],
+      }),
+    }),
+    expect.any(Function),
+  );
+  // A saved version stays read-only.
+  fireEvent.change(screen.getByLabelText("Viewing Plan version"), { target: { value: "0" } });
+  fireEvent.click(monthlyCell("Salary"));
+  expect(screen.queryByLabelText("Monthly amount for Salary")).toBeNull();
+});
 it("keeps source UUID and expected revision when saving an edited draft", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(json(plans));
   const p = props();
@@ -445,7 +507,7 @@ it("retains exact keyboard edits across Home and flags one cent but not exact ze
   fireEvent.change(screen.getByLabelText("Amount for Guilt-free spending"), {
     target: { value: "4000.01" },
   });
-  fireEvent.keyDown(screen.getByLabelText("Amount for Guilt-free spending"), { key: "Escape" });
+  fireEvent.keyDown(screen.getByLabelText("Amount for Guilt-free spending"), { key: "Enter" });
   expect(screen.queryByLabelText("Amount for Guilt-free spending")).toBeNull();
   fireEvent.click(nav().getByRole("link", { name: "Home" }));
   const attention = await screen.findByRole("list", { name: "Needs you" });
@@ -458,7 +520,7 @@ it("retains exact keyboard edits across Home and flags one cent but not exact ze
   fireEvent.change(screen.getByLabelText("Amount for Guilt-free spending"), {
     target: { value: "4000.00" },
   });
-  fireEvent.keyDown(screen.getByLabelText("Amount for Guilt-free spending"), { key: "Escape" });
+  fireEvent.keyDown(screen.getByLabelText("Amount for Guilt-free spending"), { key: "Enter" });
   fireEvent.click(nav().getByRole("link", { name: "Home" }));
   expect(screen.queryByRole("button", { name: /overallocated/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /has unsaved changes.*Open draft/ }));
@@ -468,7 +530,7 @@ it("retains exact keyboard edits across Home and flags one cent but not exact ze
   fireEvent.change(screen.getByLabelText("Amount for Guilt-free spending"), {
     target: { value: "invalid" },
   });
-  fireEvent.keyDown(screen.getByLabelText("Amount for Guilt-free spending"), { key: "Escape" });
+  fireEvent.keyDown(screen.getByLabelText("Amount for Guilt-free spending"), { key: "Enter" });
   expect(screen.getByDisplayValue("invalid")).toBeDefined();
   fireEvent.click(nav().getByRole("link", { name: "Home" }));
   expect(screen.queryByRole("button", { name: /overallocated/ })).toBeNull();
@@ -622,6 +684,7 @@ it("keeps Enter and Escape edits local and writes only on Ctrl+S, never mid-edit
   fireEvent.change(spendingInput(), { target: { value: "3999.40" } });
   fireEvent.keyDown(spendingInput(), { key: "Escape" });
   expect(screen.queryByLabelText("Amount for Guilt-free spending")).toBeNull();
+  expect(spendingCell().textContent).toBe("$3,999.50");
   expect(p.save).not.toHaveBeenCalled();
   // Ctrl+S is refused while a cell edit is still open.
   fireEvent.keyDown(spendingCell(), { key: "i" });
@@ -633,7 +696,7 @@ it("keeps Enter and Escape edits local and writes only on Ctrl+S, never mid-edit
   expect(p.save).toHaveBeenCalledOnce();
   const spec = vi.mocked(p.save).mock.calls[0][0];
   expect(spec).toMatchObject({ method: "PUT", path: "/api/entities/entity/plans/p/draft" });
-  expect(JSON.stringify(spec.body)).toContain("3999.40");
+  expect(JSON.stringify(spec.body)).toContain("3999.50");
   // A saved version is read-only: Ctrl+S does nothing.
   fireEvent.change(screen.getByLabelText("Viewing Plan version"), { target: { value: "0" } });
   fireEvent.keyDown(spendingCell(), { key: "s", ctrlKey: true });
@@ -719,7 +782,7 @@ it("does not prompt about retained Plan edits when acting on another screen", as
   fireEvent.click(await screen.findByRole("button", { name: "Baseline" }));
   fireEvent.keyDown(spendingCell(), { key: "i" });
   fireEvent.change(spendingInput(), { target: { value: "4000.00" } });
-  fireEvent.keyDown(spendingInput(), { key: "Escape" });
+  fireEvent.keyDown(spendingInput(), { key: "Enter" });
   fireEvent.click(nav().getByRole("link", { name: "Loans" }));
   fireEvent.click(await screen.findByRole("button", { name: "Add loan" }));
   expect(await screen.findByRole("dialog", { name: "Add loan" })).toBeDefined();
