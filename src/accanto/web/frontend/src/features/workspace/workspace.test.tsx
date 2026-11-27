@@ -129,8 +129,8 @@ it("opens the entry dialog from any screen and shares one month across Home, Act
   const dialog = await screen.findByRole("dialog", { name: "Record activity" });
   expect(within(dialog).getByLabelText("Amount (USD)")).toBeDefined();
   fireEvent(dialog, new Event("cancel", { cancelable: true }));
-  // The new entry counts as unsaved, so leaving asks first.
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+  // Closing a new entry nothing was typed into discards it, so leaving does not ask.
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   // The request is one-shot: coming back to Activity later does not reopen the dialog.
   view.rerender(
     <Workspace initial={session} signedOut={vi.fn()} screen="review" navigate={navigate} />,
@@ -139,10 +139,12 @@ it("opens the entry dialog from any screen and shares one month across Home, Act
     <Workspace initial={session} signedOut={vi.fn()} screen="activity" navigate={navigate} />,
   );
   expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByText("Unsaved")).toBeNull();
   const top = screen.getByRole("banner");
   expect(within(top).getByText("October 2026")).toBeDefined();
   fireEvent.click(screen.getByRole("button", { name: "Next month" }));
   expect(navigate).toHaveBeenLastCalledWith("activity", false, "2026-11");
+  expect(confirm).not.toHaveBeenCalled();
   view.rerender(
     <Workspace
       initial={session}
@@ -199,4 +201,45 @@ it("sends free text from the Ask bar to the assistant and runs / commands withou
   fireEvent.keyDown(bar, { key: "Enter" });
   await waitFor(() => expect(asked).toEqual(["How much went to Example Bistro?"]));
   expect(screen.getByRole("complementary", { name: "Assistant" })).toBeDefined();
+});
+it("returns focus after a dialog and starts j in a screen's own rows", async () => {
+  const session = {
+    user: { id: "u" },
+    csrf_token: "test",
+    entities: [{ id: "e", name: "Synthetic Entity", today: "2026-11-10", time_zone: "UTC" }],
+  };
+  const entry = {
+    uuid: "lunch",
+    financial_date: "2026-11-03",
+    category: "spending",
+    amount: "12.00",
+    source_id: null,
+    fixed_cost_id: null,
+    fixed_cost_name: null,
+    debt_account_id: null,
+    saving_goal_id: null,
+    funding_origin: "income",
+    note: "Synthetic lunch",
+    revision: 4,
+    is_adjustment: false,
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/activity") ? new Response(JSON.stringify([entry])) : new Response("[]"),
+  );
+  render(<Workspace initial={session} signedOut={vi.fn()} screen="activity" navigate={vi.fn()} />);
+  await screen.findByText("Synthetic lunch");
+  const link = within(screen.getByRole("navigation", { name: "Workspace" })).getByRole("link", {
+    name: "Activity",
+  });
+  link.focus();
+  fireEvent.keyDown(link, { key: "k", ctrlKey: true });
+  expect(document.activeElement?.getAttribute("aria-label")).toBe("Ask or jump");
+  fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(link);
+  // Activity's rows are a grid with its own keys, so j lands on its current cell.
+  fireEvent.keyDown(link, { key: "j" });
+  const cell = document.activeElement as HTMLElement;
+  expect(cell.closest("[role=grid]")).not.toBeNull();
+  expect(cell.closest("[role=row]")?.textContent).toContain("Synthetic lunch");
 });

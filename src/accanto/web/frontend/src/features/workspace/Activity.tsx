@@ -446,7 +446,10 @@ export function ActivityScreen(
     setSelection({ id, col });
     requestAnimationFrame(() => document.getElementById(`activity-${id}-${col}`)?.focus());
   }
+  /** A new record exactly as it opened: closing it untouched discards it. */
+  const untouched = useRef<Draft | null>(null);
   function start(next: Draft, isNew: boolean) {
+    untouched.current = isNew ? next : null;
     setDraft(next);
     setInfo(null);
     setInfoTags(null);
@@ -688,7 +691,7 @@ export function ActivityScreen(
   }
   /** Escape or the backdrop leaves the dialog; unsaved changes stay on their row. */
   function closeDialog() {
-    if (!draft || (!changed && !p.busy)) done();
+    if (!draft || (!p.busy && (!changed || draft === untouched.current))) done();
     else setOpen(false);
     const id = selection.id || rows[0]?.id;
     if (id) focusCell(id, selection.col);

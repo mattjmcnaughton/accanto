@@ -106,6 +106,9 @@ const MONTHLY: Screen[] = ["home", "activity", "review"];
 const typing = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   Boolean(target.closest("input,textarea,select,[contenteditable],[role=textbox]"));
+/** Where a screen's own row keys start: a grid's current cell, a Plan, a Review step. */
+const ROW_KEYS =
+  '[role=grid] [tabindex="0"], [data-keyrow] button:enabled, .disclose[tabindex="0"]';
 
 export function Workspace({
   initial,
@@ -441,6 +444,12 @@ export function Workspace({
       if (!props.busy) go(screen, false, addMonths(month, event.key === "[" ? -1 : 1));
     } else if (event.key === "j" || event.key === "k") {
       const rows = [...document.querySelectorAll<HTMLElement>("#main [data-row]")];
+      const main = document.querySelector("#main");
+      // Screens with their own row keys take j and k once focus is in their rows.
+      if (!rows.length && !main?.contains(document.activeElement)) {
+        main?.querySelector<HTMLElement>(ROW_KEYS)?.focus();
+        return;
+      }
       const at = rows.indexOf(document.activeElement as HTMLElement);
       const step = event.key === "j" ? 1 : at < 0 ? 0 : -1;
       rows[Math.max(0, Math.min(rows.length - 1, at + step))]?.focus();
@@ -894,7 +903,10 @@ const Shortcuts = ({ close }: { close: () => void }) => (
         {[
           ["Ctrl K or ⌘ K", "Ask the assistant, jump to a screen, or run a / command"],
           ["Ctrl J or ⌘ J", "Open or close the assistant"],
-          ["1 to 9", "Go to a screen, in sidebar order"],
+          [
+            "1 to 9",
+            "Go to a screen, in sidebar order. In the Transactions inbox, 1 to 6 set a category",
+          ],
           ["N", "Add activity"],
           ["[ and ]", "Previous and next month on Home, Activity and Review"],
           ["J and K", "Move through rows, then Enter to open one"],
