@@ -416,3 +416,24 @@ Index(
     "entry_spending_subcategory_subcategory",
     spending_subcategory_assignments.c.spending_subcategory_id,
 )
+# An optional monthly estimate for one Spending subcategory in a Plan revision.
+# Informational only: guilt-free spending stays one planned amount, no Plan total
+# reads these, and estimates need not add up to it. Named by the subcategory's
+# current name, like entries, so there is no name snapshot.
+spending_estimate_lines = table(
+    "plan_spending_estimate_line",
+    Column("plan_revision_id", BigInteger, nullable=False),
+    Column("entity_id", BigInteger, nullable=False),
+    Column("spending_subcategory_id", BigInteger, nullable=False),
+    Column("amount", Numeric(14, 2), nullable=False),
+    ForeignKeyConstraint(
+        ["plan_revision_id", "entity_id"],
+        ["plan_revision.id", "plan_revision.entity_id"],
+    ),
+    ForeignKeyConstraint(
+        ["spending_subcategory_id", "entity_id"],
+        ["spending_subcategory.id", "spending_subcategory.entity_id"],
+    ),
+    UniqueConstraint("plan_revision_id", "spending_subcategory_id"),
+    CheckConstraint("amount BETWEEN 0 AND 999999999.99"),
+)

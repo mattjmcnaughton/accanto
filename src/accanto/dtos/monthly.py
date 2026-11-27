@@ -95,6 +95,18 @@ class DestinationLine(Input):
         return str(money(value))
 
 
+class SpendingEstimateLine(Input):
+    """An optional monthly estimate for one Spending subcategory; informational."""
+
+    spending_subcategory_id: UUID
+    amount: str
+
+    @field_validator("amount")
+    @classmethod
+    def valid_amount(cls, value: str) -> str:
+        return str(money(value))
+
+
 class PlanInput(Input):
     name: Name
     incomes: list[IncomeLine] = Field(min_length=1, max_length=100)
@@ -105,6 +117,11 @@ class PlanInput(Input):
     saving_goals: list[SavingGoalLine] = Field(default_factory=list, max_length=100)
     investments: list[DestinationLine] = Field(default_factory=list, max_length=100)
     giving: list[DestinationLine] = Field(default_factory=list, max_length=100)
+    # Optional, need not add up to spending, and change no Plan total. Like other
+    # lines, a PUT replaces them: omitting this clears the draft's estimates.
+    spending_estimates: list[SpendingEstimateLine] = Field(
+        default_factory=list, max_length=100
+    )
     spending: str
     expected_revision: int | None = Field(default=None, ge=1)
 

@@ -10,6 +10,7 @@ import { PlanBreakdown, share } from "./PlanBreakdown";
 import {
   type Catalog,
   type Choice,
+  type Estimates,
   type Group,
   type Line,
   type WorksheetDraft,
@@ -23,6 +24,7 @@ import {
   lineGroups,
   money,
   monthlyAmount as monthly,
+  revisionEstimates,
   revisionLines,
   savedLabel,
   storedCents,
@@ -36,9 +38,14 @@ import { composing } from "./shared";
 type DisplayRow = { id: string; group: Group } & (
   | { heading: true }
   | { heading: false; line: Line }
-  // A Spending subcategory under guilt-free spending: Entity-wide, with no planned amount.
+  // A Spending subcategory under guilt-free spending, with an optional estimate.
   | { heading: "subcategory"; subcategory: SpendingSubcategory }
+  // Guilt-free spending not covered by estimates; shown once any estimate is set.
+  | { heading: "unestimated" }
 );
+const ESTIMATE = "subcategory-";
+/** The subcategory id of an estimate cell edit, or null for any other edit. */
+const estimateOf = (id?: string) => (id?.startsWith(ESTIMATE) ? id.slice(ESTIMATE.length) : null);
 const groups: Group[] = ["income", "funding", "fixed", "spending", "saving", "investing", "giving"];
 /** What a Destination picker can create; savings accounts and other groups are made elsewhere. */
 const creatable = (group: Group): CreatableKind | null =>
@@ -88,14 +95,14 @@ export function PlanWorksheet({
   /** Reference data still loading or failed: unknown, not empty or inactive. */
   unavailable?: ReadonlyArray<Group | "loans">;
   loans: Choice[];
-  /** Active Spending subcategories, listed under guilt-free spending without amounts. */
+  /** Active Spending subcategories, listed under guilt-free spending with optional estimates. */
   subcategories?: SpendingSubcategory[];
   /** Opens the Spending subcategories manager (add, rename, archive). */
   onSubcategories?: () => void;
   busy: boolean;
   timeZone: string;
   onChange: (draft: WorksheetDraft) => void;
-  onSave: (name: string, lines: Line[]) => void;
+  onSave: (name: string, lines: Line[], estimates: Estimates) => void;
   onVersion: () => void;
   onBack: () => void;
   /** Copy this Plan; omitted while copying is unavailable. */
@@ -110,9 +117,17 @@ export function PlanWorksheet({
 }) {
   const initialLines = useMemo(() => revisionLines(revision), [revision]);
   const [draftLines, setLines] = useState<Line[]>(retained?.lines ?? initialLines);
+  const initialEstimates = useMemo(() => revisionEstimates(revision), [revision]);
+  const [draftEstimates, setEstimates] = useState<Estimates>(
+    retained?.estimates ?? initialEstimates,
+  );
   const [draftName, setDraftName] = useState(retained?.name ?? revision.name);
   const [editingName, setEditingName] = useState(retained?.name.trim() === "");
-  const saved = JSON.stringify({ name: revision.name, lines: initialLines });
+  const saved = JSON.stringify({
+    name: revision.name,
+    lines: initialLines,
+    estimates: initialEstimates,
+  });
   const [collapsed, setCollapsed] = useState<Group[]>([]);
   const [selection, setSelection] = useState({
     id: retained?.cellEdit?.id ?? "group-income",
@@ -138,10 +153,15 @@ export function PlanWorksheet({
   );
   const planName = snapshot ? snapshot.name : draftName;
   const validName = draftName.trim().length > 0 && draftName.trim().length <= 120;
-  const dirty = JSON.stringify({ name: draftName, lines: draftLines }) !== saved;
+  const dirty =
+    JSON.stringify({ name: draftName, lines: draftLines, estimates: draftEstimates }) !== saved;
+  const estimates = useMemo(
+    () => (snapshot ? revisionEstimates(snapshot) : draftEstimates),
+    [snapshot, draftEstimates],
+  );
   // An open amount or frequency edit previews in the totals and band; an invalid amount is unknown.
   const preview = useMemo(() => {
-    if (!edit || readOnly) return lines;
+    if (!edit || readOnly || estimateOf(edit.id) !== null) return lines;
     if (amountCol(edit.col) && cents(edit.value) === null) return null;
     return lines.map((line) =>
       line.id !== edit.id
@@ -166,6 +186,41 @@ export function PlanWorksheet({
   const amounts = stored ? storedGroups(stored) : lineGroups(preview);
   const groupTotal = (group: Group) => amounts[group];
   const band = allocationBand(amounts, stats.unassigned);
+  // Estimates are informational: they need not add up to guilt-free spending.
+  const shownEstimates = { ...estimates };
+  const editing = estimateOf(edit?.id);
+  if (editing !== null && edit && !readOnly) {
+    if (edit.value.trim()) shownEstimates[editing] = edit.value.trim();
+    else delete shownEstimates[editing];
+  }
+  const estimateValues = Object.values(shownEstimates).map(cents);
+  const estimated = estimateValues.some((value) => value === null)
+    ? null
+    : estimateValues.reduce<number>((total, value) => total + (value ?? 0), 0);
+  const unestimated =
+    estimated === null || amounts.spending === null ? null : amounts.spending - estimated;
+  // Archived subcategories keep the estimates a draft or version already has.
+  const estimateRows = useMemo<SpendingSubcategory[]>(() => {
+    const names = new Map(
+      (snapshot ?? revision).spending_estimates?.map((line) => [
+        line.spending_subcategory_id,
+        line.spending_subcategory_name,
+      ]) ?? [],
+    );
+    return [
+      ...subcategories,
+      ...Object.keys(estimates)
+        .filter((id) => !subcategories.some((sub) => sub.uuid === id))
+        .map((id) => ({
+          uuid: id,
+          name: names.get(id) ?? "Archived subcategory",
+          active: false,
+          revision: 0,
+          entries: 0,
+        })),
+    ];
+  }, [subcategories, estimates, snapshot, revision]);
+  const hasEstimates = estimateValues.length > 0;
   const state = balance(stats);
   const needsRevision = (line: Line) =>
     !readOnly &&
@@ -184,12 +239,15 @@ export function PlanWorksheet({
               ...lines
                 .filter((line) => line.group === "spending")
                 .map((line) => ({ id: line.id, group, heading: false as const, line })),
-              ...subcategories.map((subcategory) => ({
-                id: `subcategory-${subcategory.uuid}`,
+              ...estimateRows.map((subcategory) => ({
+                id: `${ESTIMATE}${subcategory.uuid}`,
                 group,
                 heading: "subcategory" as const,
                 subcategory,
               })),
+              ...(hasEstimates
+                ? [{ id: "unestimated", group, heading: "unestimated" as const }]
+                : []),
             ]
           : [
               { id: `group-${group}`, group, heading: true },
@@ -200,13 +258,19 @@ export function PlanWorksheet({
                     .map((line) => ({ id: line.id, group, heading: false, line }))),
             ],
       ),
-    [lines, collapsed, subcategories],
+    [lines, collapsed, estimateRows, hasEstimates],
   );
   const notify = useRef(onChange);
   notify.current = onChange;
   useEffect(() => {
-    notify.current({ name: draftName, lines: draftLines, editing: !!edit, cellEdit: edit });
-  }, [draftName, draftLines, edit]);
+    notify.current({
+      name: draftName,
+      lines: draftLines,
+      estimates: draftEstimates,
+      editing: !!edit,
+      cellEdit: edit,
+    });
+  }, [draftName, draftLines, draftEstimates, edit]);
   const focusCell = (id: string, col: number) => {
     setSelection({ id, col });
     requestAnimationFrame(() => document.getElementById(`cell-${id}-${col}`)?.focus());
@@ -232,8 +296,15 @@ export function PlanWorksheet({
   const toggle = (group: Group) =>
     setCollapsed((cs) => (cs.includes(group) ? cs.filter((g) => g !== group) : [...cs, group]));
   function begin(row: DisplayRow, col: number) {
+    if (row.heading === "unestimated") return;
     if (row.heading === "subcategory") {
       if (col === 4) add(row.group);
+      else if (amountCol(col) && !readOnly && !busy) {
+        setError("");
+        discarded.current = false;
+        setSelection({ id: row.id, col: 1 });
+        setEdit({ id: row.id, col: 1, value: estimates[row.subcategory.uuid] ?? "" });
+      }
       return;
     }
     if (row.heading) {
@@ -266,6 +337,25 @@ export function PlanWorksheet({
   }
   function commit(): boolean {
     if (!edit) return true;
+    const estimate = estimateOf(edit.id);
+    if (estimate !== null) {
+      const value = edit.value.trim();
+      const amount = cents(value);
+      if (value && amount === null) {
+        setError("Enter an amount, or leave it blank.");
+        return false;
+      }
+      setEstimates((all) => {
+        const next = { ...all };
+        if (amount === null) delete next[estimate];
+        else next[estimate] = (amount / 100).toFixed(2);
+        return next;
+      });
+      setEdit(null);
+      setError("");
+      setNotice("");
+      return true;
+    }
     if (amountCol(edit.col) && cents(edit.value) === null) {
       setError("Enter a nonnegative USD amount with up to two decimal places.");
       return false;
@@ -311,7 +401,7 @@ export function PlanWorksheet({
   function add(group: Group) {
     if (readOnly || busy) return;
     if (group === "spending") {
-      // Subcategories are Entity records with no planned amount; the draft does not change.
+      // Subcategories are Entity records: adding one leaves the draft unchanged.
       if (commit()) onSubcategories?.();
       return;
     }
@@ -382,7 +472,7 @@ export function PlanWorksheet({
       setNotice("Correct the highlighted inputs before saving.");
       return;
     }
-    onSave(draftName.trim(), lines);
+    onSave(draftName.trim(), lines, draftEstimates);
   }
   function saveVersion() {
     if (readOnly || busy) return;
@@ -467,7 +557,31 @@ export function PlanWorksheet({
     focusCell(display[index].id, nextCol);
   }
   function editor(row: DisplayRow) {
-    if (!edit || row.heading) return null;
+    if (!edit) return null;
+    if (row.heading === "subcategory") {
+      const currentEdit = edit;
+      return (
+        <input
+          // biome-ignore lint/a11y/noAutofocus: Editing a cell focuses its input.
+          autoFocus
+          value={edit.value}
+          inputMode="decimal"
+          placeholder="Optional"
+          aria-label={`Estimate for ${row.subcategory.name}`}
+          aria-invalid={!!error}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => {
+            setEdit({ ...currentEdit, value: e.target.value });
+            setError("");
+          }}
+          onBlur={() => {
+            if (discarded.current) discarded.current = false;
+            else commit();
+          }}
+        />
+      );
+    }
+    if (row.heading) return null;
     const currentEdit = edit;
     const options =
       edit?.col === 2
@@ -763,6 +877,9 @@ export function PlanWorksheet({
               <tbody>
                 {display.flatMap((row) => {
                   const sub = row.heading === "subcategory" ? row.subcategory : null;
+                  const rest = row.heading === "unestimated";
+                  // The estimate follows an open edit, as line amounts do.
+                  const estimate = sub ? cents(shownEstimates[sub.uuid] ?? "") : null;
                   const caption =
                     row.heading === true || (row.heading === false && row.group === "spending")
                       ? sections[row.group]
@@ -787,17 +904,21 @@ export function PlanWorksheet({
                           <td
                             id={`cell-${row.id}-${col}`}
                             key={col}
-                            aria-label={`${sub ? sub.name : row.heading ? titles[row.group] : row.line?.name}, ${["Item", "Entered amount", "Frequency", "Monthly amount", "Actions"][col]}`}
+                            aria-label={`${sub ? sub.name : rest ? "Unestimated" : row.heading ? titles[row.group] : row.line?.name}, ${["Item", sub ? "Estimate" : "Entered amount", "Frequency", sub ? "Estimate" : "Monthly amount", "Actions"][col]}`}
                             aria-selected={active}
                             tabIndex={active ? 0 : -1}
-                            className={`c${col} ${col === 1 || col === 3 ? "num" : ""} ${active ? "selected-cell" : ""} ${editing ? "editing" : ""} ${amountCol(col) && row.heading === false && !readOnly ? "amount-edit" : ""}`}
+                            className={`c${col} ${col === 1 || col === 3 ? "num" : ""} ${active ? "selected-cell" : ""} ${editing ? "editing" : ""} ${amountCol(col) && (row.heading === false || row.heading === "subcategory") && !readOnly ? "amount-edit" : ""}`}
                             onKeyDown={(e) => onGridKey(e, row, col)}
                             onClick={(e) => {
                               if ((e.target as HTMLElement).closest("button,input,select")) return;
                               if (!commit()) return;
                               // A click on an amount opens it; other cells select, then edit on a
                               // double click or Enter.
-                              if (amountCol(col) && row.heading === false && !readOnly)
+                              if (
+                                amountCol(col) &&
+                                (row.heading === false || row.heading === "subcategory") &&
+                                !readOnly
+                              )
                                 begin(row, col);
                               else focusCell(row.id, col);
                             }}
@@ -805,6 +926,27 @@ export function PlanWorksheet({
                           >
                             {editing ? (
                               editor(row)
+                            ) : rest ? (
+                              col === 0 ? (
+                                <span
+                                  className="line-name"
+                                  title={
+                                    unestimated !== null && unestimated < 0
+                                      ? "Estimates exceed guilt-free spending"
+                                      : "Guilt-free spending without an estimate"
+                                  }
+                                >
+                                  <span className="nm muted">
+                                    {unestimated !== null && unestimated < 0
+                                      ? "Estimates over"
+                                      : "Unestimated"}
+                                  </span>
+                                </span>
+                              ) : col === 3 ? (
+                                <span className="muted">
+                                  {money(unestimated === null ? null : Math.abs(unestimated))}
+                                </span>
+                              ) : null
                             ) : sub ? (
                               col === 0 ? (
                                 <span className="line-name">
@@ -826,13 +968,16 @@ export function PlanWorksheet({
                                     <Icon name="more" />
                                   </button>
                                 )
-                              ) : col === 3 ? (
-                                <span
-                                  className="muted"
-                                  title="Subcategories have no planned amount"
-                                >
-                                  —
-                                </span>
+                              ) : col === 1 || col === 3 ? (
+                                estimate === null ? (
+                                  <span className="muted" title="Estimate (optional)">
+                                    —
+                                  </span>
+                                ) : (
+                                  <span className="ink2" title="Estimate">
+                                    {money(estimate)}
+                                  </span>
+                                )
                               ) : null
                             ) : row.heading ? (
                               col === 0 ? (
@@ -1228,6 +1373,7 @@ export function PlanWorksheet({
                   "a / A",
                   "Add a line in the current category, or a guilt-free spending subcategory",
                 ],
+                ["Click or Enter on a subcategory", "Set its estimate (optional; blank clears)"],
                 ["dd", "Remove selected line, with confirmation"],
                 ["Enter", "Keep a valid cell edit; return to normal"],
                 ["Escape", "Discard a cell edit; return to normal"],

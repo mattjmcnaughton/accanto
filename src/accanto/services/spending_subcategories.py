@@ -218,3 +218,36 @@ async def write_spending_subcategory(
     await audit(table, record["uuid"], dict(row), dict(record))
     counts = await entry_counts(session, entity["id"])
     return view(record, counts.get(record["id"], 0))
+
+
+async def plan_estimates(session, entity_id, revision_id, lines, *, kept):
+    """Write a Plan revision's optional Spending estimates (one per subcategory).
+
+    Estimates are informational: they need not add up to guilt-free spending and
+    no Plan total reads them. An archived subcategory keeps an estimate the draft
+    or the copied version already had, but cannot gain a new one.
+    """
+    seen = set()
+    for line in lines:
+        row = await subcategory(session, entity_id, line["spending_subcategory_id"])
+        if row["id"] in seen:
+            raise RejectionError(
+                "duplicate_allocation", "Estimate each subcategory once.", 422
+            )
+        seen.add(row["id"])
+        try:
+            check_assignment(
+                "spending",
+                active=row["active"],
+                kept=bool(line.get("_kept")) or str(row["uuid"]) in kept,
+            )
+        except SubcategoryRejectionError as error:
+            raise rejection(error) from None
+        await session.execute(
+            insert(m.spending_estimate_lines).values(
+                plan_revision_id=revision_id,
+                entity_id=entity_id,
+                spending_subcategory_id=row["id"],
+                amount=line["amount"],
+            )
+        )

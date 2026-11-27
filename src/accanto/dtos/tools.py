@@ -95,11 +95,17 @@ class IdentityComparison(Output):
 
 
 class BreakdownLine(Output):
-    """Recorded guilt-free spending for one subcategory; id None is Unassigned."""
+    """Recorded guilt-free spending for one subcategory; id None is Unassigned.
+
+    recorded is None only for an estimated subcategory with no entry yet.
+    """
 
     id: UUID | None
     name: "Untrusted | None"
-    recorded: Amount
+    recorded: Amount | None
+    estimated: Amount | None = Field(
+        default=None, description="The Plan's optional estimate; None if not set."
+    )
     entries: int
 
 
@@ -112,6 +118,10 @@ class CategoryComparison(Output):
     items: list[IdentityComparison]
     # Spending only: groups that add up exactly to recorded; no planned amounts.
     breakdown: list[BreakdownLine] = []
+    # Spending only, None without estimates: their sum, and planned minus it
+    # (negative when estimates exceed planned; estimates need not add up).
+    estimated: Amount | None = None
+    unestimated: Amount | None = None
 
 
 class Summary(Output):
@@ -205,10 +215,13 @@ def project_review(result) -> MonthlyReview:
                         id=line["id"],
                         name=line["name"],
                         recorded=line["recorded"],
+                        estimated=line.get("estimated"),
                         entries=len(line["entries"]),
                     )
                     for line in comparison.get("breakdown", [])
                 ],
+                estimated=comparison.get("estimated"),
+                unestimated=comparison.get("unestimated"),
             )
             for category in (
                 "income",
@@ -325,6 +338,8 @@ class PlanDetail(PlanRevision):
     saving_goals: list[PlanLine]
     investments: list[PlanLine]
     giving: list[PlanLine]
+    # Optional Spending estimates, one per subcategory; informational only.
+    spending_estimates: list[PlanLine] = []
 
 
 class PlanSummary(Output):
@@ -665,6 +680,11 @@ def project_plan(plan) -> PlanView:
                     row["investments"], "destination_id", "destination_name"
                 ),
                 giving=lines(row["giving"], "destination_id", "destination_name"),
+                spending_estimates=lines(
+                    row.get("spending_estimates", []),
+                    "spending_subcategory_id",
+                    "spending_subcategory_name",
+                ),
             )
             for row in plan["revisions"]
         ],

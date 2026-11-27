@@ -243,4 +243,124 @@ async def scenario():
         )
         assert spending["items"] == []
         assert review["spending_difference"] == "-133.35"
+        # Without estimates nothing changes.
+        assert spending["estimated"] is None and spending["unestimated"] is None
+        assert all(g["estimated"] is None for g in spending["breakdown"])
+
+        # Optional estimates per subcategory, kept per Plan version. They need not
+        # add up to guilt-free spending and change no Plan total.
+        hobbies = await ok("POST", "/spending-subcategories", {"name": "Hobbies"})
+        base = {
+            "name": "Synthetic Plan",
+            "incomes": [{"name": "Primary salary", "amount": "1000.00"}],
+            "spending": "200.00",
+        }
+        draft = (await ok("GET", "/plans"))[0]["revisions"]
+        draft = next(r for r in draft if not r["saved"])
+        income = draft["incomes"][0]["source_id"]
+        base["incomes"][0]["source_id"] = income
+        # An archived subcategory cannot gain an estimate; another Entity's is absent.
+        assert (
+            await code(
+                "PUT",
+                f"/plans/{plan['plan_id']}/draft",
+                {
+                    **base,
+                    "expected_revision": draft["revision"],
+                    "spending_estimates": [
+                        {"spending_subcategory_id": books["uuid"], "amount": "5.00"}
+                    ],
+                },
+            )
+            == "archived_spending_subcategory"
+        )
+        assert (
+            await code(
+                "PUT",
+                f"/plans/{plan['plan_id']}/draft",
+                {
+                    **base,
+                    "expected_revision": draft["revision"],
+                    "spending_estimates": [
+                        {"spending_subcategory_id": foreign["uuid"], "amount": "5.00"}
+                    ],
+                },
+            )
+            == "spending_subcategory_not_found"
+        )
+        edited = (
+            await ok(
+                "PUT",
+                f"/plans/{plan['plan_id']}/draft",
+                {
+                    **base,
+                    "expected_revision": draft["revision"],
+                    "spending_estimates": [
+                        {"spending_subcategory_id": eating["uuid"], "amount": "150.00"},
+                        {"spending_subcategory_id": hobbies["uuid"], "amount": "75.5"},
+                    ],
+                },
+            )
+        )["draft"]
+        assert [
+            (e["spending_subcategory_name"], e["amount"])
+            for e in edited["spending_estimates"]
+        ] == [("Restaurants", "150.00"), ("Hobbies", "75.50")]
+        assert (edited["spending"], edited["allocation_total"]) == (
+            "200.00",
+            draft["allocation_total"],
+        )
+        saved = await ok(
+            "POST",
+            f"/plans/{plan['plan_id']}/versions",
+            {"expected_revision": edited["revision"]},
+        )
+        assert len(saved["version"]["spending_estimates"]) == 2
+        assert len(saved["draft"]["spending_estimates"]) == 2
+        # The unreviewed Review follows the new version.
+        review = await ok("GET", "/reviews/2026-10-01")
+        spending = review["comparison"]["spending"]
+        assert [
+            (g["name"], g["recorded"], g["estimated"]) for g in spending["breakdown"]
+        ] == [
+            ("Restaurants", "62.10", "150.00"),
+            ("Books", "0.00", None),
+            ("Hobbies", None, "75.50"),
+            (None, "4.55", None),
+        ]
+        # Estimates exceed the 200.00 total by 25.50, shown as negative unestimated.
+        assert (spending["estimated"], spending["unestimated"]) == ("225.50", "-25.50")
+        assert spending["recorded"] == "66.65"
+        assert review["spending_difference"] == "-133.35"
+
+        # Archiving a subcategory keeps its estimate in the draft and in a copy.
+        await ok(
+            "PUT",
+            f"/spending-subcategories/{hobbies['uuid']}",
+            {"name": "Hobbies", "active": False, "expected_revision": 1},
+        )
+        kept = (
+            await ok(
+                "PUT",
+                f"/plans/{plan['plan_id']}/draft",
+                {
+                    **base,
+                    "expected_revision": saved["draft"]["revision"],
+                    "spending_estimates": [
+                        {"spending_subcategory_id": hobbies["uuid"], "amount": "60.00"}
+                    ],
+                },
+            )
+        )["draft"]
+        assert [e["amount"] for e in kept["spending_estimates"]] == ["60.00"]
+        copy = await ok(
+            "POST",
+            f"/plans/{plan['plan_id']}/copies",
+            {
+                "name": "Synthetic copy",
+                "source_revision_id": saved["version"]["uuid"],
+                "expected_revision": saved["version"]["revision"],
+            },
+        )
+        assert len(copy["draft"]["spending_estimates"]) == 2
     await engine.dispose()

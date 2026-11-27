@@ -5,6 +5,7 @@ from accanto.domains.monthly_comparison import (
     compare_category,
     ratio,
     summary,
+    with_estimates,
 )
 
 
@@ -71,6 +72,31 @@ def test_spending_breakdown_groups_every_entry_once_and_adds_up_to_the_total():
     recorded = compare_category([], entries, "spending_subcategory_id", "500.00")
     assert recorded["recorded"] == "96.65" and recorded["items"] == []
     assert len(recorded["unplanned"]) == len(entries)
+
+    # Optional estimates sit beside the groups without changing them. An estimated
+    # subcategory with no entry joins before Unassigned; estimates need not add up.
+    estimated, totals = with_estimates(
+        lines,
+        [
+            {"id": "e", "name": "Eating out", "amount": "80.00"},
+            {"id": "h", "name": "Hobbies", "amount": "45.50"},
+        ],
+        "500.00",
+    )
+    assert [(x["name"], x["recorded"], x["estimated"]) for x in estimated] == [
+        ("Eating out", "92.10", "80.00"),
+        ("Books", "0.00", None),
+        ("Hobbies", None, "45.50"),
+        (None, "4.55", None),
+    ]
+    assert totals == {"estimated": "125.50", "unestimated": "374.50"}
+    _, over = with_estimates(
+        lines, [{"id": "e", "name": "Eating out", "amount": "520.00"}], "500.00"
+    )
+    assert over == {"estimated": "520.00", "unestimated": "-20.00"}
+    unchanged, none = with_estimates(lines, [], "500.00")
+    assert none == {"estimated": None, "unestimated": None}
+    assert [x["estimated"] for x in unchanged] == [None, None, None]
 
 
 def test_net_saving_and_savings_funded_investing_are_distinct():

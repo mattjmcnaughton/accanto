@@ -30,9 +30,12 @@ export type Line = {
 export type Choice = { id: string; name: string; active: boolean };
 export type Catalog = Partial<Record<Group, Choice[]>>;
 export type CellEdit = { id: string; col: number; value: string };
+/** Optional Spending estimates by subcategory id; a blank estimate is absent, not zero. */
+export type Estimates = Record<string, string>;
 export type WorksheetDraft = {
   name: string;
   lines: Line[];
+  estimates?: Estimates;
   editing: boolean;
   cellEdit: CellEdit | null;
 };
@@ -226,7 +229,17 @@ export function revisionLines(revision: PlanRevision): Line[] {
   ];
 }
 
-export function planInput(name: string, lines: Line[], revision?: number): PlanInput {
+export const revisionEstimates = (revision: PlanRevision): Estimates =>
+  Object.fromEntries(
+    (revision.spending_estimates ?? []).map((line) => [line.spending_subcategory_id, line.amount]),
+  );
+
+export function planInput(
+  name: string,
+  lines: Line[],
+  revision?: number,
+  estimates: Estimates = {},
+): PlanInput {
   const group = (value: Group) => lines.filter((line) => line.group === value);
   return {
     name: name.trim(),
@@ -259,6 +272,10 @@ export function planInput(name: string, lines: Line[], revision?: number): PlanI
     giving: group("giving").map((line) => ({
       destination_id: line.reference ?? "",
       amount: line.amount,
+    })),
+    spending_estimates: Object.entries(estimates).map(([id, amount]) => ({
+      spending_subcategory_id: id,
+      amount,
     })),
   };
 }

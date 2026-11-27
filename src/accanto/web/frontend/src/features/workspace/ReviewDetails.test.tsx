@@ -290,3 +290,79 @@ it("groups guilt-free spending by subcategory without planned amounts per group"
   expect(row("^Unassigned").textContent).toBe("Unassigned$7.05");
   expect(spending.getAllByText(/Synthetic (dinner|lunch|gum)/)).toHaveLength(3);
 });
+
+it("shows each subcategory's optional estimate beside what was recorded, and the rest as unestimated", () => {
+  const dinner: Activity = {
+    uuid: "dinner",
+    financial_date: "2026-10-05",
+    category: "spending",
+    amount: "62.10",
+    source_id: null,
+    fixed_cost_id: null,
+    fixed_cost_name: null,
+    debt_account_id: null,
+    spending_subcategory_id: "eating",
+    spending_subcategory_name: "Eating out",
+    note: "Synthetic dinner",
+    revision: 1,
+    is_adjustment: false,
+    funding_origin: "income",
+    saving_goal_id: null,
+    funding_goal_id: null,
+  };
+  const empty: ComparisonGroup = {
+    planned: "0.00",
+    recorded: null,
+    incomplete: true,
+    difference: null,
+    items: [],
+    unplanned: [],
+    adjustments: [],
+  };
+  render(
+    <ReviewDetails
+      ended={false}
+      review={{
+        ...base,
+        actual: { ...base.actual, spending_recorded: "62.10" },
+        spending_difference: "-737.90",
+        comparison: {
+          income: empty,
+          fixed_cost: empty,
+          spending: {
+            ...empty,
+            planned: "800.00",
+            recorded: "62.10",
+            incomplete: false,
+            difference: "-737.90",
+            unplanned: [dinner],
+            estimated: "250.00",
+            unestimated: "550.00",
+            breakdown: [
+              {
+                id: "eating",
+                name: "Eating out",
+                recorded: "62.10",
+                estimated: "150.00",
+                entries: [dinner],
+              },
+              // Estimated, nothing recorded yet: not a question the Review asks.
+              { id: "books", name: "Books", recorded: null, estimated: "100.00", entries: [] },
+            ],
+          },
+          saving: empty,
+          investing: empty,
+          giving: empty,
+        },
+      }}
+    />,
+  );
+  const spending = within(section("Guilt-free spending"));
+  expect(spending.queryByText(/still to come|no entry/)).toBeNull();
+  fireEvent.click(spending.getByRole("button", { name: "1 entry" }));
+  expect(spending.getByRole("columnheader", { name: "Estimated" })).toBeDefined();
+  expect(row("^Eating out").textContent).toBe("Eating out$62.10$150.00");
+  expect(row("^Books").textContent).toBe("Books—$100.00");
+  expect(row("^Unestimated").textContent).toBe("Unestimated—$550.00");
+  expect(spending.queryByText(/Eating out: \$62\.10 of/)).toBeNull();
+});

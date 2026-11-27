@@ -5,6 +5,7 @@ from accanto.domains.monthly_comparison import (
     breakdown,
     compare_category,
     summary,
+    with_estimates,
 )
 
 
@@ -78,14 +79,26 @@ def explain_review(version, entries):
             ]
     # Spending subcategories have no planned lines (TDD 07): every spending entry
     # is unplanned, grouped by subcategory in a breakdown that sums to the total.
+    # Optional estimates sit beside the groups and never change the comparison.
     spending = [e for e in entries if e["category"] == "spending"]
+    lines, estimate_totals = with_estimates(
+        breakdown(spending, "spending_subcategory_id", "spending_subcategory_name"),
+        [
+            {
+                "id": line["spending_subcategory_id"],
+                "name": line["spending_subcategory_name"],
+                "amount": line["amount"],
+            }
+            for line in version.get("spending_estimates", [])
+        ],
+        version["spending"],
+    )
     comparisons["spending"] = {
         **compare_category(
             [], spending, "spending_subcategory_id", version["spending"]
         ),
-        "breakdown": breakdown(
-            spending, "spending_subcategory_id", "spending_subcategory_name"
-        ),
+        "breakdown": lines,
+        **estimate_totals,
     }
     amounts = summary(comparisons, entries)
     return {

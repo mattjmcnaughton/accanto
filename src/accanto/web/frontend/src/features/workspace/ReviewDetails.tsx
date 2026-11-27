@@ -44,6 +44,8 @@ export type ReviewLine = {
   recorded: Amount;
   difference: Amount;
   entries: Entry[];
+  /** Informational (a Spending estimate): no entry is not a question to answer. */
+  quiet?: boolean;
 };
 export type ReviewSection = {
   category: Category;
@@ -56,6 +58,8 @@ export type ReviewSection = {
   /** Lines with no entry. Unknown is never zero. */
   unknown: ReviewLine[];
   lists: Array<{ key: string; name: string; entries: Entry[] }>;
+  /** The lines' planned column: guilt-free spending shows its optional estimates there. */
+  plannedLabel: string;
 };
 /** A question the Review asks about one unknown line, answered by recording an entry. */
 export type Resolution = { category: Category; id: string | null; name: string; amount: string };
@@ -199,19 +203,34 @@ export function reviewSections(review: ReviewView): ReviewSection[] {
             entries: [],
           });
       }
-    // Guilt-free spending by subcategory: recorded only, no planned amounts, and the
-    // groups add up to the section's recorded total (TDD 07).
-    if (category === "spending" && group?.breakdown)
+    // Guilt-free spending by subcategory: recorded groups add up to the section's
+    // recorded total (TDD 07); optional estimates sit beside them, with no difference.
+    const estimating = category === "spending" && group?.estimated != null;
+    if (category === "spending" && group?.breakdown) {
       for (const part of group.breakdown)
         lines.push({
           key: `b-spending-${part.id ?? "unassigned"}`,
           id: part.id,
           name: part.name ?? "Unassigned",
-          planned: undefined,
+          planned: part.estimated ?? undefined,
           recorded: part.recorded,
           difference: undefined,
           entries: part.entries,
+          quiet: true,
         });
+      const rest = cents(group.unestimated);
+      if (estimating && rest !== null)
+        lines.push({
+          key: "b-spending-unestimated",
+          id: null,
+          name: rest < 0 ? "Estimates over total" : "Unestimated",
+          planned: inputMoney(Math.abs(rest)),
+          recorded: undefined,
+          difference: undefined,
+          entries: [],
+          quiet: true,
+        });
+    }
     const lists: ReviewSection["lists"] = [];
     const spendingEntries = review.entries.filter((e) => e.category === "spending");
     if (category === "spending" && !group?.breakdown && spendingEntries.length)
@@ -224,7 +243,7 @@ export function reviewSections(review: ReviewView): ReviewSection[] {
         name: "Adjustments, already included",
         entries: group.adjustments,
       });
-    const unknown = lines.filter((line) => line.recorded === null);
+    const unknown = lines.filter((line) => line.recorded === null && !line.quiet);
     if (category === "spending" && recorded === null)
       unknown.push({
         key: "s-spending",
@@ -245,6 +264,7 @@ export function reviewSections(review: ReviewView): ReviewSection[] {
       lines,
       unknown,
       lists,
+      plannedLabel: estimating ? "Estimated" : "Planned",
     };
   });
 }
@@ -505,7 +525,7 @@ function Lines({ section, open }: { section: ReviewSection; open?: (uuid: string
             Recorded
           </th>
           <th scope="col" className="num c-plan">
-            Planned
+            {section.plannedLabel}
           </th>
           <th scope="col" className="num">
             Difference
@@ -534,12 +554,14 @@ function Lines({ section, open }: { section: ReviewSection; open?: (uuid: string
   );
 }
 function LineRows({ line, entries }: { line: ReviewLine; entries: ReactNode[] }) {
-  const unknown = line.recorded === null;
+  const unknown = line.recorded === null && !line.quiet;
   return (
     <>
-      <tr>
+      <tr className={line.key === "b-spending-unestimated" ? "muted" : undefined}>
         <th scope="row">{line.name}</th>
-        <td className={`num${unknown ? " warn" : ""}`}>{formatMoney(line.recorded)}</td>
+        <td className={`num${unknown ? " warn" : ""}`}>
+          {line.quiet && line.recorded == null ? "—" : formatMoney(line.recorded)}
+        </td>
         <td className="num c-plan">
           {line.planned === undefined ? "" : formatMoney(line.planned)}
         </td>
