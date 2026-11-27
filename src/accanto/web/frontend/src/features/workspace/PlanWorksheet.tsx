@@ -1,8 +1,11 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlanRevision } from "../../lib/monthly";
+import type { SavingsAccount } from "../../lib/savings";
 import type { SpendingSubcategory } from "../../lib/spendingSubcategories";
-import { Band, Dialog, Icon, tint } from "../../ui";
+import { Band, Combobox, Dialog, Icon, cleanName, tint } from "../../ui";
+import { NewGoal } from "../create/CreateForms";
+import { type CreatableKind, type CreateRequest, NOUNS } from "../create/create";
 import { PlanBreakdown, share } from "./PlanBreakdown";
 import {
   type Catalog,
@@ -37,6 +40,16 @@ type DisplayRow = { id: string; group: Group } & (
   | { heading: "subcategory"; subcategory: SpendingSubcategory }
 );
 const groups: Group[] = ["income", "funding", "fixed", "spending", "saving", "investing", "giving"];
+/** What a Destination picker can create; savings accounts and other groups are made elsewhere. */
+const creatable = (group: Group): CreatableKind | null =>
+  group === "saving"
+    ? "saving_goal"
+    : group === "investing"
+      ? "investment"
+      : group === "giving"
+        ? "giving_recipient"
+        : null;
+
 /** Section captions shown above the first group of each half of the worksheet. */
 const sections: Partial<Record<Group, [string, string?]>> = {
   income: ["Where the money comes from"],
@@ -59,6 +72,8 @@ export function PlanWorksheet({
   onVersion,
   onBack,
   onCopy,
+  onCreate,
+  accounts = [],
 }: {
   revision: PlanRevision;
   retained?: WorksheetDraft;
@@ -79,6 +94,13 @@ export function PlanWorksheet({
   onBack: () => void;
   /** Copy this Plan; omitted while copying is unavailable. */
   onCopy?: () => void;
+  /**
+   * Create a saving goal, investment or giving recipient from a typed name; `chosen` gets the
+   * new record once its create command succeeds. Omitted, the Destination picker only chooses.
+   */
+  onCreate?: (request: CreateRequest, chosen: (id: string) => void) => void;
+  /** Savings accounts a new saving goal can belong to. */
+  accounts?: SavingsAccount[];
 }) {
   const initialLines = useMemo(() => revisionLines(revision), [revision]);
   const [draftLines, setLines] = useState<Line[]>(retained?.lines ?? initialLines);
@@ -95,6 +117,8 @@ export function PlanWorksheet({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [modal, setModal] = useState<"help" | null>(null);
+  /** A new saving goal's name, waiting for its savings account. */
+  const [newGoal, setNewGoal] = useState<string | null>(null);
   const [versionIndex, setVersionIndex] = useState<number | null>(null);
   const gTime = useRef(0);
   const pendingDelete = useRef<{ id: string; time: number } | null>(null);
@@ -138,6 +162,7 @@ export function PlanWorksheet({
   const needsRevision = (line: Line) =>
     !readOnly &&
     ((catalog[line.group] &&
+      line.reference &&
       !unavailable.includes(line.group) &&
       !catalog[line.group]?.some((choice) => choice.id === line.reference && choice.active)) ||
       (line.link &&
@@ -292,7 +317,7 @@ export function PlanWorksheet({
       (choice) =>
         choice.active && !lines.some((l) => l.group === group && l.reference === choice.id),
     );
-    if (options?.length === 0) {
+    if (options?.length === 0 && !onCreate) {
       setNotice(
         "No available destinations. Add or reopen a destination in the workspace, or edit an existing line.",
       );
@@ -302,7 +327,10 @@ export function PlanWorksheet({
     const line: Line = {
       id,
       group,
-      name: options?.[0]?.name || (group === "income" ? "New income source" : "New fixed cost"),
+      // With nothing to choose, the line waits for a destination to be created in its details.
+      name:
+        options?.[0]?.name ??
+        (options ? "" : group === "income" ? "New income source" : "New fixed cost"),
       reference: options?.[0]?.id,
       amount: "0.00",
       frequency: "Monthly",
@@ -988,33 +1016,54 @@ export function PlanWorksheet({
                     {catalog[selectedLine.group] ? "Destination" : "Name"}
                   </label>
                   {catalog[selectedLine.group] ? (
-                    <select
+                    <Combobox
                       id="detail-name"
+                      placeholder="Choose or type a new name"
+                      options={[
+                        ...(selectedLine.reference
+                          ? [{ id: selectedLine.reference, name: selectedLine.name }]
+                          : []),
+                        ...(catalog[selectedLine.group] ?? [])
+                          .filter(
+                            (n) =>
+                              n.active &&
+                              !lines.some(
+                                (l) => l.group === selectedLine.group && l.reference === n.id,
+                              ),
+                          )
+                          .map((n) => ({ id: n.id, name: n.name })),
+                      ]}
                       value={selectedLine.reference ?? ""}
-                      onChange={(e) =>
+                      onChange={(id) =>
                         change(selectedLine.id, {
-                          reference: e.target.value,
-                          name: catalog[selectedLine.group]?.find(
-                            (choice) => choice.id === e.target.value,
-                          )?.name,
+                          reference: id,
+                          name: catalog[selectedLine.group]?.find((choice) => choice.id === id)
+                            ?.name,
                         })
                       }
-                    >
-                      <option value={selectedLine.reference}>{selectedLine.name}</option>
-                      {catalog[selectedLine.group]
-                        ?.filter(
-                          (n) =>
-                            n.active &&
-                            !lines.some(
-                              (l) => l.group === selectedLine.group && l.reference === n.id,
-                            ),
-                        )
-                        .map((n) => (
-                          <option key={n.id} value={n.id}>
-                            {n.name}
-                          </option>
-                        ))}
-                    </select>
+                      create={
+                        onCreate && creatable(selectedLine.group)
+                          ? {
+                              noun: NOUNS[creatable(selectedLine.group) as CreatableKind],
+                              // Goal names repeat across accounts; the catalog reads "Account · Goal".
+                              taken:
+                                selectedLine.group === "saving"
+                                  ? []
+                                  : (catalog[selectedLine.group] ?? []).map((n) => n.name),
+                              onCreate: (name) => {
+                                const line = selectedLine.id;
+                                if (selectedLine.group === "saving") return setNewGoal(name);
+                                const kind = creatable(selectedLine.group) as
+                                  | "investment"
+                                  | "giving_recipient";
+                                onCreate({ kind, name }, (id) =>
+                                  change(line, { reference: id, name: cleanName(name) }),
+                                );
+                              },
+                            }
+                          : undefined
+                      }
+                    />
                   ) : (
                     <input
                       id="detail-name"
@@ -1024,7 +1073,32 @@ export function PlanWorksheet({
                       onChange={(e) => change(selectedLine.id, { name: e.target.value })}
                     />
                   )}
-                  {!selectedLine.name.trim() && <p className="err">Enter a name.</p>}
+                  {!selectedLine.name.trim() && (
+                    <p className="err">
+                      {catalog[selectedLine.group]
+                        ? "Choose a destination, or type a new name to create one."
+                        : "Enter a name."}
+                    </p>
+                  )}
+                  {newGoal !== null && selectedLine.group === "saving" && onCreate && (
+                    <NewGoal
+                      name={newGoal}
+                      accounts={accounts}
+                      busy={busy}
+                      onCancel={() => setNewGoal(null)}
+                      onCreate={(request) => {
+                        const line = selectedLine.id;
+                        const account = request.kind === "saving_goal" ? request.account : null;
+                        setNewGoal(null);
+                        onCreate(request, (id) =>
+                          change(line, {
+                            reference: id,
+                            name: `${account?.name} · ${cleanName(request.name)}`,
+                          }),
+                        );
+                      }}
+                    />
+                  )}
                 </div>
                 <div className="field">
                   <label htmlFor="detail-amount">

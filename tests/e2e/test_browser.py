@@ -244,6 +244,20 @@ def test_signed_in_workspace(tmp_path):
         until(f"!!{found}")
         return value(f"{found}.value")
 
+    def combo(selector, typed, chosen):
+        # A filtering picker: type, wait for the row, then Enter chooses the
+        # first row, as a keyboard user would.
+        browser("fill", selector, typed)
+        until(
+            "Array.from(document.querySelectorAll('[role=option]'))"
+            f".some(o => o.textContent.startsWith({chosen!r}))"
+        )
+        until(
+            "document.querySelector('[role=option][aria-selected=true]')"
+            f"?.textContent.startsWith({chosen!r})"
+        )
+        browser("press", "Enter")
+
     def record_cell(grid, column, expected):
         selector = (
             f'table[aria-label="{grid}"] tbody tr:first-child td:nth-child({column})'
@@ -449,8 +463,15 @@ def test_signed_in_workspace(tmp_path):
         go("Activity")
         record_activity()
         browser("select", "#activity-record select", "fixed_cost")
-        fixed = option("select[name='fixed-cost']", "Synthetic annual service")
-        browser("select", "select[name='fixed-cost']", fixed)
+        combo(
+            "input[name='fixed-cost']",
+            "annual service",
+            "Synthetic annual service",
+        )
+        until(
+            "document.querySelector(\"input[name='fixed-cost']\").value"
+            " === 'Synthetic annual service'"
+        )
         browser("find", "label", "Amount (USD)", "fill", "8.33")
         save_activity()
         browser("wait", "--text", "Synthetic annual service")
@@ -463,8 +484,32 @@ def test_signed_in_workspace(tmp_path):
         go("Activity")
         record_activity()
         browser("find", "label", "Amount (USD)", "fill", "25")
+        # Inline create: a name no subcategory or tag has becomes one, saved by
+        # its own command, and is chosen on the entry before the entry saves.
+        combo(
+            "input[name='spending-subcategory']",
+            "Synthetic hobbies",
+            "Create “Synthetic hobbies”",
+        )
+        until(
+            "document.querySelector(\"input[name='spending-subcategory']\")"
+            ".value === 'Synthetic hobbies'"
+        )
+        combo(
+            "input[aria-label='Add a tag (Tags)']",
+            "Synthetic trip",
+            "Create “Synthetic trip”",
+        )
+        until(
+            "Array.from(document.querySelectorAll('#activity-record .tag-chip'))"
+            ".some(c => c.textContent.includes('Synthetic trip'))"
+        )
         save_activity()
         browser("wait", "--text", "$25.00")
+        until(
+            "document.querySelector('#main').textContent.includes('Synthetic hobbies')"
+        )
+        until("document.querySelector('#main').textContent.includes('Synthetic trip')")
         go("Review")
         browser("wait", "--text", "Changed since review")
         assert "Reviewed. Clear the mark" in browser(
@@ -522,8 +567,7 @@ def test_signed_in_workspace(tmp_path):
         button("Discard pending save")
         browser("select", "#activity-record select", "saving")
         browser("find", "label", "Amount (USD)", "fill", "200.00")
-        option("select[name='saving-goal']", "Laptop")
-        browser("select", "select[name='saving-goal']", laptop)
+        combo("input[name='saving-goal']", "Laptop", "Synthetic savings · Laptop")
         save_activity()
         browser("wait", "--text", "$200.00")
         record_activity()

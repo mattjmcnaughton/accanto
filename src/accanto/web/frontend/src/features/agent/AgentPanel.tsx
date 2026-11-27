@@ -17,8 +17,12 @@ import {
 import { ApiError, type BrowserSession, type UUID } from "../../lib/api";
 import { formatMoney } from "../../lib/format";
 import type { WriteSpec } from "../../lib/monthly";
-import { Icon } from "../../ui";
-import { type Entity, composing } from "../workspace/shared";
+import { type SpendingSubcategory, spendingSubcategories } from "../../lib/spendingSubcategories";
+import { type Tag, tags as tagApi } from "../../lib/tags";
+import { Combobox, Icon } from "../../ui";
+import { type CreateRequest, createSpec, createdId } from "../create/create";
+import { TagPicker } from "../tags/Tags";
+import { type Entity, composing, useLoad } from "../workspace/shared";
 import { Markdown } from "./Markdown";
 import "./agent.css";
 
@@ -175,6 +179,25 @@ export function AgentPanel(p: AgentPanelProps) {
   const [loadError, setLoadError] = useState("");
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [pending, setPending] = useState<PendingChange[]>([]);
+  // An editable drafted entry can take a subcategory and tags, so its card needs their lists.
+  const editableDrafts = pending.some((c) => c.tool === "save_activity" && !c.input.id);
+  const tagState = useLoad(() => tagApi.list(p.entity.id), [p.entity.id, p.refresh], {
+    enabled: editableDrafts,
+  });
+  const subcategoryState = useLoad(
+    () => spendingSubcategories.list(p.entity.id),
+    [p.entity.id, p.refresh],
+    { enabled: editableDrafts },
+  );
+  const pickers: Pickers = {
+    tags: tagState.kind === "ready" ? tagState.data : [],
+    subcategories: subcategoryState.kind === "ready" ? subcategoryState.data : [],
+    create: (request, chosen) =>
+      p.save(createSpec(p.entity.id, request), (data) => {
+        const id = createdId(request, data);
+        if (id) chosen(id);
+      }),
+  };
   const [tab, setTab] = useState<Tab>("chat");
   const [text, setText] = useState("");
   const [images, setImages] = useState<File[]>([]);
@@ -590,6 +613,7 @@ export function AgentPanel(p: AgentPanelProps) {
           disabled={p.busy}
           edited={edits[c.id] ?? null}
           edit={(values) => setEdits((all) => ({ ...all, [c.id]: values }))}
+          pickers={pickers}
           problem={outcome?.failed === c.id ? outcome.message : ""}
           apply={(edited) => applyChanges([c], edited ? { [c.id]: edited } : {})}
           dismiss={() => void dismiss(c)}
@@ -898,6 +922,7 @@ export function AgentPanel(p: AgentPanelProps) {
                   disabled={p.busy}
                   edited={edits[c.id] ?? null}
                   edit={(values) => setEdits((all) => ({ ...all, [c.id]: values }))}
+                  pickers={pickers}
                   problem={outcome?.failed === c.id ? outcome.message : ""}
                   apply={(edited) => applyChanges([c], edited ? { [c.id]: edited } : {})}
                   dismiss={() => void dismiss(c)}
@@ -1170,6 +1195,13 @@ export function inputRows(
   });
 }
 
+/** Lists and create commands an editable drafted entry's subcategory and tag pickers use. */
+type Pickers = {
+  tags: Tag[];
+  subcategories: SpendingSubcategory[];
+  create: (request: CreateRequest, chosen: (id: string) => void) => void;
+};
+
 /** A drafted change. save_activity drafts are editable before applying. */
 export function PendingCard({
   change,
@@ -1181,6 +1213,7 @@ export function PendingCard({
   problem,
   apply,
   dismiss,
+  pickers,
 }: {
   change: PendingChange;
   canApply: boolean;
@@ -1194,6 +1227,8 @@ export function PendingCard({
   problem: string;
   apply: (edited?: Record<string, unknown>) => void;
   dismiss: () => void;
+  /** Subcategory and tag pickers, with inline create, for an editable drafted entry. */
+  pickers?: Pickers;
 }) {
   const { _draft, ...input } = change.input as Record<string, unknown> & {
     _draft?: { uncertain_fields?: string[]; source_text?: string };
@@ -1233,7 +1268,14 @@ export function PendingCard({
                   id={`${change.id}-${field}`}
                   className="input"
                   value={String(values[field] ?? "spending")}
-                  onChange={(e) => edit({ ...values, [field]: e.target.value })}
+                  onChange={(e) =>
+                    // A subcategory belongs to guilt-free spending only.
+                    edit({
+                      ...values,
+                      [field]: e.target.value,
+                      ...(e.target.value === "spending" ? {} : { spending_subcategory_id: null }),
+                    })
+                  }
                 >
                   {["spending", "income", "fixed_cost", "saving"].map((c) => (
                     <option key={c} value={c}>
@@ -1253,6 +1295,51 @@ export function PendingCard({
               )}
             </label>
           ))}
+          {pickers && String(values.category ?? "spending") === "spending" && (
+            <label htmlFor={`${change.id}-subcategory`}>
+              <span>subcategory</span>
+              <Combobox
+                id={`${change.id}-subcategory`}
+                options={[
+                  { id: "", name: "Unassigned" },
+                  ...pickers.subcategories
+                    .filter((sub) => sub.active || sub.uuid === values.spending_subcategory_id)
+                    .map((sub) => ({ id: sub.uuid, name: sub.name })),
+                ]}
+                value={String(values.spending_subcategory_id ?? "")}
+                disabled={disabled}
+                onChange={(id) => edit({ ...values, spending_subcategory_id: id || null })}
+                create={{
+                  noun: "spending subcategory",
+                  taken: pickers.subcategories.map((sub) => sub.name),
+                  onCreate: (name) =>
+                    pickers.create({ kind: "spending_subcategory", name }, (id) =>
+                      edit({ ...values, spending_subcategory_id: id }),
+                    ),
+                }}
+              />
+            </label>
+          )}
+          {pickers && (
+            <TagPicker
+              label="tags"
+              tags={pickers.tags}
+              value={Array.isArray(values.tag_ids) ? (values.tag_ids as string[]) : []}
+              disabled={disabled}
+              onChange={(tag_ids) => edit({ ...values, tag_ids })}
+              onCreate={(name) =>
+                pickers.create({ kind: "tag", name }, (id) =>
+                  edit({
+                    ...values,
+                    tag_ids: [
+                      ...(Array.isArray(values.tag_ids) ? (values.tag_ids as string[]) : []),
+                      id,
+                    ],
+                  }),
+                )
+              }
+            />
+          )}
         </div>
       ) : (
         <dl className="agent-input">

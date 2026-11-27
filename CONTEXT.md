@@ -501,6 +501,14 @@ They define behavior without prescribing production storage or architecture:
 - Review checkpoints are freely set or cleared personal annotations with an
   optional takeaway. Subsequent relevant changes can show an informational
   indicator without clearing the annotation; unknown amounts remain unknown.
+- A picker that chooses a Tag, Spending subcategory, Fixed cost, Saving goal,
+  Investment or Giving recipient can create one from a typed name that none
+  has, through that record's own create command. A new Saving goal names its
+  savings account and starts ongoing with no target. A Fixed cost exists only as
+  a Plan line, so a new one is a new line, with its planned amount and
+  fixed-cost frequency, in a Plan's editable draft: saved Plan versions, and the
+  Reviews compared with them, keep what they had until a version is saved.
+  Creating a record allocates no money and records nothing.
 - Browser storage plus export/restore supports prototype continuity. It is not
   production persistence, authentication, or cross-device synchronization.
 

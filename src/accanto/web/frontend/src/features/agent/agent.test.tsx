@@ -819,3 +819,43 @@ it("starts an AGENT.md interview from an empty conversation and shows the drafte
   expect(screen.getByText("Example Grocer is groceries.").tagName).toBe("LI");
   expect(screen.getByText(/as of revision 3/)).toBeInTheDocument();
 });
+
+it("creates a subcategory and a tag from a drafted entry's card, and applies with both", () => {
+  const edit = vi.fn();
+  const create = vi.fn();
+  const pickers = {
+    tags: [{ uuid: "tag-kids", name: "Kids", active: true, revision: 1, entries: 0 }],
+    subcategories: [{ uuid: "sub-eat", name: "Eating out", active: true, revision: 1, entries: 0 }],
+    create,
+  };
+  render(
+    <PendingCard
+      change={change()}
+      canApply
+      entityName="Synthetic Personal"
+      disabled={false}
+      edited={null}
+      edit={edit}
+      problem=""
+      apply={vi.fn()}
+      dismiss={vi.fn()}
+      pickers={pickers}
+    />,
+  );
+  fireEvent.change(screen.getByRole("combobox", { name: "subcategory" }), {
+    target: { value: "Groceries" },
+  });
+  fireEvent.click(screen.getByRole("option", { name: /Create “Groceries”/ }));
+  expect(create.mock.calls[0][0]).toEqual({ kind: "spending_subcategory", name: "Groceries" });
+  create.mock.calls[0][1]("sub-new");
+  expect(edit).toHaveBeenLastCalledWith(
+    expect.objectContaining({ spending_subcategory_id: "sub-new", amount: "65.50" }),
+  );
+  fireEvent.change(screen.getByRole("combobox", { name: "Add a tag (tags)" }), {
+    target: { value: "Italy trip" },
+  });
+  fireEvent.click(screen.getByRole("option", { name: /Create “Italy trip”/ }));
+  expect(create.mock.calls[1][0]).toEqual({ kind: "tag", name: "Italy trip" });
+  create.mock.calls[1][1]("tag-new");
+  expect(edit).toHaveBeenLastCalledWith(expect.objectContaining({ tag_ids: ["tag-new"] }));
+});

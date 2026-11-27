@@ -16,7 +16,16 @@ import { savings } from "../../lib/savings";
 import { matches } from "../../lib/search";
 import { spendingSubcategories } from "../../lib/spendingSubcategories";
 import { tags } from "../../lib/tags";
-import { tint } from "../../ui";
+import { cleanName, sameName, tint } from "../../ui";
+import {
+  type CreateRequest,
+  NOUNS,
+  createSpec,
+  createdId,
+  fixedCostsOf,
+  planDrafts,
+} from "../create/create";
+import { FREQUENCIES, type Frequency } from "../workspace/planWorksheetModel";
 import { LoadProblem, LoadingCard } from "../workspace/Activity";
 import { type ScreenProps, keysBelongElsewhere, sourceChoices, useLoad } from "../workspace/shared";
 import {
@@ -58,6 +67,25 @@ type Picker = {
   at: number;
   /** The selected items a batch choice applies to; otherwise the current item. */
   ids?: string[];
+  /** The category whose assignment a line picker chooses. */
+  category?: InboxCategory;
+};
+/** A new fixed cost needs its planned amount before it joins a Plan's draft. */
+type FixedForm = {
+  name: string;
+  planId: string;
+  planName: string;
+  ids: string[];
+  amount: string;
+  frequency: Frequency;
+};
+/** The inbox category whose picker lists each kind of record. */
+const LIST: Partial<Record<CreateRequest["kind"], InboxCategory>> = {
+  spending_subcategory: "spending",
+  fixed_cost: "fixed_cost",
+  saving_goal: "saving",
+  investment: "investing",
+  giving_recipient: "giving",
 };
 type Outcome = { item_id: string; ok: boolean; item?: unknown; error?: { message: string } };
 type Toast = { text: string; tone?: "warn" | "bad"; undo?: boolean };
@@ -175,6 +203,11 @@ export function Inbox(
   const [picker, setPicker] = useState<Picker | null>(null);
   /** The note being written: the items it is for and its text so far. */
   const [noting, setNoting] = useState<Noting | null>(null);
+  const [fixedForm, setFixedForm] = useState<FixedForm | null>(null);
+  /** Records this screen created, named until the reloaded lists include them. */
+  const [made, setMade] = useState<
+    Array<{ list: InboxCategory | "tag"; id: string; name: string }>
+  >([]);
   const [help, setHelp] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [busy, setBusy] = useState(false);
@@ -269,7 +302,7 @@ export function Inbox(
       state.kind === "ready"
         ? state.data.filter((d) => d.active).map((d) => ({ id: d.uuid, name: d.name }))
         : [];
-    return {
+    const base: Choices = {
       lines: {
         income: [
           ...(plans.kind === "ready"
@@ -309,9 +342,28 @@ export function Inbox(
                 Number(e.amount) > 0,
             )
           : [],
-      tags: tagState.kind === "ready" ? tagState.data : [],
-    } satisfies Choices;
-  }, [plans, accounts, activity, investments, recipients, tagState, subcategoryState]);
+      tags: tagState.kind === "ready" ? [...tagState.data] : [],
+    };
+    const tagList = base.tags ?? [];
+    for (const record of made) {
+      if (record.list === "tag") {
+        if (!tagList.some((tag) => tag.uuid === record.id))
+          tagList.push({
+            uuid: record.id,
+            name: record.name,
+            active: true,
+            revision: 1,
+            entries: 0,
+          });
+      } else if (record.list === "saving") {
+        // Saving's options are the goals list itself.
+        if (!base.goals.some((goal) => goal.id === record.id))
+          base.goals.unshift({ id: record.id, name: record.name, saved: 0, note: "$0.00 saved" });
+      } else if (!base.lines[record.list].some((option) => option.id === record.id))
+        base.lines[record.list].unshift({ id: record.id, name: record.name });
+    }
+    return base;
+  }, [plans, accounts, activity, investments, recipients, tagState, subcategoryState, made]);
 
   /** What a row shows: the recorded entry once recorded, else the edit or proposal. */
   const shownAs = (it: StagedTransaction): Completion => {
@@ -919,6 +971,7 @@ export function Inbox(
       setPicker({
         ...base,
         kind,
+        category: c.category as InboxCategory,
         title: `${category.line} for ${target}`,
         placeholder: `Type to filter ${category.line?.toLowerCase()}s`,
         options:
@@ -929,8 +982,10 @@ export function Inbox(
             : undefined,
         none:
           c.category === "spending"
-            ? "No subcategories yet. Add them from Activity, Spending subcategories."
-            : "Nothing to choose here yet. Add one on its own screen first.",
+            ? "No subcategories yet. Type a name to create one."
+            : c.category === "income"
+              ? "No Income sources yet. Add them to a Plan."
+              : "Nothing to choose here yet. Type a name to create one.",
       });
     } else if (kind === "funding") {
       const targets = ids ? chosen.filter((x) => ids.includes(x.id)) : [it];
@@ -971,7 +1026,7 @@ export function Inbox(
         foot: ids
           ? "Choose a tag to add it to every selected item, or to remove it when all carry it."
           : "An entry can carry several tags. Choose one to add or remove it.",
-        none: "No tags yet. Create them in Activity with Manage tags.",
+        none: "No tags yet. Type a name to create one.",
       });
     } else if (kind === "refund") {
       const options = refundCandidates(it, choices.purchases);
@@ -1000,13 +1055,119 @@ export function Inbox(
       });
     }
   }
+  /** Change the drafts of these items, from their latest drafts after an awaited create. */
+  function assign(ids: string[], change: (c: Completion) => Completion) {
+    setDrafts((d) => {
+      const next = { ...d };
+      for (const id of ids) {
+        const it = all.find((x) => x.id === id);
+        if (it) next[id] = change(effective(it, d[id]));
+      }
+      return next;
+    });
+    setHints((h) => Object.fromEntries(Object.entries(h).filter(([id]) => !ids.includes(id))));
+  }
+  /**
+   * Create a record through its own create command, with one retry identity across a sign-in,
+   * then choose it for these items. Lists reload so every picker has it.
+   */
+  async function create(request: CreateRequest, ids: string[], kind: "line" | "tag") {
+    const key = crypto.randomUUID();
+    const spec = createSpec(p.entity.id, request);
+    setBusy(true);
+    try {
+      let data: unknown;
+      try {
+        data = await send(await p.credentials(), spec, key);
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.kind !== "unauthenticated") throw error;
+        data = await send(await p.credentials(true), spec, key);
+      }
+      const id = createdId(request, data);
+      const list = kind === "tag" ? "tag" : LIST[request.kind];
+      const shown =
+        request.kind === "saving_goal"
+          ? `${request.account.name} · ${cleanName(request.name)}`
+          : cleanName(request.name);
+      if (id && list) setMade((all) => [...all, { list, id, name: shown }]);
+      if (id && kind === "line") assign(ids, (c) => ({ ...c, assignment: id }));
+      else if (id)
+        assign(ids, (c) => ({ ...c, tag_ids: [...(c.tag_ids ?? []).filter((t) => t !== id), id] }));
+      setToast({ text: `Created the ${NOUNS[request.kind]} ${cleanName(request.name)}.` });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Try again.";
+      setToast({ text: `Not created. ${message}`, tone: "bad" });
+      return false;
+    } finally {
+      setBusy(false);
+      refreshAll();
+    }
+  }
+  function chooseCreate(option: Option, pick: Picker, ids: string[]) {
+    const [, kind, ref] = option.id.split(":");
+    const name = cleanName(pick.query);
+    if (kind === "fixed_cost") {
+      const plan = planDrafts(plans.kind === "ready" ? plans.data : []).find(
+        (x) => x.planId === ref,
+      );
+      if (plan)
+        setFixedForm({
+          name,
+          planId: plan.planId,
+          planName: plan.draft.name,
+          ids,
+          amount: "",
+          frequency: "Monthly",
+        });
+      return;
+    }
+    if (kind === "saving_goal") {
+      const account =
+        accounts.kind === "ready" ? accounts.data.find((a) => a.uuid === ref) : undefined;
+      if (account) void create({ kind, name, account }, ids, "line");
+      return;
+    }
+    void create(
+      { kind: kind as "tag" | "spending_subcategory" | "investment" | "giving_recipient", name },
+      ids,
+      pick.kind === "tag" ? "tag" : "line",
+    );
+  }
+  function submitFixed(form: FixedForm) {
+    const plan = planDrafts(plans.kind === "ready" ? plans.data : []).find(
+      (x) => x.planId === form.planId,
+    );
+    if (!plan || decimalToCents(form.amount.trim()) === null || form.amount.trim().startsWith("-"))
+      return;
+    setFixedForm(null);
+    void create(
+      {
+        kind: "fixed_cost",
+        name: form.name,
+        planId: plan.planId,
+        draft: plan.draft,
+        amount: form.amount,
+        frequency: form.frequency,
+      },
+      form.ids,
+      "line",
+    );
+  }
   async function choose(option: Option) {
     const it = current;
     const kind = picker?.kind;
     const ids = picker?.ids;
+    const pick = picker;
     setPicker(null);
     const targets = ids ? chosen.filter((x) => ids.includes(x.id)) : it ? [it] : [];
-    if (!it || !kind || !targets.length) return;
+    if (!it || !kind || !targets.length || !pick) return;
+    if (option.id.startsWith("create:"))
+      return chooseCreate(
+        option,
+        pick,
+        targets.map((x) => x.id),
+      );
     const each = (change: (c: Completion) => Completion, only = targets) =>
       setDraft(Object.fromEntries(only.map((x) => [x.id, change(effective(x, drafts[x.id]))])));
     const on = targets.every((x) => effective(x, drafts[x.id]).tag_ids?.includes(option.id));
@@ -1029,10 +1190,62 @@ export function Inbox(
       });
     }
   }
+  /** "Create …" rows for a typed name that no option has, in CONTEXT.md's names. */
+  function createRows(pick: Picker): Option[] {
+    const typed = cleanName(pick.query);
+    if (!typed || typed.length > 120 || pick.options.some((o) => sameName(o.name, typed)))
+      return [];
+    const row = (kind: string, ref = "", where = "") => ({
+      id: `create:${kind}:${ref}`,
+      name: `Create “${typed}”${where ? ` in ${where}` : ""}`,
+      note: `New ${NOUNS[kind as keyof typeof NOUNS]}`,
+    });
+    const named = (names: string[]) => names.some((n) => sameName(n, typed));
+    if (pick.kind === "tag")
+      return named(tagState.kind === "ready" ? tagState.data.map((t) => t.name) : [])
+        ? []
+        : [row("tag")];
+    if (pick.kind !== "line") return [];
+    switch (pick.category) {
+      case "spending":
+        return named(
+          subcategoryState.kind === "ready" ? subcategoryState.data.map((x) => x.name) : [],
+        )
+          ? []
+          : [row("spending_subcategory")];
+      case "investing":
+        return [row("investment")];
+      case "giving":
+        return [row("giving_recipient")];
+      case "saving":
+        // A goal belongs to one savings account: offer each open account.
+        return accounts.kind === "ready"
+          ? accounts.data
+              .filter((a) => a.active && !named(a.goals.map((g) => g.name)))
+              .map((a) => ({ ...row("saving_goal", a.uuid, a.name), note: "New ongoing goal" }))
+          : [];
+      case "fixed_cost": {
+        // A fixed cost is a line of a Plan: it joins a draft. Saved versions never change.
+        const all = plans.kind === "ready" ? plans.data : [];
+        if (named(fixedCostsOf(all).flatMap((c) => [c.name, c.canonical_name]))) return [];
+        return planDrafts(all).map(({ planId, draft }) => ({
+          ...row("fixed_cost", planId, `${draft.name}'s draft`),
+          note: "Planned amount next",
+        }));
+      }
+      default:
+        return [];
+    }
+  }
   const filtered = picker
-    ? picker.options.filter((o) =>
-        `${o.name} ${o.note ?? ""} ${o.sub ?? ""}`.toLowerCase().includes(picker.query),
-      )
+    ? [
+        ...picker.options.filter((o) =>
+          `${o.name} ${o.note ?? ""} ${o.sub ?? ""}`
+            .toLowerCase()
+            .includes(picker.query.toLowerCase()),
+        ),
+        ...createRows(picker),
+      ]
     : [];
 
   /** Keys that act on every selected item; false lets the key reach the normal handler. */
@@ -1086,6 +1299,7 @@ export function Inbox(
       if (key === "Escape" || key === "?") setHelp(false);
       return;
     }
+    if (fixedForm) return;
     if (picker) {
       if (key === "Escape") setPicker(null);
       else if (key === "ArrowDown")
@@ -1095,8 +1309,7 @@ export function Inbox(
         if (filtered[picker.at]) void choose(filtered[picker.at]);
       } else if (key === "Backspace")
         setPicker({ ...picker, query: picker.query.slice(0, -1), at: 0 });
-      else if (key.length === 1)
-        setPicker({ ...picker, query: picker.query + key.toLowerCase(), at: 0 });
+      else if (key.length === 1) setPicker({ ...picker, query: picker.query + key, at: 0 });
       return;
     }
     if (busy && !["j", "k", "ArrowDown", "ArrowUp", "?", "v", "/", "Escape"].includes(key)) return;
@@ -1224,7 +1437,7 @@ export function Inbox(
   const keys = useRef(press);
   keys.current = press;
   const overlay = useRef(false);
-  overlay.current = Boolean(picker) || help;
+  overlay.current = Boolean(picker) || help || Boolean(fixedForm);
   useEffect(() => {
     // Capture runs before the workspace's own shortcuts, which skip handled events.
     const listener = (e: KeyboardEvent) => {
@@ -1943,6 +2156,67 @@ export function Inbox(
           </div>
         </div>
       )}
+      {fixedForm && (
+        <div className="ix-ov" onClick={() => setFixedForm(null)} onKeyDown={undefined}>
+          <form
+            className="ix-pal create-form"
+            aria-label={`New fixed cost ${fixedForm.name}`}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setFixedForm(null);
+              }
+            }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitFixed(fixedForm);
+            }}
+          >
+            <b>New fixed cost “{fixedForm.name}”</b>
+            <p className="note">
+              It joins {fixedForm.planName}'s draft as a new line. Saved versions, and the Reviews
+              compared with them, stay as they are until you save a new version.
+            </p>
+            <div className="two">
+              <label className="field">
+                <span>Planned amount (USD)</span>
+                <input
+                  // biome-ignore lint/a11y/noAutofocus: The form opens to ask for this amount.
+                  autoFocus
+                  required
+                  inputMode="decimal"
+                  pattern="[0-9]{1,9}([.][0-9]{1,2})?"
+                  placeholder="0.00"
+                  value={fixedForm.amount}
+                  onChange={(e) => setFixedForm({ ...fixedForm, amount: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>Frequency</span>
+                <select
+                  value={fixedForm.frequency}
+                  onChange={(e) =>
+                    setFixedForm({ ...fixedForm, frequency: e.target.value as Frequency })
+                  }
+                >
+                  {Object.keys(FREQUENCIES).map((name) => (
+                    <option key={name}>{name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="create-form-actions">
+              <button type="submit" className="btn pri" disabled={busy}>
+                Create and choose
+              </button>
+              <button type="button" className="btn" onClick={() => setFixedForm(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       {help && <Help close={() => setHelp(false)} />}
     </div>
   );
@@ -2645,7 +2919,10 @@ const HELP: Array<[string, string]> = [
     "F",
     "Flow: one waiting item at a time. Enter accepts, l or → leaves it for later (nothing is saved), s ignores, e edits, c writes a note, z undoes, Esc leaves.",
   ],
-  ["↑ ↓ Enter Esc", "In a picker: move, choose, cancel."],
+  [
+    "↑ ↓ Enter Esc",
+    "In a picker: move, choose, cancel. Type a name it does not have to create it: a tag, subcategory, goal, investment, giving recipient or fixed cost.",
+  ],
   [
     "Ctrl K",
     "Ask, or jump to another screen (⌘ K on a Mac). Here 1 – 6 set a category, so they do not switch screens. Ctrl J or ⌘ J opens the assistant and n adds activity.",
