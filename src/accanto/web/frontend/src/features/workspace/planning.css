@@ -334,12 +334,45 @@
 }
 .plan-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 16px;
   align-items: start;
 }
-.plan-layout.with-sidebar {
-  grid-template-columns: minmax(0, 1fr) 280px;
+.plan-sheet.screen {
+  max-width: 1280px;
+}
+/* The breakdown stays in view while editing; the line panel opens below it. */
+.plan-rail {
+  position: sticky;
+  top: 70px;
+  max-height: calc(100vh - 86px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.plan-rail .plan-breakdown {
+  order: -1;
+}
+.plan-rail .plan-table tbody th {
+  white-space: nowrap;
+}
+/* In the narrow rail each row's bar runs along its bottom edge. */
+.plan-rail .plan-table tbody tr {
+  position: relative;
+}
+.plan-rail .breakdown-bar-cell {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  padding: 0;
+  border: 0;
+}
+.plan-rail .breakdown-bar {
+  height: 3px;
+  border-radius: 2px;
 }
 .plan-grid {
   width: 100%;
@@ -507,8 +540,6 @@
   color: var(--ink2);
 }
 .plan-details {
-  position: sticky;
-  top: 70px;
   display: grid;
   gap: 10px;
 }
@@ -626,11 +657,19 @@
 }
 
 @media (max-width: 960px) {
-  .plan-layout.with-sidebar {
+  .plan-layout {
     grid-template-columns: minmax(0, 1fr);
   }
-  .plan-details {
+  .plan-sheet.screen {
+    max-width: 940px;
+  }
+  .plan-rail {
     position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  .plan-rail .plan-breakdown {
+    order: 0;
   }
 }
 @media (max-width: 760px) {

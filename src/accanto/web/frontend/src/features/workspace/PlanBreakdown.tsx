@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { formatMoney } from "../../lib/format";
 import type { Metric } from "../../lib/monthly";
 import { tint } from "../../ui";
@@ -38,8 +39,14 @@ export function PlanBreakdown({
 }) {
   const shares = rows.map((row) => ({ ...row, share: percentage(row.amount, funding) }));
   const scale = Math.max(100, ...shares.map((row) => row.share ?? 0));
+  // Open beside the worksheet on desktop; collapsed below it on narrow screens.
+  const [open, setOpen] = useState(() => !!window.matchMedia?.("(min-width: 961px)").matches);
   return (
-    <details className="plan-breakdown card">
+    <details
+      className="plan-breakdown card"
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
       <summary>
         <strong>Plan breakdown</strong>
         <span className="muted">{label(percentage(allocated, funding))} allocated</span>
@@ -51,9 +58,9 @@ export function PlanBreakdown({
           <thead>
             <tr>
               <th>Allocation</th>
-              <th className="num">Monthly amount</th>
-              <th className="num">Share of funding</th>
-              <th>
+              <th className="num">Monthly</th>
+              <th className="num">Share</th>
+              <th className="breakdown-bar-cell">
                 <span className="sr-only">Relative share</span>
               </th>
             </tr>
