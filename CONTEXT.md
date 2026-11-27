@@ -19,8 +19,8 @@ committing").
 
 | Term | Meaning |
 | --- | --- |
-| User | The account identity used for sign-in and account management. A User owns one or more Entities and works in one at a time. A User is not itself the financial planning boundary. |
-| Entity | A User’s named financial workspace and the planning boundary for Income sources, Plans, Reviews, saving goals, savings accounts, investments, debt accounts, giving recipients, Spending subcategories, Tags, and recorded activity. Its finances are viewed and totaled together. Income sources belong to individual Plans within the Entity, not to a shared Entity source catalog. |
+| User | The account identity used for sign-in and account management. A User owns zero or more Entities, may be an Entity member of others, and works in one at a time. A User is not itself the financial planning boundary. |
+| Entity | A User’s (its owner's) named financial workspace, which the owner may share with Entity members, and the planning boundary for Income sources, Plans, Reviews, saving goals, savings accounts, investments, debt accounts, giving recipients, Spending subcategories, Tags, and recorded activity. Its finances are viewed and totaled together. Income sources belong to individual Plans within the Entity, not to a shared Entity source catalog. |
 | Entity time zone | The time zone used for defaults such as today and this month across browser, API, and MCP. Financial activity belongs to the calendar date selected for it, not the date of entry or a time-zone conversion. Changing the time zone does not move existing activity between dates or Periods. |
 | Currency | All monetary amounts use U.S. dollars (USD): Plan inputs and results, actual entries and adjustments, funding origins, saving goals, contribution targets, investment balance observations, and projections. Mixed-currency records and currency conversion are outside current scope. |
 | Income source | A Plan's named, stable identity for a source of money, scoped to that Plan's Entity. Identity persists across edits and saved versions of that Plan; changing salary amounts requires no relinking. Copying a Plan creates new Income source identities. Each monthly Plan specifies a directly entered planned net amount for each included source. A generic label such as “Primary salary” can distinguish a source without a separate Individual record. An Income source and its planned amounts are distinct from money actually received. Existing Plan copy may shorten Income source to Income. |
@@ -123,6 +123,7 @@ committing").
 | Entry schedule | An Entity's named set of one to ten entries that come back together on a cadence, such as a paycheck's 401(k) deferral as income and the matching investing entry, on the last weekday of each month. It uses the Routine cadence, and a monthly day may move off a weekend to the weekday before or after, within the month. On each Scheduled date the hourly job puts its entries in the Transactions inbox once, as waiting staged transactions with the planned completion as their proposal; nothing is an actual entry until the owner accepts it there, like any inbox item. Pausing stages nothing until resumed, and dates while paused never arrive later; editing changes future dates only; ending stops it after its end date. Dates before the schedule was created never arrive. |
 | Scheduled date | One date of an Entry schedule. It is staged (its items are in the Transactions inbox, where they are recorded or ignored), skipped once by a person, or failed: its entries could not be staged, because a line names a record that no longer exists, so none was, and the reason shows until it is fixed (the job tries again every hour) or skipped. |
 | Inbox pair | A waiting staged transaction and one of the other origin, an Entry schedule's item and a Transaction source's, waiting or recorded, that are likely the same money: the same exact signed amount, dated within four days of each other. Each waiting item of a pair says so; the owner keeps one and ignores the other, so the money counts once. Accanto never pairs, records or ignores on its own. |
+| Entity member | Another User the Entity's owner added, by the verified email that User signs in with, to share the Entity. A member has the owner's access to the Entity's finances, settings and agents through every interface, except managing members and setting up Transaction sources. Only the owner adds members or removes others, from a signed-in browser; a member may leave. A removed member loses access on their next request. Each person keeps their own sign-in, API keys and assistant conversations, and the audit history records which person made each change. Entry schedules act as the owner. |
 | Untrusted data | Any text read from the Entity, a source, or an image (payees, memos, notes, names, rationales). Quoted to the model as data, never followed as instructions; an instruction found there is reported to the owner. |
 
 ## Actors and roles
@@ -131,8 +132,10 @@ In current scope, the person using Accanto can create and edit Plans, record
 activity, and review results. Planning, recording, and reviewing are activities
 of the same actor, not separate Planner, Recorder, or Reviewer permission roles.
 User remains the account identity; Entity remains the financial planning boundary.
-There is no separate approver or required approval handoff. Shared access and
-any future division of responsibilities require explicit later decisions.
+There is no separate approver or required approval handoff. An Entity's owner
+may share it with Entity members, who do everything the owner does except
+manage members ([TDD 19](docs/tdds/19-entity-members.md)). Any narrower
+division of responsibilities requires an explicit later decision.
 An Agent acts for that same person within one Entity at a time; it is not a
 separate actor with its own permissions ([PRD 02](docs/prd/02-agent-access.md)).
 
@@ -315,11 +318,11 @@ second source would add one adapter module, not an integration framework.
 ## Domain boundaries
 
 A User is the account boundary. An Entity is the financial boundary. One User
-owns each Entity and may own several, such as Family and Personal; there is no
-sharing or membership. The User works in one Entity at a time and switches
+owns each Entity and may own several, such as Family and Personal; the owner may
+share an Entity with Entity members, who see it next to their own. The User works in one Entity at a time and switches
 explicitly. Records never link across Entities: a funding origin, assignment or
 transfer names only records of the same Entity, and there are no cross-Entity
-transfers. A Transaction source's plan feeds one of the User's Entities at a time.
+transfers. A Transaction source's plan feeds one of the owner's Entities at a time.
 All Plans, Reviews, Income sources, activity, goals, savings accounts, investments,
 debt accounts, giving recipients, and balance observations are scoped to their Entity. Totals never combine different
 Entities: figures from several Entities may be shown side by side, each labeled

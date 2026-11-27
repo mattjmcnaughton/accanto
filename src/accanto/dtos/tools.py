@@ -287,6 +287,8 @@ class EntityContext(Output):
     name: Untrusted
     time_zone: str
     today: date
+    # The caller's access (TDD 19): an owner also manages who shares the Entity.
+    role: Literal["owner", "member"]
 
 
 class EntityRef(Output):

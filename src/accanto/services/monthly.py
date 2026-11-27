@@ -75,7 +75,19 @@ async def authorize(
         if actor.credential_kind == "oauth" and lock:
             # A provider may revoke while this request waits for Entity serialization.
             actor = await revalidate_actor(session, actor, lock=lock)
-    if not entity or entity["owner_id"] != actor.user_id:
+        # A member (TDD 19) is checked in its own statement, after the Entity
+        # lock, so it sees a removal that committed while this request waited.
+        allowed = entity is not None and (
+            entity["owner_id"] == actor.user_id
+            or await session.scalar(
+                select(m.members.c.id).where(
+                    m.members.c.entity_id == entity["id"],
+                    m.members.c.user_id == actor.user_id,
+                )
+            )
+            is not None
+        )
+    if not allowed:
         raise RejectionError("entity_not_found", "Entity is unavailable.", 404)
     return actor, entity
 

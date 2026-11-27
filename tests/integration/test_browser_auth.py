@@ -119,6 +119,14 @@ async def scenario():
         assert (await browser.get("/api/auth/session")).status_code == 401
         response, callback = await sign_in()
         assert response.status_code == 303, response.text
+        async with sessions() as db:
+            # The admitted, verified email is kept for adding members (TDD 19).
+            assert (
+                await db.scalar(
+                    select(m.users.c.email).where(m.users.c.id == user["id"])
+                )
+                == "synthetic@example.test"
+            )
         assert "HttpOnly" in response.headers["set-cookie"]
         assert "SameSite=lax" in response.headers["set-cookie"]
         assert "Max-Age=43200" in response.headers["set-cookie"]
@@ -136,6 +144,7 @@ async def scenario():
                 .astimezone(ZoneInfo("Pacific/Kiritimati"))
                 .date()
                 .isoformat(),
+                "role": "owner",
             }
         ]
         headers = {

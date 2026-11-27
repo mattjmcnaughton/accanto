@@ -45,6 +45,8 @@ users = table(
     "app_user",
     Column("issuer", String, nullable=False),
     Column("subject", String, nullable=False),
+    # Verified email of the latest browser sign-in; finds a member to add (TDD 19).
+    Column("email", String(320)),
     UniqueConstraint("issuer", "subject"),
 )
 entities = table(
@@ -63,6 +65,17 @@ entities = table(
     ),
     # Average annual inflation for today's dollars and the FIRE target (TDD 17).
     Column("inflation_percent", Numeric(4, 2), nullable=False, server_default="3.00"),
+)
+# Another User sharing the Entity with its owner (TDD 19); the owner is not a row.
+members = table(
+    "entity_member",
+    Column("entity_id", ForeignKey("entity.id"), nullable=False),
+    Column("user_id", ForeignKey("app_user.id"), nullable=False),
+    Column("name", String(120), nullable=False),
+    Column(
+        "created_at", DateTime(timezone=True), server_default=func.now(), nullable=False
+    ),
+    UniqueConstraint("entity_id", "user_id"),
 )
 keys = table(
     "api_key",

@@ -5,6 +5,7 @@ import { type ScreenProps, useLoad } from "../workspace/shared";
 import "./settings.css";
 import { AgentSettings } from "../agent/AgentSettings";
 import { ApiKeys } from "./ApiKeys";
+import { EntityMembers } from "./Members";
 import { TransactionProviderSettings } from "./TransactionProviderSettings";
 
 interface EntitySettings {
@@ -188,8 +189,25 @@ export function Settings(p: SettingsProps) {
           </form>
         </section>
       )}
+      <EntityMembers entityId={p.entity.id} credentials={p.credentials} disabled={p.busy} />
       <AgentSettings {...p} />
-      <TransactionProviderSettings {...p} />
+      {p.entity.role === "member" ? (
+        <section aria-labelledby="provider-member-heading">
+          <h2 className="h2" id="provider-member-heading">
+            Transactions
+          </h2>
+          <div className="card">
+            <div className="setting">
+              <small>
+                Only this Entity's owner sets up where transactions come from. You can still sync
+                and record them in the Transactions inbox.
+              </small>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <TransactionProviderSettings {...p} />
+      )}
       <ApiKeys credentials={p.credentials} disabled={p.busy} />
     </section>
   );

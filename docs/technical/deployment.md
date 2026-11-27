@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6w043`.
+   supported revision is `6x044`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -201,6 +201,15 @@ sequence:
 `6w043` adds the index `actual_entry_entity_date` on current activity (Entity,
 newest financial date first) for Activity pages. No row changes; `6v042` code
 runs unchanged against it. No grant changes.
+`6x044` adds Entity members ([TDD 19](../tdds/19-entity-members.md)): a new
+`entity_member` table and a nullable `app_user.email`, filled at each browser
+sign-in, no backfill (owners sign in once after the deploy before they can be
+found by email). Reapply the runtime grants so `accanto_app`
+can use the new table and its identity sequence:
+`GRANT SELECT, INSERT, UPDATE, DELETE ON entity_member TO accanto_app;`
+`GRANT USAGE, SELECT ON SEQUENCE entity_member_id_seq TO accanto_app;`
+(or rerun the whole recipe). `6w043` code ignores the table, so an application
+rollback only removes members' access. The downgrade drops every membership.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

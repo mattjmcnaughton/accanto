@@ -2,8 +2,10 @@
 
 The token is saved once per Entity in Settings. Provider settings and source setup
 (plans, connect, accounts, disconnect) need a browser session: the token never
-passes through an agent or API key (PRD AG-02, AG-05). Listing sources and syncing
-remain available to every caller.
+passes through an agent or API key (PRD AG-02, AG-05). They are also the Entity
+owner's alone (TDD 19): the token may read plans the owner never shared, so a
+member cannot browse or connect them. Listing sources and syncing remain
+available to every caller with access to the Entity.
 """
 
 from typing import Annotated
@@ -22,6 +24,7 @@ from accanto.integrations.ynab import SourceError, YnabClient, YnabSource
 from accanto.routers.authentication import BrowserToken, Session, Token
 from accanto.services import inbox
 from accanto.services.access import RejectionError
+from accanto.services.entity_members import require_owner
 from accanto.services.monthly import authorize, write
 
 router = APIRouter(prefix="/api/entities/{entity_id}/sources", tags=["inbox"])
@@ -40,6 +43,10 @@ def client(request: Request, token: str) -> YnabClient:
         base_url=config.ynab_api_url,
         transport=getattr(request.app.state, "ynab_transport", None),
     )
+
+
+async def owner_setup(session, token, entity_id):
+    await require_owner(session, token, entity_id, "sets up transaction sources")
 
 
 async def outside(call):
@@ -65,6 +72,7 @@ async def save_provider(
     request_key: RequestKey,
 ):
     """Check the token can read YNAB, then store it encrypted."""
+    await owner_setup(session, token, entity_id)
     fernet = inbox.cipher(request.app.state.auth_settings.source_secret_key)
     async with session.begin():
         await authorize(session, token, entity_id, lock=False)
@@ -96,6 +104,7 @@ async def remove_provider(
     request_key: RequestKey,
 ):
     """Forget the token. Sources stay connected but cannot sync until one is saved."""
+    await owner_setup(session, token, entity_id)
     return await write(
         session,
         token,
@@ -116,6 +125,7 @@ async def list_ynab_plans(
     entity_id: UUID, request: Request, session: Session, token: BrowserToken
 ):
     """Plans the saved YNAB token can read, so the person can pick one."""
+    await owner_setup(session, token, entity_id)
     key = request.app.state.auth_settings.source_secret_key
     _, secret = await inbox.source_secret(session, token, entity_id, None, key)
     return await outside(client(request, secret).plans())
@@ -130,6 +140,7 @@ async def connect_ynab(
     token: BrowserToken,
     request_key: RequestKey,
 ):
+    await owner_setup(session, token, entity_id)
     key = request.app.state.auth_settings.source_secret_key
     _, secret = await inbox.source_secret(session, token, entity_id, None, key)
     plans = await outside(client(request, secret).plans())
@@ -167,6 +178,7 @@ async def source_accounts(
     token: BrowserToken,
 ):
     """The source's accounts, with which ones are selected for import."""
+    await owner_setup(session, token, entity_id)
     key = request.app.state.auth_settings.source_secret_key
     row, secret = await inbox.source_secret(session, token, entity_id, source_id, key)
     accounts = await outside(client(request, secret).accounts(row["external_ref"]))
@@ -194,6 +206,7 @@ async def select_accounts(
     token: BrowserToken,
     request_key: RequestKey,
 ):
+    await owner_setup(session, token, entity_id)
     key = request.app.state.auth_settings.source_secret_key
     row, secret = await inbox.source_secret(session, token, entity_id, source_id, key)
     names = {
@@ -227,6 +240,7 @@ async def disconnect(
     request_key: RequestKey,
 ):
     """Stop importing this plan. Recorded entries and the inbox history stay."""
+    await owner_setup(session, token, entity_id)
     return await write(
         session,
         token,
