@@ -53,3 +53,42 @@ def test_frontend_navigation_serves_the_app(client, path):
 @pytest.mark.parametrize("path", ["/api/missing", "/assets/missing.js"])
 def test_missing_api_and_assets_do_not_return_the_app(client, path):
     assert client.get(path).status_code == 404
+
+
+def _dependencies(dependant):
+    for dependency in dependant.dependencies:
+        yield dependency.call
+        yield from _dependencies(dependency)
+
+
+def test_credential_routes_need_a_browser_session():
+    """No API key (so no script or agent) reads or changes a credential: API keys,
+    the YNAB token, or a future integration's. Name such routes after what they
+    hold (key, token, provider, credential, secret) and this keeps them browser-only.
+    """
+    import re
+
+    from fastapi.routing import APIRoute
+
+    from accanto.routers.authentication import browser_credential
+
+    words = re.compile(r"key|token|provider|credential|secret")
+    checked = []
+
+    def routes(items):
+        for item in items:
+            # Included routers are resolved lazily; read the router they wrap.
+            inner = getattr(item, "original_router", None)
+            yield from routes(inner.routes) if inner else [item]
+
+    for route in routes(create_app().routes):
+        if not (isinstance(route, APIRoute) and route.path.startswith("/api/")):
+            continue
+        if words.search(route.path.removeprefix("/api/entities/{entity_id}")):
+            assert browser_credential in set(_dependencies(route.dependant)), (
+                route.path,
+                route.methods,
+            )
+            checked.append(route.path)
+    assert {"/api/keys", "/api/keys/{key_id}"} <= set(checked)
+    assert "/api/entities/{entity_id}/transaction-provider" in checked

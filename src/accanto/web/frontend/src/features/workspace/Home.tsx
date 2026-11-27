@@ -103,7 +103,7 @@ export function Home({
   /** The most recently updated Plans, to return to a draft quickly. */
   recent: { id: string; name: string; detail: string }[];
   review: LoadState<ReviewResult>;
-  /** The latest saved version of the Plan Home shows, for the Plan split. */
+  /** The version the month's Review links, or without one the latest saved version. */
   split?: PlanRevision;
   accounts: LoadState<SavingsAccount[]>;
   investments: LoadState<Destination[]>;
@@ -230,7 +230,9 @@ export function Home({
       )}
       {(split || worth.kind !== "empty") && (
         <div className="grid2 glance">
-          {split && <PlanSplit version={split} compared={result?.version} />}
+          {split && (
+            <PlanSplit version={split} linked={result?.version?.uuid === split.uuid} month={name} />
+          )}
           {worth.kind !== "empty" && <NetWorthCard worth={worth} retry={retry} />}
         </div>
       )}
@@ -470,10 +472,14 @@ function FixedLine({ fixed, difference }: { fixed: ComparisonGroup; difference: 
 }
 
 /**
- * The latest saved Plan version's split of monthly funding, as percentages. It names the
- * version the month's Review compares with when that is another one.
+ * A Plan version's split of monthly funding, as percentages: the version the month's Review
+ * links, or the latest saved version when the month has no Review.
  */
-function PlanSplit({ version, compared }: { version: PlanRevision; compared?: PlanRevision }) {
+function PlanSplit({
+  version,
+  linked,
+  month,
+}: { version: PlanRevision; linked: boolean; month: string }) {
   const funding = version.funding_total ?? null;
   const total = storedCents(funding);
   const amounts = storedGroups(version);
@@ -486,7 +492,9 @@ function PlanSplit({ version, compared }: { version: PlanRevision; compared?: Pl
       <span className="cap">
         Plan split{" "}
         <span className="muted">
-          {version.name}, latest version {version.number}
+          {linked
+            ? `${version.name}, version ${version.number}, linked to ${month}`
+            : `${version.name}, latest version ${version.number}`}
         </span>
       </span>
       <Band
@@ -512,9 +520,7 @@ function PlanSplit({ version, compared }: { version: PlanRevision; compared?: Pl
       </ul>
       <p className="note">
         Of {formatMoney(funding)} monthly funding
-        {compared && compared.uuid !== version.uuid
-          ? `. This month's Review compares with ${compared.name}, version ${compared.number}.`
-          : ""}
+        {linked ? "" : `. ${month} has no Review yet, so this is the latest saved version.`}
       </p>
     </div>
   );

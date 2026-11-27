@@ -30,9 +30,9 @@ uv run python -m accanto.bootstrap \
 ```
 
 Store the returned key securely. Requests use `Authorization: Bearer <key>`;
-only SHA-256 hashes are persisted. `POST /api/keys` with `{"name":"My script"}`
-issues another key (plaintext returned once); `DELETE /api/keys/{key_id}` revokes
-one of the current User's keys. There is no expiry. Revocation and Entity access
+only SHA-256 hashes are persisted. Further keys are issued, listed and revoked
+only from a signed-in browser (Settings, `/api/keys` below): an API key cannot
+read or manage any credential, its own included. There is no expiry. Revocation and Entity access
 changes apply to subsequent requests, including retries. Browser sign-in uses OIDC
 and opaque server-side sessions; see the browser authentication endpoints below.
 Hosted MCP OAuth uses a separate four-tool listener with local implementation
@@ -687,12 +687,18 @@ or `agent`. Everything else in Settings is sensitive and browser-session only;
 API keys get `403 browser_session_required` and no tool reaches it: the Agent
 mode, assistant enablement and `PUT /agent/settings` (AGENT.md may only be
 proposed, see below), the YNAB token (`/transaction-provider`) and source setup
-(plans, connect, account selection, disconnect), and sign-in and sessions. An
+(plans, connect, account selection, disconnect), API keys (`/api/keys`), and
+sign-in and sessions. An
 unknown field in a settings body, such as `mode`, is a 422.
 
-`GET /api/keys` lists the authenticated User's keys as `{id, name, created_at,
+API key management is browser session only (with CSRF, like every browser
+write); an API key gets `403 browser_session_required` on all three routes, so
+no script or agent can list, mint or revoke keys. The same holds for every
+credential: the YNAB token (`/transaction-provider`) and any future
+integration's credential are browser-only and never returned.
+`GET /api/keys` lists the signed-in User's keys as `{id, name, created_at,
 revoked_at}`, including revoked metadata. It never returns a token or digest.
-Existing `POST /api/keys` shows a new token once; `DELETE /api/keys/{id}` revokes
+`POST /api/keys` shows a new token once; `DELETE /api/keys/{id}` revokes
 that key only, and repeated owner-session revocation retains its original timestamp.
 Foreign-user key identifiers return 404. A revoked key cannot authenticate again.
 

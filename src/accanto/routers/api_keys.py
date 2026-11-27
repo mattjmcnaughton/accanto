@@ -1,13 +1,16 @@
-"""Create (shown once) and individually revoke API keys."""
+"""Create (shown once), list and individually revoke API keys.
+
+Browser session only: no API key, and so no script or agent, reads or changes
+any credential, its own included (Constitution §2).
+"""
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from accanto.dtos.monthly import Input, Name
-from accanto.routers.monthly import Session, Token
+from accanto.routers.authentication import BrowserToken, Session
 from accanto.services.api_keys import list_keys, manage_key
-from accanto.services.monthly import RejectionError
 
 router = APIRouter(prefix="/api/keys", tags=["API keys"])
 
@@ -17,21 +20,15 @@ class KeyInput(Input):
 
 
 @router.get("")
-async def get_keys(session: Session, token: Token):
-    return await list_keys(session, token)
+async def get_keys(session: Session, actor: BrowserToken):
+    return await list_keys(session, actor)
 
 
 @router.post("")
-async def create_key(body: KeyInput, session: Session, token: Token):
-    try:
-        return await manage_key(session, token, name=body.name)
-    except RejectionError as error:
-        raise HTTPException(error.status, error.message) from None
+async def create_key(body: KeyInput, session: Session, actor: BrowserToken):
+    return await manage_key(session, actor, name=body.name)
 
 
 @router.delete("/{key_id}")
-async def revoke_key(key_id: UUID, session: Session, token: Token):
-    try:
-        return await manage_key(session, token, revoke=key_id)
-    except RejectionError as error:
-        raise HTTPException(error.status, error.message) from None
+async def revoke_key(key_id: UUID, session: Session, actor: BrowserToken):
+    return await manage_key(session, actor, revoke=key_id)

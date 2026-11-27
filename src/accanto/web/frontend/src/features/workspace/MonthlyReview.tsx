@@ -40,8 +40,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
   });
   const [choice, setChoice] = useState("");
   const [target, setTarget] = useState("");
-  const [note, setNote] = useState("");
-  const [reviewed, setReviewed] = useState(false);
+  const [draft, setDraft] = useState({ note: "", reviewed: false });
   const [edited, setEdited] = useState(false);
   const [help, setHelp] = useState(false);
   const editedRef = useRef(false);
@@ -56,12 +55,11 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
   useEffect(() => {
     if (state.kind === "ready") setTarget(state.data.version.uuid);
   }, [state]);
-  useEffect(() => {
-    if (state.kind === "ready" && !edited) {
-      setNote(state.data.review.note);
-      setReviewed(Boolean(state.data.review.reviewed_at));
-    }
-  }, [state, edited]);
+  // Derived while rendering, not copied in by an effect: a late effect would overwrite a
+  // keystroke typed before it ran, losing attempted input.
+  const saved = state.kind === "ready" ? state.data.review : null;
+  const note = edited ? draft.note : (saved?.note ?? "");
+  const reviewed = edited ? draft.reviewed : Boolean(saved?.reviewed_at);
   if (p.concealed) return null;
   const versions =
     plans.kind === "ready"
@@ -350,7 +348,7 @@ export function MonthlyReview(p: ScreenProps & { month?: string; go?: (to: Scree
                   maxLength={4000}
                   placeholder={`Anything worth remembering about ${name}`}
                   onChange={(e) => {
-                    setNote(e.target.value);
+                    setDraft({ note: e.target.value, reviewed });
                     touch();
                   }}
                 />

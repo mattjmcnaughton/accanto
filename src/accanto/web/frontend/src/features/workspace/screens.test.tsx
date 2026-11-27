@@ -96,7 +96,7 @@ it.each([
   expect(reads.sort()).toEqual(expected);
 });
 
-it("splits Home by the latest saved version of the Review's Plan, without another read", async () => {
+it("splits Home by the version the month's Review links, else the latest saved version", async () => {
   const totals = (fixed: string, spending: string, saving: string, investing: string) => ({
     funding_total: "5000.00",
     fixed_cost_total: fixed,
@@ -174,13 +174,14 @@ it("splits Home by the latest saved version of the Review's Plan, without anothe
     render(<Workspace initial={session} signedOut={vi.fn()} screen="home" />);
   });
   const card = () => screen.getByText("Plan split").closest(".glance-card") as HTMLElement;
-  expect(within(card()).getByText("Baseline, latest version 3")).toBeDefined();
+  // Version 3 is newer, but November's Review links version 2, so Home shows version 2.
+  expect(within(card()).getByText("Baseline, version 2, linked to November")).toBeDefined();
   const row = (name: string) => within(card()).getByText(name).closest("li")?.textContent;
-  expect(row("Fixed costs")).toBe("Fixed costs$1,500.0030.0%");
-  expect(row("Guilt-free spending")).toBe("Guilt-free spending$1,000.0020.0%");
+  expect(row("Fixed costs")).toBe("Fixed costs$1,000.0020.0%");
+  expect(row("Guilt-free spending")).toBe("Guilt-free spending$2,500.0050.0%");
   expect(row("Giving")).toBe("Giving$500.0010.0%");
-  expect(card().textContent).toContain("This month's Review compares with Baseline, version 2.");
-  // The month's figures still compare against the Review's own version.
+  expect(card().textContent).not.toContain("no Review");
+  // The month's figures compare against the same version.
   expect(
     screen.getByRole("heading", {
       name: "$2,500.00 is planned for guilt-free spending this month",
@@ -188,14 +189,16 @@ it("splits Home by the latest saved version of the Review's Plan, without anothe
   ).toBeDefined();
   expect(reads.filter((read) => read === "plans" || read.startsWith("reviews/"))).toHaveLength(2);
 
-  // Without a Review, the split follows the most recently edited Plan with a saved version.
+  // Without a Review, the split shows the latest saved version of the most recently edited Plan.
   cleanup();
   linked = false;
   await act(async () => {
     render(<Workspace initial={session} signedOut={vi.fn()} screen="home" />);
   });
   expect(within(card()).getByText("Other, latest version 1")).toBeDefined();
-  expect(card().textContent).not.toContain("compares with");
+  expect(card().textContent).toContain(
+    "November has no Review yet, so this is the latest saved version.",
+  );
 });
 
 it("refreshes only visible Activity after a write and restores the unsaved Plan", async () => {

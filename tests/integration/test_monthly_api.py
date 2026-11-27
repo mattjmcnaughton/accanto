@@ -908,15 +908,10 @@ async def scenario():
                 .where(m.entities.c.id == entity["id"])
                 .values(owner_id=user)
             )
-        issued = await client.post("/api/keys", json={"name": "Disposable"})
-        assert issued.status_code == 200
-        issued = issued.json()
-        assert (await client.delete(f"/api/keys/{issued['id']}")).status_code == 200
-        assert (
-            await client.get(
-                prefix + "/plans", headers={"Authorization": f"Bearer {issued['key']}"}
-            )
-        ).status_code == 401
+        # An API key cannot mint another key (browser session only).
+        minted = await client.post("/api/keys", json={"name": "Disposable"})
+        assert minted.status_code == 403
+        assert minted.json()["detail"]["code"] == "browser_session_required"
     async with sessions() as session:
         audit_rows = (
             (

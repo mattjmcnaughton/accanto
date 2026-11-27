@@ -566,7 +566,7 @@ outcome; only who may call them widens.
 | Assistant enablement | Settings, Assistant | Sensitive: consents to sending data to the model provider | Refused |
 | YNAB token | Settings, Transaction provider | Sensitive: credential | Refused; never returned |
 | Source setup: plan and start date, account selection, disconnect | Inbox, Settings | Sensitive: uses the token and decides what bank data flows in | Refused; listing and sync stay open |
-| API keys | Settings | Sensitive: grants access | No tool; REST accepts keys (see below) |
+| API keys | Settings | Sensitive: grants access | Refused on every route, list included |
 | Sign-in, sessions, CSRF, OIDC | Browser auth | Sensitive | Refused |
 | Retention, daily cap, provider, model | Server configuration | Not a setting | Read in `GET /agent/settings` (browser) |
 | Agent panel width and full screen, last Entity | Browser storage | Device-local display preference | Not stored on the server |
@@ -587,9 +587,15 @@ outcome; only who may call them widens.
   what stays in Settings. The panel reloads the Entity's metadata (name, time
   zone, today) after a turn that called `save_entity_settings` or after
   applying one.
-- **Open question for the owner.** `POST /api/keys` accepts an API key, so a
-  script, or an MCP client holding a key, can issue another key. Recommended:
-  require a browser session to issue keys, keeping list and revoke open.
+- **No credential CRUD from an API key (owner decision, 2026-11-27).** Every
+  credential (API keys, the YNAB token, a future integration's) is listed,
+  created, replaced and revoked only from a browser session. `/api/keys` now
+  takes `BrowserToken` (before, an API key could list, mint and revoke keys),
+  and `services/api_keys.browser_only` refuses API keys at the service too.
+  `tests/unit/test_app.py` fails if any `/api/` route whose path names a key,
+  token, provider, credential or secret accepts an API key, and the catalog
+  test fails if any tool input carries such a field. Name a future credential
+  route that way so the check covers it.
 
 Verification: unit, the catalog snapshot and that settings tools take exactly
 the safe fields; integration (`test_settings_tools.py`), over MCP JSON-RPC and
@@ -597,6 +603,6 @@ the sidebar context, Ask first pends with no audit, apply audits once, Apply
 directly records and audits as `mcp`, replay and `key_reuse`, `stale_revision`,
 Read only refuses, smuggled `mode`/`enabled`/`instructions`/`access_token` and
 an unknown tool change nothing, API keys get `403 browser_session_required` on
-agent settings, the transaction provider and YNAB plans, and no response carries
+agent settings, the transaction provider, YNAB plans and every `/api/keys` route, and no response carries
 the stored token; `test_trace_privacy.py` sends a canary FIRE amount through
 `save_fire_assumptions` and finds it in no export or server log.

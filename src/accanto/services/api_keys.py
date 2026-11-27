@@ -11,7 +11,6 @@ from accanto.models.monthly import keys
 from accanto.services.access import (
     AuthenticatedActor,
     RejectionError,
-    resolve_actor,
     revalidate_actor,
 )
 
@@ -32,20 +31,29 @@ async def issue_key(session, user_id: int, name: str):
     return {"id": str(record), "key": token, "name": name}
 
 
+def browser_only(actor) -> AuthenticatedActor:
+    """Managing credentials needs a browser session; API keys are refused."""
+    if not isinstance(actor, AuthenticatedActor) or actor.credential_kind not in {
+        "api_key",
+        "session",
+    }:
+        raise RejectionError("invalid_credential", "Credential is invalid.", 401)
+    if actor.credential_kind != "session":
+        raise RejectionError(
+            "browser_session_required",
+            "Sign in to Accanto in the browser for this action.",
+            403,
+        )
+    return actor
+
+
 async def manage_key(
-    session, token: str | AuthenticatedActor, *, name: str | None = None, revoke=None
+    session, actor: AuthenticatedActor, *, name: str | None = None, revoke=None
 ):
     async with session.begin():
-        # Session first, then keys in ID order; key callers never lock out of order.
-        actor = (
-            token
-            if isinstance(token, AuthenticatedActor)
-            else await resolve_actor(session, token)
-        )
-        if actor.credential_kind not in {"api_key", "session"}:
-            raise RejectionError("invalid_credential", "Credential is invalid.", 401)
-        if actor.credential_kind == "session":
-            await revalidate_actor(session, actor, lock=True)
+        actor = browser_only(actor)
+        # Session first, then keys in ID order.
+        await revalidate_actor(session, actor, lock=True)
         records = (
             (
                 await session.execute(
@@ -58,8 +66,6 @@ async def manage_key(
             .mappings()
             .all()
         )
-        if actor.credential_kind == "api_key":
-            await revalidate_actor(session, actor, lock=False)
         if name is not None:
             return await issue_key(session, actor.user_id, name)
         target = next((row for row in records if row["uuid"] == revoke), None)
@@ -77,7 +83,7 @@ async def manage_key(
 
 async def list_keys(session, actor):
     async with read_snapshot(session):
-        current = await revalidate_actor(session, actor, lock=False)
+        current = await revalidate_actor(session, browser_only(actor), lock=False)
         rows = (
             (
                 await session.execute(
