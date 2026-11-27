@@ -11,7 +11,7 @@ import {
   logout,
   reauthenticate,
 } from "../../lib/recoverableWrite";
-import { Dialog, Icon, useDialogSlot } from "../../ui";
+import { Dialog, Icon, Mark, useDialogSlot } from "../../ui";
 import { AgentPanel } from "../agent/AgentPanel";
 import { Balances } from "../balances/Balances";
 import { Destinations } from "../destinations/Destinations";
@@ -591,7 +591,7 @@ export function Workspace({
             go("home");
           }}
         >
-          <i />
+          <Mark />
           accanto
         </a>
         {entity && (

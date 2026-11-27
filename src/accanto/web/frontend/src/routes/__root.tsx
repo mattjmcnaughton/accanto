@@ -4,6 +4,7 @@ import { lastEntity, rememberEntity } from "../features/workspace/Entities";
 import { ENTITY, MONTH, SCREENS, type Screen, Workspace } from "../features/workspace/Workspace";
 import { useTheme } from "../features/workspace/shared";
 import { ApiError, type BrowserSession, readSession } from "../lib/api";
+import { Mark } from "../ui";
 
 // The session gate stays mounted across screens, so retained Plan edits survive navigation.
 // ?m=YYYY-MM is the month Home, Activity and Review show; ?e= is the Entity, when the User
@@ -142,7 +143,7 @@ export function ProductionHome({
       </button>
       <header className="signin-top">
         <span className="logo">
-          <i />
+          <Mark />
           accanto
         </span>
       </header>

@@ -135,7 +135,8 @@ commit, even "anonymized":
   strings), or personal contact details. Use `example.test` addresses.
 
 `tests/unit/test_synthetic_data_only.py` (in `just gate`) rejects tracked
-exports, dumps, recordings, images outside `docs/screenshots/`, non-example
+exports, dumps, recordings, images outside `docs/screenshots/` (and the rendered
+app icons in `public/icons/`), non-example
 emails and common credential formats. It cannot recognise a real amount or
 payee: the rules below still apply.
 

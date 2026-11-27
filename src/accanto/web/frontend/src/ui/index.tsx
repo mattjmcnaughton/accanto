@@ -55,6 +55,13 @@ export const Icon = ({ name }: { name: string }) => (
     <path d={PATHS[name] ?? ""} />
   </svg>
 );
+/** Accanto's mark: two parallel rising paths, yours and Accanto's. Same drawing as public/icons/favicon.svg. */
+export const Mark = () => (
+  <svg className="mark" viewBox="0 0 32 32" aria-hidden="true">
+    <path d="M4.5 25.5C14.5 25.5 16.5 14.5 27.5 14.5" stroke="var(--c-free)" />
+    <path d="M4.5 17.5C14.5 17.5 16.5 6.5 27.5 6.5" stroke="currentColor" />
+  </svg>
+);
 /** Each category keeps one color on every screen. */
 export const tint = (kind: string) => ({ "--c": `var(--c-${kind})` }) as CSSProperties;
 
