@@ -255,6 +255,26 @@
 .loan-terms .actions {
   justify-content: flex-end;
 }
+.dlg.loan-dlg {
+  width: min(640px, calc(100vw - 24px));
+}
+.loan-schedule .chart-plot {
+  height: 180px;
+}
+.loan-split {
+  display: grid;
+  gap: 6px;
+}
+.loan-split .band {
+  height: 14px;
+  border-radius: 7px;
+}
+.loan-split .chart-legend {
+  margin-top: 0;
+}
+.loan-split strong {
+  font-variant-numeric: tabular-nums;
+}
 .loan-rows {
   max-height: 280px;
   overflow-y: auto;
