@@ -474,6 +474,16 @@
 .plan-grid td.num input {
   text-align: right;
 }
+/* An amount opens on one click. */
+.plan-grid td.amount-edit:not(.editing) {
+  cursor: text;
+}
+@media (hover: hover) {
+  .plan-grid td.amount-edit:not(.editing):hover {
+    text-decoration: underline dotted var(--ink3);
+    text-underline-offset: 3px;
+  }
+}
 .plan-grid td input[aria-invalid="true"] {
   border-color: var(--bad);
 }
@@ -664,6 +674,9 @@
   .plan-grid .c4 {
     grid-column: 3;
     grid-row: 1;
+  }
+  .plan-grid .c3 input {
+    width: 8em;
   }
   .plan-grid .c1,
   .plan-grid .c2 {

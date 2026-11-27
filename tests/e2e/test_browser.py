@@ -427,10 +427,17 @@ def test_signed_in_workspace(tmp_path):
         browser("fill", "#detail-name", "Synthetic source")
         browser("fill", "#detail-amount", "4000")
         browser("click", "#close-details")
-        browser("click", "button[aria-label='Details for Guilt-free spending']")
-        browser("wait", "#detail-amount")
-        browser("fill", "#detail-amount", "800")
-        browser("click", "#close-details")
+        # A monthly amount edits in place: Enter keeps it, Escape discards.
+        spending = "td[aria-label='Guilt-free spending, Monthly amount']"
+        spending_input = "input[aria-label='Monthly amount for Guilt-free spending']"
+        browser("click", spending)
+        browser("fill", spending_input, "800")
+        browser("press", "Enter")
+        expect_cell(spending, "$800.00")
+        browser("click", spending)
+        browser("fill", spending_input, "999")
+        browser("press", "Escape")
+        expect_cell(spending, "$800.00")
         browser("click", "button[aria-label='Add Fixed costs line']")
         browser("wait", "#detail-name")
         browser("fill", "#detail-name", "Synthetic annual service")

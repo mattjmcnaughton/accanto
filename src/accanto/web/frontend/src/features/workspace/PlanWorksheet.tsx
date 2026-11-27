@@ -50,6 +50,12 @@ const creatable = (group: Group): CreatableKind | null =>
         ? "giving_recipient"
         : null;
 
+/**
+ * Entered amount (1) and monthly amount (3) both edit a line's amount. The monthly cell edits in
+ * place only when the two are equal; other frequencies edit the entered amount, which converts.
+ */
+const amountCol = (col: number) => col === 1 || col === 3;
+
 /** Section captions shown above the first group of each half of the worksheet. */
 const sections: Partial<Record<Group, [string, string?]>> = {
   income: ["Where the money comes from"],
@@ -122,6 +128,8 @@ export function PlanWorksheet({
   const [versionIndex, setVersionIndex] = useState<number | null>(null);
   const gTime = useRef(0);
   const pendingDelete = useRef<{ id: string; time: number } | null>(null);
+  /** The closing editor's blur must not write the value Escape discarded. */
+  const discarded = useRef(false);
   const readOnly = versionIndex !== null;
   const snapshot = readOnly ? versions[versionIndex] : null;
   const lines = useMemo(
@@ -134,11 +142,11 @@ export function PlanWorksheet({
   // An open amount or frequency edit previews in the totals and band; an invalid amount is unknown.
   const preview = useMemo(() => {
     if (!edit || readOnly) return lines;
-    if (edit.col === 1 && cents(edit.value) === null) return null;
+    if (amountCol(edit.col) && cents(edit.value) === null) return null;
     return lines.map((line) =>
       line.id !== edit.id
         ? line
-        : edit.col === 1
+        : amountCol(edit.col)
           ? { ...line, amount: edit.value.trim() }
           : edit.col === 2
             ? { ...line, frequency: edit.value as Line["frequency"] }
@@ -238,29 +246,27 @@ export function PlanWorksheet({
       return;
     }
     if (readOnly || busy) return;
-    if (
-      col === 3 ||
-      (col === 2 && row.group !== "fixed") ||
-      (col === 0 && row.group === "spending")
-    )
-      return;
+    if ((col === 2 && row.group !== "fixed") || (col === 0 && row.group === "spending")) return;
+    const at = col === 3 && row.line.frequency !== "Monthly" ? 1 : col;
     setError("");
+    discarded.current = false;
+    setSelection({ id: row.id, col: at });
     setEdit({
       id: row.id,
-      col,
+      col: at,
       value:
         col === 0
           ? catalog[row.group]
             ? (row.line.reference ?? "")
             : row.line.name
-          : col === 1
+          : amountCol(col)
             ? row.line.amount
             : row.line.frequency,
     });
   }
   function commit(): boolean {
     if (!edit) return true;
-    if (edit.col === 1 && cents(edit.value) === null) {
+    if (amountCol(edit.col) && cents(edit.value) === null) {
       setError("Enter a nonnegative USD amount with up to two decimal places.");
       return false;
     }
@@ -277,13 +283,18 @@ export function PlanWorksheet({
         ? catalog[line.group]
           ? { reference: edit.value, name: choice?.name ?? line.name }
           : { name: edit.value.trim() }
-        : edit.col === 1
+        : amountCol(edit.col)
           ? { amount: edit.value.trim() }
           : { frequency: edit.value as Line["frequency"] },
     );
     setEdit(null);
     setError("");
     return true;
+  }
+  function discard() {
+    discarded.current = true;
+    setEdit(null);
+    setError("");
   }
   function openDetails(id: string) {
     if (!commit()) return;
@@ -396,7 +407,8 @@ export function PlanWorksheet({
       if (e.key === "Escape" || e.key === "Enter") {
         e.preventDefault();
         e.stopPropagation();
-        if (commit()) focusCell(row.id, col);
+        if (e.key === "Escape") discard();
+        if (e.key === "Escape" || commit()) focusCell(row.id, edit.col);
       }
       return;
     }
@@ -464,14 +476,15 @@ export function PlanWorksheet({
     const props = {
       autoFocus: true,
       value: edit?.value,
-      "aria-label": `${edit?.col === 0 ? "Name" : edit?.col === 1 ? "Amount" : "Frequency"} for ${row.line?.name}`,
+      "aria-label": `${["Name", "Amount", "Frequency", "Monthly amount"][edit.col]} for ${row.line?.name}`,
       "aria-invalid": !!error,
       onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setEdit({ ...currentEdit, value: e.target.value });
         setError("");
       },
       onBlur: () => {
-        commit();
+        if (discarded.current) discarded.current = false;
+        else commit();
       },
     };
     return edit?.col === 2 || (edit?.col === 0 && options) ? (
@@ -494,7 +507,7 @@ export function PlanWorksheet({
     ) : (
       <input
         {...props}
-        inputMode={edit?.col === 1 ? "decimal" : "text"}
+        inputMode={amountCol(edit.col) ? "decimal" : "text"}
         onFocus={(e) => e.target.select()}
       />
     );
@@ -783,12 +796,16 @@ export function PlanWorksheet({
                             aria-label={`${sub ? sub.name : row.heading ? titles[row.group] : row.line?.name}, ${["Item", "Entered amount", "Frequency", "Monthly amount", "Actions"][col]}`}
                             aria-selected={active}
                             tabIndex={active ? 0 : -1}
-                            className={`c${col} ${col === 1 || col === 3 ? "num" : ""} ${active ? "selected-cell" : ""} ${editing ? "editing" : ""}`}
+                            className={`c${col} ${col === 1 || col === 3 ? "num" : ""} ${active ? "selected-cell" : ""} ${editing ? "editing" : ""} ${amountCol(col) && row.heading === false && !readOnly ? "amount-edit" : ""}`}
                             onKeyDown={(e) => onGridKey(e, row, col)}
                             onClick={(e) => {
                               if ((e.target as HTMLElement).closest("button,input,select")) return;
                               if (!commit()) return;
-                              focusCell(row.id, col);
+                              // A click on an amount opens it; other cells select, then edit on a
+                              // double click or Enter.
+                              if (amountCol(col) && row.heading === false && !readOnly)
+                                begin(row, col);
+                              else focusCell(row.id, col);
                             }}
                             onDoubleClick={() => begin(row, col)}
                           >
@@ -1224,7 +1241,8 @@ export function PlanWorksheet({
                   "Add a line in the current category, or a guilt-free spending subcategory",
                 ],
                 ["dd", "Remove selected line, with confirmation"],
-                ["Escape / Enter", "Keep a valid cell edit; return to normal"],
+                ["Enter", "Keep a valid cell edit; return to normal"],
+                ["Escape", "Discard a cell edit; return to normal"],
                 ["↑ / ↓ in a selector", "Choose an option while editing"],
                 ["Tab / Shift+Tab", "Leave the table or move through form fields"],
                 ["Ctrl / ⌘ + S", "Save draft"],
