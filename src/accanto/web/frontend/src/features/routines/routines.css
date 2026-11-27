@@ -420,14 +420,6 @@ fieldset.rt-days {
   color: var(--ink2);
 }
 
-/* Home card */
-.rt-home .pip.good {
-  background: var(--good);
-}
-.rt-home small.warn {
-  color: var(--warn);
-}
-
 @media (max-width: 760px) {
   .rt-row {
     grid-template-columns: minmax(0, 1fr);

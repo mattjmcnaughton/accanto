@@ -913,8 +913,8 @@ def test_signed_in_workspace(tmp_path):
         go("Review")
         browser("wait", "section[aria-label='Planned and actual metrics']")
         assert "Synthetic month v1" in browser("get", "text", "#main")
-        # Routines (TDD 13): create one due today, tick its step by hand, and Home
-        # then shows nothing due.
+        # Routines (TDD 13): create one due today; Home lists it in Needs you and
+        # opens it. Tick its step by hand, and Home then shows nothing for it.
         weekday = datetime.now(UTC).strftime("%A")
         go("Routines")
         button("New routine")
@@ -925,7 +925,17 @@ def test_signed_in_workspace(tmp_path):
         browser("find", "label", "Step 1", "fill", "Synthetic step", "--exact")
         button("Create routine")
         browser("wait", "--text", "Due today. 0 of 1 step done.")
-        button("Continue")
+        go("Home")
+        browser("wait", "--text", "Synthetic routine is due today")
+        browser(
+            "find",
+            "role",
+            "button",
+            "click",
+            "--name",
+            "Synthetic routine is due today Open",
+            "--exact",
+        )
         browser("wait", "--text", "0 of 1 step done")
         button("Synthetic step")
         browser("wait", "--text", "1 of 1 step done")
@@ -934,7 +944,9 @@ def test_signed_in_workspace(tmp_path):
             "?.getAttribute('aria-pressed') === 'true'"
         )
         go("Home")
-        browser("wait", "--text", "All caught up. Next: Synthetic routine")
+        until(
+            "!document.querySelector('#main').textContent.includes('Synthetic routine')"
+        )
         browser("set", "viewport", "320", "760")
         assert fits()
         # Below 760 px the sidebar is hidden; More holds Sign out.
