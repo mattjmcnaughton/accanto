@@ -43,6 +43,7 @@ import {
 } from "./inboxModel";
 import "./inbox.css";
 import { ConnectSource } from "./ConnectSource";
+import { InboxZero, type ZeroStyle } from "./InboxZero";
 import { useFlowWrites } from "./useFlowWrites";
 
 type Picker = {
@@ -114,6 +115,10 @@ export function Inbox(
     session?: BrowserSession;
     changed?: () => void;
     openSettings?: () => void;
+    /** Opens a month's Review, the next step once nothing is waiting. */
+    openReview?: (month: string) => void;
+    /** Which inbox zero design to show; Storybook compares them. */
+    zeroStyle?: ZeroStyle;
     /** A one-shot request to start flow mode, from the Ask bar's /inbox; a new value asks again. */
     flow?: number;
     flowStarted?: () => void;
@@ -334,6 +339,25 @@ export function Inbox(
     const entry = texts.get(i.id);
     return !entry || matches(entry, query);
   };
+  /** Items seen waiting while the inbox is open; those recorded or ignored since are this session's. */
+  const waitedHere = useRef(new Set<string>());
+  for (const i of all) if (i.status === "waiting") waitedHere.current.add(i.id);
+  const cleared = all.flatMap((it) => {
+    if (!waitedHere.current.has(it.id) || (it.status !== "recorded" && it.status !== "skipped"))
+      return [];
+    // In flow the entries reload only when it ends, so a fresh record falls back to its proposal.
+    const c = it.status === "recorded" ? shownAs(it) : {};
+    return [{ it, category: c.category ?? (c.refund_of ? null : (it.proposal?.category ?? null)) }];
+  });
+  // A decision still saving counts as made; one the server may not have received does not.
+  const unsure = new Set(writes.pending.flatMap((i) => (i.state === "uncertain" ? [i.it.id] : [])));
+  /** What still needs a decision anywhere in the inbox, whatever the view, filter or search. */
+  const left = all.filter(
+    (i) =>
+      i.status === "conflict" ||
+      (i.status === "waiting" && (!pendingIds.has(i.id) || unsure.has(i.id))),
+  );
+  const zero = items.kind === "ready" && !left.length;
   const scope = all.filter(
     (i) => !pendingIds.has(i.id) && (!proposedOnly || i.proposal) && found(i),
   );
@@ -1233,6 +1257,23 @@ export function Inbox(
   if (p.concealed) return null;
   const source = sources.kind === "ready" ? sources.data.find((s) => s.connected) : undefined;
   const failed = [items, sources, plans, accounts, activity, investments, recipients];
+  const zeroProps = source && {
+    look: p.zeroStyle,
+    cleared,
+    sourceName: source.name,
+    lastSynced: source.last_synced_at,
+    timeZone: p.entity.time_zone,
+    month: p.entity.today.slice(0, 7),
+    syncing: Boolean(syncing),
+    busy,
+    sync: () => void sync(),
+    openReview: p.openReview && (() => p.openReview?.(p.entity.today.slice(0, 7))),
+  };
+  /** Waiting items the search or the proposals filter hides from an empty Waiting view. */
+  const held =
+    view === "waiting" && !counts.waiting
+      ? left.filter((i) => i.status === "waiting" && !pendingIds.has(i.id))
+      : [];
   async function sync(target = source) {
     if (!target || syncing) return;
     setSyncing(target.name);
@@ -1507,7 +1548,9 @@ export function Inbox(
         </div>
       ) : flow ? (
         <div className="ix-flow">
-          {passOver || !current ? (
+          {(passOver || !current) && zero && zeroProps ? (
+            <InboxZero {...zeroProps} flow={{ undo: () => void flowUndo(), leave: endFlow }} />
+          ) : passOver || !current ? (
             <article
               className="ix-card ix-end"
               aria-label="Pass complete"
@@ -1592,6 +1635,10 @@ export function Inbox(
             </>
           )}
         </div>
+      ) : zero && view === "waiting" && zeroProps ? (
+        <div className={`ix-zero-wrap${p.zeroStyle === "quiet" ? " quiet" : ""}`}>
+          <InboxZero {...zeroProps} />
+        </div>
       ) : (
         <div className="ix-cols">
           <div className="ix-side">
@@ -1665,12 +1712,35 @@ export function Inbox(
                         ? "No proposals here"
                         : "Nothing here"}
                   </b>
-                  {query.trim() && (
-                    <p>
-                      <button type="button" className="btn sm" onClick={() => setQuery("")}>
-                        Clear search
-                      </button>
-                    </p>
+                  {held.length ? (
+                    // Waiting items outside the search or filter: not inbox zero yet.
+                    <>
+                      <p>
+                        {held.length} still waiting{" "}
+                        {query.trim() ? "outside this search" : "without a proposal"}, so this is
+                        not inbox zero yet.
+                      </p>
+                      <p>
+                        <button
+                          type="button"
+                          className="btn sm"
+                          onClick={() => {
+                            setQuery("");
+                            setProposedOnly(false);
+                          }}
+                        >
+                          Show all {held.length} waiting
+                        </button>
+                      </p>
+                    </>
+                  ) : (
+                    query.trim() && (
+                      <p>
+                        <button type="button" className="btn sm" onClick={() => setQuery("")}>
+                          Clear search
+                        </button>
+                      </p>
+                    )
                   )}
                 </div>
               )}
@@ -1729,7 +1799,7 @@ export function Inbox(
                 press={press}
                 note={note}
               />
-            ) : (
+            ) : held.length ? null : (
               <div className="ix-empty">
                 <b>
                   {view === "waiting"
@@ -1750,7 +1820,7 @@ export function Inbox(
         {(flow && !picker
           ? passOver
             ? [
-                [["l"], "Go through later"],
+                ...(flow.later.length ? [[["l"], "Go through later"]] : []),
                 [["z"], "Undo"],
                 [["Esc"], "Back to the inbox"],
               ]

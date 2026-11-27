@@ -756,6 +756,7 @@ export function Workspace({
                   flow={flow}
                   flowStarted={() => setFlow(0)}
                   openSettings={() => go("settings")}
+                  openReview={(m) => go("review", false, m)}
                 />
               )}
               {screen === "routines" && (

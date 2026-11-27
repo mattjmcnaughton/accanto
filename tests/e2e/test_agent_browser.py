@@ -469,6 +469,23 @@ def test_agent_journey(tmp_path):
         assert "Read only" in last_reply()
         assert waiting() == before
 
+        # Inbox zero: ignore everything still waiting from the selection bar.
+        # The inbox says it is all done, counts only this visit's decisions and
+        # opens this month's Review.
+        browser("click", ".ix-selbar .ix-pick")
+        until("/ selected/.test(document.querySelector('.ix-selbar').textContent)")
+        left = int(text(".ix-selbar > span").split(" ")[0])
+        button(f"Ignore {left}")
+        zero = "[aria-label='Inbox zero']"
+        until(f"!!document.querySelector({zero!r})")
+        assert f"{left} cleared this session · 0 recorded · {left} ignored" in text(
+            zero
+        )
+        assert waiting() == 0
+        month = datetime.strptime(today, "%Y-%m-%d").strftime("%B %Y")
+        button(f"Open {month} Review")
+        until("document.title === 'Review · Accanto'")
+
         # On a phone the sheet fits the visual viewport, which an on-screen
         # keyboard shrinks (simulated here as iOS reports it): the header stays
         # at the top, the composer and the latest reply stay above the keyboard,

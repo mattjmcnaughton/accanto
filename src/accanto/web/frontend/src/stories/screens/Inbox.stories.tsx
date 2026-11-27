@@ -15,6 +15,7 @@ const meta = {
     ...screenArgs(),
     credentials: fn(async () => data.session).mockName("credentials"),
     openSettings: fn().mockName("openSettings"),
+    openReview: fn().mockName("openReview"),
   },
   parameters: { layout: "padded", msw: [...inboxApi(), ...mockApi()] },
 } satisfies Meta<typeof Inbox>;
@@ -234,6 +235,7 @@ export const BatchNote: Story = {
 };
 
 /** Every item is recorded or skipped. */
+/** Every item was recorded or ignored before this visit: inbox zero, nothing new since the sync. */
 export const NothingWaiting: Story = {
   parameters: {
     msw: [
@@ -249,6 +251,90 @@ export const NothingWaiting: Story = {
     ],
   },
 };
+
+/** Four waiting items, all with proposals: three record, one is ignored. */
+const lastFour = {
+  msw: [
+    ...inboxApi(
+      seedInbox().filter(
+        (it) =>
+          [
+            "Sample Pharmacy",
+            "Example Streaming",
+            "Sample Street Market",
+            "Example Coffee Cart",
+          ].includes(it.payee) || it.status === "recorded",
+      ),
+    ),
+    ...mockApi(),
+  ],
+};
+const phone = { globals: { viewport: { value: "phone", isRotated: false } } };
+const clearAll = async ({
+  canvas,
+}: { canvas: { findAllByText: (t: string) => Promise<unknown> } }) => {
+  await canvas.findAllByText("Sample Pharmacy");
+  for (const key of ["F", "{Enter}", "{Enter}", "{Enter}", "s"]) {
+    await press(key);
+    await new Promise((done) => setTimeout(done, 500));
+  }
+};
+const clearAllThenLeave = async (ctx: Parameters<typeof clearAll>[0]) => {
+  await clearAll(ctx);
+  await press("{Escape}");
+};
+
+/**
+ * Inbox zero, the recommended design: a calm card with this session's tally (recorded amounts
+ * only; ignored items are in no total), the last sync with Sync now, and this month's Review.
+ * The check draws once; reduced motion shows it still.
+ */
+export const InboxZero: Story = { parameters: lastFour, play: clearAllThenLeave };
+export const InboxZeroPhone: Story = { ...phone, parameters: lastFour, play: clearAllThenLeave };
+
+/** The last item of a flow pass leaves nothing waiting: the pass ends on inbox zero. */
+export const FlowInboxZero: Story = { parameters: lastFour, play: clearAll };
+export const FlowInboxZeroPhone: Story = { ...phone, parameters: lastFour, play: clearAll };
+
+/** Option B: the same card with the session's recorded amounts by category. */
+export const InboxZeroLedger: Story = {
+  args: { zeroStyle: "ledger" },
+  parameters: lastFour,
+  play: clearAllThenLeave,
+};
+export const InboxZeroLedgerPhone: Story = { ...InboxZeroLedger, ...phone };
+
+/** Option C: one quiet line in the inbox's own layout, no card. */
+export const InboxZeroQuiet: Story = {
+  args: { zeroStyle: "quiet" },
+  parameters: lastFour,
+  play: clearAllThenLeave,
+};
+export const InboxZeroQuietPhone: Story = { ...InboxZeroQuiet, ...phone };
+
+/** Search matches only a recorded item ($129.00): the Waiting view says what it hides, not "all done". */
+export const HeldBySearch: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findAllByText("Sample Street Market");
+    await press("/");
+    await userEvent.keyboard("129");
+  },
+};
+
+/** The proposals filter hides the waiting items that have none. */
+export const HeldByFilter: Story = {
+  parameters: {
+    msw: [
+      ...inboxApi(seedInbox().filter((it) => it.status === "recorded" || !it.proposal)),
+      ...mockApi(),
+    ],
+  },
+  play: async ({ canvas }) => {
+    await canvas.findAllByText("Placeholder Hardware");
+    await press("p");
+  },
+};
+export const HeldByFilterPhone: Story = { ...HeldByFilter, ...phone };
 
 export const NoSource: Story = {
   parameters: { msw: [...inboxApi([], []), ...mockApi()] },

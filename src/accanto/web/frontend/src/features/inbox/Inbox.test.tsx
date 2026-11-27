@@ -758,3 +758,161 @@ it("c writes the owner's note, Enter saves it with the item's revision, and sear
   const rows = screen.queryAllByRole("option").map((o) => o.querySelector(".tt span")?.textContent);
   expect(rows).toEqual(["Example Coffee Cart"]);
 });
+
+/** A stateful synthetic inbox server: writes change the items the next list read returns. */
+function serve(items: StagedTransaction[]) {
+  const state = new Map(items.map((i) => [i.id, { ...i }]));
+  const set = (id: string, status: StagedTransaction["status"]) => {
+    const it = state.get(id);
+    if (!it) throw new Error(`unknown item ${id}`);
+    Object.assign(it, { status, revision: it.revision + 1 });
+    return { ...it };
+  };
+  const STATUS = {
+    record: "recorded",
+    skip: "skipped",
+    unskip: "waiting",
+    undo: "waiting",
+  } as const;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const url = String(path);
+    if (init?.method === "POST") {
+      const action = url.split("/").pop() as keyof typeof STATUS;
+      const body = JSON.parse(String(init.body ?? "{}"));
+      if (body.items)
+        return new Response(
+          JSON.stringify({
+            results: body.items.map((x: { item_id: string }) => ({
+              item_id: x.item_id,
+              ok: true,
+              item: set(x.item_id, STATUS[action]),
+            })),
+          }),
+        );
+      const id = decodeURIComponent(url.split("/").slice(-2)[0]);
+      const it = set(id, STATUS[action]);
+      return new Response(
+        JSON.stringify(action === "record" || action === "undo" ? { item: it } : it),
+      );
+    }
+    if (url.endsWith("/inbox")) return new Response(JSON.stringify([...state.values()]));
+    if (url.endsWith("/sources"))
+      return new Response(
+        JSON.stringify([
+          {
+            id: "s",
+            name: "Example Plan",
+            connected: true,
+            synced: true,
+            last_synced_at: "2026-11-20T15:05:00Z",
+            accounts: [{ id: "x", name: "Example Checking" }],
+          },
+        ]),
+      );
+    return new Response("[]");
+  });
+}
+const spending = { category: "spending", rationale: "Synthetic" } as Proposal;
+const renderInbox = (openReview = vi.fn()) =>
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+      openReview={openReview}
+    />,
+  );
+const zeroCard = () => screen.queryByRole("region", { name: "Inbox zero" });
+
+it("shows inbox zero with this visit's clears, recorded amounts only, until an undo", async () => {
+  serve([
+    item({ id: "a", proposal: spending }),
+    item({ id: "b", source_ref: "tx-2", payee: "Sample Hardware", amount: "-30.25" }),
+    item({
+      id: "c",
+      source_ref: "tx-3",
+      payee: "Example Property Co",
+      amount: "-500.00",
+      status: "recorded",
+    }),
+  ]);
+  const openReview = vi.fn();
+  renderInbox(openReview);
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  expect(zeroCard()).toBeNull();
+  fireEvent.keyDown(document.body, { key: "Enter" });
+  await screen.findByText("Sample Hardware", { selector: ".ix-d-t" });
+  expect(zeroCard()).toBeNull();
+  fireEvent.keyDown(document.body, { key: "s" });
+  const card = await screen.findByRole("region", { name: "Inbox zero" });
+  // The item recorded before this visit is not counted; the ignored one is in no total.
+  expect(card.textContent).toContain("2 cleared this session · 1 recorded, $12.00 · 1 ignored");
+  expect(card.textContent).toContain("Example Plan last synced Nov 20, 3:05 PM");
+  fireEvent.click(screen.getByRole("button", { name: "Open November 2026 Review" }));
+  expect(openReview).toHaveBeenCalledWith("2026-11");
+  fireEvent.keyDown(document.body, { key: "z" });
+  await screen.findByText("Sample Hardware", { selector: ".ix-d-t" });
+  expect(zeroCard()).toBeNull();
+});
+
+it("ends a flow pass on inbox zero only when nothing is left for later", async () => {
+  serve([
+    item({ id: "a", proposal: spending }),
+    item({ id: "b", source_ref: "tx-2", payee: "Sample Hardware", proposal: spending }),
+  ]);
+  renderInbox();
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  const press = (key: string) => fireEvent.keyDown(document.body, { key });
+  press("F");
+  await screen.findByRole("article", { name: /^Example Coffee Cart/ });
+  press("Enter");
+  await screen.findByRole("article", { name: /^Sample Hardware/ });
+  press("l");
+  expect(await screen.findByText("Pass complete")).toBeDefined();
+  expect(zeroCard()).toBeNull();
+  press("l");
+  await screen.findByRole("article", { name: /^Sample Hardware/ });
+  press("Enter");
+  const card = await screen.findByRole("region", { name: "Inbox zero" });
+  expect(card.textContent).toContain("That was the last one.");
+  await waitFor(() =>
+    expect(card.textContent).toContain("2 cleared this session · 2 recorded, $24.00 · 0 ignored"),
+  );
+  press("Escape");
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Leave flow" })).toBeNull());
+  expect(zeroCard()).not.toBeNull();
+});
+
+it("says waiting items are hidden by the search or the proposals filter instead of inbox zero", async () => {
+  serve([
+    item({ id: "a" }),
+    item({
+      id: "c",
+      source_ref: "tx-3",
+      payee: "Example Property Co",
+      amount: "-500.00",
+      status: "recorded",
+    }),
+  ]);
+  renderInbox();
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  fireEvent.change(screen.getByRole("searchbox", { name: "Search the inbox" }), {
+    target: { value: "Property" },
+  });
+  expect(
+    await screen.findByText(/1 still waiting outside this search, so this is not inbox zero yet/),
+  ).toBeDefined();
+  expect(zeroCard()).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Show all 1 waiting" }));
+  await screen.findByText("Example Coffee Cart", { selector: ".ix-d-t" });
+  fireEvent.keyDown(document.body, { key: "p" });
+  expect(
+    await screen.findByText(/1 still waiting without a proposal, so this is not inbox zero yet/),
+  ).toBeDefined();
+  expect(zeroCard()).toBeNull();
+});
