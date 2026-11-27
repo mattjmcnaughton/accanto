@@ -428,6 +428,38 @@ Rejections: `schedule_not_found` (404); `invalid_schedule`, `invalid_cadence`,
 `invalid_line`, `not_scheduled`, `not_skipped`, `occurrence_passed` (422);
 `occurrence_staged`, `stale_revision` (409).
 
+## Notifications
+
+Notifications go to a User's phone or browser over Web Push
+([TDD 20](tdds/20-notifications.md)). They carry counts and Routine names only,
+never amounts, payees, notes, accounts or Entity names. Routes are under
+`/api/notifications`; none takes an Entity, because preferences apply to every
+Entity the User owns or is a member of.
+
+| Method | Path | Credential | Result |
+| --- | --- | --- | --- |
+| `GET` | `/config` | session or API key | `{public_key}` (VAPID, base64url), or `404 push_not_configured` when the server has no key |
+| `GET` | `/preferences` | session or API key | `{hour, routines_due, scheduled_entries, transactions_waiting}` |
+| `PUT` | `/preferences` | session or API key | the same shape back; `hour` is 0–23 |
+| `POST` | `/devices` | browser session | body is the browser's `PushSubscription.toJSON()` (`{endpoint, keys: {p256dh, auth}}`); returns `{id}` |
+| `DELETE` | `/devices/{id}` | browser session | `204`; another User's or an unknown Device is `404` |
+| `POST` | `/devices/{id}/test` | browser session | sends a test to that Device; `{outcome}` is `delivered`, `error`, `gone` or `disabled` |
+
+Defaults, before anything is saved: `hour` 9, `routines_due` and
+`scheduled_entries` on, `transactions_waiting` off. A Device's `endpoint` must be
+`https` on a known push service (`push.apple.com`, `fcm.googleapis.com`,
+`push.services.mozilla.com`, `notify.windows.com`, or a subdomain), with no port
+or credentials; anything else is `422 push_endpoint_not_allowed`. Registering
+the same endpoint again updates it and moves it to the caller. API keys cannot
+register Devices or send tests (`403 browser_session_required`).
+
+The hourly tick sends, at its first run at or after `hour` in each Entity's
+time zone, each enabled kind that has something to say, at most once per User,
+Entity, kind and local date: Routines due today and unfinished (by name, up to three),
+Entry schedule items staged for today and still waiting (a count), and synced
+transactions waiting or in conflict (a count). A Device the push service
+reports gone is removed.
+
 ## Plan → activity → Review
 
 Plan revisions include a nullable UTC `updated_at` (serialized like `saved_at`, as

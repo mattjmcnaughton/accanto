@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     # Each step of `python -m accanto.jobs.tick` has its own deadline.
     job_tick_step_timeout: float = 300
 
+    # Notifications over Web Push (TDD 20). VAPID_PRIVATE_KEY is a raw base64url
+    # P-256 key from `just vapid-keys`; unset hides Notifications and sends
+    # nothing. It is checked where it is used (services.push.sender_for): a
+    # settings validation error would echo every configured value. Local tests
+    # only: PUSH_RECORD_FILE receives payloads instead of a push service, and
+    # only with a loopback http BROWSER_ORIGIN.
+    vapid_private_key: SecretStr = SecretStr("")
+    push_record_file: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

@@ -9,6 +9,7 @@ const meta = {
   args: {
     ...screenArgs(),
     credentials: fn(async () => data.session).mockName("credentials"),
+    userId: data.session.user.id,
     saved: fn().mockName("saved"),
   },
 } satisfies Meta<typeof Settings>;

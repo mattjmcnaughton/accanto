@@ -627,6 +627,9 @@ def run_tick(tmp_path, suffix, private):
     # The canary schedule's date today is staged in the inbox; only counts are logged.
     assert steps[1]["step"] == "scheduled_entries"
     assert steps[1]["counts"]["staged"] >= 1
+    # Notifications (TDD 20): counts only, after the day's items are staged.
+    assert steps[2]["step"] == "notifications"
+    assert set(steps[2]["counts"]) == {"notified", "delivered", "not_delivered"}
     for value in private:
         assert value not in captured, f"tick log contains {value[:24]}"
 

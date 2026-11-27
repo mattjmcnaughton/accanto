@@ -6,6 +6,7 @@ import "./settings.css";
 import { AgentSettings } from "../agent/AgentSettings";
 import { ApiKeys } from "./ApiKeys";
 import { EntityMembers } from "./Members";
+import { Notifications } from "./Notifications";
 import { TransactionProviderSettings } from "./TransactionProviderSettings";
 
 interface EntitySettings {
@@ -20,6 +21,7 @@ interface EntitySettings {
 const PERCENT = /^-?\d{1,2}(\.\d{1,2})?$/;
 export interface SettingsProps extends ScreenProps {
   credentials: (signIn?: boolean) => Promise<BrowserSession>;
+  userId: string;
   saved: () => void;
   openInbox?: () => void;
 }
@@ -190,6 +192,7 @@ export function Settings(p: SettingsProps) {
         </section>
       )}
       <EntityMembers entityId={p.entity.id} credentials={p.credentials} disabled={p.busy} />
+      <Notifications {...p} />
       <AgentSettings {...p} />
       {p.entity.role === "member" ? (
         <section aria-labelledby="provider-member-heading">
