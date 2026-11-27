@@ -97,7 +97,13 @@ def test_excluded_operations_have_no_tool():
     for tool in CATALOG:
         assert not any(word in tool.name for word in excluded), tool.name
         properties = tool.input.model_json_schema().get("properties", {})
-        assert "access_token" not in str(properties)
+        # No tool reads or writes a credential: API keys, the YNAB token, or a
+        # future integration's (idempotency_key is the MCP retry identity).
+        assert not any(
+            word in field
+            for field in properties
+            for word in ("token", "secret", "credential", "api_key")
+        ), tool.name
         # Agents never reach enablement or the Agent mode; AGENT.md only as a draft.
         assert not {"enabled", "mode"} & set(properties), tool.name
         assert ("instructions" in properties) == (

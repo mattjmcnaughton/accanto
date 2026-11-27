@@ -57,7 +57,9 @@ Every core financial workflow must be available through a documented,
 authenticated API from the first usable production version. The UI uses that
 API; the user must also be able to operate Accanto through their own API calls.
 Direct API access uses user-owned, individually revocable API keys, shown once
-at creation and stored only as hashes. MCP clients may authenticate with those
+at creation and stored only as hashes. Credentials (API keys, provider tokens
+such as YNAB's, and any future integration's) are created, listed, replaced
+and revoked only from a signed-in browser; no API key or agent manages them. MCP clients may authenticate with those
 user-owned API keys; hosted MCP access for clients that cannot hold a key
 (claude.ai, mobile connectors) uses OAuth in a later phase.
 

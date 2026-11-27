@@ -197,26 +197,30 @@ async def scenario():
                 path, json=payload, headers={"Idempotency-Key": str(uuid4())}
             )
         ).status_code == 409
-        keys = await client.get("/api/keys")
-        assert keys.status_code == 200
-        assert set(keys.json()[0]) == {"id", "name", "created_at", "revoked_at"}
-        assert keys.json()[0]["id"] == key["id"]
-        assert {row["id"] for row in keys.json()} == {key["id"], second_key["id"]}
-        assert (await client.delete(f"/api/keys/{other_key['id']}")).status_code == 404
-        assert (
-            await client.get(
-                "/api/keys", headers={"Authorization": f"Bearer {other_key['key']}"}
+        # API keys never read or manage credentials, their own included.
+        for method, url in (
+            ("GET", "/api/keys"),
+            ("POST", "/api/keys"),
+            ("DELETE", f"/api/keys/{second_key['id']}"),
+            ("DELETE", f"/api/keys/{key['id']}"),
+        ):
+            refused = await client.request(
+                method,
+                url,
+                json={"name": "Synthetic minted"} if method == "POST" else None,
             )
-        ).json()[0]["id"] == other_key["id"]
-        assert (await client.delete(f"/api/keys/{second_key['id']}")).status_code == 200
-        revoked_first = (await client.get("/api/keys")).json()[1]["revoked_at"]
-        assert (await client.delete(f"/api/keys/{second_key['id']}")).status_code == 200
-        assert (await client.get("/api/keys")).json()[1]["revoked_at"] == revoked_first
-        assert (
-            await client.get(
-                path, headers={"Authorization": f"Bearer {second_key['key']}"}
+            assert refused.status_code == 403, (method, url)
+            assert refused.json()["detail"]["code"] == "browser_session_required"
+            assert "key" not in refused.json()["detail"]
+        async with sessions() as db:
+            assert (
+                await db.scalar(
+                    select(func.count())
+                    .select_from(m.keys)
+                    .where(m.keys.c.user_id == user, m.keys.c.revoked_at.is_(None))
+                )
+                == 2
             )
-        ).status_code == 401
         assert (
             await client.get(
                 path, headers={"Authorization": f"Bearer {other_key['key']}"}
@@ -326,6 +330,41 @@ async def scenario():
         )
         assert response.status_code == 200, response.text
         assert response.json()["revision"] == 4
+        browser_write = {
+            "Origin": "https://test",
+            "X-CSRF-Token": csrf_token(browser["token"], config),
+        }
+        keys = await browser_client.get("/api/keys")
+        assert keys.status_code == 200
+        assert keys.json()[0]["id"] == key["id"]
+        assert {row["id"] for row in keys.json()} == {key["id"], second_key["id"]}
+        foreign = await browser_client.delete(
+            f"/api/keys/{other_key['id']}", headers=browser_write
+        )
+        assert foreign.status_code == 404
+        revoke = f"/api/keys/{second_key['id']}"
+        assert (
+            await browser_client.delete(revoke, headers=browser_write)
+        ).status_code == 200
+        revoked_first = (await browser_client.get("/api/keys")).json()[1]["revoked_at"]
+        assert (
+            await browser_client.delete(revoke, headers=browser_write)
+        ).status_code == 200
+        assert (await browser_client.get("/api/keys")).json()[1][
+            "revoked_at"
+        ] == revoked_first
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="https://test"
+        ) as revoked_client:
+            assert (
+                await revoked_client.get(
+                    path, headers={"Authorization": f"Bearer {second_key['key']}"}
+                )
+            ).status_code == 401
+        # A browser without its CSRF token cannot manage keys either.
+        assert (
+            await browser_client.post("/api/keys", json={"name": "x"})
+        ).status_code == 403
         listed = await browser_client.get("/api/keys")
         assert listed.status_code == 200
         assert all(

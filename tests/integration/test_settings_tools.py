@@ -335,10 +335,13 @@ async def scenario():
                 ),
                 ("GET", "/transaction-provider", None),
                 ("GET", "/sources/ynab/plans", None),
+                ("GET", "/api/keys", None),
+                ("POST", "/api/keys", {"name": "Synthetic minted"}),
+                ("DELETE", f"/api/keys/{key['id']}", None),
             ):
                 response = await client.request(
                     method,
-                    prefix + path,
+                    path if path.startswith("/api/") else prefix + path,
                     json=body,
                     headers={**api, "Idempotency-Key": str(uuid4())},
                 )

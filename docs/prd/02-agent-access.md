@@ -112,7 +112,9 @@ Included:
 
 Excluded from every agent surface:
 
-- API keys: listing, issuing, revoking.
+- API keys: listing, issuing, revoking. Since 2026-11-27 this holds for every
+  API-key caller, not only agents: credentials (API keys, the YNAB token, any
+  future integration's) are managed only from a signed-in browser.
 - Source setup: connecting YNAB, replacing or reading the token, disconnecting,
   choosing which accounts sync.
 - The agent's own settings: enablement, agent mode, AGENT.md, retention.
