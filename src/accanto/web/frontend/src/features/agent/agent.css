@@ -405,7 +405,7 @@
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  /* Phone keyboards have no Shift+Enter to explain. */
+  /* Phone keyboards have no Alt+Enter to explain: their return key sends. */
   .agent-hint {
     display: none;
   }

@@ -701,6 +701,63 @@ it("opens the latest conversation, reopens an older one from History, and archiv
   expect(String(archived?.[0])).toMatch(/\/conversations\/c-new\/archive$/);
 });
 
+it("sends on Enter and Shift+Enter, starts a new line at the caret on Alt or Ctrl+Enter, and waits out an input method", async () => {
+  const sent: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    if (String(path).endsWith("/settings"))
+      return json({ enabled: true, mode: "ask_first", instructions: "", revision: 1 });
+    if (init?.method === "POST") {
+      sent.push(String((init.body as FormData).get("content")));
+      return new Response(
+        body(
+          'event: delta\ndata: {"text":"Noted."}\n\n',
+          'event: done\ndata: {"conversation_id":"c1","owner_message_id":"m1","agent_message_id":"m2","pending_change_ids":[]}\n\n',
+        ),
+        { status: 200 },
+      );
+    }
+    return json([]);
+  });
+  render(
+    <AgentPanel
+      entity={entity}
+      busy={false}
+      refresh={0}
+      screen="home"
+      month="2026-11"
+      credentials={async () => session}
+      save={vi.fn()}
+      close={vi.fn()}
+      openSettings={vi.fn()}
+      changed={vi.fn()}
+    />,
+  );
+  const box = (await screen.findByRole("textbox", {
+    name: "Message the assistant",
+  })) as HTMLTextAreaElement;
+  fireEvent.change(box, { target: { value: "Groceries rent" } });
+  // The new line goes where the caret is, replacing a selection, not at the end.
+  box.setSelectionRange(9, 10);
+  fireEvent.keyDown(box, { key: "Enter", altKey: true });
+  expect(box).toHaveValue("Groceries\nrent");
+  expect(box.selectionStart).toBe(10);
+  box.setSelectionRange(9, 9);
+  fireEvent.keyDown(box, { key: "Enter", ctrlKey: true });
+  expect(box).toHaveValue("Groceries\n\nrent");
+  // Enter that confirms an input-method candidate sends nothing.
+  fireEvent.keyDown(box, { key: "Enter", isComposing: true });
+  fireEvent.keyDown(box, { key: "Enter", shiftKey: true, keyCode: 229 });
+  expect(box).toHaveValue("Groceries\n\nrent");
+  expect(sent).toEqual([]);
+
+  fireEvent.keyDown(box, { key: "Enter", shiftKey: true });
+  await waitFor(() => expect(sent).toEqual(["Groceries\n\nrent"]));
+  await waitFor(() => expect(box).toHaveValue(""));
+  fireEvent.change(box, { target: { value: "And utilities?" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(sent).toEqual(["Groceries\n\nrent", "And utilities?"]));
+});
+
 it("starts an AGENT.md interview from an empty conversation and shows the drafted text", async () => {
   const sent: string[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
