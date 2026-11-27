@@ -366,3 +366,48 @@ export const FireInterviewPhone: Story = {
   parameters: { msw: fireMsw },
   globals: { viewport: { value: "phone", isRotated: false } },
 };
+
+/**
+ * A stand-in for the browser's speech recognizer: Speak your message hears a synthetic question
+ * word by word, then pauses, which ends listening. Real browsers ask for the microphone first.
+ */
+class ScriptedRecognition {
+  onresult: ((event: { results: { transcript: string }[][] }) => void) | null = null;
+  onerror: ((event: { error: string }) => void) | null = null;
+  onend: (() => void) | null = null;
+  timers: number[] = [];
+  start() {
+    const words = "How much is left in the synthetic vacation fund this month?".split(" ");
+    words.forEach((_, i) =>
+      this.timers.push(
+        window.setTimeout(
+          () => this.onresult?.({ results: [[{ transcript: words.slice(0, i + 1).join(" ") }]] }),
+          600 + i * 350,
+        ),
+      ),
+    );
+    this.timers.push(window.setTimeout(() => this.stop(), 1800 + words.length * 350));
+  }
+  stop() {
+    for (const timer of this.timers) clearTimeout(timer);
+    this.onend?.();
+  }
+  abort() {
+    this.stop();
+  }
+}
+const withSpeech = () => {
+  const w = window as unknown as Record<string, unknown>;
+  const before = [w.SpeechRecognition, w.webkitSpeechRecognition];
+  w.SpeechRecognition = w.webkitSpeechRecognition = ScriptedRecognition;
+  return () => {
+    [w.SpeechRecognition, w.webkitSpeechRecognition] = before;
+  };
+};
+/** Press the mic: the question appears in the box as it is heard, and waits for Send. */
+export const Dictation: Story = { beforeEach: withSpeech };
+/** The same on a phone browser that can listen, such as Chrome on Android. iPhones hide the mic. */
+export const DictationPhone: Story = {
+  beforeEach: withSpeech,
+  globals: { viewport: { value: "phone", isRotated: false } },
+};

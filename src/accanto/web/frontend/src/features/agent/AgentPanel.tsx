@@ -24,6 +24,7 @@ import { type CreateRequest, createSpec, createdId } from "../create/create";
 import { TagPicker } from "../tags/Tags";
 import { type Entity, composing, useLoad } from "../workspace/shared";
 import { Markdown } from "./Markdown";
+import { useSpeech } from "./speech";
 import "./agent.css";
 
 export interface AgentPanelProps {
@@ -240,6 +241,7 @@ export function AgentPanel(p: AgentPanelProps) {
   const stopping = useRef<Promise<unknown> | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const speech = useSpeech((heard) => setText(heard.slice(0, 4000)), setError);
 
   const [list, setList] = useState<ConversationSummary[]>([]);
   /** The open conversation: null is a new one, undefined the latest until loaded. */
@@ -390,6 +392,7 @@ export function AgentPanel(p: AgentPanelProps) {
 
   async function send(content = text.trim(), attached = images, resume?: Turn) {
     if ((!content && !images.length && !attached.length) || live) return;
+    speech?.stop(true);
     await stopping.current;
     const local = `local-${Date.now()}`;
     setError("");
@@ -657,6 +660,10 @@ export function AgentPanel(p: AgentPanelProps) {
       data-own-keys=""
       onKeyDown={(event) => {
         if (event.key !== "Escape" || event.defaultPrevented) return;
+        if (speech?.listening) {
+          event.preventDefault();
+          return speech.stop();
+        }
         // Esc stops a streaming reply first; it closes only when nothing typed would be lost.
         const field = event.target;
         const typed =
@@ -1059,7 +1066,11 @@ export function AgentPanel(p: AgentPanelProps) {
               rows={1}
               value={text}
               placeholder="What did I spend on groceries last month?"
-              onChange={(event) => setText(event.target.value)}
+              onChange={(event) => {
+                // Typing takes over from speech: words still arriving would overwrite it.
+                speech?.stop(true);
+                setText(event.target.value);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !composing(event)) {
                   event.preventDefault();
@@ -1119,11 +1130,35 @@ export function AgentPanel(p: AgentPanelProps) {
                   ))}
                 </span>
               )}
-              <small className="agent-hint">
-                {text.length > 3600
-                  ? `${4000 - text.length} characters left`
-                  : "Enter or Shift+Enter to send · Alt+Enter for a new line"}
+              <small className={speech?.listening ? "agent-hint live" : "agent-hint"}>
+                {speech?.listening
+                  ? "Listening… pause or press the mic to stop"
+                  : text.length > 3600
+                    ? `${4000 - text.length} characters left`
+                    : "Enter or Shift+Enter to send · Alt+Enter for a new line"}
               </small>
+              {speech && (
+                <button
+                  type="button"
+                  className="icon-btn agent-mic"
+                  aria-label="Speak your message"
+                  aria-pressed={speech.listening}
+                  title={
+                    speech.listening
+                      ? "Stop listening (Esc)"
+                      : "Speak your message. Your browser's speech service turns it into text."
+                  }
+                  onClick={() => {
+                    if (speech.listening) return speech.stop();
+                    setError("");
+                    // Speech adds to what is typed; Enter then sends from the box.
+                    speech.start(text.trim() ? `${text.trimEnd()} ` : "");
+                    input.current?.focus();
+                  }}
+                >
+                  <Icon name={speech.listening ? "stop" : "mic"} />
+                </button>
+              )}
               {live ? (
                 <button
                   type="button"

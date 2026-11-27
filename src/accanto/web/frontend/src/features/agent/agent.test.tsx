@@ -758,6 +758,118 @@ it("sends on Enter and Shift+Enter, starts a new line at the caret on Alt or Ctr
   await waitFor(() => expect(sent).toEqual(["Groceries\n\nrent", "And utilities?"]));
 });
 
+it("writes speech into the box as it is heard, sends nothing on its own, and hides the mic where the browser cannot listen", async () => {
+  const sent: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    if (String(path).endsWith("/settings"))
+      return json({ enabled: true, mode: "ask_first", instructions: "", revision: 1 });
+    if (init?.method === "POST") {
+      sent.push(String((init.body as FormData).get("content")));
+      return new Response(
+        body(
+          'event: done\ndata: {"conversation_id":"c1","owner_message_id":"m1","agent_message_id":"m2","pending_change_ids":[]}\n\n',
+        ),
+        { status: 200 },
+      );
+    }
+    return json([]);
+  });
+  const heard: FakeRecognition[] = [];
+  class FakeRecognition {
+    lang = "";
+    continuous = true;
+    interimResults = false;
+    onresult: ((event: { results: { transcript: string }[][] }) => void) | null = null;
+    onerror: ((event: { error: string }) => void) | null = null;
+    onend: (() => void) | null = null;
+    start = vi.fn(() => heard.push(this));
+    stop = vi.fn(() => this.onend?.());
+    abort = vi.fn(() => {
+      this.onerror?.({ error: "aborted" });
+      this.onend?.();
+    });
+    say = (...phrases: string[]) =>
+      act(() => this.onresult?.({ results: phrases.map((transcript) => [{ transcript }]) }));
+  }
+  vi.stubGlobal("webkitSpeechRecognition", FakeRecognition);
+  const panel = (
+    <AgentPanel
+      entity={entity}
+      busy={false}
+      refresh={0}
+      screen="home"
+      month="2026-11"
+      credentials={async () => session}
+      save={vi.fn()}
+      close={vi.fn()}
+      openSettings={vi.fn()}
+      changed={vi.fn()}
+    />
+  );
+  render(panel);
+  const box = await screen.findByRole("textbox", { name: "Message the assistant" });
+  const mic = screen.getByRole("button", { name: "Speak your message" });
+  fireEvent.change(box, { target: { value: "Groceries:" } });
+
+  // Speech adds to what is typed, replacing its own guesses as they settle.
+  fireEvent.click(mic);
+  expect(mic).toHaveAttribute("aria-pressed", "true");
+  expect(heard[0]).toMatchObject({ interimResults: true, continuous: false });
+  await heard[0].say("how much did i");
+  expect(box).toHaveValue("Groceries: how much did i");
+  await heard[0].say("How much did I spend", " in November?");
+  expect(box).toHaveValue("Groceries: How much did I spend in November?");
+  // A pause ends listening; the owner sends.
+  act(() => heard[0].onend?.());
+  expect(mic).toHaveAttribute("aria-pressed", "false");
+  expect(sent).toEqual([]);
+
+  // Typing takes over: later words do not overwrite it.
+  fireEvent.click(mic);
+  await heard[1].say("and rent");
+  expect(box).toHaveValue("Groceries: How much did I spend in November? and rent");
+  fireEvent.change(box, { target: { value: "Groceries in November?" } });
+  expect(heard[1].abort).toHaveBeenCalled();
+  expect(mic).toHaveAttribute("aria-pressed", "false");
+  await heard[1].say("and rent and utilities");
+  expect(box).toHaveValue("Groceries in November?");
+
+  // Esc stops listening; Enter sends what is in the box.
+  fireEvent.click(mic);
+  fireEvent.keyDown(box, { key: "Escape" });
+  expect(heard[2].stop).toHaveBeenCalled();
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(sent).toEqual(["Groceries in November?"]));
+
+  // A blocked microphone says how to fix it.
+  fireEvent.click(mic);
+  act(() => {
+    heard[3].onerror?.({ error: "not-allowed" });
+    heard[3].onend?.();
+  });
+  expect(screen.getByRole("alert")).toHaveTextContent(/Microphone access is off/);
+  cleanup();
+
+  // iPhone and iPad browsers keep the keyboard's dictation instead.
+  vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Version/27.0 Mobile/15E148 Safari/604.1",
+  );
+  render(panel);
+  await screen.findByRole("textbox", { name: "Message the assistant" });
+  expect(screen.queryByRole("button", { name: "Speak your message" })).toBeNull();
+  cleanup();
+  vi.restoreAllMocks();
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) =>
+    String(path).endsWith("/settings")
+      ? json({ enabled: true, mode: "ask_first", instructions: "", revision: 1 })
+      : json([]),
+  );
+  vi.unstubAllGlobals();
+  render(panel);
+  await screen.findByRole("textbox", { name: "Message the assistant" });
+  expect(screen.queryByRole("button", { name: "Speak your message" })).toBeNull();
+});
+
 it("starts an AGENT.md interview from an empty conversation and shows the drafted text", async () => {
   const sent: string[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
