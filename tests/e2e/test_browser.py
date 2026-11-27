@@ -188,7 +188,7 @@ def test_signed_in_workspace(tmp_path):
         # phone tabs, with More listing the screens that have no tab.
         until("!document.querySelector('dialog[open]')")
         wide = value("innerWidth > 760") == "true"
-        if not wide and screen not in {"Home", "Activity", "Review", "Plans"}:
+        if not wide and screen not in {"Home", "Activity"}:
             browser("find", "role", "link", "click", "--name", "More", "--exact")
             until("document.title === 'More · Accanto'")
         browser("find", "role", "link", "click", "--name", screen, "--exact")
