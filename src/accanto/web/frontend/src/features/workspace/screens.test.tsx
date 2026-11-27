@@ -197,9 +197,6 @@ it("splits Home by the version the month's Review links, else the latest saved v
     render(<Workspace initial={session} signedOut={vi.fn()} screen="home" />);
   });
   expect(within(card()).getByText("Other, latest version 1")).toBeDefined();
-  expect(card().textContent).toContain(
-    "November has no Review yet, so this is the latest saved version.",
-  );
 });
 
 it("refreshes only visible Activity after a write and restores the unsaved Plan", async () => {

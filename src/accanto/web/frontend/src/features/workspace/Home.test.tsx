@@ -50,9 +50,6 @@ const props = (result: ReviewResult, month = "2026-11") => ({
   attention: [],
   recent: [],
   review: { kind: "ready" as const, data: result },
-  accounts: { kind: "empty" as const },
-  investments: { kind: "empty" as const },
-  loans: { kind: "empty" as const },
   worth: { kind: "empty" as const },
   open: vi.fn(),
   newPlan: vi.fn(),
@@ -71,25 +68,30 @@ it("takes what is left from the API's difference and never shows a missing figur
   const saving = screen.getByRole("row", { name: /Saving/ });
   expect(saving.textContent).toContain("Unknown");
   expect(saving.textContent).not.toContain("$0.00");
-  expect(saving.textContent).toContain("1 line with no entry");
+  // November is running: its line with no entry is still to come, not something that needs you.
+  expect(saving.textContent).toContain("1 still to come");
+  expect(saving.textContent).not.toContain("no entry");
   expect(screen.getByRole("row", { name: /Giving/ }).textContent).toContain(
     "$50.00 more than planned",
   );
-  const needs = screen.getByRole("list", { name: "Needs you" });
-  expect(within(needs).getByText("Synthetic goal has no November entry")).toBeDefined();
+  expect(screen.queryByRole("list", { name: "Needs you" })).toBeNull();
+
+  // An ended month: the same line warns, and Needs you, listed first, opens Review.
   const go = vi.fn();
-  rerender(<Home {...props(review(group("1000.00", "400.00", "-600.00"), "-600.00"))} go={go} />);
+  rerender(
+    <Home
+      {...props(review(group("1000.00", "400.00", "-600.00"), "-600.00"), "2026-09")}
+      go={go}
+    />,
+  );
+  expect(screen.getByRole("row", { name: /Saving/ }).textContent).toContain("1 line with no entry");
+  const needs = screen.getByRole("list", { name: "Needs you" });
+  expect(document.querySelector(".screen.home")?.firstElementChild?.contains(needs)).toBe(true);
   fireEvent.click(
-    within(screen.getByRole("list", { name: "Needs you" })).getByRole("button", {
-      name: /Synthetic goal has no November entry/,
-    }),
+    within(needs).getByRole("button", { name: /Synthetic goal has no September entry/ }),
   );
   expect(go).toHaveBeenCalledWith("review");
-
   // Another month has no today: its figures, without "this month" or a pace marker.
-  rerender(
-    <Home {...props(review(group("1000.00", "400.00", "-600.00"), "-600.00"), "2026-09")} />,
-  );
   expect(
     screen.getByRole("heading", { name: "$600.00 left of September's guilt-free plan" }),
   ).toBeDefined();

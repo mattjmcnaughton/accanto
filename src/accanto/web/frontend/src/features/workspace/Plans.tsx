@@ -381,9 +381,6 @@ export function Plans(
           }))}
           review={review}
           split={splitVersion}
-          accounts={accounts}
-          investments={investments}
-          loans={loans}
           worth={worth}
           dollars={dollars}
           setDollars={(value: Dollars) => {

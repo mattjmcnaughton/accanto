@@ -149,39 +149,6 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.stand-card {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-}
-.stand-card .cap {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.stand-rows li {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 7px 0;
-  border-top: 1px solid var(--line);
-}
-.stand-rows li:first-child {
-  border-top: 0;
-}
-.stand-rows .t {
-  min-width: 0;
-}
-.stand-rows small {
-  display: block;
-  color: var(--ink3);
-  font-size: 12.5px;
-}
-.stand-rows b {
-  font-weight: 650;
-  white-space: nowrap;
-}
 .steps3 {
   counter-reset: step;
 }

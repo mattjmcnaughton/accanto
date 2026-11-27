@@ -185,7 +185,11 @@ export function AskBar({
                 difference={result.spending_difference}
               />
             ) : (
-              <MonthBreakdown comparison={result.comparison} name={name} />
+              <MonthBreakdown
+                comparison={result.comparison}
+                name={name}
+                ended={month < entity.today.slice(0, 7)}
+              />
             )
           ) : review.kind === "ready" || review.kind === "empty" || review.kind === "not_found" ? (
             <p className="pal-none">
