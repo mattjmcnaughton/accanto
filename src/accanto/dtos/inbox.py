@@ -80,6 +80,19 @@ class BulkRevisionInput(Input):
     items: list[BulkRevisionItem] = Field(min_length=1, max_length=200)
 
 
+class NoteInput(RevisionInput):
+    """The owner's note; "" clears it."""
+
+    note: str = Field(max_length=1000)
+
+
+class BulkNoteInput(Input):
+    """One note for many items; each item is its own write."""
+
+    note: str = Field(max_length=1000)
+    items: list[BulkRevisionItem] = Field(min_length=1, max_length=200)
+
+
 class ResolveInput(Input):
     expected_revision: int = Field(ge=1)
     resolution: Literal["keep", "delete"]

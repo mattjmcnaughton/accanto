@@ -174,7 +174,7 @@ export function summary(it: StagedTransaction, c: Completion, choices: Choices) 
 /**
  * What inbox search reads on an item: payee, memo, source category, amount, and what the row
  * shows it as (the proposal or edit, or the recorded entry with its line) with the proposal's
- * rationale or question, and the tags it carries or will carry.
+ * rationale or question, the owner's note, and the tags it carries or will carry.
  */
 export function searchable(
   it: StagedTransaction,
@@ -204,6 +204,7 @@ export function searchable(
       summary(it, c, choices).text,
       line,
       it.proposal?.rationale,
+      it.note,
       ...tagIds.map((id) => choices.tags?.find((tag) => tag.uuid === id)?.name),
     ],
     cents(it),

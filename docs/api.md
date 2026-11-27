@@ -929,6 +929,8 @@ point it at the fake server in `tests/fakes/ynab_server.py`.
 | POST | `/inbox/{item_id}/undo` | `{expected_revision}`; soft-deletes the recorded entry through its normal delete command; the item waits again |
 | POST | `/inbox/skip`, `/inbox/unskip`, `/inbox/undo` | `{items: [{item_id, expected_revision}]}` (up to 200); the batch form of the commands above. Each item is its own write under the request's `Idempotency-Key`, so one rejection keeps the rest; per-item outcomes `{item_id, ok, item?, entry?, error?}` |
 | POST | `/inbox/{item_id}/resolve` | `{expected_revision, resolution: "keep" \| "delete"}` for a conflict |
+| PUT | `/inbox/{item_id}/note` | `{expected_revision, note}` (up to 1000 characters; `""` clears it); the owner's note on a waiting or ignored item. Returns the item with `note` and `noted_at`. A recorded item's note is on its actual entry (`inbox_status` here). Agents (the built-in assistant and MCP) cannot write it: `owner_note`, 403 |
+| PUT | `/inbox/note` | `{note, items: [{item_id, expected_revision}]}` (up to 200); the same note on each item, each its own write; per-item outcomes `{item_id, ok, item?, error?}` |
 
 A **proposal** (and a record `completion`) is any subset of `category`
 (`income`, `fixed_cost`, `spending`, `saving`, `investing`, `giving`),
@@ -947,7 +949,8 @@ for income, fixed costs, guilt-free spending and saving; the investment and givi
 contribution commands; or the linked refund command for `refund_of`. Those
 commands' rules, audit, and stale-edit checks apply unchanged; the audit
 interface is `inbox`. An inflow to an outflow category must be a refund. The entry
-note is the payee (and memo). A rejection leaves the item waiting with its reason
+note is the payee, then the memo and the owner's inbox note when present,
+joined with ` · `. A rejection leaves the item waiting with its reason
 in `rejection`. The record retry identity is the item and its expected revision,
 so repeating the same press returns the first outcome without a second entry.
 

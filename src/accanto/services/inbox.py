@@ -117,6 +117,7 @@ def facts_of(row) -> StagedFacts:
         amount=Decimal(latest["amount"]),
         payee=latest["payee"],
         memo=latest.get("memo"),
+        note=row["note"],
     )
 
 
@@ -183,6 +184,8 @@ def render_item(row, source_uuid, entry_uuid, proposer, split):
             }
             if row["proposal"]
             else None,
+            "note": row["note"],
+            "noted_at": row["noted_at"],
             "staged_at": row["staged_at"],
             "revision": row["revision"],
         }
@@ -518,6 +521,14 @@ async def write_inbox(session, entity, actor, operation, payload, target, audit)
             proposed_interface=None,
             proposed_at=None,
         )
+    elif action == "note":
+        # The owner's own words: agents read notes but never write them.
+        if actor.interface in {"agent", "mcp"}:
+            raise RejectionError(
+                "owner_note", "Only the owner writes an inbox note.", 403
+            )
+        note = payload["note"]
+        values.update(note=note, noted_at=datetime.now(UTC) if note else None)
     elif action == "skip":
         values["rejection"] = None
     record = (

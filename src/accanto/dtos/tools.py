@@ -505,6 +505,11 @@ class InboxItem(Output):
     changed_after_staging: bool
     deleted_in_source: bool
     proposal: Proposal | None
+    note: Untrusted | None = Field(
+        default=None,
+        description="The owner's note: context, or why a proposal is wrong. "
+        "Recording keeps it on the actual entry's note. Agents cannot set it.",
+    )
     revision: int
 
 
@@ -792,6 +797,7 @@ def project_item(row) -> InboxItem:
         )
         if proposal
         else None,
+        note=row["note"] or None,
         revision=row["revision"],
     )
 

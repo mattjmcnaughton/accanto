@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6p036`.
+   supported revision is `6q037`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -164,6 +164,10 @@ additive: back up first if those proposals matter. No schema change, so `6o035`
 code runs on it unchanged (it would stage uncleared transactions again). The
 downgrade restores nothing; a later sync stages each once it clears. No grant
 changes.
+`6q037` adds the owner's inbox note: `staged_transaction.note` (default `''`)
+and nullable `noted_at`. Additive with a default; `6p036` code never reads or
+writes them, so its sync inserts store an empty note and its record leaves the
+entry note as payee and memo. The downgrade drops the notes. No grant changes.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

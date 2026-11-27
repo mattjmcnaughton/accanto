@@ -894,3 +894,34 @@
     grid-column: 1 / -1;
   }
 }
+/* The owner's note sits beside the agent's rationale, told apart by its brand edge. */
+.ix-note {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brand);
+  border-radius: 9px;
+  padding: 7px 10px;
+}
+.ix-note > .btn {
+  justify-self: start;
+}
+.ix-note textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.ix-note-do {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ix-row .t small .ix-note-row {
+  color: var(--ink2);
+}
