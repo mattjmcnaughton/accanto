@@ -85,7 +85,11 @@ const resources = {
   projections: {
     path: `${entity}/projections`,
     loaded: projection.projections,
-    empty: { 10: { investments: [] }, 20: { investments: [] }, 30: { investments: [] } },
+    empty: Object.fromEntries(
+      ["10", "20", "30"].flatMap((y) =>
+        ["today", "future"].map((d) => [`${y}:${d}`, { investments: [] }]),
+      ),
+    ),
   },
   fireAssumptions: {
     path: `${entity}/fire-assumptions`,
@@ -115,11 +119,12 @@ function reader(resource: Resource, choice: State | unknown) {
         { status: 503 },
       );
     const body = choice === "loaded" || choice === "empty" ? bodies[choice] : choice;
-    // Projections are keyed by the requested horizon in years.
-    if (resource === "projections")
-      return HttpResponse.json(
-        (body as Record<string, object>)[new URL(request.url).searchParams.get("years") ?? "20"],
-      );
+    // Projections are keyed by the requested horizon in years and dollars.
+    if (resource === "projections") {
+      const query = new URL(request.url).searchParams;
+      const key = `${query.get("years") ?? "20"}:${query.get("dollars") ?? "today"}`;
+      return HttpResponse.json((body as Record<string, object>)[key]);
+    }
     // Payoff schedules are keyed by loan.
     if (resource === "payoffSchedules")
       return HttpResponse.json((body as Record<string, object>)[String(params.debt)] ?? {});

@@ -743,3 +743,17 @@
 .home-list .row .t small {
   white-space: normal;
 }
+.glance-proj-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.glance-proj-head .projected {
+  margin-top: 0;
+}
+.seg-control.sm button {
+  padding: 2px 8px;
+  font-size: 12.5px;
+}

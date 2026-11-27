@@ -12,7 +12,7 @@ import {
   plural,
 } from "../../lib/format";
 import type { ComparisonGroup, PlanRevision, ReviewResult } from "../../lib/monthly";
-import type { Projection } from "../../lib/projections";
+import type { Dollars, Projection } from "../../lib/projections";
 import type { Routine } from "../../lib/routines";
 import type { SavingsAccount } from "../../lib/savings";
 import { Band, type BandPart, Empty, tint } from "../../ui";
@@ -86,6 +86,8 @@ export function Home({
   investments,
   loans,
   worth,
+  dollars = "today",
+  setDollars = () => {},
   open,
   newPlan,
   showPlans,
@@ -109,6 +111,9 @@ export function Home({
   investments: LoadState<Destination[]>;
   loans: LoadState<Loan[]>;
   worth: LoadState<Projection>;
+  /** Today's or future dollars for the projected milestones, shared with Projections. */
+  dollars?: Dollars;
+  setDollars?: (value: Dollars) => void;
   open: (id: string) => void;
   newPlan: () => void;
   showPlans: () => void;
@@ -233,7 +238,9 @@ export function Home({
           {split && (
             <PlanSplit version={split} linked={result?.version?.uuid === split.uuid} month={name} />
           )}
-          {worth.kind !== "empty" && <NetWorthCard worth={worth} retry={retry} />}
+          {worth.kind !== "empty" && (
+            <NetWorthCard worth={worth} retry={retry} dollars={dollars} setDollars={setDollars} />
+          )}
         </div>
       )}
       {result && comparison && (
@@ -527,7 +534,17 @@ function PlanSplit({
 }
 
 /** Net worth today and its Projection; an unobserved account leaves both unknown. */
-function NetWorthCard({ worth, retry }: { worth: LoadState<Projection>; retry: () => void }) {
+function NetWorthCard({
+  worth,
+  retry,
+  dollars,
+  setDollars,
+}: {
+  worth: LoadState<Projection>;
+  retry: () => void;
+  dollars: Dollars;
+  setDollars: (value: Dollars) => void;
+}) {
   if (worth.kind === "loading")
     return (
       <div className="card pad glance-card" aria-busy="true" aria-label="Loading net worth">
@@ -568,7 +585,22 @@ function NetWorthCard({ worth, retry }: { worth: LoadState<Projection>; retry: (
       )}
       {today.net_worth !== null && (
         <>
-          <span className="cap projected">Projected</span>
+          <div className="glance-proj-head">
+            <span className="cap projected">Projected</span>
+            {/* biome-ignore lint/a11y/useSemanticElements: The kit's segmented control is a button group. */}
+            <div className="seg-control sm" role="group" aria-label="Dollars">
+              {(["today", "future"] as const).map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  aria-pressed={dollars === d}
+                  onClick={() => setDollars(d)}
+                >
+                  {d === "today" ? "Today's $" : "Future $"}
+                </button>
+              ))}
+            </div>
+          </div>
           <ul className="split-rows proj-rows">
             {milestones.map((p) => (
               <li key={p.years}>
@@ -585,7 +617,10 @@ function NetWorthCard({ worth, retry }: { worth: LoadState<Projection>; retry: (
           <p className="note">
             A Projection, not a balance: each investment grows at its expected return with its
             expected contribution; loans with a fixed rate and monthly payment are paid down, and
-            savings and other loans stay as they are today. Inflation is not included.
+            savings and other loans stay as they are today.
+            {dollars === "today"
+              ? ` In today's dollars at ${worth.data.inflation_percent}% inflation.`
+              : " In future dollars, before inflation."}
             {defaulted
               ? ` ${plural(defaulted, "investment")} ${defaulted === 1 ? "uses" : "use"} the default ${default_return_percent}% return.`
               : ""}
