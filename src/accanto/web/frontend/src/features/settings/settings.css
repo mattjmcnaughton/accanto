@@ -67,3 +67,19 @@
 .set-screen section > .banner {
   margin-bottom: 12px;
 }
+.set-screen .set-member-email {
+  width: 260px;
+}
+.set-howto ol {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  color: var(--ink2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+@media (max-width: 760px) {
+  .set-screen .set-member-email {
+    width: auto;
+    flex: 1 1 220px;
+  }
+}

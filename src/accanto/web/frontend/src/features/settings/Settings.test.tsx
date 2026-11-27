@@ -302,3 +302,82 @@ it("does not let a delayed key credential read overwrite refreshed Entity defaul
   fireEvent.click(await screen.findByRole("button", { name: "Record activity" }));
   expect(screen.getByLabelText("Financial date")).toHaveValue("2026-11-04");
 });
+it("lets the owner add by email and remove a member, and a member only leave", async () => {
+  const owner = {
+    id: null,
+    email: "owner@example.test",
+    name: null,
+    role: "owner",
+    you: true,
+  };
+  const partner = {
+    id: "row-1",
+    email: "partner@example.test",
+    name: "Synthetic Partner",
+    role: "member",
+    you: false,
+  };
+  const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const method = init?.method ?? "GET";
+    if (String(path).includes("/members")) {
+      calls.push({ method, path: String(path), body: init?.body && JSON.parse(String(init.body)) });
+      if (method === "POST") return json({ role: "owner", members: [owner, partner] });
+      if (method === "DELETE") return json({ role: "owner", members: [owner] });
+      return json({ role: "owner", members: [owner] });
+    }
+    return json(String(path).endsWith("/keys") ? [] : { ...entity, revision: 1 });
+  });
+  const view = render(<Settings {...props()} />);
+  expect(await screen.findByText("owner@example.test")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Synthetic Partner" } });
+  fireEvent.change(screen.getByLabelText("Their email"), {
+    target: { value: " partner@example.test " },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add person" }));
+  await screen.findByText(/They see this Entity the next time/);
+  expect(calls[calls.length - 1]).toEqual({
+    method: "POST",
+    path: "/api/entities/entity/members",
+    body: { email: "partner@example.test", name: "Synthetic Partner" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Remove Synthetic Partner" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove access" }));
+  await screen.findByText(/lose access on their next request/);
+  expect(calls[calls.length - 1]).toMatchObject({
+    method: "DELETE",
+    path: "/api/entities/entity/members/row-1",
+  });
+  view.unmount();
+
+  // A member sees the list, can leave, and cannot add or remove anyone else.
+  const leaving: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    if (String(path).includes("/members")) {
+      if (init?.method === "DELETE") {
+        leaving.push(String(path));
+        return json({ left: true });
+      }
+      return json({
+        role: "member",
+        members: [
+          { ...owner, you: false },
+          { ...partner, you: true },
+        ],
+      });
+    }
+    return json(String(path).endsWith("/keys") ? [] : { ...entity, revision: 1 });
+  });
+  const assign = vi.fn();
+  vi.stubGlobal("location", { ...window.location, assign });
+  render(<Settings {...props()} entity={{ ...entity, role: "member" }} />);
+  expect(await screen.findByText(/\(you\)/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add person" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /^Remove/ })).not.toBeInTheDocument();
+  expect(screen.getByText(/Only this Entity's owner sets up/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Leave this Entity" }));
+  fireEvent.click(screen.getByRole("button", { name: "Leave Entity" }));
+  await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
+  expect(leaving).toEqual(["/api/entities/entity/members/row-1"]);
+  vi.unstubAllGlobals();
+});

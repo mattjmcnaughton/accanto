@@ -5,7 +5,14 @@ export type IsoDate = string;
 
 export interface BrowserSession {
   user: { id: UUID };
-  entities: Array<{ id: UUID; name: string; time_zone: string; today: IsoDate }>;
+  entities: Array<{
+    id: UUID;
+    name: string;
+    time_zone: string;
+    today: IsoDate;
+    /** The caller's access (TDD 19); absent from older servers. */
+    role?: "owner" | "member";
+  }>;
   csrf_token: string;
   screen_timing?: boolean;
 }

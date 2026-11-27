@@ -5,7 +5,7 @@ import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, insert, select, update
 
 from accanto.db import read_snapshot
 from accanto.domains.entity import entity_today
@@ -91,6 +91,11 @@ async def admit_identity(session, claims, config):
                 "An operator must provision this identity before sign-in.",
                 403,
             )
+        # Kept so an Entity owner can add this User by email (TDD 19). Only an
+        # admitted, verified email is stored, and it never links identities.
+        await session.execute(
+            update(m.users).where(m.users.c.id == user).values(email=claims["email"])
+        )
         return await issue_session(session, user)
 
 
@@ -104,7 +109,14 @@ async def account_metadata(session, actor):
             (
                 await session.execute(
                     select(m.entities)
-                    .where(m.entities.c.owner_id == current.user_id)
+                    .where(
+                        (m.entities.c.owner_id == current.user_id)
+                        | m.entities.c.id.in_(
+                            select(m.members.c.entity_id).where(
+                                m.members.c.user_id == current.user_id
+                            )
+                        )
+                    )
                     .order_by(m.entities.c.id)
                 )
             )
@@ -120,6 +132,9 @@ async def account_metadata(session, actor):
                     "name": entity["name"],
                     "time_zone": entity["time_zone"],
                     "today": entity_today(now, entity["time_zone"]).isoformat(),
+                    "role": "owner"
+                    if entity["owner_id"] == current.user_id
+                    else "member",
                 }
                 for entity in entities
             ],

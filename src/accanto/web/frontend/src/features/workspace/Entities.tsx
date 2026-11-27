@@ -64,7 +64,7 @@ export function EntitySwitcher({
       >
         {entities.map((e) => (
           <option key={e.id} value={e.id}>
-            {e.name}
+            {e.role === "member" ? `${e.name} (shared with you)` : e.name}
           </option>
         ))}
         <option value={CREATE}>Create Entity…</option>

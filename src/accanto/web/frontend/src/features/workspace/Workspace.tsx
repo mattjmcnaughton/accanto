@@ -528,7 +528,7 @@ export function Workspace({
           ...session.entities
             .filter((e) => e.id !== entity?.id)
             .map((e) => ({
-              text: `Switch to ${e.name}`,
+              text: `Switch to ${e.name}${e.role === "member" ? " (shared with you)" : ""}`,
               hint: "Entity",
               run: () => void switchTo(e.id),
             })),
@@ -733,7 +733,11 @@ export function Workspace({
           )}
           {!entity && (
             <div className="screen">
-              <p>No Entity is available. Contact the operator to complete setup.</p>
+              <p>No Entity is available yet.</p>
+              <p>
+                To join someone else's Entity, ask its owner to add the email you sign in with, in
+                Settings under Shared with. Then reload this page.
+              </p>
             </div>
           )}
           {entity && (

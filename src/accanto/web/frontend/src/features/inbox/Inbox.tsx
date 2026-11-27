@@ -1790,15 +1790,21 @@ export function Inbox(
         </div>
       ) : (sources.kind === "empty" && !all.length) || (source && !source.accounts.length) ? (
         <div className="ix-empty">
-          <ConnectSource
-            key={source?.id ?? "new"}
-            entityId={p.entity.id}
-            today={p.entity.today}
-            source={source}
-            credentials={p.credentials}
-            openSettings={p.openSettings}
-            connected={(saved) => void sync(saved)}
-          />
+          {p.entity.role === "member" ? (
+            <p className="note">
+              Only this Entity's owner connects a transaction source and chooses its accounts.
+            </p>
+          ) : (
+            <ConnectSource
+              key={source?.id ?? "new"}
+              entityId={p.entity.id}
+              today={p.entity.today}
+              source={source}
+              credentials={p.credentials}
+              openSettings={p.openSettings}
+              connected={(saved) => void sync(saved)}
+            />
+          )}
         </div>
       ) : flow ? (
         <div className="ix-flow">

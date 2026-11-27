@@ -29,6 +29,10 @@ uv run python -m accanto.bootstrap \
   --entity 'My finances' --time-zone America/New_York
 ```
 
+Omit `--entity` and `--time-zone` for someone who will only share another User's
+Entity: they sign in once, and the owner adds them by that email in Settings
+([Entity members](#entity-members)). The output includes the new `user_id`.
+
 Store the returned key securely. Requests use `Authorization: Bearer <key>`;
 only SHA-256 hashes are persisted. Further keys are issued, listed and revoked
 only from a signed-in browser (Settings, `/api/keys` below): an API key cannot
@@ -653,7 +657,8 @@ A popup closing is not proof of login: always re-read session metadata.
     "id": "00000000-0000-4000-8000-000000000002",
     "name": "Synthetic Entity",
     "time_zone": "America/New_York",
-    "today": "2026-10-16"
+    "today": "2026-10-16",
+    "role": "owner"
   }],
   "csrf_token": "opaque-session-bound-value",
   "screen_timing": false
@@ -661,7 +666,8 @@ A popup closing is not proof of login: always re-read session metadata.
 ```
 
 These UUIDs are deliberately synthetic examples. `today` is computed by the server
-in each Entity's zone. A direct API-key request can also read this metadata and
+in each Entity's zone. `entities` lists the Entities the User owns and those they
+are a member of; `role` says which. A direct API-key request can also read this metadata and
 receives `csrf_token: null`. No request may supply both a session cookie and an
 Authorization header.
 
@@ -701,6 +707,36 @@ User is `404 record_not_found`, exactly like a foreign one. A YNAB plan can be
 connected to only one of the User's Entities at a time: connecting a plan that is
 connected (not disconnected) in another of them returns `409
 source_connected_elsewhere` naming that Entity. Disconnect it there first.
+
+## Entity members
+
+An Entity's owner can share it with other provisioned Users
+([TDD 19](tdds/19-entity-members.md)). A member can do everything the owner can in
+that Entity, through every interface, except manage members and set up
+Transaction sources (provider token, plans, connect, accounts, disconnect:
+`403 owner_required`); members still list and sync sources. These endpoints
+need a signed-in browser session; API keys get `403 browser_session_required`.
+
+- `GET /api/entities/{id}/members` (owner or member) returns
+  `{"role": "owner" | "member", "members": [...]}`. The first item is the owner
+  (`id: null`, `role: "owner"`); then each member as `{id, email, name,
+  role: "member", you, added_at}`. `email` is the verified email of that User's
+  latest browser sign-in (null if they have not signed in since `6x044`); `you`
+  marks the caller.
+- `POST /api/entities/{id}/members` with `{"email": "partner@example.test",
+  "name": "Partner"}` (owner only) adds the User who signed in with that email
+  (case-insensitive) and returns the same listing. An email never creates or
+  links an identity. Errors: `404 user_not_found` (no one has signed in with it),
+  `409 ambiguous_email`, `409 already_member` (including the owner), `403
+  owner_required`, `422` for a malformed email or a blank or over-120-character name.
+- `DELETE /api/entities/{id}/members/{member_id}` removes one (owner), or the
+  caller's own row (a member leaving, which returns `{"left": true}`);
+  `404 member_not_found` when it is already gone. The member's next request to
+  the Entity, including replaying an assistant reply, is `404 entity_not_found`.
+
+Each add or remove writes an audit record (`add_member` / `remove_member`); every
+other write records the acting User as before, so the history shows which person
+changed what.
 
 ## Projections
 

@@ -23,6 +23,7 @@ from accanto.dtos.agent import (
 from accanto.routers.authentication import BrowserToken, Session, Token
 from accanto.services import agent_images, agent_settings, agent_writes, tools
 from accanto.services.access import RejectionError
+from accanto.services.monthly import authorize
 from accanto.services.openrouter import provider_label
 from accanto.services.sse import SSE_HEADERS, SSE_MEDIA_TYPE
 
@@ -210,6 +211,10 @@ async def stream_turn(
     if key is not None:
         run = service.find(actor, entity_id, key)
         if run is not None:
+            # Replayed frames hold Entity data: a member removed since the turn
+            # began must not read them again (TDD 19).
+            async with sessions_of(request)() as session, session.begin():
+                await authorize(session, actor, entity_id, lock=False)
             return sse(service.follow(run, after))
     if after:
         raise RejectionError(

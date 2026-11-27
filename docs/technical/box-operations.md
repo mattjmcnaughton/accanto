@@ -141,6 +141,23 @@ After the redirect, the app refuses with:
   Provision it with `python -m accanto.bootstrap` from an orb with the owner
   credential (see [api.md](../api.md)); matching email never links accounts.
 
+### Giving someone access to an existing Entity
+
+To let a second person, such as a partner, use an Entity you own
+([TDD 19](../tdds/19-entity-members.md)):
+
+1. Add their email to the `OIDC_ALLOWED_EMAILS` secret (keep it a JSON list) and
+   redeploy. Auth0 must also let them log in with a verified email.
+2. They sign in once and get `identity_setup_required`. Copy their `user_id`
+   (subject) from the Auth0 dashboard.
+3. From an orb with the owner database credential, provision them without an
+   Entity of their own: `python -m accanto.bootstrap --issuer <OIDC_ISSUER>
+   --subject <their subject>`. Keep the printed API key out of logs.
+4. They sign in again (this records their verified email in Accanto).
+5. In Accanto, open Settings → **Shared with**, enter their name and the email
+   they sign in with, and choose **Add person**. They see the Entity on their next page load.
+   **Remove** there revokes their access on their next request.
+
 Auth0's tenant logs (dashboard, or the Management API with `read:logs`) explain
 refusals on the provider's side, such as a disabled connection or a wrong callback.
 
