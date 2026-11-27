@@ -359,7 +359,8 @@ export function Inbox(
   }, [visible]);
   useEffect(() => {
     if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 6000);
+    // A confirmation only acknowledges the action; z still undoes it after it fades.
+    const timer = window.setTimeout(() => setToast(null), toast.tone ? 6000 : 2500);
     return () => window.clearTimeout(timer);
   }, [toast]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Scroll when the cursor or view moves.
@@ -1738,6 +1739,7 @@ export function Inbox(
                   [["a"], "Assignment"],
                   [["f"], "Funding origin"],
                   [["r"], "Refund"],
+                  [["t"], "Tags"],
                   [["s"], "Ignore"],
                   [["x"], "Select"],
                   [["z"], "Undo"],
@@ -2388,6 +2390,10 @@ const HELP: Array<[string, string]> = [
     "Flow: one waiting item at a time. Enter accepts, l or → leaves it for later (nothing is saved), s ignores, e edits, z undoes, Esc leaves.",
   ],
   ["↑ ↓ Enter Esc", "In a picker: move, choose, cancel."],
+  [
+    "Ctrl K",
+    "Ask, or jump to another screen (⌘ K on a Mac). Here 1 – 6 set a category, so they do not switch screens. Ctrl J or ⌘ J opens the assistant and n adds activity.",
+  ],
   ["?", "Show or hide this help."],
 ];
 function Help({ close }: { close: () => void }) {

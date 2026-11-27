@@ -451,21 +451,21 @@
   align-items: center;
   white-space: nowrap;
 }
+/* Small, in the page corner below the inbox, so it covers no rows or buttons. */
 .ix-toast {
-  position: absolute;
-  left: 50%;
-  bottom: 56px;
-  transform: translateX(-50%);
+  position: fixed;
+  right: 16px;
+  bottom: 8px;
   z-index: 8;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   background: var(--ink);
   color: var(--surface);
-  border-radius: 10px;
-  padding: 8px 13px;
-  max-width: calc(100% - 24px);
-  font-size: 13.5px;
+  border-radius: 8px;
+  padding: 4px 10px;
+  max-width: min(460px, calc(100vw - 32px));
+  font-size: 12.5px;
   animation: ix-toast 0.18s ease-out;
 }
 .ix-toast.warn {
@@ -489,7 +489,7 @@
 @keyframes ix-toast {
   from {
     opacity: 0;
-    transform: translate(-50%, 6px);
+    transform: translateY(6px);
   }
 }
 .ix-ov {
@@ -655,6 +655,9 @@
   .ix-detail {
     border-left: 0;
     border-top: 1px solid var(--line);
+  }
+  .ix-toast {
+    bottom: 70px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
