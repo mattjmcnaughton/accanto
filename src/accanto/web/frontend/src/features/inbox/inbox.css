@@ -848,3 +848,46 @@
 .ix-ready span {
   color: var(--ink3);
 }
+.ix-pending {
+  padding: 6px 14px;
+  max-height: 22vh;
+  overflow: auto;
+  color: var(--ink2);
+  background: var(--wash);
+}
+.ix-leave {
+  align-self: flex-end;
+}
+@media (max-width: 600px) {
+  .ix:has(.ix-flow) .ix-top {
+    display: grid;
+    grid-template-columns: 1fr auto;
+  }
+  .ix:has(.ix-flow) .ix-top .spacer,
+  .ix:has(.ix-flow) .ix-strip,
+  .ix:has(.ix-flow) .ix-foot {
+    display: none;
+  }
+  .ix-flow {
+    align-content: start;
+    padding: 12px 8px;
+  }
+  .ix-card .btn,
+  .ix-card .ix-fld,
+  .ix-card .ix-cats button,
+  .ix-leave,
+  .ix-pending button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .ix-card .kbd {
+    display: none;
+  }
+  .ix-card .ix-fld {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ix-progress {
+    min-width: 0;
+    grid-column: 1 / -1;
+  }
+}

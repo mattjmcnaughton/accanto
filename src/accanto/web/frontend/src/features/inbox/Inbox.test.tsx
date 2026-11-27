@@ -396,7 +396,7 @@ it("searches every field as you type, inside the views and filters, and X select
   expect(input.value).toBe("");
 });
 
-it("steps through a pass in flow with one request per key and no list reloads", async () => {
+it("advances before sending, cancels a queued ignore, and returns only the rejected record", async () => {
   const proposal = (category: Proposal["category"], rationale: string) =>
     ({ category, rationale, skip: false, tag_ids: [] }) as unknown as Proposal;
   const a = item({
@@ -418,21 +418,21 @@ it("steps through a pass in flow with one request per key and no list reloads", 
     financial_date: "2026-11-11",
     proposal: proposal("spending", "Groceries."),
   });
-  const writes: Array<{ path: string; body: { expected_revision?: number } }> = [];
+  const writes: Array<{ path: string; body: object }> = [];
   let listReads = 0;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
     const url = String(path);
     if (init?.method === "POST") {
       const body = JSON.parse(String(init.body));
       writes.push({ path: url, body });
-      const revision = body.expected_revision + 1;
-      if (url.endsWith("/a/record"))
-        return new Response(JSON.stringify({ item: { ...a, status: "recorded", revision } }));
-      if (url.endsWith("/c/skip"))
-        return new Response(JSON.stringify({ ...c, status: "skipped", revision }));
-      if (url.endsWith("/c/unskip"))
-        return new Response(JSON.stringify({ ...c, status: "waiting", revision }));
-      return new Response("{}", { status: 500 });
+      return new Response(
+        JSON.stringify({
+          results: [
+            { item_id: "a", ok: true, item: { ...a, status: "recorded", revision: 4 } },
+            { item_id: "c", ok: false, error: { message: "Synthetic funding limit." } },
+          ],
+        }),
+      );
     }
     if (url.endsWith("/inbox")) {
       listReads++;
@@ -466,26 +466,77 @@ it("steps through a pass in flow with one request per key and no list reloads", 
   press("Enter");
   // Recorded from the proposal; the unsure item comes next.
   await card("Unknown Vendor");
-  expect(writes.map((w) => w.path)).toEqual(["/api/entities/e/inbox/a/record"]);
+  expect(writes).toHaveLength(0);
   press("Enter");
   // Unsure: Enter opens edit instead of sending anything.
   expect(await screen.findByText(/The agent was not sure/)).toBeDefined();
-  expect(writes).toHaveLength(1);
+  expect(writes).toHaveLength(0);
   press("Escape");
   press("l");
   await card("Sample Street Market");
   press("s");
   expect(await screen.findByText("Pass complete")).toBeDefined();
-  expect(screen.getByText(/1 recorded · 1 ignored · 1 left for later/)).toBeDefined();
+  expect(screen.getByText(/2 unconfirmed · Keep/)).toBeDefined();
   press("z");
   await card("Sample Street Market");
-  // Undo used the revision the ignore returned (4), without reading the list again.
-  expect(writes.map((w) => [w.path.split("/inbox/")[1], w.body.expected_revision])).toEqual([
-    ["a/record", 3],
-    ["c/skip", 3],
-    ["c/unskip", 4],
+  press("Enter");
+  await screen.findByText(/Not saved. Synthetic funding limit/);
+  await card("Sample Street Market");
+  expect(writes).toEqual([
+    {
+      path: "/api/entities/e/inbox/record",
+      body: {
+        items: [
+          { item_id: "a", expected_revision: 3 },
+          { item_id: "c", expected_revision: 3 },
+        ],
+      },
+    },
   ]);
   expect(listReads).toBe(reads);
+});
+
+it("flushes on leaving flow and retries an unconfirmed ignore with its original body and key", async () => {
+  const i = item({});
+  const attempts: { path: string; body: unknown; key: string | null }[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    if (init?.method === "POST") {
+      attempts.push({
+        path: String(path),
+        body: init.body,
+        key: new Headers(init.headers).get("Idempotency-Key"),
+      });
+      if (attempts.length === 1) throw new TypeError("offline");
+      return new Response(
+        JSON.stringify({
+          results: [{ item_id: i.id, ok: true, item: { ...i, status: "skipped", revision: 4 } }],
+        }),
+      );
+    }
+    return new Response(JSON.stringify(String(path).endsWith("/inbox") ? [i] : []));
+  });
+  render(
+    <Inbox
+      entity={session.entities[0]}
+      concealed={false}
+      busy={false}
+      refresh={0}
+      guard={() => true}
+      dirty={() => {}}
+      save={() => {}}
+      credentials={async () => session}
+    />,
+  );
+  await screen.findByText(i.payee, { selector: ".ix-d-t" });
+  for (const key of ["F", "s", "Escape"]) fireEvent.keyDown(document.body, { key });
+  await screen.findByText(/Could not reach Accanto/);
+  expect(screen.queryByRole("article")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(screen.queryByText(/unconfirmed · Keep/)).toBeNull());
+  expect(attempts[0].key).toBeTruthy();
+  expect(attempts[0].path).toMatch(/\/inbox\/skip$/);
+  expect(attempts).toEqual([attempts[0], attempts[0]]);
+  expect(screen.getByRole("button", { name: "Ignored 1" })).toBeDefined();
 });
 
 it("batch resolves a shift-click range with one choice and keeps only failures selected", async () => {

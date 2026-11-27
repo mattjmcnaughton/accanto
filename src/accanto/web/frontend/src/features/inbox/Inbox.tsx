@@ -43,6 +43,7 @@ import {
 } from "./inboxModel";
 import "./inbox.css";
 import { ConnectSource } from "./ConnectSource";
+import { useFlowWrites } from "./useFlowWrites";
 
 type Picker = {
   kind: "line" | "funding" | "refund" | "resolve" | "tag";
@@ -91,6 +92,7 @@ const typing = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   Boolean(target.closest("input,textarea,select,[contenteditable]"));
 const Key = ({ k }: { k: string }) => <kbd className="kbd">{k}</kbd>;
+const focusCard = (card: HTMLElement | null) => card?.focus({ preventScroll: true });
 const signed = (it: StagedTransaction) => `${isInflow(it) ? "+" : ""}${money(Math.abs(cents(it)))}`;
 /** Keep showing the last loaded data while a reload after a write is in flight. */
 function useSettled<T>(state: LoadState<T>): LoadState<T> {
@@ -106,6 +108,7 @@ function useSettled<T>(state: LoadState<T>): LoadState<T> {
 export function Inbox(
   p: ScreenProps & {
     credentials: (signIn?: boolean) => Promise<BrowserSession>;
+    session?: BrowserSession;
     changed?: () => void;
     openSettings?: () => void;
     /** A one-shot request to start flow mode, from the Ask bar's /inbox; a new value asks again. */
@@ -114,10 +117,13 @@ export function Inbox(
   },
 ) {
   const [reload, setReload] = useState(0);
+  const [proposalRevision, setProposalRevision] = useState(0);
   const deps = [p.entity.id, p.refresh, reload];
   // Proposals and keyboard pickers need their options as soon as the rows arrive.
   const enabled = !p.concealed;
-  const items = useSettled(useLoad(() => inbox.list(p.entity.id), deps, { enabled }));
+  const items = useSettled(
+    useLoad(() => inbox.list(p.entity.id), [...deps, proposalRevision], { enabled }),
+  );
   const sources = useSettled(useLoad(() => inbox.sources(p.entity.id), deps, { enabled }));
   const plans = useSettled(
     useLoad(() => monthly.plans(p.entity.id), deps, { enabled, share: "plans" }),
@@ -174,6 +180,45 @@ export function Inbox(
   quiet.current = Boolean(flow);
   const [proposals, setProposals] = useState<ProposalRun | null>(null);
   const proposing = Boolean(proposals?.run && ["queued", "running"].includes(proposals.run.state));
+  const refreshOnDrain = useRef(false);
+  const writes = useFlowWrites({
+    entity: p.entity.id,
+    session: p.session,
+    credentials: p.credentials,
+    dirty: p.dirty,
+    settled({ it }, item, rejection) {
+      if (item) {
+        setPatched((previous) => ({ ...previous, [item.id]: item }));
+        clearDraft(it.id);
+      } else {
+        undo.current = undo.current.filter(
+          (group) => !group.some((x) => x.id === it.id && x.action !== "later"),
+        );
+        setHints((h) => ({
+          ...h,
+          [it.id]: `Not saved. ${readable(choices, rejection ?? "Try again.")}`,
+        }));
+        setFlow(
+          (f) =>
+            f && {
+              ...f,
+              queue: [
+                ...f.queue.filter((id) => id !== it.id && !f.later.includes(id)),
+                it.id,
+                ...f.later,
+              ],
+            },
+        );
+      }
+    },
+    drained() {
+      if (refreshOnDrain.current) {
+        refreshOnDrain.current = false;
+        refreshAll();
+      }
+    },
+  });
+  const pendingIds = new Set(writes.pending.map((i) => i.it.id));
 
   const all = (items.kind === "ready" ? items.data : []).map((i) => {
     const newer = patched[i.id];
@@ -279,7 +324,9 @@ export function Inbox(
     const entry = texts.get(i.id);
     return !entry || matches(entry, query);
   };
-  const scope = all.filter((i) => (!proposedOnly || i.proposal) && found(i));
+  const scope = all.filter(
+    (i) => !pendingIds.has(i.id) && (!proposedOnly || i.proposal) && found(i),
+  );
   const shown = rows(scope, view);
   const ids = shown.flatMap((r) => ("it" in r ? [r.it.id] : []));
   /** Rows with a checkbox: waiting items in the Waiting view, under the current filter. */
@@ -293,7 +340,7 @@ export function Inbox(
     return it ? [it] : [];
   });
   const waitingIds = new Set(all.filter((i) => i.status === "waiting").map((i) => i.id));
-  const queue = flow ? flow.queue.filter((id) => waitingIds.has(id)) : [];
+  const queue = flow ? flow.queue.filter((id) => waitingIds.has(id) && !pendingIds.has(id)) : [];
   const passOver = Boolean(flow) && queue.every((id) => flow?.later.includes(id));
   const current = flow
     ? passOver
@@ -324,6 +371,8 @@ export function Inbox(
     recorded: flow ? flow.ids.filter((id) => statusOf(id) === "recorded").length : 0,
     ignored: flow ? flow.ids.filter((id) => statusOf(id) === "skipped").length : 0,
   };
+  const pendingCount = flow ? writes.pending.filter((i) => flow.ids.includes(i.it.id)).length : 0;
+  const reviewed = flowDone.recorded + flowDone.ignored + pendingCount;
   function statusOf(id: string) {
     return all.find((i) => i.id === id)?.status;
   }
@@ -402,6 +451,7 @@ export function Inbox(
       setHints((h) => ({ ...h, [current.id]: reason }));
       return false;
     }
+    if (flow) return enqueue(current, "record");
     const result = await run<{ item: StagedTransaction }>(
       inbox.record(p.entity.id, current, drafts[current.id]),
     );
@@ -512,6 +562,7 @@ export function Inbox(
   }
   /** Ignore a waiting item, or return an ignored one; true when it was saved. */
   async function skip(it: StagedTransaction): Promise<boolean> {
+    if (flow) return enqueue(it, "skip");
     const back = it.status === "skipped";
     if (!(await run(inbox.action(p.entity.id, it, back ? "unskip" : "skip")))) return false;
     undo.current.push([{ id: it.id, action: back ? "skip" : "unskip" }]);
@@ -530,6 +581,16 @@ export function Inbox(
     return true;
   }
   async function undoLast(): Promise<boolean> {
+    const id = undo.current[undo.current.length - 1]?.[0]?.id;
+    if (id && pendingIds.has(id)) {
+      if (writes.cancel(id)) {
+        undo.current.pop();
+        setCur(id);
+        return true;
+      }
+      setToast({ text: "This write was sent. Undo after its result is confirmed." });
+      return false;
+    }
     const last = undo.current.pop();
     if (!last) {
       setToast({ text: "Nothing to undo.", tone: "warn" });
@@ -572,9 +633,15 @@ export function Inbox(
   }
 
   // Flow mode -------------------------------------------------------------------
+  function enqueue(it: StagedTransaction, action: "record" | "skip") {
+    if (!writes.enqueue(it, action, drafts[it.id])) return false;
+    undo.current.push([{ id: it.id, action: action === "skip" ? "unskip" : "undo" }]);
+    setFlow((f) => f && { ...f, editing: false, later: f.later.filter((id) => id !== it.id) });
+    return true;
+  }
   function startFlow() {
     const order = rows(all, "waiting").flatMap((r) =>
-      "it" in r && r.it.status === "waiting" ? [r.it.id] : [],
+      "it" in r && r.it.status === "waiting" && !pendingIds.has(r.it.id) ? [r.it.id] : [],
     );
     if (!order.length) return setToast({ text: "Nothing is waiting in the inbox.", tone: "warn" });
     setSelected(new Set());
@@ -596,7 +663,10 @@ export function Inbox(
     setFlow(null);
     setPicker(null);
     // One refresh of the other screens' reads for the whole pass.
-    refreshAll();
+    if (writes.pending.length) {
+      refreshOnDrain.current = true;
+      void writes.flush();
+    } else refreshAll();
   }
   const editing = (on: boolean) => setFlow((f) => f && { ...f, editing: on });
   /** Enter: accept the proposal; an unsure, incomplete or rejected one opens edit instead. */
@@ -642,7 +712,10 @@ export function Inbox(
             editing: false,
           }
         : f;
-    if (last?.length === 1 && last[0].action === "later") {
+    if (id && pendingIds.has(id) && !writes.cancel(id)) {
+      return setToast({ text: "This write was sent. Undo after its result is confirmed." });
+    }
+    if (last?.length === 1 && (last[0].action === "later" || (id && pendingIds.has(id)))) {
       undo.current.pop();
       setFlow(front);
       return setToast({ text: "Undone. Back on that item." });
@@ -718,7 +791,8 @@ export function Inbox(
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reload the items when proposals arrive.
   useEffect(() => {
     if (!proposals) return;
-    if (seen.current !== null && seen.current !== proposals.proposed) setReload((x) => x + 1);
+    if (seen.current !== null && proposals.proposed > seen.current)
+      setProposalRevision((x) => x + 1);
     seen.current = proposals.proposed;
   }, [proposals?.proposed]);
   async function startRun() {
@@ -1092,7 +1166,11 @@ export function Inbox(
         e.preventDefault();
         return;
       }
-      if (e.key === "Enter" && e.target instanceof HTMLElement && e.target.closest("button"))
+      if (
+        e.key === "Enter" &&
+        e.target instanceof HTMLElement &&
+        e.target.closest("button,summary")
+      )
         return;
       e.preventDefault();
       keys.current(e.key);
@@ -1131,7 +1209,12 @@ export function Inbox(
           )}
         </div>
         <span className="spacer" />
-        {source && (
+        {flow && (
+          <button className="btn ix-leave" type="button" onClick={endFlow}>
+            Leave flow
+          </button>
+        )}
+        {source && !flow && (
           <button
             type="button"
             className="btn sm"
@@ -1152,15 +1235,15 @@ export function Inbox(
           <div className="ix-progress" aria-label="Flow progress">
             <span>
               <b>
-                {flowDone.recorded + flowDone.ignored} / {flow.ids.length}
+                {reviewed} / {flow.ids.length}
               </b>{" "}
               · {flowDone.recorded} recorded · {flowDone.ignored} ignored · {flow.later.length}{" "}
-              later
+              later{pendingCount > 0 && ` · ${pendingCount} unconfirmed`}
             </span>
             <span className="ix-track">
               <span
                 style={{
-                  width: `${(100 * (flowDone.recorded + flowDone.ignored)) / Math.max(1, flow.ids.length)}%`,
+                  width: `${(100 * reviewed) / Math.max(1, flow.ids.length)}%`,
                 }}
               />
             </span>
@@ -1250,6 +1333,46 @@ export function Inbox(
           </>
         )}
       </header>
+      {writes.storageProblem && (
+        <div className="ix-msg warn" role="alert">
+          Nothing queued. The browser cannot mark an interrupted flow. Leave flow to save one item
+          at a time.
+        </div>
+      )}
+      {writes.otherReceipts.length > 0 && (
+        <div className="ix-msg warn" role="alert">
+          Another or interrupted tab had unconfirmed flow decisions. Check that tab and the Waiting,
+          Recorded and Ignored lists before repeating them.{" "}
+          <button type="button" className="btn sm" onClick={writes.acknowledge}>
+            I’ve checked
+          </button>
+        </div>
+      )}
+      {writes.pending.length > 0 && (
+        <details
+          className="ix-pending"
+          open={writes.pending.some((i) => i.state === "uncertain") || undefined}
+        >
+          <summary>{writes.pending.length} unconfirmed · Keep this tab open</summary>
+          {writes.pending.map((i) => (
+            <div key={i.it.id}>
+              {i.it.payee} · {i.action === "skip" ? "Ignore" : "Record"} ·{" "}
+              {i.state === "uncertain" ? (
+                <>
+                  {i.reason}{" "}
+                  <button className="btn sm" type="button" onClick={() => writes.retry(i.it.id)}>
+                    {i.signIn ? "Sign in and retry" : "Retry"}
+                  </button>
+                </>
+              ) : i.state === "queued" ? (
+                "Queued"
+              ) : (
+                "Saving…"
+              )}
+            </div>
+          ))}
+        </details>
+      )}
       {proposals && proposing ? (
         <output className="ix-syncing ix-run">
           <span className="ix-bar" aria-hidden="true" />
@@ -1268,7 +1391,7 @@ export function Inbox(
           {RUN_ERRORS[proposals.run.error_code ?? ""] ?? "something went wrong. Start it again."}{" "}
           Proposals it set stay.
         </div>
-      ) : proposals?.run && proposals.waiting > 0 ? (
+      ) : !flow && proposals?.run && proposals.waiting > 0 ? (
         <div className="ix-ready">
           <b>
             Proposals ready: {proposals.proposed - proposals.needs_you} proposed,{" "}
@@ -1326,7 +1449,12 @@ export function Inbox(
       ) : flow ? (
         <div className="ix-flow">
           {passOver || !current ? (
-            <article className="ix-card ix-end" aria-label="Pass complete">
+            <article
+              className="ix-card ix-end"
+              aria-label="Pass complete"
+              ref={focusCard}
+              tabIndex={-1}
+            >
               <div className="ix-d-t">Pass complete</div>
               <p>
                 {flowDone.recorded} recorded · {flowDone.ignored} ignored · {flow.later.length} left
@@ -1357,6 +1485,9 @@ export function Inbox(
           ) : (
             <>
               <article
+                key={current.id}
+                tabIndex={-1}
+                ref={focusCard}
                 className={`ix-card${flow.editing ? " editing" : ""}`}
                 aria-label={`${current.payee}, ${signed(current)}`}
               >
@@ -1375,13 +1506,20 @@ export function Inbox(
                     </button>
                   </>
                 ) : (
-                  <FlowCard
-                    it={current}
-                    c={shownAs(current)}
-                    choices={choices}
-                    later={flow.later.includes(current.id)}
-                    press={press}
-                  />
+                  <>
+                    {hints[current.id] && (
+                      <div role="alert" className="ix-msg warn">
+                        {hints[current.id]}
+                      </div>
+                    )}
+                    <FlowCard
+                      it={current}
+                      c={shownAs(current)}
+                      choices={choices}
+                      later={flow.later.includes(current.id)}
+                      press={press}
+                    />
+                  </>
                 )}
               </article>
               {queue[1] && (

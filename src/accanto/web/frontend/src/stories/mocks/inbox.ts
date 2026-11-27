@@ -447,6 +447,28 @@ export function inboxApi(
     http.get(`${entity}/activity`, () =>
       HttpResponse.json(state.activity.filter((e) => !e.deleted_at)),
     ),
+    http.post(`${entity}/inbox/skip`, async ({ request }) => {
+      const body = (await request.json()) as {
+        items: Array<{ item_id: string; expected_revision: number }>;
+      };
+      await delay(250);
+      return HttpResponse.json({
+        results: body.items.map(({ item_id, expected_revision }) => {
+          const it = find(item_id);
+          if (!it || it.status !== "waiting" || it.revision !== expected_revision)
+            return {
+              item_id,
+              ok: false,
+              error: {
+                code: "stale_revision",
+                message: "Reload the current record and reconcile.",
+              },
+            };
+          bump(it, { status: "skipped", rejection: null });
+          return { item_id, ok: true, item: it };
+        }),
+      });
+    }),
     http.post(`${entity}/inbox/record`, async ({ request }) => {
       const body = (await request.json()) as { items: Array<Record<string, unknown>> };
       await delay(250);

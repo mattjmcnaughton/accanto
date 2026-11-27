@@ -741,6 +741,7 @@ export function Workspace({
               {screen === "inbox" && (
                 <Inbox
                   {...props}
+                  session={session}
                   credentials={credentials}
                   changed={changed}
                   flow={flow}
