@@ -17,6 +17,7 @@ import { fmtDate, formatMoney, plural } from "../../lib/format";
 import { savings } from "../../lib/savings";
 import { Dialog, Empty, Field, Head, Icon, Trend } from "../../ui";
 import { type ScreenProps, useLoad } from "../workspace/shared";
+import { InvestmentSummary } from "./InvestmentSummary";
 import {
   type Column,
   ConfirmDialog,
@@ -632,6 +633,7 @@ export function Destinations(p: ScreenProps & { kind?: DestinationKind }) {
             {copy.empty}
           </Empty>
         )}
+        {kind === "investment" && list.length > 0 && <InvestmentSummary rows={list} />}
         {list.length > 0 && <div className="grid2">{cards(kind)}</div>}
         <div className="card pad rec-records">
           {shown(rows[kind]) && (
