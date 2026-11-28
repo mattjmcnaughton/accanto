@@ -1,3 +1,5 @@
+<img src="src/accanto/web/frontend/public/icons/icon.svg" alt="" width="64" height="64">
+
 # Accanto
 
 A financial companion for planning a rich life: conscious spending, giving,
@@ -5,21 +7,27 @@ experiences, saving and financial independence.
 
 Plan where each month's money goes, record where it went, and review the difference.
 
-- **Plan** each month: income, fixed costs, guilt-free spending, giving, saving and
-  investing. Saved versions never change, so you can compare them.
+- **Plan** each month: income, fixed costs, guilt-free spending, saving, investing
+  and giving. Click an amount to change it. Saved versions never change, so you can
+  compare them.
 - **Record** activity by hand, or accept it from the **Transactions inbox**: YNAB
   transactions and your own scheduled entries wait there until you record them.
   Search it, add notes, record several at once, or work through it in flow mode.
-- **Review** each month against the Plan you chose. Home shows what needs you.
-- **Track** savings goals, investments, giving and loans, including loan payoff
-  schedules.
+- **Review** each month against the Plan you chose. Home shows what needs you:
+  routines that are due, and spending alerts when a category passes a share of
+  its plan.
+- **Track** savings goals, investments, debts and giving as cards or a table.
+  Debts show their payoff schedule.
 - **Project** net worth and a FIRE date, in today's or future dollars.
 - **Routines** are checklists on a schedule, such as a Saturday money check.
-- **Ask the assistant**, with several conversations kept, or connect your own agent
-  over [MCP](docs/technical/mcp-clients.md). Agents can also read and change safe
-  settings.
+  Turn on notifications in Settings to hear when one is due, an alert is reached or
+  the inbox is waiting.
+- **Ask the assistant** by typing or speaking, with several conversations kept, or
+  connect your own agent over [MCP](docs/technical/mcp-clients.md). Agents can also
+  read and change safe settings.
 
-On a phone the tabs are Home, Inbox, Assistant, Activity and More.
+On a phone the tabs are Home, Inbox, Assistant, Activity and More, and the top bar
+names the Entity and switches between them.
 
 ![Home in the light theme](docs/screenshots/home-light.png)
 
@@ -47,8 +55,12 @@ to the dark theme and the phone width.
 
 ## Status
 
-A personal alpha: one owner, USD only, no public sign-up. It runs on an Amp Box
-([Box operations](docs/technical/box-operations.md)). The
+A personal alpha in USD only, with no public sign-up. An owner can share a workspace
+(an Entity) with someone else from Settings → **Shared with**. A new person is let
+in by the operator adding their email to the allowed list; their first sign-in
+creates their account and their own Entity, as
+[Box operations](docs/technical/box-operations.md#adding-a-new-person) describes.
+The owner can delete an Entity from Settings. It runs on an Amp Box. The
 [readiness matrix](docs/technical/release-readiness.md) lists what is covered and
 what is still open.
 
