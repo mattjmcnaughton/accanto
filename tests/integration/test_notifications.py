@@ -302,7 +302,9 @@ async def scenario(monkeypatch):
         # Nothing financial reaches a payload.
         everything = json.dumps(sender.sent)
         assert CANARY_NOTE not in everything and CANARY_AMOUNT not in everything
-        assert "4321" not in everything and "Synthetic notices" not in everything
+        # Formatted forms of the amount; a bare "4321" can occur inside a random UUID.
+        assert "4,321" not in everything and "4321." not in everything
+        assert "Synthetic notices" not in everything
 
         # Signing out on the phone removes its Device.
         assert (await web.delete(f"{devices}/{phone_id}")).status_code == 204

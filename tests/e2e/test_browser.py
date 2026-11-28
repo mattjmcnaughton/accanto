@@ -1001,6 +1001,32 @@ def test_signed_in_workspace(tmp_path):
             "Array.from(document.querySelectorAll('button'))"
             ".some(b => b.textContent.trim() === 'Turn on')"
         )
+        # Delete Entity (TDD 22): create a spare Entity, delete it from Settings
+        # by typing its name, and land back on the one that is left.
+        browser("select", "select[aria-label='Entity']", "Create Entity…")
+        # Settings has its own Entity name field: fill the dialog's.
+        browser("fill", "dialog[open] input:not([list])", "Synthetic E2E Spare")
+        button("Create Entity")
+        current_entity = (
+            "document.querySelector('select[aria-label=\"Entity\"]')"
+            "?.selectedOptions[0]?.text"
+        )
+        until(f"{current_entity} === 'Synthetic E2E Spare'")
+        go("Settings")
+        button("Delete Entity…")
+        browser(
+            "find",
+            "label",
+            "Type Synthetic E2E Spare to confirm",
+            "fill",
+            "Synthetic E2E Spare",
+        )
+        button("Delete permanently")
+        until(f"{current_entity} === 'Synthetic E2E Entity'")
+        until(
+            '!Array.from(document.querySelectorAll(\'select[aria-label="Entity"]'
+            " option')).some(o => o.text === 'Synthetic E2E Spare')"
+        )
         go("Home")
         browser("set", "viewport", "320", "760")
         assert fits()

@@ -258,7 +258,8 @@ async def send_due(session_factory, now: datetime | None = None, sender=None):
                                 select(m.members.c.entity_id).where(
                                     m.members.c.user_id == user_id
                                 )
-                            )
+                            ),
+                            m.entities.c.deleted_at.is_(None),
                         )
                         .order_by(m.entities.c.id)
                     )

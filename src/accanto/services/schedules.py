@@ -793,6 +793,7 @@ async def due_work(session, now: datetime) -> list[tuple]:
             .where(
                 ~sc.schedules.c.paused,
                 sc.schedules.c.next_on.is_not(None),
+                m.entities.c.deleted_at.is_(None),
                 sc.schedules.c.next_on <= horizon,
             )
             .order_by(sc.schedules.c.id)
@@ -819,7 +820,11 @@ async def due_work(session, now: datetime) -> list[tuple]:
         )
         .join(sc.schedules, sc.schedules.c.id == sc.occurrences.c.schedule_id)
         .join(m.entities, m.entities.c.id == sc.schedules.c.entity_id)
-        .where(sc.occurrences.c.status == "failed", ~sc.schedules.c.paused)
+        .where(
+            sc.occurrences.c.status == "failed",
+            ~sc.schedules.c.paused,
+            m.entities.c.deleted_at.is_(None),
+        )
         .order_by(sc.occurrences.c.scheduled_on)
     )
     work += [tuple(row) for row in failed]

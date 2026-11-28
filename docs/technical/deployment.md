@@ -49,7 +49,7 @@ configuration is implicitly authorized by the local implementation.
    head`; for an existing database, use the same additive upgrade path. Do not
    reset, recreate, truncate or downgrade a populated database to repair startup.
    Serialize migrations and hold traffic if compatibility is uncertain. The current
-   supported revision is `6z046`.
+   supported revision is `7a047`.
 3. Create/configure a distinct runtime login through the provider's approved secret
    path. It must own no tables/schema, have no superuser/BYPASSRLS/role administration,
    and have no inherited privileged roles or ability to disable triggers. Apply the
@@ -227,6 +227,13 @@ new table and its identity sequence:
 `GRANT SELECT, INSERT, UPDATE, DELETE ON bug_report TO accanto_app;`
 `GRANT USAGE, SELECT ON SEQUENCE bug_report_id_seq TO accanto_app;`
 (or rerun the whole recipe). The downgrade drops the reports.
+
+`7a047` adds Delete Entity ([TDD 22](../tdds/22-entity-deletion.md)): a nullable
+`entity.deleted_at`, no backfill, no new tables or sequences, so no grant changes.
+Deploy the code with the migration: `6z046` code ignores the column, so rolling
+the application back would make deleted Entities reachable again (with members,
+token and conversations already removed). The downgrade drops the column with the
+same effect; never run it after an Entity was deleted.
 These are compatibility prerequisites, not
 proof every older app is safe. An earlier image's `/readyz` either accepts any
 revision or pins `5k019` and refuses `5l020`; neither answer is the compatibility

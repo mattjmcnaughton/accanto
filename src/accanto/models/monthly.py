@@ -67,6 +67,8 @@ entities = table(
     ),
     # Average annual inflation for today's dollars and the FIRE target (TDD 17).
     Column("inflation_percent", Numeric(4, 2), nullable=False, server_default="3.00"),
+    # Delete Entity (TDD 22): set once by its owner; every interface then 404s it.
+    Column("deleted_at", DateTime(timezone=True)),
 )
 # Another User sharing the Entity with its owner (TDD 19); the owner is not a row.
 members = table(

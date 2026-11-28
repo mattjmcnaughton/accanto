@@ -6,6 +6,7 @@ import "./settings.css";
 import { AgentSettings } from "../agent/AgentSettings";
 import { BugReports } from "../bugReport/BugReports";
 import { ApiKeys } from "./ApiKeys";
+import { DeleteEntity } from "./DeleteEntity";
 import { EntityMembers } from "./Members";
 import { Notifications } from "./Notifications";
 import { TransactionProviderSettings } from "./TransactionProviderSettings";
@@ -216,6 +217,14 @@ export function Settings(p: SettingsProps) {
       )}
       <ApiKeys credentials={p.credentials} disabled={p.busy} />
       {p.reportBug && <BugReports credentials={() => p.credentials()} disabled={p.busy} />}
+      {p.entity.role !== "member" && (
+        <DeleteEntity
+          entityId={p.entity.id}
+          name={state.kind === "ready" ? state.data.name : p.entity.name}
+          credentials={p.credentials}
+          disabled={p.busy}
+        />
+      )}
     </section>
   );
 }

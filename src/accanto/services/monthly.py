@@ -77,15 +77,21 @@ async def authorize(
             actor = await revalidate_actor(session, actor, lock=lock)
         # A member (TDD 19) is checked in its own statement, after the Entity
         # lock, so it sees a removal that committed while this request waited.
-        allowed = entity is not None and (
-            entity["owner_id"] == actor.user_id
-            or await session.scalar(
-                select(m.members.c.id).where(
-                    m.members.c.entity_id == entity["id"],
-                    m.members.c.user_id == actor.user_id,
+        # Deleted (TDD 22) is read after the lock too: a write that waited behind
+        # Delete Entity sees it and changes nothing.
+        allowed = (
+            entity is not None
+            and entity["deleted_at"] is None
+            and (
+                entity["owner_id"] == actor.user_id
+                or await session.scalar(
+                    select(m.members.c.id).where(
+                        m.members.c.entity_id == entity["id"],
+                        m.members.c.user_id == actor.user_id,
+                    )
                 )
+                is not None
             )
-            is not None
         )
     if not allowed:
         raise RejectionError("entity_not_found", "Entity is unavailable.", 404)
