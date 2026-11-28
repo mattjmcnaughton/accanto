@@ -14,6 +14,8 @@ class Preferences(Input):
     routines_due: bool
     scheduled_entries: bool
     transactions_waiting: bool
+    # Absent from callers written before Spending alerts (TDD 23): on.
+    spending_alerts: bool = True
 
 
 class SubscriptionKeys(BaseModel):

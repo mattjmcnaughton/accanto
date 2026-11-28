@@ -90,6 +90,11 @@ an external UUID. Financial writes require `Idempotency-Key` (1–120 characters
 | GET | `/routines/{routine_id}/occurrences/{scheduled_on}` | One occurrence's checklist; 404 on a date the cadence does not schedule |
 | PUT | `/routines/{routine_id}/occurrences/{scheduled_on}` | `{skipped, note, expected_revision}` skips or reopens the occurrence (0 before it is stored) |
 | PUT | `/routines/{routine_id}/occurrences/{scheduled_on}/steps/{step_id}` | `{status, note?}`: `done`, `skipped` or `null` to clear |
+| GET | `/spending-alerts` | This month's Spending alerts with their Plan amount and progress ([Spending alerts](#spending-alerts)) |
+| POST | `/spending-alerts` | `{category, spending_subcategory_id?, fixed_cost_id?, thresholds}`; one per target |
+| PUT | `/spending-alerts/{alert_id}` | `{thresholds, expected_revision}` |
+| DELETE | `/spending-alerts/{alert_id}` | `{expected_revision}` |
+| POST | `/spending-alerts/{alert_id}/dismissal` | Hides a reached alert on Home for this User until its next threshold or month |
 | GET | `/schedules` | Entry schedules with cadence, entries, state, next date, the next 3 dates and recent staged, skipped or failed dates ([Entry schedules](#entry-schedules)) |
 | GET | `/schedules/{schedule_id}` | One schedule, same shape |
 | POST | `/schedules` | Name, cadence, `starts_on`, `ends_on?`, `paused?` and 1–10 entries; no previous revision |
@@ -430,10 +435,28 @@ Rejections: `schedule_not_found` (404); `invalid_schedule`, `invalid_cadence`,
 `invalid_line`, `not_scheduled`, `not_skipped`, `occurrence_passed` (422);
 `occurrence_staged`, `stale_revision` (409).
 
+## Spending alerts
+
+A Spending alert ([TDD 23](tdds/23-spending-alerts.md)) watches `category`
+`spending` or `fixed_cost` as a whole, one Spending subcategory
+(`spending_subcategory_id`, read against its Spending estimate) or one Fixed cost
+(`fixed_cost_id`, read against its planned line), with 1–10 `thresholds` from 1 to
+999 (over 100 is overspent). It stores no amount. `GET` returns `{month, version,
+spending_alerts}`: `version` is the Plan version read (the month's Review
+version, else the latest saved one, or null), and each alert has `basis`
+(`planned` or `estimate`), `amount`, `recorded` (null when nothing is recorded),
+`percent` (rounded down), `reached` (the highest threshold reached this month),
+`waiting` (`no_plan_version`, `no_estimate`, `not_planned` or null) and
+`dismissed` (for the caller). Rejections: `invalid_spending_alert` (422, such as an
+archived subcategory), `record_not_found` (404), `spending_alert_exists` (409),
+`stale_revision` (409), `spending_alert_not_reached` (409, dismissing). The hourly
+tick pushes each threshold once a month per User (see Notifications).
+
 ## Notifications
 
 Notifications go to a User's phone or browser over Web Push
-([TDD 20](tdds/20-notifications.md)). They carry counts and Routine names only,
+([TDD 20](tdds/20-notifications.md)). They carry counts, Routine names and Spending
+alert names with thresholds only,
 never amounts, payees, notes, accounts or Entity names. Routes are under
 `/api/notifications`; none takes an Entity, because preferences apply to every
 Entity the User owns or is a member of.
@@ -441,14 +464,15 @@ Entity the User owns or is a member of.
 | Method | Path | Credential | Result |
 | --- | --- | --- | --- |
 | `GET` | `/config` | session or API key | `{public_key}` (VAPID, base64url), or `404 push_not_configured` when the server has no key |
-| `GET` | `/preferences` | session or API key | `{hour, routines_due, scheduled_entries, transactions_waiting}` |
+| `GET` | `/preferences` | session or API key | `{hour, routines_due, scheduled_entries, transactions_waiting, spending_alerts}` |
 | `PUT` | `/preferences` | session or API key | the same shape back; `hour` is 0–23 |
 | `POST` | `/devices` | browser session | body is the browser's `PushSubscription.toJSON()` (`{endpoint, keys: {p256dh, auth}}`); returns `{id}` |
 | `DELETE` | `/devices/{id}` | browser session | `204`; another User's or an unknown Device is `404` |
 | `POST` | `/devices/{id}/test` | browser session | sends a test to that Device; `{outcome}` is `delivered`, `error`, `gone` or `disabled` |
 
-Defaults, before anything is saved: `hour` 9, `routines_due` and
-`scheduled_entries` on, `transactions_waiting` off. A Device's `endpoint` must be
+Defaults, before anything is saved: `hour` 9, `routines_due`,
+`scheduled_entries` and `spending_alerts` on, `transactions_waiting` off; a `PUT`
+without `spending_alerts` turns it on. A Device's `endpoint` must be
 `https` on a known push service (`push.apple.com`, `fcm.googleapis.com`,
 `push.services.mozilla.com`, `notify.windows.com`, or a subdomain), with no port
 or credentials; anything else is `422 push_endpoint_not_allowed`. Registering

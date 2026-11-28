@@ -3,6 +3,7 @@ import { fn } from "storybook/test";
 import { Plans } from "../../features/workspace/Plans";
 import { mockApi, projection, screenArgs, stateStory } from "../mocks/api";
 import { routinesApi } from "../mocks/routines";
+import { alertList } from "../mocks/spendingAlerts";
 
 // Home is the Plans screen with `home` set, as Workspace renders it.
 const meta = {
@@ -35,6 +36,18 @@ export const RoutineDueToday: Story = {
 /** Nothing due: no routine appears on Home. */
 export const RoutinesCaughtUp: Story = {
   parameters: { msw: [...routinesApi({ allDone: true }).handlers, ...mockApi()] },
+};
+/** Spending alerts past a threshold lead with amounts; a dismissed one (Rent) stays hidden. */
+export const SpendingAlertReached: Story = {
+  parameters: { msw: mockApi("loaded", { spendingAlerts: alertList("reached") }) },
+};
+/** Past 100% of an estimate: the mark turns red and the line says how much over. */
+export const SpendingAlertOverspent: Story = {
+  parameters: { msw: mockApi("loaded", { spendingAlerts: alertList("overspent") }) },
+};
+/** No threshold reached: no spending alert on Home. */
+export const SpendingAlertsQuiet: Story = {
+  parameters: { msw: mockApi("loaded", { spendingAlerts: alertList("quiet") }) },
 };
 export const Empty: Story = stateStory("empty");
 export const Loading: Story = stateStory("loading");

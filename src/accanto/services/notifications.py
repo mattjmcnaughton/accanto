@@ -3,7 +3,8 @@
 A User's preferences apply to every Entity they own or are a member of, and
 every Device they registered. The hourly tick sends each enabled kind at most
 once per User, Entity and local date, at or after the chosen hour in the Entity
-time zone. A send is claimed in notification_send before delivery, so an
+time zone. Spending alerts (TDD 23) send at any tick from that hour on, once per
+threshold a month. A send is claimed in notification_send before delivery, so an
 overlapping or retried tick sends nothing twice. Logs carry counts and outcomes
 only; a Device's endpoint is a capability and never leaves this module.
 """
@@ -20,12 +21,14 @@ from sqlalchemy.dialects.postgresql import insert
 from accanto.config import settings
 from accanto.domains import notifications as rules
 from accanto.domains import routines as routine_rules
+from accanto.domains import spending_alerts as alert_rules
 from accanto.domains.entity import entity_today
 from accanto.models import inbox as st
 from accanto.models import monthly as m
 from accanto.models import notifications as n
 from accanto.models import routines as r
 from accanto.models import schedules as sc
+from accanto.services import spending_alerts as alerts
 from accanto.services.access import RejectionError, revalidate_actor
 from accanto.services.api_keys import browser_only
 from accanto.services.push import (
@@ -38,7 +41,7 @@ from accanto.services.push import (
 from accanto.services.routines import stored_cadence
 
 log = structlog.get_logger(__name__)
-PREFERENCES = ("hour", *rules.KINDS)
+PREFERENCES = ("hour", *rules.KINDS, "spending_alerts")
 
 
 def push_config(config=settings) -> dict:
@@ -309,5 +312,29 @@ async def send_due(session_factory, now: datetime | None = None, sender=None):
                     )
                 counts["notified"] += 1
                 counts["delivered" if outcome == "delivered" else "not_delivered"] += 1
+            if not prefs["spending_alerts"]:
+                continue
+            # Spending alerts (TDD 23) go at any tick from the hour on, each
+            # threshold claimed once a month per User before delivery.
+            async with session_factory() as session, session.begin():
+                items, keys = await alerts.claim_pushes(
+                    session, entity["id"], user_id, today
+                )
+                devices = await _devices(session, user_id) if items else []
+            if not items:
+                continue
+            notice = with_entity(
+                alert_rules.spending_alerts(
+                    items, f"{today}-{local.hour}", str(entity["uuid"])
+                ),
+                entity,
+                len(entities) > 1,
+            )
+            async with session_factory() as session:
+                outcome = await _deliver(session, sender, devices, notice)
+            async with session_factory() as session, session.begin():
+                await alerts.record_outcome(session, user_id, today, keys, outcome)
+            counts["notified"] += 1
+            counts["delivered" if outcome == "delivered" else "not_delivered"] += 1
     # A refused push is reported, not a tick failure: the next day tries again.
     return counts

@@ -13,7 +13,8 @@ import {
 import type { ComparisonGroup, PlanRevision, ReviewResult } from "../../lib/monthly";
 import type { Dollars, Projection } from "../../lib/projections";
 import type { Routine } from "../../lib/routines";
-import { Band, type BandPart, Empty, tint, Wait } from "../../ui";
+import { type SpendingAlerts, headline } from "../../lib/spendingAlerts";
+import { Band, type BandPart, Empty, Wait, tint } from "../../ui";
 import { share } from "./PlanBreakdown";
 import type { Screen } from "./Workspace";
 import { storedCents, storedGroups } from "./planWorksheetModel";
@@ -35,6 +36,10 @@ type Item = {
   action?: string;
   run?: () => void;
   quiet?: boolean;
+  /** Overspent: a red mark instead of amber. */
+  over?: boolean;
+  /** Hides the line (a spending alert) until something changes. */
+  dismiss?: () => void;
 };
 type Category = keyof NonNullable<ReviewResult["comparison"]>;
 const OUT: { key: Category; group: Allocation; kind: string; name: string }[] = [
@@ -94,6 +99,8 @@ export function Home({
   go,
   routines,
   openRoutine,
+  alerts,
+  dismissAlert,
   retry,
 }: {
   /** The month Home shows, YYYY-MM. */
@@ -118,6 +125,9 @@ export function Home({
   go?: (to: Screen) => void;
   routines?: LoadState<Routine[]>;
   openRoutine?: (routine: string, on: string) => void;
+  /** Spending alerts (TDD 23) with this month's progress; shown for the current month only. */
+  alerts?: LoadState<SpendingAlerts>;
+  dismissAlert?: (alert: string) => void;
   retry: () => void;
 }) {
   // A routine is due whether or not the Entity has a Plan yet, and comes first: it has a date.
@@ -141,6 +151,25 @@ export function Home({
     );
   const toReview = go && (() => go("review"));
   const name = monthName(month);
+  // A spending alert that reached a threshold this month, until dismissed or back under it.
+  const watched = alerts?.kind === "ready" && alerts.data.month === month ? alerts.data : null;
+  for (const alert of watched?.spending_alerts ?? []) {
+    const spent = cents(alert.recorded);
+    const planned = cents(alert.amount);
+    if (alert.reached === null || alert.dismissed || spent === null || planned === null) continue;
+    const left = planned - spent;
+    items.push({
+      key: `a-${alert.uuid}`,
+      title: headline(alert),
+      detail: `${money(spent)} of ${money(planned)} recorded (${alert.percent}%), ${
+        left >= 0 ? `${money(left)} left` : `${money(-left)} over`
+      }${watched?.version ? ` · ${watched.version.name}, version ${watched.version.number}` : ""}`,
+      action: toReview && "Review",
+      run: toReview,
+      over: left < 0,
+      dismiss: dismissAlert && (() => dismissAlert(alert.uuid)),
+    });
+  }
   // An empty mocked or legacy body is treated as no Review rather than as zeros.
   const result = review.kind === "ready" && review.data?.review ? review.data : null;
   const comparison = result?.comparison;
@@ -615,16 +644,41 @@ function NeedsYou({ items }: { items: Item[] }) {
       </h2>
       <ul className="card home-list" aria-label="Needs you">
         {items.map((item) => {
+          const mark = (
+            <span className={`pip${item.quiet ? " quiet" : ""}${item.over ? " over" : ""}`} />
+          );
+          const text = (
+            <span className="t">
+              {item.title}
+              {item.detail && <small>{item.detail}</small>}
+            </span>
+          );
           const body = (
             <>
-              <span className={`pip${item.quiet ? " quiet" : ""}`} />
-              <span className="t">
-                {item.title}
-                {item.detail && <small>{item.detail}</small>}
-              </span>
+              {mark}
+              {text}
               {item.action && <span className="go">{item.action}</span>}
             </>
           );
+          // Two actions cannot share one row button, so each is its own.
+          if (item.dismiss)
+            return (
+              <li key={item.key}>
+                <div className="row">
+                  {mark}
+                  {text}
+                  <button type="button" className="go home-act" onClick={item.dismiss}>
+                    Dismiss<span className="sr-only">: {item.title}</span>
+                  </button>
+                  {item.run && item.action && (
+                    <button type="button" className="go home-act" onClick={item.run}>
+                      {item.action}
+                      <span className="sr-only">: {item.title}</span>
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
           return (
             <li key={item.key}>
               {item.run ? (

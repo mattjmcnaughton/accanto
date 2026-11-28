@@ -18,6 +18,7 @@ CATALOG_NAMES = [
     "summarize_activity",
     "list_tags",
     "list_spending_subcategories",
+    "list_spending_alerts",
     "list_savings",
     "list_destinations",
     "list_debts",
@@ -71,6 +72,8 @@ CATALOG_NAMES = [
     "delete_observation",
     "save_schedule",
     "skip_schedule_date",
+    "save_spending_alert",
+    "delete_spending_alert",
     "save_routine",
 ]
 

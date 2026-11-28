@@ -25,6 +25,11 @@ const KINDS: Array<[keyof Omit<Preferences, "hour">, string, string]> = [
     "Transactions waiting",
     "Each day that synced transactions are still waiting in the inbox, with how many.",
   ],
+  [
+    "spending_alerts",
+    "Spending alerts",
+    "When a spending alert passes a threshold, with its name and percentage, once a month each. Sent from the hour below on.",
+  ],
 ];
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const hourLabel = (hour: number) =>
@@ -109,7 +114,7 @@ export function Notifications({ platform = browserPush, ...p }: NotificationsPro
   return (
     <section aria-labelledby="notifications-heading">
       <h2 className="h2" id="notifications-heading">
-        Notifications <span>Counts and routine names only, never amounts or payees.</span>
+        Notifications <span>Counts and names only, never amounts or payees.</span>
       </h2>
       <div className="card">
         <div className="setting">

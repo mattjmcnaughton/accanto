@@ -1284,6 +1284,16 @@ async def write(
             response = await write_routine(
                 session, entity, operation, payload, target, audit
             )
+        elif operation in {
+            "create_spending_alert",
+            "edit_spending_alert",
+            "delete_spending_alert",
+        }:
+            from accanto.services.spending_alerts import write_alert
+
+            response = await write_alert(
+                session, entity, operation, payload, target, audit
+            )
         elif operation in {"create_schedule", "edit_schedule"}:
             from accanto.services.schedules import write_schedule
 

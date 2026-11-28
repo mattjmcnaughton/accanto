@@ -136,6 +136,20 @@
 .home-list > li.row:first-child {
   border-top: 0;
 }
+.pip.over {
+  background: var(--bad);
+}
+.home-act {
+  border: 0;
+  background: none;
+  padding: 4px 2px;
+  font: inherit;
+  cursor: pointer;
+}
+.home-act:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .home-plan {
   border: 0;
   background: none;

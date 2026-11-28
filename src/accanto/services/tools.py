@@ -353,6 +353,15 @@ async def list_spending_subcategories(ctx, entity_id, args, key):
         )
 
 
+async def list_spending_alerts(ctx, entity_id, args, key):
+    from accanto.services.spending_alerts import read_alerts
+
+    async with ctx.sessions() as session:
+        return t.project_spending_alerts(
+            await read_alerts(session, ctx.actor, entity_id)
+        )
+
+
 async def list_savings(ctx, entity_id, args, key):
     async with ctx.sessions() as session:
         return t.project_savings(await read_accounts(session, ctx.actor, entity_id))
@@ -821,6 +830,32 @@ def build_spending_subcategory(args: t.SaveSpendingSubcategory):
     )
 
 
+def build_spending_alert(args: t.SaveSpendingAlert):
+    shown = ", ".join(f"{x}%" for x in sorted(set(args.values.thresholds)))
+    if args.id:
+        _kind_of(args.values, t.SpendingAlertEdit, "edit (thresholds)")
+        return (
+            Command("edit_spending_alert", _json(args.values), args.id),
+            f"Change a spending alert to {shown}",
+        )
+    _kind_of(args.values, t.SpendingAlertInput, "create")
+    return (
+        Command("create_spending_alert", _json(args.values)),
+        f"Add a spending alert at {shown}",
+    )
+
+
+def build_delete_spending_alert(args: t.DeleteSpendingAlert):
+    return (
+        Command(
+            "delete_spending_alert",
+            {"expected_revision": args.expected_revision},
+            args.id,
+        ),
+        "Delete a spending alert",
+    )
+
+
 def build_delete_tag(args: t.DeleteTag):
     return (
         Command("delete_tag", {"expected_revision": args.expected_revision}, args.id),
@@ -1249,6 +1284,16 @@ CATALOG: tuple[CatalogTool, ...] = (
         list_spending_subcategories,
     ),
     _read(
+        "list_spending_alerts",
+        "Spending alerts and this month's progress: each rule's target (guilt-"
+        "free spending, fixed costs, one subcategory against its estimate or one "
+        "fixed cost), thresholds, the Plan amount, recorded, percent and the "
+        "highest threshold reached, or why it is waiting.",
+        t.NoInput,
+        t.SpendingAlertList,
+        list_spending_alerts,
+    ),
+    _read(
         "list_savings",
         "Savings accounts and their goals with remaining saved, remaining to "
         "target and percent of target.",
@@ -1647,6 +1692,21 @@ CATALOG: tuple[CatalogTool, ...] = (
         "a skipped upcoming date back.",
         t.SkipScheduleDate,
         build_skip_schedule_date,
+    ),
+    _write(
+        "save_spending_alert",
+        "Create a spending alert for guilt-free spending, fixed costs, one "
+        "subcategory or one fixed cost, with whole-percent thresholds (1-999; "
+        "over 100 is overspent); or change an alert's thresholds. One per target.",
+        t.SaveSpendingAlert,
+        build_spending_alert,
+    ),
+    _write(
+        "delete_spending_alert",
+        "Delete a spending alert.",
+        t.DeleteSpendingAlert,
+        build_delete_spending_alert,
+        "delete",
     ),
     _write(
         "save_routine",

@@ -8,14 +8,16 @@ import { type Dollars, projections, saveDollars, savedDollars } from "../../lib/
 import { confirmInAppNavigation } from "../../lib/recoverableWrite";
 import { routines } from "../../lib/routines";
 import { savings } from "../../lib/savings";
+import { spendingAlerts } from "../../lib/spendingAlerts";
 import { spendingSubcategories } from "../../lib/spendingSubcategories";
 import { parseTimestamp } from "../../lib/timestamp";
 import { Band, Dialog, Empty, Icon, Skeleton, Tip, Wait } from "../../ui";
+import { createSpec, createdId } from "../create/create";
 import { SubcategoriesDialog } from "../tags/Subcategories";
 import { Home } from "./Home";
 import { CopyPlan } from "./PlanScenarios";
-import { createSpec, createdId } from "../create/create";
 import { PlanWorksheet } from "./PlanWorksheet";
+import type { Screen } from "./Workspace";
 import {
   type Catalog,
   type WorksheetDraft,
@@ -32,7 +34,6 @@ import {
   storedTotals,
   totals,
 } from "./planWorksheetModel";
-import type { Screen } from "./Workspace";
 import { LoadMessage, type ScreenProps, composing, useLoad } from "./shared";
 import "./planning.css";
 
@@ -96,6 +97,10 @@ export function Plans(
   const routineList = useLoad(() => routines.list(p.entity.id), deps, {
     enabled: home,
     share: "routines",
+  });
+  const alertList = useLoad(() => spendingAlerts.list(p.entity.id), deps, {
+    enabled: home,
+    share: "spending-alerts",
   });
   const [dollars, setDollars] = useState<Dollars>(savedDollars);
   const worth = useLoad(() => projections.netWorth(p.entity.id, dollars), [...deps, dollars], {
@@ -408,6 +413,8 @@ export function Plans(
           go={p.go}
           routines={routineList}
           openRoutine={p.openRoutine}
+          alerts={alertList}
+          dismissAlert={(alert) => p.save(spendingAlerts.dismiss(p.entity.id, alert), () => {})}
           retry={() => setReload((n) => n + 1)}
         />
       )}

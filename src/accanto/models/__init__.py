@@ -9,3 +9,4 @@ from accanto.models import notifications as notifications
 from accanto.models import refunds as refunds
 from accanto.models import routines as routines
 from accanto.models import schedules as schedules
+from accanto.models import spending_alerts as spending_alerts

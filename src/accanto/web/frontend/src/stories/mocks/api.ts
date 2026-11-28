@@ -16,6 +16,7 @@ import { payoffSchedules } from "./loans";
 import * as projection from "./projections";
 import { routineList } from "./routines";
 import { scheduleList } from "./schedules";
+import { alertList } from "./spendingAlerts";
 
 export { data, projection };
 export type State = "loaded" | "empty" | "loading" | "failed";
@@ -80,6 +81,11 @@ const resources = {
   },
   routines: { path: `${entity}/routines`, loaded: routineList(), empty: [] },
   schedules: { path: `${entity}/schedules`, loaded: scheduleList(), empty: [] },
+  spendingAlerts: {
+    path: `${entity}/spending-alerts`,
+    loaded: alertList(),
+    empty: { ...alertList(), spending_alerts: [] },
+  },
   tags: { path: `${entity}/tags`, loaded: data.tags, empty: [] },
   spendingSubcategories: {
     path: `${entity}/spending-subcategories`,

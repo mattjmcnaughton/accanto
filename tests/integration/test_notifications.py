@@ -138,6 +138,7 @@ async def scenario(monkeypatch):
             "routines_due": True,
             "scheduled_entries": True,
             "transactions_waiting": False,
+            "spending_alerts": True,
         }
         bad_hour = {**defaults.json(), "hour": 24}
         assert (
