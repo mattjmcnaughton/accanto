@@ -404,8 +404,8 @@
   width: 96px;
 }
 .plan-grid .action-col {
-  /* Guilt-free spending's row has two actions: add a subcategory and details. */
-  width: 64px;
+  /* Up to three actions: a Spending alert's bell, add, and details. */
+  width: 92px;
 }
 .plan-grid thead th {
   font-size: 12.5px;
@@ -536,7 +536,23 @@
 }
 .plan-grid .row-actions {
   display: inline-flex;
+  align-items: center;
   gap: 2px;
+}
+.plan-grid .alert-bell {
+  height: 26px;
+}
+/* A set bell names its thresholds where the Item column keeps room for them. */
+.plan-grid .alert-bell span {
+  display: none;
+}
+@media (min-width: 1500px) {
+  .plan-grid .action-col {
+    width: 168px;
+  }
+  .plan-grid .alert-bell span {
+    display: inline;
+  }
 }
 .plan-grid .icon-btn {
   width: 26px;
@@ -687,6 +703,10 @@
   }
 }
 @media (max-width: 760px) {
+  /* Lines name their thresholds; a type row keeps its name on one line without them. */
+  .plan-grid .line-row .alert-bell span {
+    display: inline;
+  }
   .buckets thead {
     display: none;
   }

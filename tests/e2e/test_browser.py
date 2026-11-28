@@ -485,6 +485,22 @@ def test_signed_in_workspace(tmp_path):
         )
         browser("click", "#save-version")
         until("!!document.querySelector('#plan-version option[value=\"0\"]')")
+        # Spending alerts (TDD 23) live beside the money: a worksheet bell sets
+        # one on a fixed cost; the Spending alerts screen lists and deletes it.
+        button("Add a spending alert for Synthetic annual service")
+        until("!!document.querySelector('dialog[open] .alert-form')")
+        button("100%")
+        button("Add alert")
+        until("!document.querySelector('dialog[open]')")
+        until(
+            "!!document.querySelector('button[aria-label=\"Spending alert for "
+            "Synthetic annual service at 70%, 90%, 100%\"]')"
+        )
+        go("Spending alerts")
+        browser("wait", "--text", "Synthetic annual service · 70 · 90 · 100%")
+        button("Edit Synthetic annual service")
+        button("Delete alert")
+        browser("wait", "--text", "No spending alerts yet")
         go("Review")
         until(
             "Array.from(document.querySelectorAll('#main button'))"

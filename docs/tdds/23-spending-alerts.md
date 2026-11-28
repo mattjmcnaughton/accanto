@@ -1,7 +1,7 @@
 # 23 — Spending alerts
 
 Status: Implemented
-Updated: 2026-11-27
+Updated: 2026-11-28
 
 ## Purpose and scope
 
@@ -40,8 +40,16 @@ Create, edit and delete are audited and retry-safe through `services.monthly.wri
 - Agent and MCP: `list_spending_alerts` reads; `save_spending_alert` and
   `delete_spending_alert` follow the Agent mode. Dismissal is browser UI only:
   it is a person's acknowledgement, not something an agent does for them.
-- UI: Settings → Spending alerts (presets 50/70/90/100, any other percentage,
-  70 and 90 preselected); Home's Needs you, red past 100%; Notifications switch.
+- UI: rules live next to the money, not in Settings (owner decision, 2026-11-28).
+  A bell on each Plan worksheet row an alert can watch (Fixed costs, each fixed
+  cost, Guilt-free spending, each active subcategory; key `b`) shows its
+  thresholds and opens the alert dialog, on any Plan or version, because a rule
+  targets the row, not the version. The dialog names the version it reads. The
+  Spending alerts screen (sidebar Recurring, beside Routines and Schedules) lists
+  every rule with this month's progress and adds, edits or deletes one. Both use
+  one dialog: presets 50/70/90/100, any other percentage, 70 and 90 preselected.
+  Home's Needs you, red past 100%; Settings keeps only the Notifications switch.
+  The worksheet reads `/spending-alerts` (one more request on that screen).
 - Push: the notifications tick, after the daily kinds, at any tick from the
   User's hour on. Text names the target and threshold, such as "Eating out passed
   70% of its estimate."; never an amount or payee.

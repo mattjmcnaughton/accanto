@@ -8,10 +8,11 @@ import { type Dollars, projections, saveDollars, savedDollars } from "../../lib/
 import { confirmInAppNavigation } from "../../lib/recoverableWrite";
 import { routines } from "../../lib/routines";
 import { savings } from "../../lib/savings";
-import { spendingAlerts } from "../../lib/spendingAlerts";
+import { type SpendingAlert, spendingAlerts } from "../../lib/spendingAlerts";
 import { spendingSubcategories } from "../../lib/spendingSubcategories";
 import { parseTimestamp } from "../../lib/timestamp";
 import { Band, Dialog, Empty, Icon, Skeleton, Tip, Wait } from "../../ui";
+import { type AlertChoice, AlertDialog } from "../alerts/Alerts";
 import { createSpec, createdId } from "../create/create";
 import { SubcategoriesDialog } from "../tags/Subcategories";
 import { Home } from "./Home";
@@ -90,6 +91,8 @@ export function Plans(
     share: "spending-subcategories",
   });
   const [managingSubcategories, setManagingSubcategories] = useState(false);
+  /** A worksheet bell's alert: its target, and its rule when it has one. */
+  const [alerting, setAlerting] = useState<{ target: AlertChoice; alert?: SpendingAlert }>();
   const loans = useLoad(() => balances.loans(p.entity.id), deps, {
     enabled: home || worksheet,
     share: "loans",
@@ -99,7 +102,7 @@ export function Plans(
     share: "routines",
   });
   const alertList = useLoad(() => spendingAlerts.list(p.entity.id), deps, {
-    enabled: home,
+    enabled: home || worksheet,
     share: "spending-alerts",
   });
   const [dollars, setDollars] = useState<Dollars>(savedDollars);
@@ -734,6 +737,8 @@ export function Plans(
                 }
                 onSubcategories={() => setManagingSubcategories(true)}
                 accounts={accounts.kind === "ready" ? accounts.data : []}
+                alerts={alertList.kind === "ready" ? alertList.data.spending_alerts : undefined}
+                onAlert={(target, alert) => setAlerting({ target, alert })}
                 onCreate={(request, chosen) =>
                   p.save(createSpec(p.entity.id, request), (data) => {
                     const created = createdId(request, data);
@@ -781,6 +786,29 @@ export function Plans(
           busy={p.busy}
           save={p.save}
           onClose={() => setManagingSubcategories(false)}
+        />
+      )}
+      {alerting && worksheet && (
+        <AlertDialog
+          p={p}
+          targets={[alerting.target]}
+          alert={alerting.alert}
+          version={alertList.kind === "ready" ? alertList.data.version : null}
+          close={() => setAlerting(undefined)}
+          footer={
+            p.go && (
+              <button
+                type="button"
+                className="btn quiet sm"
+                onClick={() => {
+                  setAlerting(undefined);
+                  p.go?.("alerts");
+                }}
+              >
+                All spending alerts
+              </button>
+            )
+          }
         />
       )}
       {copying && !home && (

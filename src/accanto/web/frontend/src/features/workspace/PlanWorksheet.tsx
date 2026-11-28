@@ -2,8 +2,10 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlanRevision } from "../../lib/monthly";
 import type { SavingsAccount } from "../../lib/savings";
+import { type SpendingAlert, TYPE_NAMES } from "../../lib/spendingAlerts";
 import type { SpendingSubcategory } from "../../lib/spendingSubcategories";
 import { Band, Combobox, Dialog, Icon, cleanName, tint } from "../../ui";
+import { type AlertChoice, alertKey, thresholdsShort } from "../alerts/Alerts";
 import { NewGoal } from "../create/CreateForms";
 import { type CreatableKind, type CreateRequest, NOUNS } from "../create/create";
 import { PlanBreakdown, share } from "./PlanBreakdown";
@@ -87,6 +89,8 @@ export function PlanWorksheet({
   onCopy,
   onCreate,
   accounts = [],
+  alerts,
+  onAlert,
 }: {
   revision: PlanRevision;
   retained?: WorksheetDraft;
@@ -114,6 +118,10 @@ export function PlanWorksheet({
   onCreate?: (request: CreateRequest, chosen: (id: string) => void) => void;
   /** Savings accounts a new saving goal can belong to. */
   accounts?: SavingsAccount[];
+  /** Spending alerts, one bell per row they can watch; omitted while they load. */
+  alerts?: SpendingAlert[];
+  /** Opens a row's Spending alert. Alerts are not part of the Plan, so saved versions have bells. */
+  onAlert?: (target: AlertChoice, alert?: SpendingAlert) => void;
 }) {
   const initialLines = useMemo(() => revisionLines(revision), [revision]);
   const [draftLines, setLines] = useState<Line[]>(retained?.lines ?? initialLines);
@@ -146,6 +154,64 @@ export function PlanWorksheet({
   /** The closing editor's blur must not write the value Escape discarded. */
   const discarded = useRef(false);
   const readOnly = versionIndex !== null;
+  /** What a row's bell watches: fixed costs, one fixed cost, guilt-free spending or a subcategory. */
+  const alertTarget = (row: DisplayRow): AlertChoice | null => {
+    const none = { spending_subcategory_id: null, fixed_cost_id: null };
+    if (row.heading === true && row.group === "fixed")
+      return { ...none, category: "fixed_cost", name: TYPE_NAMES.fixed_cost };
+    if (row.heading === "subcategory")
+      return row.subcategory.active
+        ? {
+            ...none,
+            category: "spending",
+            spending_subcategory_id: row.subcategory.uuid,
+            name: row.subcategory.name,
+          }
+        : null;
+    if (row.heading === false && row.group === "spending")
+      return { ...none, category: "spending", name: TYPE_NAMES.spending };
+    if (row.heading === false && row.group === "fixed" && row.line.reference)
+      return {
+        ...none,
+        category: "fixed_cost",
+        fixed_cost_id: row.line.reference,
+        name: row.line.name,
+      };
+    return null;
+  };
+  const alertFor = (target: AlertChoice) =>
+    alerts?.find((alert) => alertKey(alert) === alertKey(target));
+  const openAlert = (row: DisplayRow) => {
+    const target = alertTarget(row);
+    if (!target || !alerts || !onAlert) return false;
+    setSelection({ id: row.id, col: 4 });
+    onAlert(target, alertFor(target));
+    return true;
+  };
+  const bell = (row: DisplayRow) => {
+    const target = alerts && onAlert ? alertTarget(row) : null;
+    if (!target) return null;
+    const alert = alertFor(target);
+    return (
+      <button
+        type="button"
+        tabIndex={-1}
+        className={`alert-bell ${alert ? "set" : ""}`}
+        aria-label={
+          alert
+            ? `Spending alert for ${target.name} at ${alert.thresholds.map((t) => `${t}%`).join(", ")}`
+            : `Add a spending alert for ${target.name}`
+        }
+        title={
+          alert ? `Spending alert at ${thresholdsShort(alert.thresholds)}` : "Add a spending alert"
+        }
+        onClick={() => openAlert(row)}
+      >
+        <Icon name="bell" />
+        {alert && <span>{thresholdsShort(alert.thresholds)}</span>}
+      </button>
+    );
+  };
   const snapshot = readOnly ? versions[versionIndex] : null;
   const lines = useMemo(
     () => (snapshot ? revisionLines(snapshot) : draftLines),
@@ -526,6 +592,11 @@ export function PlanWorksheet({
     if (key === "?") {
       e.preventDefault();
       setModal("help");
+      return;
+    }
+    if (key === "b") {
+      e.preventDefault();
+      openAlert(row);
       return;
     }
     if (key === "i" || key === "Enter") {
@@ -953,21 +1024,24 @@ export function PlanWorksheet({
                                   <span className="nm">{sub.name}</span>
                                 </span>
                               ) : col === 4 ? (
-                                !readOnly && (
-                                  <button
-                                    type="button"
-                                    tabIndex={-1}
-                                    aria-label={`Rename or archive ${sub.name}`}
-                                    title="Rename or archive"
-                                    className="icon-btn"
-                                    onClick={() => {
-                                      setSelection({ id: row.id, col: 4 });
-                                      add(row.group);
-                                    }}
-                                  >
-                                    <Icon name="more" />
-                                  </button>
-                                )
+                                <span className="row-actions">
+                                  {bell(row)}
+                                  {!readOnly && (
+                                    <button
+                                      type="button"
+                                      tabIndex={-1}
+                                      aria-label={`Rename or archive ${sub.name}`}
+                                      title="Rename or archive"
+                                      className="icon-btn"
+                                      onClick={() => {
+                                        setSelection({ id: row.id, col: 4 });
+                                        add(row.group);
+                                      }}
+                                    >
+                                      <Icon name="more" />
+                                    </button>
+                                  )}
+                                </span>
                               ) : col === 1 || col === 3 ? (
                                 estimate === null ? (
                                   <span className="muted" title="Estimate (optional)">
@@ -1004,17 +1078,22 @@ export function PlanWorksheet({
                                 </button>
                               ) : col === 3 ? (
                                 <b>{money(total)}</b>
-                              ) : col === 4 && !readOnly ? (
-                                <button
-                                  type="button"
-                                  tabIndex={-1}
-                                  aria-label={`Add ${titles[row.group]} line`}
-                                  title={`Add ${titles[row.group]} line`}
-                                  className="icon-btn"
-                                  onClick={() => add(row.group)}
-                                >
-                                  <Icon name="plus" />
-                                </button>
+                              ) : col === 4 ? (
+                                <span className="row-actions">
+                                  {bell(row)}
+                                  {!readOnly && (
+                                    <button
+                                      type="button"
+                                      tabIndex={-1}
+                                      aria-label={`Add ${titles[row.group]} line`}
+                                      title={`Add ${titles[row.group]} line`}
+                                      className="icon-btn"
+                                      onClick={() => add(row.group)}
+                                    >
+                                      <Icon name="plus" />
+                                    </button>
+                                  )}
+                                </span>
                               ) : null
                             ) : col === 0 ? (
                               row.group === "spending" ? (
@@ -1064,6 +1143,7 @@ export function PlanWorksheet({
                               )
                             ) : (
                               <span className="row-actions">
+                                {bell(row)}
                                 {row.group === "spending" && !readOnly && (
                                   <button
                                     type="button"
@@ -1376,6 +1456,7 @@ export function PlanWorksheet({
                   "Add a line in the current category, or a guilt-free spending subcategory",
                 ],
                 ["Click or Enter on a subcategory", "Set its estimate (optional; blank clears)"],
+                ["b", "Set a spending alert on the row: a type, subcategory or fixed cost"],
                 ["dd", "Remove selected line, with confirmation"],
                 ["Enter", "Keep a valid cell edit; return to normal"],
                 ["Escape", "Discard a cell edit; return to normal"],
