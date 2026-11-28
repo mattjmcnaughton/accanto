@@ -134,6 +134,7 @@ class ScreenTiming(BaseModel):
         "plans",
         "routines",
         "schedules",
+        "alerts",
         "projections",
         "savings",
         "investments",

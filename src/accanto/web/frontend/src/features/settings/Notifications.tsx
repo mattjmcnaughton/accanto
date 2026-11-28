@@ -28,7 +28,7 @@ const KINDS: Array<[keyof Omit<Preferences, "hour">, string, string]> = [
   [
     "spending_alerts",
     "Spending alerts",
-    "When a spending alert passes a threshold, with its name and percentage, once a month each. Sent from the hour below on.",
+    "When a spending alert passes a threshold, with its name and percentage, once a month each. Sent from the hour below on. Set alerts on the Spending alerts screen or a Plan's bell.",
   ],
 ];
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);

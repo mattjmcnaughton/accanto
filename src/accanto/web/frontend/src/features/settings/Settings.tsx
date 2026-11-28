@@ -9,7 +9,6 @@ import { ApiKeys } from "./ApiKeys";
 import { DeleteEntity } from "./DeleteEntity";
 import { EntityMembers } from "./Members";
 import { Notifications } from "./Notifications";
-import { SpendingAlertsSettings } from "./SpendingAlerts";
 import { TransactionProviderSettings } from "./TransactionProviderSettings";
 
 interface EntitySettings {
@@ -197,7 +196,6 @@ export function Settings(p: SettingsProps) {
         </section>
       )}
       <EntityMembers entityId={p.entity.id} credentials={p.credentials} disabled={p.busy} />
-      <SpendingAlertsSettings {...p} />
       <Notifications {...p} />
       <AgentSettings {...p} />
       {p.entity.role === "member" ? (

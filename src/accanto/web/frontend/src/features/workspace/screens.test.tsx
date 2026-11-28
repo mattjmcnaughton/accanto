@@ -250,8 +250,93 @@ it("refreshes only visible Activity after a write and restores the unsaved Plan"
     "investments",
     "plans",
     "savings-accounts",
+    "spending-alerts",
     "spending-subcategories",
   ]);
+});
+
+it("sets a spending alert from a worksheet bell without losing the unsaved Plan", async () => {
+  const rent = {
+    fixed_cost_id: "rent",
+    debt_account_id: null,
+    name: "Synthetic rent",
+    canonical_name: "synthetic rent",
+    amount: "1500.00",
+    frequency: "monthly" as const,
+    monthly_amount: "1500.00",
+  };
+  const withRent = [
+    {
+      plan_id: "plan",
+      revisions: [
+        { ...version, fixed_costs: [rent] },
+        { ...version, uuid: "draft", saved: false, number: 2, fixed_costs: [rent] },
+      ],
+    },
+  ];
+  const alerts: unknown[] = [];
+  const posts: unknown[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {
+    const resource = String(path).replace(`/api/entities/${entity.id}/`, "");
+    if (resource === "spending-alerts" && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      posts.push(body);
+      const alert = {
+        ...body,
+        uuid: "alert",
+        name: "Synthetic rent",
+        revision: 1,
+        basis: "planned",
+        amount: "1500.00",
+        recorded: null,
+        percent: null,
+        reached: null,
+        waiting: null,
+        dismissed: false,
+      };
+      alerts.push(alert);
+      return json(alert, 201);
+    }
+    if (resource === "spending-alerts")
+      return json({
+        month: "2026-11",
+        version: { uuid: "v1", name: "Baseline", number: 1 },
+        spending_alerts: alerts,
+      });
+    return json(resource === "plans" ? withRent : []);
+  });
+  render(<Workspace initial={session} signedOut={vi.fn()} />);
+  fireEvent.click(nav().getByRole("link", { name: "Plans" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Baseline" }));
+  fireEvent.click(screen.getByRole("button", { name: "Details for Salary" }));
+  fireEvent.change(screen.getByLabelText("Monthly amount"), { target: { value: "4200.00" } });
+
+  // Rent's bell, not the Fixed costs bell above it: the alert names the one fixed cost.
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Add a spending alert for Synthetic rent" }),
+  );
+  const dialog = within(screen.getByRole("dialog", { name: "Alert for Synthetic rent" }));
+  fireEvent.click(dialog.getByRole("button", { name: "90%" }));
+  fireEvent.click(dialog.getByRole("button", { name: "100%" }));
+  await act(async () => fireEvent.click(dialog.getByRole("button", { name: "Add alert" })));
+
+  expect(posts).toEqual([
+    {
+      category: "fixed_cost",
+      spending_subcategory_id: null,
+      fixed_cost_id: "rent",
+      thresholds: [70, 100],
+    },
+  ]);
+  expect(
+    await screen.findByRole("button", { name: "Spending alert for Synthetic rent at 70%, 100%" }),
+  ).toBeDefined();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Add a spending alert for Fixed costs" }),
+  ).toBeDefined();
+  fireEvent.click(screen.getByRole("button", { name: "Details for Salary" }));
+  expect(screen.getByDisplayValue("4200.00")).toBeDefined();
 });
 
 it("shows a revisited screen's last data while its fresh read is pending", async () => {

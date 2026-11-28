@@ -252,6 +252,7 @@ it("gives the phone tabs to daily screens and groups the rest in More", async ()
     "Giving",
     "Routines",
     "Schedules",
+    "Spending alerts",
     "Settings",
   ]);
   // More keeps the sidebar's groups, in the sidebar's order.

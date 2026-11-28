@@ -1,8 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { Settings } from "../../features/settings/Settings";
-import { data, mockApi, screenArgs, stateStory } from "../mocks/api";
-import { alertList } from "../mocks/spendingAlerts";
+import { data, screenArgs, stateStory } from "../mocks/api";
 
 const meta = {
   title: "Screens/Settings",
@@ -24,7 +23,3 @@ export const Loading: Story = stateStory("loading");
 export const Failed: Story = stateStory("failed");
 /** A User the operator listed for Report bug sees their reports below API keys. */
 export const WithBugReports: Story = { args: { reportBug: true } };
-/** Spending alerts: one rule waiting for an estimate, one past 100% of its estimate. */
-export const SpendingAlertsOverspent: Story = {
-  parameters: { msw: mockApi("loaded", { spendingAlerts: alertList("overspent") }) },
-};

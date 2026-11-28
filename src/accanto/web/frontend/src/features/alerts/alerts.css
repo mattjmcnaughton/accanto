@@ -1,0 +1,129 @@
+.alert-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.alert-form {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+.alert-form label.alert-lbl {
+  display: grid;
+  gap: 6px;
+}
+.alert-lbl {
+  margin: 0;
+  font-weight: 600;
+}
+.alert-ths {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+.alert-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.chip.alert-opt {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 99px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.chip.alert-opt[aria-pressed="true"] {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--brand-ink);
+}
+.alert-other {
+  width: 92px;
+}
+.alert-basis {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--wash);
+  color: var(--ink2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  max-width: 62ch;
+}
+.alert-dlg {
+  width: min(560px, calc(100vw - 24px));
+}
+.alert-acts {
+  width: 100%;
+}
+.alert-acts .danger {
+  margin-left: auto;
+}
+.alert-list .muted {
+  font-variant-numeric: tabular-nums;
+}
+/* This month's progress, with a tick at each threshold up to 100%. */
+.alert-meter {
+  position: relative;
+  height: 5px;
+  margin-top: 8px;
+  max-width: 420px;
+  border-radius: 3px;
+  background: var(--wash);
+}
+.alert-meter i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--c-free);
+}
+.alert-meter.fixed i {
+  background: var(--c-fixed);
+}
+.alert-meter b {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink3);
+}
+/* A Plan worksheet row's bell: outlined without an alert, filled with its thresholds. */
+.alert-bell {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 0;
+  background: none;
+  color: var(--ink3);
+  font: inherit;
+  font-size: 12px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.alert-bell.set {
+  color: var(--brand);
+  background: var(--good-bg);
+  font-weight: 600;
+}
+.alert-bell.set .ico {
+  fill: currentColor;
+}
+@media (hover: hover) {
+  .alert-bell:hover {
+    background: var(--wash);
+    color: var(--ink);
+  }
+}

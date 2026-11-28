@@ -15,7 +15,7 @@ Plan where each month's money goes, record where it went, and review the differe
   Search it, add notes, record several at once, or work through it in flow mode.
 - **Review** each month against the Plan you chose. Home shows what needs you:
   routines that are due, and spending alerts when a category passes a share of
-  its plan.
+  its plan. Set an alert with the bell on a Plan's line or on Spending alerts.
 - **Track** savings goals, investments, debts and giving as cards or a table.
   Debts show their payoff schedule.
 - **Project** net worth and a FIRE date, in today's or future dollars.

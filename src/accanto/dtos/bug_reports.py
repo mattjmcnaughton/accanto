@@ -21,6 +21,7 @@ Screen = Literal[
     "plans",
     "routines",
     "schedules",
+    "alerts",
     "projections",
     "savings",
     "investments",

@@ -23,3 +23,25 @@ export const Worksheet: Story = {
     await expect(await canvas.findByRole("button", { name: "Save draft" })).toBeVisible();
   },
 };
+const phone = { globals: { viewport: { value: "phone", isRotated: false } } };
+/** A bell on each row a Spending alert can watch; Eating out's alert open from its bell. */
+export const WorksheetAlert: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Everyday balance" }));
+    await userEvent.click(
+      await canvas.findByRole("button", { name: /^Spending alert for Eating out/ }),
+    );
+  },
+};
+export const WorksheetAlertPhone: Story = { ...phone, play: WorksheetAlert.play };
+/** A row without an alert: its bell starts one at 70% and 90%. */
+export const WorksheetNewAlert: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Everyday balance" }));
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Add a spending alert for Fixed costs" }),
+    );
+  },
+};

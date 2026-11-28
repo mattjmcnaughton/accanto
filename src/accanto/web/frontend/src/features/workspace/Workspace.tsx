@@ -14,8 +14,9 @@ import {
 import { observeScreen } from "../../lib/screenTiming";
 import { Dialog, Icon, Mark, useDialogSlot } from "../../ui";
 import { AgentPanel } from "../agent/AgentPanel";
-import { ReportBug } from "../bugReport/ReportBug";
+import { Alerts } from "../alerts/Alerts";
 import { Balances } from "../balances/Balances";
+import { ReportBug } from "../bugReport/ReportBug";
 import { Destinations } from "../destinations/Destinations";
 import { Inbox } from "../inbox/Inbox";
 import { FIRE_INTERVIEW_PROMPT, Projections } from "../projections/Projections";
@@ -40,6 +41,7 @@ export const SCREENS = [
   "plans",
   "routines",
   "schedules",
+  "alerts",
   "projections",
   "savings",
   "investments",
@@ -93,6 +95,7 @@ const NAV: { group: string; items: [Screen, string][] }[] = [
     items: [
       ["routines", "Routines"],
       ["schedules", "Schedules"],
+      ["alerts", "Spending alerts"],
     ],
   },
 ];
@@ -833,6 +836,7 @@ export function Workspace({
                   />
                 )}
                 {screen === "schedules" && <Schedules {...props} />}
+                {screen === "alerts" && <Alerts {...props} />}
                 {screen === "projections" && (
                   <Projections
                     {...props}
