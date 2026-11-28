@@ -19,6 +19,7 @@ metadata stripped and colors reduced to 256.
 | Review | [light](review-light.png) | [dark](review-dark.png) | [390 px](review-phone.png) |
 | Routines | [light](routines-light.png) | [dark](routines-dark.png) | [390 px](routines-phone.png) |
 | Schedules | [light](schedules-light.png) | [dark](schedules-dark.png) | [390 px](schedules-phone.png) |
+| Spending alerts | [light](alerts-light.png) | [dark](alerts-dark.png) | [390 px](alerts-phone.png) |
 | Plans | [light](plans-light.png) | [dark](plans-dark.png) | [390 px](plans-phone.png) |
 | Projections | [light](projections-light.png) | [dark](projections-dark.png) | [390 px](projections-phone.png) |
 | Savings | [light](savings-light.png) | [dark](savings-dark.png) | [390 px](savings-phone.png) |
